@@ -1,0 +1,64 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "haloflow"
+version = "0.1.0"
+description = "HaloFlow — HaloVox Clinic Automation, Track B (Tier 2)"
+requires-python = ">=3.11"
+dependencies = [
+    # Web framework
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",      # file uploads (care-gap CSV/XLSX)
+
+    # Database — async postgres (Neon)
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+
+    # Config
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+
+    # HTTP client (all external API calls)
+    "httpx>=0.27.0",
+    "tenacity>=8.3.0",              # retry with backoff for flaky APIs
+
+    # Scheduling
+    "apscheduler>=3.10.4",
+
+    # Utilities
+    "python-dateutil>=2.9.0",
+    "openpyxl>=3.1.0",              # payer care-gap list XLSX ingestion
+    "python-jose[cryptography]>=3.3.0",  # JWT for webhook signatures
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-httpx>=0.30.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/haloflow"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
