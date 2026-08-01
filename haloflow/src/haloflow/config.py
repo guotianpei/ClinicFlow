@@ -32,20 +32,14 @@ class Settings(BaseSettings):
     athena_practice_id: str = ""
     athena_base_url: str = "https://api.preview.platform.athenahealth.com"
 
-    # ── Telnyx SMS ────────────────────────────────────────────────────────────
-    telnyx_api_key: str = ""
-    telnyx_from_number: str = ""
-    telnyx_messaging_profile_id: str = ""
+    # ── Notifyre (SMS + fax) ──────────────────────────────────────────────────
+    notifyre_api_key: str = ""
+    notifyre_sms_from: str = ""
+    notifyre_fax_inbound_number: str = ""
+    notifyre_fax_from_number: str = ""
 
     # ── Stedi eligibility ─────────────────────────────────────────────────────
     stedi_api_key: str = ""
-
-    # ── Fax ───────────────────────────────────────────────────────────────────
-    fax_api_url: str = "https://www.srfax.com/SRF_SecWebSvc.php"
-    fax_account_number: str = ""
-    fax_password: str = ""
-    fax_from_number: str = ""
-    fax_inbound_line: str = ""
 
     # ── Scheduling defaults ────────────────────────────────────────────────────
     reminder_days_before: int = 2

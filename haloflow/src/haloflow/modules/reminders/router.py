@@ -1,7 +1,7 @@
 """
 Reminders router — FastAPI endpoints.
 
-POST /webhooks/sms/inbound   — Telnyx inbound SMS webhook
+POST /webhooks/sms/inbound   — Notifyre inbound SMS webhook
 GET  /reminders/status       — Staff-facing: reminders sent today + reply status
 """
 import hashlib
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haloflow.config import get_settings
 from haloflow.database import get_db
 from haloflow.ehr.athenahealth import AthenaHealthAdapter
-from haloflow.integrations.telnyx import TelnyxSMSClient
+from haloflow.integrations.notifyre import NotifyreClient
 from haloflow.modules.reminders.models import ReminderRecord
 from haloflow.modules.reminders.service import ReminderService
 
@@ -26,9 +26,9 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-# ── Telnyx inbound SMS webhook ────────────────────────────────────────────────
+# ── Notifyre inbound SMS webhook ──────────────────────────────────────────────
 
-class TelnyxSMSWebhook(BaseModel):
+class NotifyreSMSWebhook(BaseModel):
     data: dict
 
 
@@ -38,26 +38,26 @@ async def inbound_sms(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Receive inbound SMS replies from Telnyx.
+    Receive inbound SMS replies from Notifyre.
     Validates webhook signature, then routes YES/NO replies to ReminderService.
     """
     body_bytes = await request.body()
-    _verify_telnyx_signature(request, body_bytes)
+    _verify_notifyre_signature(request, body_bytes)
 
     payload = await request.json()
-    event_type = payload.get("data", {}).get("event_type", "")
-    if event_type != "message.received":
+    event_type = payload.get("event", "")
+    if event_type not in ("sms.received", "sms_replied"):
         return  # ignore other event types (delivery receipts, etc.)
 
-    msg = payload["data"]["payload"]
-    from_phone: str = msg["from"]["phone_number"]
-    text: str = msg.get("text", "")
+    msg = payload.get("payload", payload)
+    from_phone: str = msg.get("sender") or msg.get("from", "")
+    text: str = msg.get("message") or msg.get("body", "")
     received_at = datetime.utcnow()
 
     svc = ReminderService(
         db=db,
         ehr=AthenaHealthAdapter(),
-        sms=TelnyxSMSClient(),
+        sms=NotifyreClient(),
     )
     await svc.handle_sms_reply(from_phone=from_phone, body=text, received_at=received_at)
 
@@ -105,15 +105,23 @@ async def reminders_status(
     }
 
 
-def _verify_telnyx_signature(request: Request, body: bytes) -> None:
-    """Validate Telnyx webhook signature to prevent spoofed webhooks."""
-    sig = request.headers.get("telnyx-signature-ed25519-v1", "")
-    timestamp = request.headers.get("telnyx-timestamp", "")
+def _verify_notifyre_signature(request: Request, body: bytes) -> None:
+    """
+    Validate Notifyre webhook signature to prevent spoofed webhooks.
+
+    Notifyre signs webhooks with an HMAC + timestamp, using the per-endpoint
+    secret key shown on the Developer > Webhooks page. Header names below
+    (x-notifyre-signature / x-notifyre-timestamp) follow Notifyre's documented
+    convention — confirm against the endpoint's webhook config once it's set
+    up in the dashboard, since the account's actual header casing/name isn't
+    verifiable from here.
+    """
+    sig = request.headers.get("x-notifyre-signature", "")
+    timestamp = request.headers.get("x-notifyre-timestamp", "")
     if not sig or not timestamp:
         raise HTTPException(status_code=401, detail="Missing webhook signature")
 
-    # Telnyx signs: timestamp + "|" + body
-    signed_payload = f"{timestamp}|".encode() + body
+    signed_payload = f"{timestamp}.".encode() + body
     expected = hmac.new(
         settings.webhook_secret.encode(),
         signed_payload,

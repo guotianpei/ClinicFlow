@@ -40,7 +40,7 @@ class ReminderRecord(Base):
     status: Mapped[ReminderStatus] = mapped_column(
         Enum(ReminderStatus), default=ReminderStatus.PENDING, nullable=False
     )
-    telnyx_message_id: Mapped[str | None] = mapped_column(String(256))
+    notifyre_message_id: Mapped[str | None] = mapped_column(String(256))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     replied_at: Mapped[datetime | None] = mapped_column(DateTime)
     reply_text: Mapped[str | None] = mapped_column(Text)
@@ -71,7 +71,7 @@ class RebookPrompt(Base):
         Integer, ForeignKey("reminder_records.id"), nullable=False
     )
     emr_appt_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    telnyx_message_id: Mapped[str | None] = mapped_column(String(256))
+    notifyre_message_id: Mapped[str | None] = mapped_column(String(256))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     status: Mapped[str] = mapped_column(String(32), default="sent")
 

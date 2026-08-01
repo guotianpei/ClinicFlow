@@ -16,7 +16,7 @@ Job 3 (daily, mid-morning): send_rebook_prompts()
   - Never sends a second prompt to the same appointment
 
 Webhook (real-time): handle_sms_reply()
-  - Called by Telnyx webhook when a patient texts back
+  - Called by Notifyre webhook when a patient texts back
   - Matches reply phone → appointment → writes Y/N back to EMR
 
 All decisions are rules-based. No AI inference. No clinical content in messages.
@@ -29,8 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haloflow.config import get_settings
 from haloflow.ehr.base import AppointmentStatus, EHRAdapter
-from haloflow.integrations.telnyx import (
-    TelnyxSMSClient,
+from haloflow.integrations.notifyre import (
+    NotifyreClient,
     care_gap_message,
     no_show_rebook_message,
     reminder_message,
@@ -49,7 +49,7 @@ class ReminderService:
         self,
         db: AsyncSession,
         ehr: EHRAdapter,
-        sms: TelnyxSMSClient,
+        sms: NotifyreClient,
     ) -> None:
         self._db = db
         self._ehr = ehr
@@ -112,7 +112,7 @@ class ReminderService:
 
             try:
                 message_id = await self._sms.send_sms(to=phone, body=body)
-                record.telnyx_message_id = message_id
+                record.notifyre_message_id = message_id
                 record.status = ReminderStatus.SENT
                 record.sent_at = datetime.utcnow()
                 sent += 1
@@ -207,7 +207,7 @@ class ReminderService:
 
             try:
                 msg_id = await self._sms.send_sms(to=phone, body=body)
-                prompt.telnyx_message_id = msg_id
+                prompt.notifyre_message_id = msg_id
                 prompt.sent_at = datetime.utcnow()
                 sent += 1
             except Exception:

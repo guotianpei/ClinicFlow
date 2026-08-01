@@ -48,7 +48,7 @@ class FaxRoutingRule(Base):
 class FaxRecord(Base):
     """
     One record per fax, inbound or outbound.
-    No fax content stored here — content stays in SRFax storage until retrieved.
+    No fax content stored here — content stays in Notifyre storage until retrieved.
     """
     __tablename__ = "fax_records"
 

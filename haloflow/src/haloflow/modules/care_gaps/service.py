@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haloflow.config import get_settings
 from haloflow.ehr.base import EHRAdapter
-from haloflow.integrations.telnyx import TelnyxSMSClient, care_gap_message
+from haloflow.integrations.notifyre import NotifyreClient, care_gap_message
 from haloflow.modules.care_gaps.models import (
     CareGapMeasure,
     CareGapRecord,
@@ -52,7 +52,7 @@ class CareGapService:
         self,
         db: AsyncSession,
         ehr: EHRAdapter,
-        sms: TelnyxSMSClient,
+        sms: NotifyreClient,
     ) -> None:
         self._db = db
         self._ehr = ehr
@@ -121,7 +121,7 @@ class CareGapService:
             )
             try:
                 msg_id = await self._sms.send_sms(to=phone, body=body)
-                record.telnyx_message_id = msg_id
+                record.notifyre_message_id = msg_id
                 record.status = OutreachStatus.SENT
                 record.sent_at = datetime.utcnow()
                 sent += 1
@@ -246,7 +246,7 @@ class CareGapService:
             )
             try:
                 msg_id = await self._sms.send_sms(to=phone, body=body)
-                record.telnyx_message_id = msg_id
+                record.notifyre_message_id = msg_id
                 record.status = OutreachStatus.SENT
                 record.sent_at = datetime.utcnow()
                 sent += 1

@@ -66,7 +66,7 @@ class CareGapRecord(Base):
     status: Mapped[OutreachStatus] = mapped_column(
         Enum(OutreachStatus), default=OutreachStatus.PENDING, nullable=False
     )
-    telnyx_message_id: Mapped[str | None] = mapped_column(String(256))
+    notifyre_message_id: Mapped[str | None] = mapped_column(String(256))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

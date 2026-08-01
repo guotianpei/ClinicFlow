@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haloflow.config import get_settings
 from haloflow.database import get_db
 from haloflow.ehr.athenahealth import AthenaHealthAdapter
-from haloflow.integrations.fax import SRFaxClient
+from haloflow.integrations.notifyre import NotifyreClient
 from haloflow.modules.fax.models import FaxDirection, FaxQueueStatus, FaxRecord
 from haloflow.modules.fax.service import FaxService
 
@@ -66,7 +66,7 @@ async def send_fax(
     Staff provides: patient ID, recipient fax/org, subject, and the PDF to send.
     """
     pdf_bytes = await document.read()
-    svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=SRFaxClient())
+    svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=NotifyreClient())
     record = await svc.send_outbound_fax(
         emr_patient_id=emr_patient_id,
         receiving_fax=receiving_fax,
@@ -94,7 +94,7 @@ async def create_routing_rule(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Create a new inbound fax routing rule."""
-    svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=SRFaxClient())
+    svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=NotifyreClient())
     rule = await svc.create_routing_rule(
         from_number=from_number,
         from_number_prefix=from_number_prefix,

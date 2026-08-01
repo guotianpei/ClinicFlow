@@ -22,9 +22,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from haloflow.database import AsyncSessionLocal
 from haloflow.ehr.athenahealth import AthenaHealthAdapter
-from haloflow.integrations.fax import SRFaxClient
+from haloflow.integrations.notifyre import NotifyreClient
 from haloflow.integrations.stedi import StediEligibilityClient
-from haloflow.integrations.telnyx import TelnyxSMSClient
 from haloflow.modules.care_gaps.models import CareGapMeasure
 from haloflow.modules.care_gaps.service import CareGapService
 from haloflow.modules.eligibility.service import EligibilityService
@@ -37,7 +36,7 @@ TIMEZONE = "America/New_York"
 
 async def _job_send_reminders() -> None:
     async with AsyncSessionLocal() as db:
-        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient())
+        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient())
         count = await svc.send_upcoming_reminders()
         logger.info("[scheduler] send_reminders: %d sent", count)
 
@@ -53,21 +52,21 @@ async def _job_check_eligibility() -> None:
 
 async def _job_rebook_prompts() -> None:
     async with AsyncSessionLocal() as db:
-        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient())
+        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient())
         count = await svc.send_rebook_prompts()
         logger.info("[scheduler] rebook_prompts: %d sent", count)
 
 
 async def _job_no_responses() -> None:
     async with AsyncSessionLocal() as db:
-        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient())
+        svc = ReminderService(db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient())
         count = await svc.process_no_responses()
         logger.info("[scheduler] no_responses marked: %d", count)
 
 
 async def _job_poll_fax() -> None:
     async with AsyncSessionLocal() as db:
-        svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=SRFaxClient())
+        svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=NotifyreClient())
         count = await svc.poll_inbound_faxes()
         if count:
             logger.info("[scheduler] fax_poll: %d faxes routed", count)
@@ -75,7 +74,7 @@ async def _job_poll_fax() -> None:
 
 async def _job_confirm_fax_delivery() -> None:
     async with AsyncSessionLocal() as db:
-        svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=SRFaxClient())
+        svc = FaxService(db=db, ehr=AthenaHealthAdapter(), fax_client=NotifyreClient())
         count = await svc.confirm_outbound_delivery()
         if count:
             logger.info("[scheduler] fax_delivery_confirmed: %d", count)
@@ -98,7 +97,7 @@ async def _job_emr_care_gaps() -> None:
         )
         measures = result.scalars().all()
 
-        svc = CareGapService(db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient())
+        svc = CareGapService(db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient())
         for measure in measures:
             count = await svc.run_emr_due_date_outreach(measure.code)
             logger.info(

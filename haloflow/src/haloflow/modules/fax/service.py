@@ -2,7 +2,7 @@
 Fax routing service — inbound sort + outbound auto-populate.
 
 INBOUND Job (every 15 min): poll_inbound_faxes()
-  - Polls SRFax for new faxes on the dedicated inbound line
+  - Polls Notifyre for new faxes on the dedicated inbound line
   - Matches sender number against FaxRoutingRule table (exact → prefix → catch-all)
   - Writes FaxRecord with queue assignment
   - Unmatched faxes → "general" queue, flagged for staff review
@@ -10,13 +10,12 @@ INBOUND Job (every 15 min): poll_inbound_faxes()
 OUTBOUND (on-demand, staff-triggered): send_outbound_fax()
   - Staff selects document(s) and provides: recipient fax, org, subject
   - Auto-populates cover sheet from EMR patient record
-  - Sends via SRFax
+  - Sends via Notifyre
   - Logs FaxRecord; polls for delivery confirmation
 
 No OCR in Tier 2 — content routing is purely by sender number.
 OCR-based content review (missing signatures, incomplete records) is Tier 3.
 """
-import base64
 import logging
 from datetime import datetime
 
@@ -25,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from haloflow.config import get_settings
 from haloflow.ehr.base import EHRAdapter
-from haloflow.integrations.fax import FaxStatus, InboundFax, SRFaxClient
+from haloflow.integrations.notifyre import FaxStatus, InboundFax, NotifyreClient
 from haloflow.modules.fax.models import (
     FaxDirection,
     FaxQueueStatus,
@@ -44,7 +43,7 @@ class FaxService:
         self,
         db: AsyncSession,
         ehr: EHRAdapter,
-        fax_client: SRFaxClient,
+        fax_client: NotifyreClient,
     ) -> None:
         self._db = db
         self._ehr = ehr
@@ -172,11 +171,10 @@ class FaxService:
             pages_to_follow=pages,
         )
 
-        pdf_base64 = base64.b64encode(pdf_bytes).decode()
         result = await self._fax.send_fax(
             to_number=receiving_fax,
             cover_sheet=cover_sheet,
-            pdf_base64=pdf_base64,
+            pdf_bytes=pdf_bytes,
         )
 
         record = FaxRecord(
@@ -185,7 +183,7 @@ class FaxService:
             status=FaxQueueStatus.QUEUED,
             external_fax_id=result.fax_id,
             to_number=receiving_fax,
-            from_number=settings.fax_from_number,
+            from_number=settings.notifyre_fax_from_number,
             pages=result.pages,
             emr_patient_id=emr_patient_id,
             subject=subject,
@@ -204,7 +202,7 @@ class FaxService:
 
     async def confirm_outbound_delivery(self) -> int:
         """
-        Poll SRFax for delivery confirmation on QUEUED outbound faxes.
+        Poll Notifyre for delivery confirmation on QUEUED outbound faxes.
         Updates status and EMR-logged flag. Run every 30 min.
         """
         result = await self._db.execute(

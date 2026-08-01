@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from haloflow.config import get_settings
 from haloflow.database import get_db
 from haloflow.ehr.athenahealth import AthenaHealthAdapter
-from haloflow.integrations.telnyx import TelnyxSMSClient
+from haloflow.integrations.notifyre import NotifyreClient
 from haloflow.modules.care_gaps.models import PayerListUpload
 from haloflow.modules.care_gaps.service import CareGapService
 
@@ -37,7 +37,7 @@ async def upload_payer_list(
 
     content = await file.read()
     svc = CareGapService(
-        db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient()
+        db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient()
     )
     upload = await svc.ingest_payer_list(
         payer_id=payer_id,
@@ -61,7 +61,7 @@ async def send_payer_list_outreach(
 ) -> dict:
     """Trigger SMS outreach for a processed payer list upload."""
     svc = CareGapService(
-        db=db, ehr=AthenaHealthAdapter(), sms=TelnyxSMSClient()
+        db=db, ehr=AthenaHealthAdapter(), sms=NotifyreClient()
     )
     sent = await svc.run_payer_list_outreach(upload_id)
     return {"upload_id": upload_id, "sent": sent}
