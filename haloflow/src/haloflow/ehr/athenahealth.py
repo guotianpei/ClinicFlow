@@ -71,7 +71,7 @@ class AthenaHealthAdapter(EHRAdapter):
             f"{settings.athena_base_url}/oauth2/v1/token",
             data={
                 "grant_type": "client_credentials",
-                "scope": "athena/service/Athena.Practice.Preview",
+                "scope": "athena/service/Athenanet.MDP.*",
             },
             auth=(settings.athena_client_id, settings.athena_client_secret),
         )
