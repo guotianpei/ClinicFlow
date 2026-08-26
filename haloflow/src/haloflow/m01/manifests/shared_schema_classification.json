@@ -1,0 +1,15 @@
+{
+  "schema": "shared",
+  "policy": {
+    "allowed_classifications": ["control-plane", "pseudonymous-id"],
+    "phi_allowed": false
+  },
+  "tables": {
+    "tenants": "control-plane",
+    "tenant_state_history": "control-plane",
+    "schema_migrations": "control-plane",
+    "support_access_grants": "control-plane",
+    "access_audit_log": "pseudonymous-id",
+    "isolation_alerts": "control-plane"
+  }
+}

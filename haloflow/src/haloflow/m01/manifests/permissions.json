@@ -1,0 +1,29 @@
+{
+  "haloflow_runtime": {
+    "allow": [
+      "shared.tenants:select(tenant_id,schema_key,lifecycle_state,schema_version)",
+      "tenant_schema:business_dml",
+      "tenant_schema.access_audit_outbox:insert"
+    ],
+    "deny": [
+      "shared.access_audit_log:insert,update,delete,truncate",
+      "database:temporary",
+      "database:ddl",
+      "schema:ownership"
+    ]
+  },
+  "haloflow_audit_projector": {
+    "allow": [
+      "tenant_schema.access_audit_outbox:select",
+      "shared.access_audit_log:insert"
+    ],
+    "deny": [
+      "tenant_schema:business_dml",
+      "shared.access_audit_log:update,delete,truncate"
+    ]
+  },
+  "haloflow_control_audit_writer": {
+    "allow": ["shared.access_audit_log:insert"],
+    "deny": ["shared.access_audit_log:update,delete,truncate"]
+  }
+}
