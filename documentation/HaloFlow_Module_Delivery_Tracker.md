@@ -1,6 +1,6 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-08-23
+Last updated: 2026-08-26
 
 ## Status legend
 
@@ -34,8 +34,8 @@ Last updated: 2026-08-23
 
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M01 | 🔵 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🔵 Next |
-| M02 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
+| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation merged; production readiness remains |
+| M02 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🔵 Next |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -60,6 +60,24 @@ Last updated: 2026-08-23
 | Reliability / performance tests | Idempotency, concurrency, lease expiry, crash recovery, duplicate callbacks, throughput, backpressure, and timeout behavior pass. |
 | E2E / acceptance | Primary and exception workflows satisfy documented acceptance criteria with representative tenant configurations. |
 | Runbook / operations | Dashboards, alerts, support procedures, reconciliation steps, deployment/rollback instructions, and ownership are documented and exercised. |
+
+## Delivery notes
+
+### M01 — Tenant Context and Data Access
+
+- Foundation merged to `main` through pull request #1 on 2026-08-26.
+- Merged implementation includes PostgreSQL 17 shared control schema and roles,
+  immutable resolver-issued tenant context, transaction gateway, M01-owned SQL
+  catalogue, exact per-statement capability checks, pool reset/baseline controls,
+  migration safety, and schema/permission manifests.
+- Independent review closed the critical cross-tenant SQL finding and recommended
+  merge after two remediation commits (`2f4b4e1` and `25e4154`).
+- Verification: 57 M01 tests passed against local PostgreSQL 17, with Ruff and
+  strict mypy checks passing.
+- Remaining before PHI deployment: migrate legacy SQLAlchemy/asyncpg business
+  modules behind M01; integrate production identity claims and provisioning;
+  complete Cloud SQL reliability/performance evidence, E2E acceptance, PHI-safe
+  telemetry, operational runbooks, and lifecycle/decommission coordination.
 
 ## Recommended implementation order
 
