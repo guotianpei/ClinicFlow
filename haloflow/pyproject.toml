@@ -13,10 +13,14 @@ dependencies = [
     "uvicorn[standard]>=0.30.0",
     "python-multipart>=0.0.9",      # file uploads (care-gap CSV/XLSX)
 
-    # Database — async postgres (Neon)
+    # Existing module persistence (removed as modules move behind M01)
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
+
+    # M01 tenant-aware data-access boundary
+    "psycopg[binary]>=3.2.0,<4.0.0",
+    "psycopg_pool>=3.2.0,<4.0.0",
 
     # Config
     "pydantic>=2.7.0",
@@ -62,3 +66,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "postgres: requires an isolated PostgreSQL 17 test database",
+]

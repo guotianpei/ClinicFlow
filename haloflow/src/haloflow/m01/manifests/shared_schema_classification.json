@@ -1,0 +1,97 @@
+{
+  "schema": "shared",
+  "policy": {
+    "allowed_classifications": ["control-plane", "pseudonymous-id"],
+    "phi_allowed": false
+  },
+  "tables": {
+    "tenants": {
+      "classification": "control-plane",
+      "columns": {
+        "tenant_id": "pseudonymous-id",
+        "schema_key": "control-plane",
+        "lifecycle_state": "control-plane",
+        "schema_version": "control-plane",
+        "display_reference": "control-plane",
+        "created_at": "control-plane",
+        "updated_at": "control-plane"
+      }
+    },
+    "tenant_state_history": {
+      "classification": "control-plane",
+      "columns": {
+        "event_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "prior_state": "control-plane",
+        "new_state": "control-plane",
+        "reason_code": "control-plane",
+        "actor_kind": "control-plane",
+        "actor_id": "pseudonymous-id",
+        "operation_id": "pseudonymous-id",
+        "occurred_at": "control-plane"
+      }
+    },
+    "schema_migrations": {
+      "classification": "control-plane",
+      "columns": {
+        "tenant_id": "pseudonymous-id",
+        "migration_id": "control-plane",
+        "checksum": "control-plane",
+        "state": "control-plane",
+        "attempt": "control-plane",
+        "started_at": "control-plane",
+        "completed_at": "control-plane",
+        "sanitized_error_code": "control-plane"
+      }
+    },
+    "support_access_grants": {
+      "classification": "control-plane",
+      "columns": {
+        "grant_id": "pseudonymous-id",
+        "actor_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "ticket_reference": "pseudonymous-id",
+        "purpose_code": "control-plane",
+        "capabilities": "control-plane",
+        "approver_id": "pseudonymous-id",
+        "starts_at": "control-plane",
+        "expires_at": "control-plane",
+        "state": "control-plane",
+        "break_glass": "control-plane",
+        "created_at": "control-plane"
+      }
+    },
+    "access_audit_log": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "audit_id": "pseudonymous-id",
+        "source_event_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "principal_kind": "control-plane",
+        "principal_id": "pseudonymous-id",
+        "action_code": "control-plane",
+        "resource_class": "control-plane",
+        "purpose_code": "control-plane",
+        "outcome_code": "control-plane",
+        "request_id": "pseudonymous-id",
+        "operation_id": "pseudonymous-id",
+        "occurred_at": "control-plane",
+        "projected_at": "control-plane"
+      }
+    },
+    "isolation_alerts": {
+      "classification": "control-plane",
+      "columns": {
+        "alert_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "source_code": "control-plane",
+        "alert_type": "control-plane",
+        "severity": "control-plane",
+        "operation_id": "pseudonymous-id",
+        "state": "control-plane",
+        "detected_at": "control-plane",
+        "closed_at": "control-plane"
+      }
+    }
+  }
+}
