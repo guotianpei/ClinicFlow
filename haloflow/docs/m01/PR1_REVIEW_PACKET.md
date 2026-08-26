@@ -28,6 +28,8 @@ Review a frozen commit from this branch. Do not review or edit the original
 - Opaque statement keys resolved through an immutable M01-owned SQL catalogue;
   callbacks cannot submit SQL text or session commands
 - Capability-derived read-only transactions and write-statement authorization
+- Exact per-statement capability checks; one module's write capability cannot
+  execute another module's catalogue statements
 - Scoped repository handle clears its connection and catalogue after callback completion
 - Prohibition of nested gateway transactions and arbitrary caller SQL
 - psycopg automatic preparation disabled with `prepare_threshold=None`
@@ -38,7 +40,7 @@ Review a frozen commit from this branch. Do not review or edit the original
 
 ## Verification evidence
 
-The M01 suite contains 53 passing unit, static, migration, grant, and PostgreSQL
+The M01 suite contains 57 passing unit, static, migration, grant, and PostgreSQL
 integration tests. The database tests use one physical pooled connection where
 required and cover:
 
@@ -50,6 +52,7 @@ required and cover:
 - ungated tenant SQL failure;
 - all five independently reported quoted/comment/session-command bypass attempts;
 - write denial under a read-only capability;
+- cross-capability statement denial under a different write capability;
 - real migration-role and column-level grant reconciliation;
 - shared schema/table/column reconciliation with the classification manifest;
 - TEMP object and global-audit write denial;
@@ -65,7 +68,8 @@ required and cover:
    a clean connection.
 2. PostgreSQL 17 `transaction_timeout` terminates the physical connection, so it
    is configured above `statement_timeout`; the recoverable timeout wins ordinary
-   slow-query cases while transaction timeout remains a backstop.
+   slow-query cases while transaction timeout remains a backstop. A transaction
+   does not start unless its context has enough lifetime to preserve that margin.
 3. Revoking TEMPORARY from the runtime role alone is insufficient because the
    privilege is inherited from `PUBLIC`; the migration revokes it from `PUBLIC`.
 
@@ -73,6 +77,10 @@ required and cover:
 
 Claude's review of commit `a06988a` is complete. The disposition and remediation
 evidence are recorded in `CLAUDE_REVIEW_DISPOSITION.md`.
+
+Python does not enforce private members at runtime. M01 ownership therefore
+depends on CI-enforced import discipline and security review of every catalogue
+addition, in addition to the narrow gateway API.
 
 ## Known follow-on work
 

@@ -50,28 +50,38 @@ TEST_STATEMENT_CATALOG = _build_statement_catalog(
     {
         "probe.marker_path": (
             StatementMode.READ,
+            "probe:write",
             "SELECT marker, current_schemas(true), pg_my_temp_schema() "
             "FROM isolation_probe WHERE business_id = %s",
         ),
         "probe.backend_marker": (
             StatementMode.READ,
+            "probe:write",
             "SELECT pg_backend_pid(), marker FROM isolation_probe WHERE business_id = 42",
         ),
         "probe.insert": (
             StatementMode.WRITE,
+            "probe:write",
             "INSERT INTO isolation_probe (business_id, marker) VALUES (%s, %s)",
         ),
         "probe.count_99": (
             StatementMode.READ,
+            "probe:write",
             "SELECT count(*) FROM isolation_probe WHERE business_id = 99",
         ),
-        "probe.select_one": (StatementMode.READ, "SELECT 1"),
+        "probe.select_one": (StatementMode.READ, "probe:read", "SELECT 1"),
         "probe.marker": (
             StatementMode.READ,
+            "probe:write",
             "SELECT marker FROM isolation_probe WHERE business_id = 42",
         ),
-        "probe.sleep_one": (StatementMode.READ, "SELECT pg_sleep(1)"),
-        "probe.sleep_ten": (StatementMode.READ, "SELECT pg_sleep(10)"),
+        "probe.sleep_one": (StatementMode.READ, "probe:write", "SELECT pg_sleep(1)"),
+        "probe.sleep_ten": (StatementMode.READ, "probe:write", "SELECT pg_sleep(10)"),
+        "probe.other_insert": (
+            StatementMode.WRITE,
+            "other:write",
+            "INSERT INTO isolation_probe (business_id, marker) VALUES (%s, %s)",
+        ),
     }
 )
 
@@ -344,10 +354,25 @@ async def test_read_capability_cannot_execute_registered_write(
     )
 
     async def attempt_write(tx: TenantRepositoryHandle) -> None:
+        assert await tx.fetch_one("probe.select_one") == (1,)
         with pytest.raises(CapabilityDenied):
             await tx.execute("probe.insert", (100, "must-not-write"))
 
     await gateway.with_tenant_transaction(read_context, attempt_write)
+
+
+@pytest.mark.asyncio
+async def test_write_capability_cannot_execute_another_capability_statement(
+    gateway: TenantTransactionGateway, resolver: TenantResolver
+) -> None:
+    context = await _context(resolver, "clinic-a", "cross-capability")
+
+    async def attempt_other_write(tx: TenantRepositoryHandle) -> None:
+        with pytest.raises(CapabilityDenied) as error:
+            await tx.execute("probe.other_insert", (101, "must-not-write"))
+        assert error.value.reason_code == "STATEMENT_CAPABILITY_DENIED"
+
+    await gateway.with_tenant_transaction(context, attempt_other_write)
 
 
 @pytest.mark.asyncio
@@ -681,6 +706,31 @@ async def test_sub_millisecond_context_lifetime_fails_before_checkout(
             context,
             lambda _tx: asyncio.sleep(0),
         )
+
+
+@pytest.mark.asyncio
+async def test_context_without_transaction_timeout_margin_fails_before_checkout(
+    tenant_pool: TenantPool,
+    resolver: TenantResolver,
+) -> None:
+    context = await _context(resolver, "clinic-a", "timeout-margin")
+
+    def edge_clock() -> datetime:
+        return context.expires_at - timedelta(milliseconds=2_000)
+
+    edge_gateway = TenantTransactionGateway(
+        tenant_pool,
+        statement_catalog=TEST_STATEMENT_CATALOG,
+        write_capabilities={"probe:write"},
+        clock=edge_clock,
+    )
+
+    with pytest.raises(ContextExpired) as error:
+        await edge_gateway.with_tenant_transaction(
+            context,
+            lambda _tx: asyncio.sleep(0),
+        )
+    assert error.value.reason_code == "CONTEXT_BUDGET_INSUFFICIENT"
 
 
 @pytest.mark.asyncio

@@ -37,3 +37,18 @@ a successful migration. Alembic revision state provides normal idempotency.
 The defensive runtime audit-table `REVOKE` remains even though current grants do
 not give runtime INSERT. Effective privilege tests, rather than that statement,
 are the evidence for the security property.
+
+## Follow-up review of `2f4b4e1`
+
+Claude's follow-up recommended merge and confirmed that C1 was closed. The
+remaining actionable items were resolved as follows:
+
+| Finding | Disposition | Resolution |
+|---|---|---|
+| R1 gateway-wide write authorization | Accepted | Every catalogue statement declares one required capability. The handle checks that exact capability in addition to transaction-level read/write mode. A regression test denies a peer-module write statement even when the context has a different write capability. |
+| R2 timeout margin near context expiry | Accepted | Effective statement timeout is capped at remaining context lifetime minus the full configured margin. Transactions fail closed before checkout when the margin cannot be preserved. |
+| R3 whitespace-defeatable `set_config` check | Accepted | Definition validation uses a case-insensitive `set_config\s*\(` pattern; space/newline and `pg_catalog`-qualified variants are regression-tested. This is defence-in-depth for M01-authored catalogue entries, not the application security boundary. |
+| R4 quoted identifiers | Retained intentionally | Blanket rejection is conservative and fail-closed. M01 will revisit it only if a reviewed schema requires quoted identifiers. |
+| R5 Python ownership assumption | Accepted | The review packet now states that private ownership is convention enforced by CI import discipline and catalogue security review. |
+| R6 exact legacy allowlist | Retained intentionally | Equality is a deliberate forcing function: both growth and shrinkage require an explicit review of the migration boundary. |
+| R7 success-path verification | No change | Callback SQL is catalogue-restricted, and exceptions roll back the transaction. Post-callback path verification is an additional success-path invariant, not the primary boundary. |

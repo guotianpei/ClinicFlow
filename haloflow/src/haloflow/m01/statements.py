@@ -13,7 +13,9 @@ from types import MappingProxyType
 from haloflow.m01.errors import RepositoryStatementRejected
 
 _STATEMENT_KEY_PATTERN = re.compile(r"^[a-z][a-z0-9_.:-]{2,127}$")
+_CAPABILITY_PATTERN = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _TENANT_SCHEMA_QUALIFIER = re.compile(r"\btenant_[a-z0-9]{8,32}\s*\.", re.IGNORECASE)
+_SET_CONFIG_CALL = re.compile(r"\bset_config\s*\(", re.IGNORECASE)
 _CATALOG_ISSUER = object()
 
 
@@ -28,13 +30,18 @@ class TenantStatement:
 
     key: str
     mode: StatementMode
+    required_capability: str
     query: str = field(repr=False)
     _issuer: InitVar[object | None] = None
 
     def __post_init__(self, _issuer: object | None) -> None:
         if _issuer is not _CATALOG_ISSUER:
             raise RepositoryStatementRejected(reason_code="UNTRUSTED_STATEMENT")
-        if not _STATEMENT_KEY_PATTERN.fullmatch(self.key) or not self.query.strip():
+        if (
+            not _STATEMENT_KEY_PATTERN.fullmatch(self.key)
+            or not _CAPABILITY_PATTERN.fullmatch(self.required_capability)
+            or not self.query.strip()
+        ):
             raise RepositoryStatementRejected(reason_code="STATEMENT_DEFINITION_INVALID")
         if ";" in self.query:
             raise RepositoryStatementRejected(reason_code="MULTI_STATEMENT_PROHIBITED")
@@ -45,7 +52,7 @@ class TenantStatement:
             or "/*" in self.query
             or "shared." in normalized_query
             or "public." in normalized_query
-            or "set_config(" in normalized_query
+            or _SET_CONFIG_CALL.search(self.query)
             or re.match(r"^\s*(?:set|reset|prepare|deallocate)\b", normalized_query)
             or _TENANT_SCHEMA_QUALIFIER.search(self.query)
         ):
@@ -79,12 +86,12 @@ class TenantStatementCatalog:
 
 
 def _build_statement_catalog(
-    definitions: Mapping[str, tuple[StatementMode, str]],
+    definitions: Mapping[str, tuple[StatementMode, str, str]],
 ) -> TenantStatementCatalog:
     """Internal construction hook used by M01-owned repositories and tests."""
 
     statements = tuple(
-        TenantStatement(key, mode, query, _issuer=_CATALOG_ISSUER)
-        for key, (mode, query) in definitions.items()
+        TenantStatement(key, mode, capability, query, _issuer=_CATALOG_ISSUER)
+        for key, (mode, capability, query) in definitions.items()
     )
     return TenantStatementCatalog(statements, _issuer=_CATALOG_ISSUER)

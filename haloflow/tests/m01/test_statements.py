@@ -11,7 +11,7 @@ from haloflow.m01.statements import (
 
 def test_application_cannot_construct_statement_or_catalog() -> None:
     with pytest.raises(RepositoryStatementRejected) as statement_error:
-        TenantStatement("probe.read", StatementMode.READ, "SELECT 1")
+        TenantStatement("probe.read", StatementMode.READ, "probe:read", "SELECT 1")
     assert statement_error.value.reason_code == "UNTRUSTED_STATEMENT"
 
     with pytest.raises(RepositoryStatementRejected) as catalog_error:
@@ -27,6 +27,8 @@ def test_application_cannot_construct_statement_or_catalog() -> None:
         "SELECT * FROM tenant_aaaaaaaa.example",
         'SELECT * FROM "tenant_aaaaaaaa".example',
         "SELECT set_config('search_path', 'tenant_bbbbbbbb', true)",
+        "SELECT set_config ('search_path', 'tenant_bbbbbbbb', true)",
+        "SELECT pg_catalog.set_config\n('search_path', 'tenant_bbbbbbbb', true)",
         "RESET search_path",
         "SET ROLE haloflow_owner",
         "SET SESSION AUTHORIZATION haloflow_owner",
@@ -36,12 +38,18 @@ def test_application_cannot_construct_statement_or_catalog() -> None:
 )
 def test_catalog_rejects_unsafe_statement_definitions(query: str) -> None:
     with pytest.raises(RepositoryStatementRejected):
-        _build_statement_catalog({"probe.unsafe": (StatementMode.READ, query)})
+        _build_statement_catalog({"probe.unsafe": (StatementMode.READ, "probe:read", query)})
 
 
 def test_catalog_is_immutable_and_rejects_unknown_keys() -> None:
     catalog = _build_statement_catalog(
-        {"probe.safe": (StatementMode.READ, "SELECT value FROM probe WHERE id = %s")}
+        {
+            "probe.safe": (
+                StatementMode.READ,
+                "probe:read",
+                "SELECT value FROM probe WHERE id = %s",
+            )
+        }
     )
 
     assert catalog.resolve("probe.safe").mode is StatementMode.READ

@@ -52,7 +52,13 @@ class TransactionOptions:
 class TenantRepositoryHandle:
     """Transaction-scoped access to fixed M01-owned statements."""
 
-    __slots__ = ("__active", "__allow_writes", "__catalog", "__connection")
+    __slots__ = (
+        "__active",
+        "__allow_writes",
+        "__capabilities",
+        "__catalog",
+        "__connection",
+    )
 
     def __init__(
         self,
@@ -60,10 +66,12 @@ class TenantRepositoryHandle:
         catalog: TenantStatementCatalog,
         *,
         allow_writes: bool,
+        capabilities: frozenset[str],
     ) -> None:
         self.__connection: AsyncConnection | None = connection
         self.__catalog: TenantStatementCatalog | None = catalog
         self.__allow_writes = allow_writes
+        self.__capabilities: frozenset[str] | None = capabilities
         self.__active = True
 
     async def execute(self, statement_key: str, params: Params = None) -> int:
@@ -85,6 +93,7 @@ class TenantRepositoryHandle:
         self.__active = False
         self.__connection = None
         self.__catalog = None
+        self.__capabilities = None
 
     def _connection(self) -> AsyncConnection:
         if not self.__active or self.__connection is None:
@@ -96,6 +105,8 @@ class TenantRepositoryHandle:
         if self.__catalog is None:
             raise RepositoryHandleExpired()
         statement = self.__catalog.resolve(statement_key)
+        if self.__capabilities is None or statement.required_capability not in self.__capabilities:
+            raise CapabilityDenied(reason_code="STATEMENT_CAPABILITY_DENIED")
         if statement.mode is StatementMode.WRITE and not self.__allow_writes:
             raise CapabilityDenied()
         return statement
@@ -132,17 +143,15 @@ class TenantTransactionGateway:
         context.assert_usable(clock=self._clock)
         transaction_options = options or TransactionOptions()
         remaining_ms = int((context.expires_at - self._clock()).total_seconds() * 1000)
-        if remaining_ms <= 0:
-            raise ContextExpired()
+        timeout_margin_ms = transaction_options.transaction_timeout_margin_ms
+        if remaining_ms <= timeout_margin_ms:
+            raise ContextExpired(reason_code="CONTEXT_BUDGET_INSUFFICIENT")
 
         statement_timeout_ms = min(
             transaction_options.statement_timeout_ms,
-            max(1, remaining_ms - 1),
+            remaining_ms - timeout_margin_ms,
         )
-        transaction_timeout_ms = min(
-            remaining_ms,
-            statement_timeout_ms + transaction_options.transaction_timeout_margin_ms,
-        )
+        transaction_timeout_ms = statement_timeout_ms + timeout_margin_ms
         lock_timeout_ms = min(
             transaction_options.lock_timeout_ms,
             statement_timeout_ms,
@@ -178,6 +187,7 @@ class TenantTransactionGateway:
                     connection,
                     self._statement_catalog,
                     allow_writes=allow_writes,
+                    capabilities=context.capabilities,
                 )
                 try:
                     result = await callback(handle)
