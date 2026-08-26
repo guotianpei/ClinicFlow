@@ -41,12 +41,12 @@ class TenantPool:
         await self._pool.close()
 
     @asynccontextmanager
-    async def connection_for_gateway(self) -> AsyncIterator[AsyncConnection]:
+    async def _connection_for_gateway(self) -> AsyncIterator[AsyncConnection]:
         async with self._pool.connection() as connection:
             yield connection
 
     @asynccontextmanager
-    async def connection_for_control(self) -> AsyncIterator[AsyncConnection]:
+    async def _connection_for_control(self) -> AsyncIterator[AsyncConnection]:
         """Restricted M01 control path; never exposed to application modules."""
 
         async with self._pool.connection() as connection:

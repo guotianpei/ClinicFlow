@@ -3,10 +3,7 @@ name: M01 tenant isolation
 on:
   pull_request:
     paths:
-      - "haloflow/alembic/**"
-      - "haloflow/src/haloflow/m01/**"
-      - "haloflow/tests/m01/**"
-      - "haloflow/pyproject.toml"
+      - "haloflow/**"
       - ".github/workflows/m01.yml"
   push:
     branches:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
+from uuid import UUID
 
 from haloflow.m01.context import (
     Principal,
@@ -122,5 +123,9 @@ class TenantResolver:
             raise TenantDenied(reason_code="CAPABILITY_DENIED")
         if purpose not in self._allowed_purposes or not PURPOSE_PATTERN.fullmatch(purpose):
             raise TenantDenied(reason_code="PURPOSE_DENIED")
-        if not operation_id or len(operation_id) > 128:
+        try:
+            parsed_operation_id = UUID(operation_id)
+        except (ValueError, AttributeError):
+            raise TenantDenied(reason_code="OPERATION_ID_INVALID") from None
+        if str(parsed_operation_id) != operation_id.lower():
             raise TenantDenied(reason_code="OPERATION_ID_INVALID")

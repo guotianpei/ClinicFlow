@@ -53,3 +53,11 @@ class RoutingMismatch(M01Error):
 
 class RepositoryHandleExpired(M01Error):
     code = "REPOSITORY_HANDLE_EXPIRED"
+
+
+class RepositoryStatementRejected(M01Error):
+    code = "REPOSITORY_STATEMENT_REJECTED"
+
+
+class CapabilityDenied(M01Error):
+    code = "CAPABILITY_DENIED"

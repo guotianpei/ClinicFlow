@@ -11,7 +11,7 @@ class PsycopgControlStore:
         self._pool = pool
 
     async def get_tenant(self, tenant_id: str) -> TenantRegistryRecord | None:
-        async with self._pool.connection_for_control() as connection:
+        async with self._pool._connection_for_control() as connection:
             row = await (
                 await connection.execute(
                     """

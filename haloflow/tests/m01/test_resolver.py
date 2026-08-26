@@ -1,4 +1,5 @@
 from datetime import UTC
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 
@@ -9,6 +10,10 @@ from haloflow.m01.resolver import (
     TenantRegistryRecord,
     TenantResolver,
 )
+
+
+def operation_id(label: str) -> str:
+    return str(uuid5(NAMESPACE_URL, f"haloflow-test:{label}"))
 
 
 class FakeControlStore:
@@ -56,7 +61,7 @@ async def test_resolver_issues_registry_derived_context() -> None:
         purpose="treatment",
         capability="appointments:read",
         source=TrustedSource.HTTP,
-        operation_id="op-1",
+        operation_id=operation_id("op-1"),
     )
 
     assert context.tenant_id == "clinic-a"
@@ -78,7 +83,7 @@ async def test_resolver_rejects_cross_tenant_hint_before_registry_lookup() -> No
             purpose="treatment",
             capability="appointments:read",
             source=TrustedSource.HTTP,
-            operation_id="op-2",
+            operation_id=operation_id("op-2"),
         )
 
     assert store.lookups == []
@@ -108,7 +113,7 @@ async def test_resolver_fails_closed_for_non_active_tenants(
             purpose="treatment",
             capability="appointments:read",
             source=TrustedSource.HTTP,
-            operation_id="op-3",
+            operation_id=operation_id("op-3"),
         )
 
 
@@ -124,7 +129,7 @@ async def test_resolver_rejects_invalid_registry_schema_key() -> None:
             purpose="treatment",
             capability="appointments:read",
             source=TrustedSource.HTTP,
-            operation_id="op-4",
+            operation_id=operation_id("op-4"),
         )
 
 
@@ -140,7 +145,7 @@ async def test_resolver_rejects_missing_capability_without_registry_lookup() -> 
             purpose="treatment",
             capability="appointments:read",
             source=TrustedSource.HTTP,
-            operation_id="op-5",
+            operation_id=operation_id("op-5"),
         )
 
     assert store.lookups == []
@@ -164,5 +169,24 @@ async def test_resolver_rejects_incompatible_schema_version() -> None:
             purpose="treatment",
             capability="appointments:read",
             source=TrustedSource.HTTP,
-            operation_id="op-6",
+            operation_id=operation_id("op-6"),
         )
+
+
+@pytest.mark.asyncio
+async def test_resolver_rejects_non_uuid_operation_id_before_registry_lookup() -> None:
+    store = FakeControlStore({"clinic-a": record()})
+    resolver = TenantResolver(store, supported_schema_versions=range(1, 2))
+
+    with pytest.raises(TenantDenied) as error:
+        await resolver.resolve(
+            principal=principal(tenant_ids={"clinic-a"}, capabilities={"appointments:read"}),
+            tenant_hint="clinic-a",
+            purpose="treatment",
+            capability="appointments:read",
+            source=TrustedSource.HTTP,
+            operation_id="not-a-uuid",
+        )
+
+    assert error.value.reason_code == "OPERATION_ID_INVALID"
+    assert store.lookups == []

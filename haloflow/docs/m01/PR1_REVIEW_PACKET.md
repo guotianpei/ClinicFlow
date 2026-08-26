@@ -9,6 +9,10 @@
 - Excluded from this checkpoint: production identity claims, Cloud SQL/IAM wiring,
   tenant provisioning orchestration, AuditProjector, and business-module migration
 
+> **Deployment blocker:** this checkpoint is not deployable against PHI while
+> legacy application modules still use the SQLAlchemy/asyncpg path. CI contains
+> an exact, shrinking allowlist for that debt; no new bypass import may be added.
+
 Review a frozen commit from this branch. Do not review or edit the original
 `main` worktree.
 
@@ -21,8 +25,11 @@ Review a frozen commit from this branch. Do not review or edit the original
 - Hardened transaction-local path: `pg_catalog`, selected tenant, `pg_temp`
 - Exact `current_schemas(true)` and `pg_my_temp_schema()` verification
 - PostgreSQL 17 transaction-local statement, lock, and transaction timeouts
-- Scoped repository handle invalidated after callback completion
-- Prohibition of nested gateway transactions and caller-qualified schemas
+- Opaque statement keys resolved through an immutable M01-owned SQL catalogue;
+  callbacks cannot submit SQL text or session commands
+- Capability-derived read-only transactions and write-statement authorization
+- Scoped repository handle clears its connection and catalogue after callback completion
+- Prohibition of nested gateway transactions and arbitrary caller SQL
 - psycopg automatic preparation disabled with `prepare_threshold=None`
 - Pool reset with `DISCARD ALL`, baseline verification, and discard on uncertainty
 - Empty runtime role search path and TEMPORARY revoked from `PUBLIC`
@@ -31,7 +38,7 @@ Review a frozen commit from this branch. Do not review or edit the original
 
 ## Verification evidence
 
-The M01 suite contains 30 passing unit, static, migration, grant, and PostgreSQL
+The M01 suite contains 53 passing unit, static, migration, grant, and PostgreSQL
 integration tests. The database tests use one physical pooled connection where
 required and cover:
 
@@ -41,34 +48,31 @@ required and cover:
 - registry lifecycle change after context issuance;
 - handle expiry and nested-call denial;
 - ungated tenant SQL failure;
-- cross-tenant qualification denial;
+- all five independently reported quoted/comment/session-command bypass attempts;
+- write denial under a read-only capability;
+- real migration-role and column-level grant reconciliation;
+- shared schema/table/column reconciliation with the classification manifest;
 - TEMP object and global-audit write denial;
 - disabled automatic preparation;
 - client-task cancellation followed by safe peer-tenant reuse; and
-- PostgreSQL 17 `transaction_timeout` followed by pool replacement and safe reuse.
+- sub-millisecond context expiry; and
+- recoverable PostgreSQL 17 statement timeout followed by reuse of the same clean backend.
 
 ## Empirical findings
 
 1. psycopg exposes `pgconn.transaction_status` as an integer-compatible value.
    Equality must be used; Python object-identity comparison incorrectly rejects
    a clean connection.
-2. PostgreSQL 17 `transaction_timeout` terminates the physical connection. The
-   safe behavior is to let the pool discard it and create a verified replacement.
+2. PostgreSQL 17 `transaction_timeout` terminates the physical connection, so it
+   is configured above `statement_timeout`; the recoverable timeout wins ordinary
+   slow-query cases while transaction timeout remains a backstop.
 3. Revoking TEMPORARY from the runtime role alone is insufficient because the
    privilege is inherited from `PUBLIC`; the migration revokes it from `PUBLIC`.
 
 ## Requested Claude review focus
 
-1. Attempt to find a path from application code to a raw pool or connection.
-2. Challenge context construction, tenant-binding, registry-revalidation, and
-   schema-identifier trust assumptions.
-3. Review reset/discard behavior for exception, timeout, cancellation, and pool
-   shutdown edge cases.
-4. Review the migration's ownership and effective grants, especially every
-   writer to `shared.access_audit_log`.
-5. Look for SQL identifier interpolation, search-path fallback, shared/public
-   resolution, prepared-state leakage, or repository-handle escape.
-6. Check that logs, errors, manifests, and audit fields do not introduce PHI.
+Claude's review of commit `a06988a` is complete. The disposition and remediation
+evidence are recorded in `CLAUDE_REVIEW_DISPOSITION.md`.
 
 ## Known follow-on work
 

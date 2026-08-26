@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 
@@ -38,7 +39,7 @@ async def resolve_context(*, expired: bool = False) -> TenantContext:
         purpose="treatment",
         capability="appointments:read",
         source=TrustedSource.WORKER,
-        operation_id="op-fixture",
+        operation_id=str(uuid5(NAMESPACE_URL, "haloflow-test:fixture")),
     )
 
 

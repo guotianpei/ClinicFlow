@@ -1,4 +1,8 @@
 {
+  "haloflow_owner": {
+    "allow": ["shared:ownership", "tenant_schema:ownership"],
+    "deny": ["database:login"]
+  },
   "haloflow_runtime": {
     "allow": [
       "shared.tenants:select(tenant_id,schema_key,lifecycle_state,schema_version)",
@@ -11,6 +15,14 @@
       "database:ddl",
       "schema:ownership"
     ]
+  },
+  "haloflow_migrator": {
+    "allow": ["tenant_schema:checksummed_ddl", "shared.schema_migrations:controlled_write"],
+    "deny": ["database:login", "tenant_schema:business_runtime"]
+  },
+  "haloflow_provisioner": {
+    "allow": ["tenant_schema:provision", "shared.tenants:controlled_write"],
+    "deny": ["database:login", "tenant_schema:business_runtime"]
   },
   "haloflow_audit_projector": {
     "allow": [
@@ -25,5 +37,17 @@
   "haloflow_control_audit_writer": {
     "allow": ["shared.access_audit_log:insert"],
     "deny": ["shared.access_audit_log:update,delete,truncate"]
+  },
+  "haloflow_support_ro": {
+    "allow": ["tenant_schema:approved_support_read"],
+    "deny": ["database:login", "tenant_schema:write"]
+  },
+  "haloflow_breakglass_ro": {
+    "allow": ["tenant_schema:approved_emergency_read"],
+    "deny": ["database:login", "tenant_schema:write"]
+  },
+  "haloflow_breakglass_rw": {
+    "allow": ["tenant_schema:separately_approved_emergency_write"],
+    "deny": ["database:login", "role:standing_membership"]
   }
 }

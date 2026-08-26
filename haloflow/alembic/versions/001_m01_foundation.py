@@ -191,6 +191,21 @@ CREATE TABLE shared.isolation_alerts (
 
 CREATE INDEX isolation_alerts_workflow_idx
     ON shared.isolation_alerts (state, severity, detected_at);
+
+COMMENT ON TABLE shared.tenants IS
+    'M01 classification: control-plane; PHI prohibited';
+COMMENT ON COLUMN shared.tenants.display_reference IS
+    'Controlled clinic display label only; person, patient, provider, and clinical data prohibited';
+COMMENT ON TABLE shared.tenant_state_history IS
+    'M01 classification: control-plane; PHI prohibited';
+COMMENT ON TABLE shared.schema_migrations IS
+    'M01 classification: control-plane; PHI prohibited';
+COMMENT ON TABLE shared.support_access_grants IS
+    'M01 classification: control-plane; PHI prohibited';
+COMMENT ON TABLE shared.access_audit_log IS
+    'M01 classification: pseudonymous-id; PHI prohibited';
+COMMENT ON TABLE shared.isolation_alerts IS
+    'M01 classification: control-plane; PHI prohibited';
 """
 
 
@@ -275,6 +290,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Roles are cluster-scoped and deliberately retained. Removing them safely
-    # requires an operator-reviewed dependency check outside a schema migration.
-    op.execute("DROP SCHEMA IF EXISTS shared CASCADE")
+    raise RuntimeError(
+        "M01 downgrade is intentionally unsupported because the shared schema "
+        "contains audit and tenant-lifecycle evidence. Use an operator-approved "
+        "export, retention, and decommission procedure instead."
+    )
