@@ -5,9 +5,10 @@ All values come from environment variables (or .env file in dev).
 Nothing sensitive is hardcoded here.
 """
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -47,7 +48,10 @@ class Settings(BaseSettings):
     no_show_rebook_hours: int = 24
 
     # ── Priority payers (Stedi payer IDs, comma-separated in env) ─────────────
-    priority_payer_ids: list[str] = ["ANTHM", "UHC", "SNTARA"]
+    # NoDecode stops pydantic-settings from running json.loads() on the raw env
+    # value before validation; without it the comma-separated form below never
+    # reaches parse_payer_ids and raises SettingsError instead.
+    priority_payer_ids: Annotated[list[str], NoDecode] = ["ANTHM", "UHC", "SNTARA"]
 
     @field_validator("priority_payer_ids", mode="before")
     @classmethod
