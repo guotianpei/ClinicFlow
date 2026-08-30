@@ -35,7 +35,7 @@ Last updated: 2026-08-30
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
 | M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation merged; debt PR required before M02; production readiness remains |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3 and ADR-011 accepted; implementation gated on OI-007 freeze and the M01 debt PR |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; implementation gated on the M01 debt PR |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -108,9 +108,15 @@ Last updated: 2026-08-30
 - Shared Infrastructure Table Inventory updated with six new tables and a correction to the
   `shared.access_audit_log` write-role entry, which had read "all roles write" against an M01 migration that
   grants INSERT to only two roles and revokes it from `haloflow_runtime`.
-- **Next gate: OI-007** — the authoritative event type, status, and contract seed catalogue. Drafted
-  2026-08-30; five open questions remain, including confirmation of the `action_family` namespace prefixes by
-  the M07, M08, M09 and M12 owners. No migration is written until OI-007 is frozen.
+- **OI-007 accepted and frozen 2026-08-30** — the authoritative event type, status, and contract seed
+  catalogue, at `documentation/detailed design/M02_OI-007_Seed_Catalog_v1.0.md`. Restructures
+  `ref_event_statuses` to hold only vocabulary (code, `status_scope`, description), moving terminality,
+  compatible-outcome class, and precedence rank onto the versioned `event_contracts` row per design §5.2's
+  `EventContract` descriptor; adds a `ref_action_families` table enforcing exclusive namespace ownership in
+  the database rather than by convention; reserves `m02_test_` as the non-production self-test family
+  covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
+  **not** granted here — each module registers its own prefix at its own design/content freeze.
+- **Next gate: the M01 debt PR.** No M02 migration is written until it lands.
 - Remaining production gates: OI-005 (provider capability evidence), OI-006 (retention, legal hold,
   disposition, correction authority), OI-009 (measured objectives, now including the Cloud KMS and
   reference-catalogue cold-start dependencies), and OI-010 revalidation before pilot.
