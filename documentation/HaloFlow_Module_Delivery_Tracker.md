@@ -1,6 +1,6 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-08-26
+Last updated: 2026-08-30
 
 ## Status legend
 
@@ -34,8 +34,8 @@ Last updated: 2026-08-26
 
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation merged; production readiness remains |
-| M02 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🔵 Next |
+| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation merged; debt PR required before M02; production readiness remains |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3 and ADR-011 accepted; implementation gated on OI-007 freeze and the M01 debt PR |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -78,6 +78,44 @@ Last updated: 2026-08-26
   modules behind M01; integrate production identity claims and provisioning;
   complete Cloud SQL reliability/performance evidence, E2E acceptance, PHI-safe
   telemetry, operational runbooks, and lifecycle/decommission coordination.
+
+- **M01 debt PR required before M02 implementation** (identified 2026-08-30 while reviewing M02
+  against the merged code, and approved as decisions B1–B8/F1):
+  - Tenant-schema provisioner and per-tenant migration runner. Migration `001` creates only the `shared`
+    schema; there is no code that creates a tenant schema, and the M01 tests build them by hand.
+  - Public, startup-only `build_statement_catalog(...)`; explicit catalogue argument on the gateway with no
+    silent empty default; CI manifest pinning statement keys and query digests.
+  - Multi-capability context issuance. `TenantResolver` currently issues `frozenset({capability})`, a
+    singleton, which would force every statement in one atomic M02 flow to share a single coarse capability.
+  - `execution_id` rename (contextual `operation_id`), plus forward migration `002` renaming and retyping
+    `operation_id` to `execution_id uuid` in `shared.tenant_state_history`, `shared.access_audit_log`, and
+    `shared.isolation_alerts`.
+  - Required `correlation_id: UUID` and `correlation_source` on `TenantContext`.
+- Ruff reports 32 pre-existing findings, all in the legacy pre-M01 modules (`modules/`, `integrations/`,
+  `ehr/`, `main.py`) and none in `m01/`, `tests/`, or `alembic/`. They belong to the legacy-migration item
+  above rather than to any M02 change set.
+
+### M02 — Event and Operation Foundation
+
+- Detailed Requirements v1.0 approved 2026-08-28. Technical Design v0.3 approved as the implementation
+  baseline 2026-08-30, closing review findings T1–T8 and V1–V5.
+- **ADR-011 accepted 2026-08-30**, superseding portions of ADR-003 and ADR-005: `idempotency_key` removed;
+  `submission_level` → `event_level` with six levels; `append_sequence` as total-order tiebreaker only;
+  capability-scoped canonical acceptance binding; tenant-bound verified references replacing unenforceable
+  shared-to-tenant foreign keys; mandatory `tenant_id` and one reconciliation case per tenant operation;
+  unknown-versus-conflict vocabulary with `status_scope`; fingerprint canonicalisation; bounded full-range
+  replay; reference-catalogue generation ledger; and the four-identifier model.
+- Shared Infrastructure Table Inventory updated with six new tables and a correction to the
+  `shared.access_audit_log` write-role entry, which had read "all roles write" against an M01 migration that
+  grants INSERT to only two roles and revokes it from `haloflow_runtime`.
+- **Next gate: OI-007** — the authoritative event type, status, and contract seed catalogue. Drafted
+  2026-08-30; five open questions remain, including confirmation of the `action_family` namespace prefixes by
+  the M07, M08, M09 and M12 owners. No migration is written until OI-007 is frozen.
+- Remaining production gates: OI-005 (provider capability evidence), OI-006 (retention, legal hold,
+  disposition, correction authority), OI-009 (measured objectives, now including the Cloud KMS and
+  reference-catalogue cold-start dependencies), and OI-010 revalidation before pilot.
+- Applying the D4 acceptance stamps to ADR-003, ADR-005 and ADR-007 remains an open Module 0 action; those
+  ADRs still carry `Proposed` in the canonical record.
 
 ## Recommended implementation order
 
