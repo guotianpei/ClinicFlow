@@ -631,6 +631,513 @@ Six Notifyre capabilities are architecturally significant but unverified. Items 
 
 ---
 
+## ADR-011: Event and Operation Foundation — Schema, Identity, Projection, and Fingerprint Semantics
+
+**Status:** Accepted
+**Date:** 2026-08-30
+**Decision owner:** HaloVox Engineering Lead
+**Supersedes:** portions of ADR-003 and ADR-005 (see Supersession Record)
+**Review trigger:** Provider capability evidence (OI-005) changes; fingerprint or canonicalisation defect; projection live-vs-rebuild divergence; tenant-sweep or replay bound breach (OI-009)
+**Related requirements:** M02-FR-001 through M02-FR-035; M02-NFR-001 through M02-NFR-010
+
+### Context
+
+M02 refines two accepted decisions materially enough that they cannot stand unamended. ADR-003 defined a
+three-level external-operation model with a stable `operation_id`; ADR-005 defined indeterminate state,
+the reconciliation lifecycle, and append-only projection. Both were written before the M02 requirements
+worked through inbound observations, corrections, conflicting terminal evidence, multi-tenant control-row
+binding, and deterministic replay. M02 requirements §1 therefore made requirements approval conditional on
+drafting this ADR, and design §19 records ADR-011 as an open external gate before schema freeze.
+
+A status note, because it affects how this ADR is framed. The canonical ADR file still stamps ADR-003,
+ADR-005 and ADR-007 as **Proposed**, while decision D4 records ADRs v4 as **Accepted** on 2 August 2026.
+The ADR process note in that file permits free revision of a Proposed ADR, which would make supersession
+unnecessary — but the M02 requirements treat those ADRs as accepted and explicitly require supersession.
+This ADR takes the conservative path and supersedes rather than edits. Applying the D4 acceptance stamps
+to the canonical record remains a separate Module 0 action and is **not** discharged here.
+
+Three further constraints shaped these decisions:
+
+- The merged M01 implementation is stricter than the M02 design assumed. Its statement catalogue rejects any
+  SQL naming `shared.`, its gateway pins `search_path` to `pg_catalog, <tenant_schema>` and asserts it before
+  and after every callback, and a `TenantContext` today carries exactly one capability.
+- No tenant-schema provisioner exists yet; migration `001` creates only the `shared` schema.
+- Cloud KMS is not wired into the repository, and OI-009 has not set its objectives.
+
+### Decision
+
+#### D-11.1 — The redundant `idempotency_key` column is removed
+
+`patient_events` does not carry an `idempotency_key` column. ADR-007 already establishes that the persisted
+`operation_id` UUID is passed **directly** to Notifyre as the idempotency key with no derivation. A second
+column holding the same value can drift from the value actually transmitted, and FR-004 requires the
+transmitted key to equal the stored `operation_id` byte for byte across retry, restart, deployment and worker
+takeover. One value, one column, one source.
+
+#### D-11.2 — `submission_level` becomes `event_level`, with six levels
+
+The column is named `event_level`, and the controlled set is:
+
+`intent`, `submission`, `delivery`, `business_outcome`, `observation`, `correction`
+
+ADR-003's three levels could not represent facts that ADR-003 itself carved out of the intent/outcome
+pattern. Inbound observations were defined as "a single append-only completed event ... no intent record",
+which left them with no level to occupy; corrections and verified domain outcomes had the same problem. The
+name `submission_level` also described only one of the levels it enumerated.
+
+Consequence for ADR-005: its first-time reconciliation anti-join predicates on
+`submission_level IN ('submission', 'delivery')` and is restated in D-11.11 against `event_level` and the
+`listStaleIntents` contract.
+
+#### D-11.3 — `append_sequence`: a total-order tiebreaker, and nothing else
+
+`patient_events.append_sequence` is `bigint GENERATED ALWAYS AS IDENTITY`, unique within the tenant schema,
+database-assigned.
+
+It **is** the final total-order tiebreaker when projecting a complete visible event set, after trustworthy
+`occurred_at` and contract status precedence.
+
+It is **not** commit order, **not** a global cursor, **not** a resumable replay watermark, and **not**
+tamper evidence. Two facts make those uses unsound: transactions commit out of allocation order, so a scan
+up to a high-water mark can miss a lower sequence that committed later; and rolled-back transactions consume
+sequence values, so gaps are normal and a gap alone is never evidence of tampering (NFR-010).
+
+This is the direct reason replay is bounded and full-range (D-11.9).
+
+#### D-11.4 — Canonical acceptance binding, with competing identities retained
+
+ADR-003 stated "at most one provider acceptance identity per `operation_id` (DB constraint)". That is
+refined, because it assumed provider identities are globally unique and they are not.
+
+- Canonical binding lives in its own tenant-local table, `operation_acceptance_bindings`, with
+  `PK(operation_id)`. This constraint **always** applies: one canonical acceptance identity per operation.
+- Uniqueness of a provider identity **across** operations is enforced only when the versioned
+  `provider_capabilities` row declares `uniqueness_scope = account_namespace`. Only then is the partial
+  unique index on `(provider, provider_account, identity_namespace, external_id)` active. Absent that
+  declaration, no cross-operation uniqueness is inferred.
+- A second, distinct verified identity never replaces the canonical binding and is never discarded. It is
+  appended as `{action}_acceptance_conflict` with stored status `conflict`, projects the non-terminal
+  `acceptance_conflict_requires_reconciliation`, and enqueues a crash-durable M05 handoff.
+
+#### D-11.5 — Shared-to-tenant references are verified application references, never foreign keys
+
+ADR-005 declared `reconciliation_cases.resolution_event_id` as "FK to patient_events" and `work_queue_id` as
+"FK". Neither is expressible: a row in the single `shared` schema cannot carry a real foreign key into one of
+N tenant schemas. Declaring it invites a false sense of integrity that the database never enforces.
+
+Every shared control row derived from tenant evidence therefore stores `tenant_id` **plus** the target
+identifier, and the application resolver verifies the pair against the resolved tenant schema at write time
+and again at resolution time. No cross-schema foreign key is declared.
+
+#### D-11.6 — Mandatory `tenant_id`; one reconciliation case per tenant operation
+
+ADR-005 keyed `reconciliation_cases` on `operation_id (unique)` with no tenant column. That is unsafe in a
+schema-per-tenant deployment: an `operation_id` collision or a forged identifier crosses a tenant boundary in
+a shared table.
+
+`shared.reconciliation_cases` carries mandatory `tenant_id`, written from the trusted M01 tenant context and
+**never** from caller input, with `UNIQUE (tenant_id, operation_id)` — one case per tenant operation.
+M05 handoff dedupe keys are `tenant_id + operation_id + handoff_kind`, so distinct conflict and failure work
+can coexist while each kind converges to at most one effective item.
+
+#### D-11.7 — Unknown and conflict are different things, and status has a scope
+
+ADR-003 defined `{action}_delivery_indeterminate` for "conflicting or unresolvable callbacks", conflating two
+states with opposite handling: an outcome nobody knows yet, and two verified outcomes that disagree. The
+first may resolve itself through a provider lookup; the second requires human adjudication and must never be
+silently collapsed.
+
+- **Unknown:** event type `{action}_submission_indeterminate`, stored status `indeterminate`, non-terminal.
+  Routes to M06 reconciliation. M02 never resends automatically.
+- **Conflict:** event types `{action}_acceptance_conflict` and `{action}_delivery_conflict`, both carrying
+  stored status `conflict`. Both source facts are retained.
+- **Projection-only statuses:** `acceptance_conflict_requires_reconciliation` and
+  `delivery_conflict_requires_reconciliation`. Explicitly non-terminal; resolvable only by authorised
+  correction or manual resolution under FR-035.
+
+Every status declares `status_scope ∈ {stored_event, projection_only, both}`. Event inserts accept only
+`stored_event` or `both`; a projection-only status in an insert is rejected by the database.
+
+`ADR-003`'s `{action}_delivery_indeterminate` is retired. Reference codes are retired by `is_active = false`,
+never deleted (D-11.14).
+
+#### D-11.8 — Fingerprint canonicalisation (new; closes readiness-review C1)
+
+Two digests exist, and both are worthless unless the canonical byte string is pinned. Without this, two
+releases disagree and every equivalent retry becomes a spurious `DEDUPE_CONFLICT`.
+
+- `business_key_fingerprint` = HMAC-SHA-256, keyed per tenant and key version, over the canonical
+  serialisation of the owning module's business key.
+- `content_fingerprint` = SHA-256 over the canonical serialisation of the event's immutable fields, its
+  typed links, and its metadata.
+
+**Canonical serialisation, version `v1`:**
+
+1. **Base encoding** is RFC 8785 JSON Canonicalization Scheme (JCS): UTF-8, object keys sorted by UTF-16 code
+   unit, no insignificant whitespace.
+2. **Digest input is the validated, normalised representation** — computed *after* contract validation and
+   metadata allowlisting, never over the wire payload. A field the contract does not allow cannot influence
+   a digest.
+3. **Absent and null are identical**, applied *after* contract validation and normalisation. A key whose
+   value is null is omitted, exactly as an absent key is. Preserving the distinction invites encoder drift.
+   Because this collapses the two forms irreversibly, an event contract **must not assign different
+   semantics to null and absent** under fingerprint version `v1`. A contract needing that distinction must
+   model it explicitly — for example a controlled enum value such as `"unknown"` — rather than relying on
+   the shape of the JSON. CI enforces this: a contract metadata schema that admits an explicit null for a
+   field it also permits to be absent is rejected at startup and in the contract-lint check.
+4. **Strings** are Unicode NFC.
+5. **Timestamps** are RFC 3339, UTC, `Z` suffix, exactly six fractional digits, **truncated** never rounded —
+   matching PostgreSQL `timestamptz` microsecond resolution, so a value survives a database round trip
+   unchanged.
+6. **UUIDs** are canonical lowercase hyphenated form.
+7. **Numbers** in fingerprinted fields are integers only. Floating-point values are prohibited: JCS number
+   formatting is ECMAScript-derived and a known source of cross-language disagreement. Any decimal quantity
+   is carried as a **controlled canonical decimal string**, whose form is pinned here — otherwise the drift
+   problem simply moves down one level:
+   - optional single leading `-` for negatives; never `+`; zero is `"0"`, never `"-0"`;
+   - at least one integer digit, with no leading zeros other than a single `0`;
+   - the fractional part carries **exactly** the scale declared by the event contract for that field, zero
+     padded if needed, so `1.50` at scale 2 is preserved and never normalised to `1.5`;
+   - no exponent notation, no thousands separators, no surrounding whitespace;
+   - a value that cannot be represented at the contract's declared scale without loss is rejected at
+     validation rather than silently rounded.
+8. **Enumerated codes and booleans** use their controlled lowercase forms.
+9. **Links** are serialised as an array sorted by `(link_type, link_id, relationship)`, each element a
+   canonical object of exactly those three fields.
+10. **Domain separation.** The digest input is prefixed with a versioned ASCII label and a newline —
+    `haloflow.m02.content-fingerprint.v1\n` or `haloflow.m02.business-key.v1\n` — so a content digest and a
+    business-key digest over identical material can never collide.
+11. **Versioning.** `fingerprint_algorithm_version` is pinned by the event contract version. Changing any
+    rule above requires a new version; historical rows retain the version they were written under and are
+    never re-digested.
+
+**Required evidence:** a committed set of golden vectors — input object, canonical byte string, hex digest —
+exercised by a unit test. A canonicalisation change that does not also change the version fails that test.
+
+#### D-11.9 — Pilot replay is bounded, full-range, and restart-from-the-top
+
+A replay or projection rebuild declares one `tenant_id`, one projection version, and one bounded
+operation/range selector. It takes a consistent database snapshot, recomputes every operation in the range,
+and validates counts and source fingerprints. **An interrupted run restarts the entire declared range**;
+`append_sequence` is not used to resume (D-11.3). Replay runs under an identity with no provider-adapter
+capability and compares handoffs in dry-run form, so it can neither call a provider nor multiply downstream
+work. Architecture review is triggered when a tenant rebuild exceeds the OI-009 wall-clock objective or
+event-count bound.
+
+#### D-11.10 — Operation identity and business-key version control (design D-02; approved B7 scope)
+
+`operation_registry` is insert-only, one row per logical operation, with
+`UNIQUE (owner_service, action_code, business_key_version, business_key_fingerprint)`.
+
+Exactly one `active_write_version` accepts new rows; retained versions are lookup-only and must each have a
+recoverable key envelope. `m02_begin_key_scope` holds `FOR KEY SHARE` on the control row while returning the
+active and retained version identifiers; `m02_rotate_key_version` holds `FOR UPDATE`, so a version flip waits
+for in-flight writers and no old-version write races a new-version write.
+
+**Scope for v1, per the approved B7 decision:** the `KeyProvider` abstraction, HMAC fingerprinting,
+`operation_key_versions`, and persisted key-version provenance ship in v1, together with an explicitly
+non-production `LocalDevKeyProvider`. Production configuration **fails closed** unless a production-capable
+provider is configured. Cloud KMS envelope integration, rotation orchestration, `m02_rotate_key_version`
+execution, and producer heartbeat machinery are deferred to OI-009 follow-up work. The v1 schema carries the
+version and provenance columns so that deferral needs no breaking migration. An unkeyed deterministic hash is
+**not** an acceptable substitute for the HMAC.
+
+#### D-11.11 — Hybrid projection with a per-operation critical section (design D-04)
+
+Current state is produced by one pure, versioned `ProjectionEngine` folding a complete visible event set. A
+derived `operation_projections` cache is refreshed in the same tenant transaction as the append and is
+rebuildable; it is never evidence and never authorises external replay.
+
+Every operation-scoped append calls `m02_lock_operation(operation_id)` before dedupe resolution, insertion,
+conflict detection or projection work. The lock targets the `operation_registry` row because that row always
+exists. Transactions touching several operations acquire locks in ascending `operation_id` byte order.
+
+An append with a null `operation_id` is **exempt**: there is no registry row and no cross-fact operation
+conflict to serialise. Such observations remain authoritative in `patient_events` and `patient_event_links`,
+appear in the subject timeline, and create no `operation_projections` row.
+
+The stale-intent evidence contract (`listStaleIntents`) replaces ADR-005's inline anti-join. It reads
+authoritative events, not cache state, anti-joins committed intents against every qualifying submission fact,
+and is served by the named partial index `idx_patient_events_stale_intent_scan`. M02 owns the evidence query;
+M06 owns detector scheduling and execution.
+
+#### D-11.12 — Tenant-local transactional outbox for control handoffs (design D-05)
+
+`event_handoff_outbox` is tenant-local and commits atomically with its source event. In-process state alone
+never satisfies at-least-once delivery. Deterministic dedupe keys: M05 `tenant + operation + kind`;
+M06 `tenant + operation`; M11 `tenant + source event + signal type`. Dispatchers enumerate tenants in a paged,
+fair round-robin sweep with bounded per-tenant claims. Consumers persist or return the effective control
+record before acknowledgement; a crash before the delivered mark repeats delivery and converges at the
+consumer.
+
+#### D-11.13 — Two producer dedupe forms plus event-id retry (design D-06)
+
+- Partial `UNIQUE (producer_service, source_namespace, source_event_id)` where `source_event_id` is not null.
+- Partial `UNIQUE (producer_service, producer_dedupe_key)` where `producer_dedupe_key` is not null.
+- `event_id` reuse covers commit-ambiguity retry.
+
+A duplicate key is success **only** when `content_fingerprint` matches. A mismatch raises `DEDUPE_CONFLICT`,
+retains structural attempt evidence outside patient data, and is investigated. This is what lets equivalent
+retries collapse while independently sourced conflicting provider facts both survive.
+
+#### D-11.14 — Reference-controlled vocabulary; no PostgreSQL ENUM (design D-08)
+
+Event types, statuses, contracts and provider capabilities are shared reference/control data, stored as
+stable lowercase `varchar` codes validated against reference tables. Native PostgreSQL `ENUM` types are not
+used, because additive rollout, retirement and zero-downtime compatibility all require adding and retiring
+codes without a type-altering migration. Codes are retired by `is_active = false`, never deleted.
+
+#### D-11.15 — No cryptographic hash chain in v1 (design D-09)
+
+Evidence integrity in v1 rests on append-only grants, separated privileged identities, database auditing,
+point-in-time recovery, retention-locked signed exports, and automated integrity reconciliation. A
+cryptographic event hash chain is **not** implemented.
+
+This is approved for the v1 baseline only, and is revalidated before pilot if policy changes. If a chain is
+later required, FR-026 lawful archival and destruction must still be reconcilable with verifiable chain
+continuity or tombstone evidence — that interaction is unresolved and is why the chain is not being adopted
+speculatively.
+
+#### D-11.16 — Reference data is read on the control plane and carried as an immutable snapshot
+
+M01's tenant SQL boundary is preserved: **no `shared.*` SQL executes on a tenant connection.** The
+ContractRegistry loads reference and contract data over the M01 control-plane connection **before** the
+tenant transaction opens, and the resulting immutable, versioned snapshot is carried in the operation context
+for the life of that transaction.
+
+For reproducibility and audit, the snapshot identity in force at append time is recorded. This requires a
+field that design v0.3 §4.3 does not have: **`patient_events.reference_snapshot_generation bigint NOT NULL`**,
+a monotonic generation of the shared reference/contract control set. It is structural and PHI-free, and it
+participates in no business identity, dedupe, or projection semantics.
+
+Extending M01's search path to make shared data readable inside the tenant transaction is reconsidered only
+if M02 later demonstrates a hard requirement for database-level atomic consistency between shared and tenant
+state. Reading a snapshot slightly ahead of the transaction is an accepted trade for keeping the isolation
+boundary intact.
+
+**Snapshot acquisition protocol (approved 2026-08-30).**
+
+*Ledger and validity.* An append-only `shared.reference_catalog_generations` ledger carries
+`generation bigint PRIMARY KEY`, the canonical catalogue digest, activation timestamp, controlled actor, and
+compatibility metadata. One locked control row identifies `current_generation`. Every snapshot-governed
+reference version carries `valid_from_generation` and a nullable, exclusive `valid_to_generation`. The
+validity predicate is pinned exactly, to remove any off-by-one reading:
+
+    valid_from_generation <= G AND (valid_to_generation IS NULL OR G < valid_to_generation)
+
+*Publication.* A controlled publisher runs one transaction: lock the current-generation row; allocate the next
+generation; write new versions and retirement boundaries; validate the complete candidate catalogue; compute
+and record its canonical digest; advance `current_generation`; commit atomically. The publisher identity is
+`haloflow_migrator` (or a dedicated `haloflow_reference_publisher`); `haloflow_runtime` holds SELECT only on
+the ledger and the reference tables, consistent with design §4.5 assigning these to migrations/provisioning.
+
+*Acquisition.* ContractRegistry uses one read-only `REPEATABLE READ` control-plane transaction: read
+`current_generation`; load all rows valid at that generation; recompute and verify the ledger digest;
+construct the immutable snapshot; **fail closed** on a missing row, digest mismatch, or unsupported content.
+
+*Caching and lifetime.* Process caching is keyed by `(generation, digest)`; each new operation checks the
+current-generation pointer and may reuse the immutable body only when both match. A generation superseded
+after acquisition remains valid for the in-flight tenant transaction and is never swapped mid-transaction;
+the event records the acquired generation. Publication preserves a compatibility window of at least the
+maximum context lifetime plus transaction duration — with M01's current defaults that is the 5-minute
+`context_ttl` plus the 30-second statement timeout, so changing either changes the required window.
+Incompatible producers fail closed rather than silently using a different generation.
+
+*Retention.* Historical versions and ledger entries are not deleted while any retained event or replay
+evidence can reference them.
+
+**Four clarifications added in review, because the protocol as stated leaves them ambiguous:**
+
+1. **Published version rows are immutable.** A generation adds or retires versions; it never edits one. This
+   invariant is what makes projection determinism work: a projection resolves each event's own retained
+   `contract_version` and therefore gets the same answer regardless of which generation is current. Without
+   it, folding fifty events spanning twelve generations would require twelve historical catalogue loads.
+2. **`reference_snapshot_generation` is provenance, not a projection input.** It records what the *producer*
+   saw at append time, for audit and replay reconstruction (D-11.9). It does not force the projection engine
+   to load that generation.
+3. **`is_active` and `valid_to_generation` are orthogonal and must not be conflated.**
+   `valid_to_generation` governs *snapshot membership* — whether a row is in generation G at all.
+   `is_active` (D-11.14) governs whether a code present in the snapshot accepts *new appends*. A retired-but-
+   still-valid code remains readable and projectable while refusing new events. Two retirement mechanisms
+   with one meaning each is workable; two with overlapping meanings is not.
+4. **The catalogue digest reuses the D-11.8 canonicalisation** with its own domain-separation prefix,
+   `haloflow.m02.reference-catalog.v1\n`. Introducing a second, separately-specified canonical form would
+   recreate exactly the drift problem D-11.8 exists to close.
+
+**Cost recorded for OI-009.** Every operation now performs a control-plane current-generation read, and a
+cold process performs a full catalogue load plus digest verification. Together with the Cloud KMS dependency
+in D-11.10, cold-start acquisition has two hard control-plane dependencies. Both belong in the OI-009
+measurement set.
+
+#### D-11.17 — SECURITY DEFINER gateways are deployed per tenant schema
+
+`m02_lock_operation` and `m02_begin_key_scope` are installed into **every tenant schema** by the tenant
+provisioner. This preserves M01's `pg_catalog, <tenant_schema>` search-path invariant and permits unqualified
+runtime calls without introducing a shared executable schema.
+
+Controls, all mandatory:
+
+- One canonical function definition in source control; identical copies deployed.
+- Ownership assigned to the dedicated NOLOGIN `haloflow_m02_lock_owner`.
+- `PUBLIC` EXECUTE revoked; EXECUTE granted only where required.
+- Fixed safe `search_path`, schema-qualified statements, exact-row targeting, minimum structural return.
+- The integrity suite detects **definition and security-metadata drift** across tenants, comparing per tenant:
+  `prosrc` digest, `proowner`, `proacl`, `prosecdef`, and `proconfig`. A function with the correct body but
+  the wrong owner or a `PUBLIC` grant is still a security defect, so a body checksum alone is insufficient.
+
+The shared-schema alternative is rejected: reducing deployment duplication is not a sufficient reason to
+weaken the tenant execution boundary. Shared **reference data** is centrally owned and read through the
+control plane (D-11.16); tenant **security gateways** are a tenant execution boundary deployed inside the
+tenant schema. Centralising the first does not imply centralising the second.
+
+#### D-11.18 — The four-identifier model, and the M01 changes it requires
+
+| Identifier | Meaning | Lifetime / scope |
+|---|---|---|
+| `execution_id` | Caller-labelled execution scope | One execution; may span multiple tenant contexts |
+| `correlation_id` | Trusted request or job-trigger chain | One request/job trigger; not durable workflow identity |
+| `operation_id` | Durable business side-effect identity | Entire logical operation, across retries and takeover |
+| `request_id` | Optional external/source diagnostic identifier | Source-defined |
+
+**Rename (B5).** M01's contextual `operation_id` becomes `execution_id` — resolver input, context field,
+validation and error terminology, `application_name`, tests and documentation. Canonical UUID validation and
+immutable issuance are preserved. The rename extends to SQL in forward migration `002` (migration `001` is
+not edited; its `downgrade()` deliberately raises):
+`shared.tenant_state_history.operation_id`, `shared.access_audit_log.operation_id`, and
+`shared.isolation_alerts.operation_id` are renamed to `execution_id` and retyped from `varchar(128)` to
+`uuid`. Renaming only the Python field would leave `shared.access_audit_log.operation_id` holding an
+execution identifier while `patient_events.operation_id` holds a business operation identifier — one column
+name, two meanings, in one database. `execution_id` is caller-supplied; callers should mint one per
+execution, but one execution may deliberately span several tenant contexts, as in an M06 batch fan-out.
+
+**Correlation (B6, with the FR-031 correction).** `TenantContext` gains required `correlation_id: UUID` and
+required `correlation_source ∈ {trusted_infrastructure, entry_point_generated}`. Per FR-031 the
+**entry-point owner**, not `TenantResolver`, generates a cryptographically strong UUID when trusted
+infrastructure has not supplied an approved one; the resolver validates and preserves the value and its
+provenance and does not mint a fallback. Arbitrary public correlation strings are rejected or replaced at the
+entry-point boundary and are never coerced or hashed into trusted UUIDs. `request_id` is not correlation
+identity. M11 retains governance of propagation, telemetry and trusted-infrastructure policy.
+
+**Multi-capability context (F1).** `TenantResolver.resolve(...)` accepts a requested `frozenset[str]` of
+capabilities; every requested capability must be contained in `principal.capabilities`; the issued context
+carries only the validated subset. This replaces singleton-capability issuance, which would have forced every
+statement in an atomic M02 flow — registry insert, event insert, link insert, projection upsert, outbox
+insert, lock gateway — to share one coarse capability and would have hollowed out the least-privilege claims
+in FR-024 and design §13.1. Per-statement enforcement remains active inside a multi-statement flow, and a
+negative test proves an unauthorised capability cannot be injected or inherited.
+
+**Statement catalogue (B2).** M01 exposes one supported, startup-only `build_statement_catalog(...)` while
+retaining the issuer sentinel internally as the mechanism. Each module owns fixed definitions in its own
+`haloflow.mNN.statements`; keys are module-prefixed; bootstrap composes approved sets into one immutable
+catalogue; duplicate keys fail startup; the gateway requires an explicit catalogue argument with no silent
+empty default; there is no runtime registration. A module definition set contributes both its statements and
+its write-capability codes, with the write-capability set preferably **derived** from WRITE statements in the
+composed catalogue so the two cannot drift. CI pins the exact registered key set and a SHA-256 digest of each
+normalised query; no runtime checksum. The security property is that SQL is fixed, reviewed, validated and
+frozen at startup — not that a Python sentinel stays secret.
+
+**Execution provenance in M02.** `patient_events.execution_id uuid NOT NULL` — structural, PHI-free forensic
+provenance tying each append to the execution scope that wrote it. It participates in no business identity,
+dedupe, or projection semantics. `operation_registry` needs no separate column: its creating execution is
+represented by the associated intent event. This is an addition to design v0.3 §4.3.
+
+`NOT NULL` is safe on every append path — M03 callback workers, the M06 reconciler and stale-intent detector,
+replay tooling, and privileged correction alike — because every append executes inside a `TenantContext`, and
+`execution_id` is a required field of that context (D-11.18). There is no append path that lacks one.
+
+#### D-11.19 — Access-audit source mapping
+
+`shared.access_audit_log.source_event_id` and `patient_events.source_event_id` are different things and must
+never be joined by name.
+
+- When a privileged audit record originates from an M02 event, `access_audit_log.source_event_id` is that M02
+  `event_id` (satisfying the existing `NOT NULL UNIQUE` constraint).
+- When privileged export, disposition or other activity has no patient event, the controlled writer generates
+  a dedicated privileged-action UUID.
+- `patient_events.source_event_id` remains a bounded provider/source deduplication identifier and is not
+  mapped by name to the shared audit field.
+
+### Options Considered
+
+| Decision | Alternative rejected | Why |
+|---|---|---|
+| D-11.2 six levels | Keep three levels; model observations as intent+outcome pairs | Manufactures a synthetic intent for a fact the system never attempted; FR-009 forbids it |
+| D-11.3 tiebreaker only | Use `append_sequence` as a replay watermark | Out-of-order commits make a high-water scan lossy; gaps from rollbacks would read as data loss |
+| D-11.4 capability-scoped uniqueness | Global unique index on provider external ID | Two providers or accounts legitimately reuse a raw external ID; a global index would reject valid facts |
+| D-11.5 verified references | Declare shared→tenant foreign keys | Not expressible across N schemas; declaring one asserts integrity the database never enforces |
+| D-11.8 JCS + pinned rules | "SHA-256 over the JSON" without a canonical form | Key order, timestamp precision and float formatting all drift across releases and languages; every drift is a false `DEDUPE_CONFLICT` |
+| D-11.9 full-range restart | Incremental resume from last processed sequence | Same out-of-order-commit flaw as D-11.3; a resumed rebuild can silently omit committed rows |
+| D-11.15 no hash chain | Hash-chain events in v1 | Unresolved interaction with lawful destruction under FR-026; compensating controls are adequate for v1 |
+| D-11.16 control-plane snapshot | Add a reference schema to M01's search path | Reopens M01's reviewed isolation invariant for a read-consistency benefit M02 does not yet need |
+| D-11.17 per-tenant gateways | One copy in a shared executable schema | Requires the same search-path change; deployment convenience is not a reason to weaken the tenant execution boundary |
+| D-11.18 multi-capability context | One coarse capability per M02 flow | Makes per-statement capability checks carry no information and overstates least privilege in §13.1 |
+
+### Consequences
+
+**Schema**
+
+- `patient_events`: no `idempotency_key`; `event_level` replaces `submission_level`; adds `append_sequence`,
+  `content_fingerprint`, `execution_id`, and `reference_snapshot_generation`.
+- New tenant-local: `operation_registry`, `operation_key_versions`, `patient_event_links`,
+  `operation_acceptance_bindings`, `operation_projections`, `event_handoff_outbox`.
+- New shared: `ref_event_types`, `event_contracts`, `provider_capabilities`, `producer_key_capabilities`.
+  `shared.reconciliation_cases` is re-specified with mandatory `tenant_id` and `UNIQUE (tenant_id, operation_id)`.
+- M01 forward migration `002` renames and retypes three `shared.*` `operation_id` columns to `execution_id uuid`.
+
+**Required corrections to the ADR file's Shared Infrastructure Table Inventory** (FR-032 requires every new
+shared table to be confirmed against it before migration):
+
+- Add rows for `ref_event_types`, `event_contracts`, `provider_capabilities`, `producer_key_capabilities`,
+  and `reference_catalog_generations` (the D-11.16 ledger), each with a classification-manifest entry.
+- The existing `shared.access_audit_log` row reads "Append-only; **all roles write**". That is wrong against
+  the merged M01 migration, which grants INSERT only to `haloflow_audit_projector` and
+  `haloflow_control_audit_writer` and explicitly revokes INSERT/UPDATE/DELETE/TRUNCATE from
+  `haloflow_runtime`. **Corrected in this change set** to name those two writers, per FR-032 and because the
+  inventory is the document the M01/M02 audit boundary is reviewed against.
+
+**Code and process**
+
+- M01 debt PR carries: tenant-schema provisioner and per-tenant migration runner; public
+  `build_statement_catalog`; required catalogue argument; multi-capability issuance; the `execution_id`
+  rename and migration `002`; `correlation_id` and `correlation_source` on the context.
+- New Python dependency for JSON Schema validation of event metadata (FR-020), version pinned.
+- CI gains: the statement manifest (keys + query digests), fingerprint golden vectors, the shared
+  classification manifest entries for every new shared column, and the per-tenant definer-function drift check.
+
+**Not discharged by this ADR**
+
+Applying the D4 acceptance stamps to ADR-003, ADR-005 and ADR-007 remains a Module 0 action.
+
+### Still-open items gating M02 after this ADR
+
+| ID | Gate | Required by |
+|---|---|---|
+| M02-OI-005 | Notifyre idempotency, echoed client reference, callback `occurred_at`, provider lookup capability evidence | Before automated takeover |
+| M02-OI-006 | Retention, legal hold, archival/export, correction and destruction authority policy | Before production pilot |
+| M02-OI-007 | Core event type/status/contract seed catalogue and compatibility process | Before seed migration — **next work item** |
+| M02-OI-009 | Measured append, projection, replay, backlog-age, fairness and Cloud KMS objectives | Before production readiness |
+| M02-OI-010 | Revalidation of D-11.15 before pilot if policy changes | Before pilot |
+
+### Supersession Record
+
+| Superseded | Where | Superseded by | Nature |
+|---|---|---|---|
+| `idempotency_key` on `patient_events` | ADR-003 Decision (Level 1) and Consequences | D-11.1 | Removed as redundant with ADR-007 |
+| `submission_level` (intent/submission/delivery) | ADR-003 Consequences; ADR-005 Consequences | D-11.2 | Renamed to `event_level`; extended to six levels |
+| `{action}_delivery_indeterminate` for "conflicting or unresolvable callbacks" | ADR-003 Decision (Level 3) | D-11.7 | Split into unknown vs conflict vocabulary; type retired |
+| "At most one provider acceptance identity per `operation_id` (DB constraint)" | ADR-003 Constraints | D-11.4 | Refined: `PK(operation_id)` always; cross-operation uniqueness only under declared provider capability scope |
+| `reconciliation_cases` keyed on `operation_id (unique)`, no tenant column | ADR-005 Decision | D-11.6 | Mandatory `tenant_id`; `UNIQUE (tenant_id, operation_id)` |
+| `resolution_event_id` / `work_queue_id` declared as foreign keys | ADR-005 Decision | D-11.5 | Replaced by tenant-bound verified application references |
+| First-time reconciliation inline anti-join on `submission_level` | ADR-005 Decision | D-11.2, D-11.11 | Restated as the M02-owned `listStaleIntents` evidence contract over `event_level` |
+| Projection ordering rule | ADR-005 "Current-status projection rule" | D-11.3, D-11.11 | Retained in substance; extended with `append_sequence` tiebreaker, correction graph, acceptance conflicts, and explanation codes |
+
+**Not superseded.** ADR-007's decision that `operation_id` is passed directly to Notifyre as the idempotency
+key remains controlling and is reinforced by D-11.1 and FR-004. ADR-003's three-level model for external side
+effects, its `external_id` population rule, and its exclusion of inbound observations from the intent pattern
+all remain correct and are extended rather than replaced.
+
+---
+
 ## Shared Infrastructure Table Inventory
 
 The following shared-schema tables are control-plane infrastructure — not tenant operational tables. All are in the `shared` schema unless noted.
@@ -644,7 +1151,13 @@ The following shared-schema tables are control-plane infrastructure — not tena
 | `shared.unresolved_callback_queue` | Webhook processor only | No | Callbacks arriving before registry committed |
 | `shared.reconciliation_cases` | Reconciler only | No | Mutable retry lifecycle for indeterminate operations |
 | `shared.ref_event_statuses` + all other ref tables | Control-plane / migrations only | No | Read by all; written only by provisioning |
-| `shared.access_audit_log` | Append-only; all roles write | Minimal (structured fields only) | PHI access audit trail |
+| `shared.ref_event_types` | Control-plane / migrations only | No | ADR-011 D-11.14; event type catalogue |
+| `shared.ref_event_levels` | Control-plane / migrations only | No | ADR-011 D-11.2; six event levels (subject to OI-007 decision S1) |
+| `shared.event_contracts` | Control-plane / migrations only | No | ADR-011 D-11.14; versioned event contracts, old versions retained |
+| `shared.provider_capabilities` | Controlled integration migration | No | ADR-011 D-11.4; declares external-ID namespace and uniqueness scope |
+| `shared.producer_key_capabilities` | Producer startup/heartbeat identity | No | ADR-011 D-11.10; PHI-free live producer registration |
+| `shared.reference_catalog_generations` | `haloflow_migrator` / reference publisher only | No | ADR-011 D-11.16; append-only generation ledger with canonical catalogue digest |
+| `shared.access_audit_log` | Append-only; `haloflow_audit_projector` and `haloflow_control_audit_writer` only | Minimal (structured fields only) | PHI access audit trail. Corrected per ADR-011: `haloflow_runtime` is explicitly revoked INSERT/UPDATE/DELETE/TRUNCATE in M01 migration 001 |
 | Global security incident log | Append-only; webhook handler writes | No PHI | Failed HMAC, unroutable events |
 
 ---
@@ -662,6 +1175,7 @@ The following shared-schema tables are control-plane infrastructure — not tena
 | ADR-007 | Central watchdog + heartbeat + fencing + `recovering` status + `batch_recipient_operations` + `operation_id` as idempotency key | Proposed | Notifyre idempotency (item 3) for automatic takeover |
 | ADR-008 | Per-tenant GCS SAs + credential broker; broker holds only `tenant_id`; honest boundary documented | Proposed | Credential broker before production |
 | ADR-009 | Items 1 and 3 are production blockers; items 4 and 6 accepted as known constraint with compliance sign-off | Proposed — pending verification | Items 1 and 3 |
+| ADR-011 | M02 event and operation foundation: `event_level`, `append_sequence`, canonical acceptance binding, unknown-vs-conflict vocabulary, fingerprint canonicalisation, reference-catalogue generations, four-identifier model | **Accepted 2026-08-30** | OI-005, OI-006, OI-007, OI-009 gate M02 delivery |
 
 ---
 
