@@ -1,0 +1,12 @@
+{
+  "policy": {
+    "description": "Pinned production statement catalogue (ADR-011 D-11.18, B2.10).",
+    "rule": "Any statement added, removed, or edited must update this manifest in the same reviewed commit. Digest is SHA-256 over the whitespace-normalised query. The manifest is composed through the production composition root, not a constant.",
+    "normalisation": "collapse runs of whitespace to a single space, then strip"
+  },
+  "modules": [
+    "haloflow.composition:APPROVED_MODULE_STATEMENTS"
+  ],
+  "statements": {},
+  "composition_root": "src/haloflow/composition.py"
+}

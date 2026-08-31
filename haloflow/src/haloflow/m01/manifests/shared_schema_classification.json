@@ -1,7 +1,10 @@
 {
   "schema": "shared",
   "policy": {
-    "allowed_classifications": ["control-plane", "pseudonymous-id"],
+    "allowed_classifications": [
+      "control-plane",
+      "pseudonymous-id"
+    ],
     "phi_allowed": false
   },
   "tables": {
@@ -27,8 +30,8 @@
         "reason_code": "control-plane",
         "actor_kind": "control-plane",
         "actor_id": "pseudonymous-id",
-        "operation_id": "pseudonymous-id",
-        "occurred_at": "control-plane"
+        "occurred_at": "control-plane",
+        "execution_id": "pseudonymous-id"
       }
     },
     "schema_migrations": {
@@ -74,9 +77,9 @@
         "purpose_code": "control-plane",
         "outcome_code": "control-plane",
         "request_id": "pseudonymous-id",
-        "operation_id": "pseudonymous-id",
         "occurred_at": "control-plane",
-        "projected_at": "control-plane"
+        "projected_at": "control-plane",
+        "execution_id": "pseudonymous-id"
       }
     },
     "isolation_alerts": {
@@ -87,10 +90,10 @@
         "source_code": "control-plane",
         "alert_type": "control-plane",
         "severity": "control-plane",
-        "operation_id": "pseudonymous-id",
         "state": "control-plane",
         "detected_at": "control-plane",
-        "closed_at": "control-plane"
+        "closed_at": "control-plane",
+        "execution_id": "pseudonymous-id"
       }
     }
   }

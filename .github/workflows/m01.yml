@@ -44,6 +44,6 @@ jobs:
           cache-dependency-path: haloflow/pyproject.toml
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev]'
-      - run: ruff check src/haloflow/m01 tests/m01 alembic
-      - run: mypy src/haloflow/m01
+      - run: ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
+      - run: mypy src/haloflow/m01 src/haloflow/composition.py
       - run: pytest tests/m01 -q

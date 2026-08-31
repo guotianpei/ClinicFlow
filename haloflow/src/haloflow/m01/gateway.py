@@ -20,10 +20,10 @@ from haloflow.m01.errors import (
 from haloflow.m01.pool import TenantPool
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN, LifecycleState
 from haloflow.m01.statements import (
+    CompiledCatalog,
     StatementMode,
     TenantStatement,
     TenantStatementCatalog,
-    _build_statement_catalog,
 )
 
 T = TypeVar("T")
@@ -118,16 +118,24 @@ class TenantTransactionGateway:
     def __init__(
         self,
         pool: TenantPool,
+        catalog: CompiledCatalog,
         *,
         supported_schema_versions: Collection[int] = range(1, 2),
-        statement_catalog: TenantStatementCatalog | None = None,
-        write_capabilities: Collection[str] = (),
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """Bind a pool to one composed, startup-frozen catalogue.
+
+        `catalog` is required. The previous `statement_catalog=None` default
+        silently produced an empty catalogue, so a misconfigured gateway failed
+        with STATEMENT_NOT_REGISTERED at first use rather than at construction.
+        Write capabilities are derived from the catalogue's WRITE statements and
+        are not separately supplied, so the two cannot drift (B2.7, B2.9).
+        """
+
         self._pool = pool
         self._supported_schema_versions = frozenset(supported_schema_versions)
-        self._statement_catalog = statement_catalog or _build_statement_catalog({})
-        self._write_capabilities = frozenset(write_capabilities)
+        self._statement_catalog: TenantStatementCatalog = catalog.catalog
+        self._write_capabilities = catalog.write_capabilities
         self._clock = clock or (lambda: datetime.now(UTC))
 
     async def with_tenant_transaction(
@@ -156,6 +164,10 @@ class TenantTransactionGateway:
             transaction_options.lock_timeout_ms,
             statement_timeout_ms,
         )
+        # A multi-capability context holding any write capability makes the whole
+        # transaction read-write; a transaction is read-only or it is not. Least
+        # privilege for mixed flows therefore rests on the per-statement check in
+        # TenantRepositoryHandle._resolve_statement, which stays exact.
         allow_writes = bool(context.capabilities & self._write_capabilities)
 
         token = _ACTIVE_TENANT_TRANSACTION.set(True)
@@ -250,7 +262,7 @@ class TenantTransactionGateway:
                 f"{statement_timeout_ms}ms",
                 f"{lock_timeout_ms}ms",
                 f"{transaction_timeout_ms}ms",
-                f"haloflow:{context.operation_id}",
+                f"haloflow:{context.execution_id}",
                 context.tenant_id,
             ),
         )

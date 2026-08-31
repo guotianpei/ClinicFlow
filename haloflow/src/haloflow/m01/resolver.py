@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import UUID
 
 from haloflow.m01.context import (
+    CorrelationSource,
     Principal,
     TenantContext,
     TrustedSource,
@@ -67,17 +68,29 @@ class TenantResolver:
         principal: Principal,
         tenant_hint: str,
         purpose: str,
-        capability: str,
+        capabilities: frozenset[str],
         source: TrustedSource,
-        operation_id: str,
+        execution_id: UUID,
+        correlation_id: UUID,
+        correlation_source: CorrelationSource,
         request_id: str | None = None,
     ) -> TenantContext:
+        """Issue the only trusted TenantContext.
+
+        `capabilities` is the requested set; every member must be held by the
+        principal, and the issued context carries only that validated subset
+        (ADR-011 D-11.18 F1). `correlation_id` and its provenance are validated
+        and preserved -- never generated here, per M02 FR-031.
+        """
+
         self._authorize_request_shape(
             principal=principal,
             tenant_hint=tenant_hint,
             purpose=purpose,
-            capability=capability,
-            operation_id=operation_id,
+            capabilities=capabilities,
+            execution_id=execution_id,
+            correlation_id=correlation_id,
+            correlation_source=correlation_source,
         )
 
         record = await self._control_store.get_tenant(tenant_hint)
@@ -97,9 +110,11 @@ class TenantResolver:
             tenant_id=record.tenant_id,
             schema_key=record.schema_key,
             principal=principal,
-            capabilities=frozenset({capability}),
+            capabilities=frozenset(capabilities),
             purpose=purpose,
-            operation_id=operation_id,
+            execution_id=execution_id,
+            correlation_id=correlation_id,
+            correlation_source=correlation_source,
             request_id=request_id,
             source=source,
             issued_at=issued_at,
@@ -112,20 +127,40 @@ class TenantResolver:
         principal: Principal,
         tenant_hint: str,
         purpose: str,
-        capability: str,
-        operation_id: str,
+        capabilities: frozenset[str],
+        execution_id: UUID,
+        correlation_id: UUID,
+        correlation_source: CorrelationSource,
     ) -> None:
+        # Request shape and runtime types are validated before any authorization
+        # comparison. Besides being the clearer failure taxonomy, it keeps a
+        # malformed container out of the subset test below: `["a"] <= frozenset()`
+        # raises a raw TypeError rather than a sanitized TenantDenied.
         if not TENANT_ID_PATTERN.fullmatch(tenant_hint):
             raise TenantDenied(reason_code="TENANT_HINT_INVALID")
-        if tenant_hint not in principal.authorized_tenant_ids:
-            raise TenantDenied(reason_code="TENANT_BINDING_MISMATCH")
-        if capability not in principal.capabilities:
-            raise TenantDenied(reason_code="CAPABILITY_DENIED")
+        if not isinstance(capabilities, frozenset | set):
+            raise TenantDenied(reason_code="CAPABILITIES_INVALID")
+        # An empty request is malformed, not unauthorized: a context carrying no
+        # capability can execute no statement. Reporting it as CAPABILITY_DENIED
+        # would send an operator to look at the principal's grants instead.
+        if not capabilities:
+            raise TenantDenied(reason_code="CAPABILITIES_EMPTY")
+        if not all(isinstance(capability, str) for capability in capabilities):
+            raise TenantDenied(reason_code="CAPABILITIES_INVALID")
+        # Typed UUIDs, not parsed strings: canonical identity holds by
+        # construction and parsing belongs to the entry point. The runtime check
+        # stands because static typing does not bind an untyped caller.
+        if not isinstance(execution_id, UUID):
+            raise TenantDenied(reason_code="EXECUTION_ID_INVALID")
+        if not isinstance(correlation_id, UUID):
+            raise TenantDenied(reason_code="CORRELATION_ID_INVALID")
+        if not isinstance(correlation_source, CorrelationSource):
+            raise TenantDenied(reason_code="CORRELATION_SOURCE_INVALID")
         if purpose not in self._allowed_purposes or not PURPOSE_PATTERN.fullmatch(purpose):
             raise TenantDenied(reason_code="PURPOSE_DENIED")
-        try:
-            parsed_operation_id = UUID(operation_id)
-        except (ValueError, AttributeError):
-            raise TenantDenied(reason_code="OPERATION_ID_INVALID") from None
-        if str(parsed_operation_id) != operation_id.lower():
-            raise TenantDenied(reason_code="OPERATION_ID_INVALID")
+
+        # Authorization comparisons, only once the request is well formed.
+        if tenant_hint not in principal.authorized_tenant_ids:
+            raise TenantDenied(reason_code="TENANT_BINDING_MISMATCH")
+        if not capabilities <= principal.capabilities:
+            raise TenantDenied(reason_code="CAPABILITY_DENIED")
