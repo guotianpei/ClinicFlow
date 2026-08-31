@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 import pytest_asyncio
@@ -20,7 +20,13 @@ from psycopg.errors import (
 )
 
 from alembic import command
-from haloflow.m01.context import Principal, PrincipalKind, TenantContext, TrustedSource
+from haloflow.m01.context import (
+    CorrelationSource,
+    Principal,
+    PrincipalKind,
+    TenantContext,
+    TrustedSource,
+)
 from haloflow.m01.control_store import PsycopgControlStore
 from haloflow.m01.errors import (
     CapabilityDenied,
@@ -37,7 +43,7 @@ from haloflow.m01.gateway import (
 )
 from haloflow.m01.pool import TenantPool
 from haloflow.m01.resolver import TenantResolver
-from haloflow.m01.statements import StatementMode, _build_statement_catalog
+from haloflow.m01.statements import StatementMode, build_statement_catalog
 
 pytestmark = pytest.mark.postgres
 
@@ -46,41 +52,51 @@ RUNTIME_LOGIN_ROLE = "haloflow_test_runtime_login"
 RUNTIME_PASSWORD = "m01-local-test-only"
 M01_ROOT = Path("src/haloflow/m01")
 
-TEST_STATEMENT_CATALOG = _build_statement_catalog(
+TEST_CATALOG = build_statement_catalog(
     {
-        "probe.marker_path": (
+        "m01_test.marker_path": (
             StatementMode.READ,
             "probe:write",
             "SELECT marker, current_schemas(true), pg_my_temp_schema() "
             "FROM isolation_probe WHERE business_id = %s",
         ),
-        "probe.backend_marker": (
+        "m01_test.backend_marker": (
             StatementMode.READ,
             "probe:write",
             "SELECT pg_backend_pid(), marker FROM isolation_probe WHERE business_id = 42",
         ),
-        "probe.insert": (
+        "m01_test.insert": (
             StatementMode.WRITE,
             "probe:write",
             "INSERT INTO isolation_probe (business_id, marker) VALUES (%s, %s)",
         ),
-        "probe.count_99": (
+        "m01_test.count_99": (
             StatementMode.READ,
             "probe:write",
             "SELECT count(*) FROM isolation_probe WHERE business_id = 99",
         ),
-        "probe.select_one": (StatementMode.READ, "probe:read", "SELECT 1"),
-        "probe.marker": (
+        "m01_test.select_one": (StatementMode.READ, "probe:read", "SELECT 1"),
+        "m01_test.marker": (
             StatementMode.READ,
             "probe:write",
             "SELECT marker FROM isolation_probe WHERE business_id = 42",
         ),
-        "probe.sleep_one": (StatementMode.READ, "probe:write", "SELECT pg_sleep(1)"),
-        "probe.sleep_ten": (StatementMode.READ, "probe:write", "SELECT pg_sleep(10)"),
-        "probe.other_insert": (
+        "m01_test.sleep_one": (StatementMode.READ, "probe:write", "SELECT pg_sleep(1)"),
+        "m01_test.sleep_ten": (StatementMode.READ, "probe:write", "SELECT pg_sleep(10)"),
+        "m01_test.other_insert": (
             StatementMode.WRITE,
             "other:write",
             "INSERT INTO isolation_probe (business_id, marker) VALUES (%s, %s)",
+        ),
+        "m01_test.application_name": (
+            StatementMode.READ,
+            "probe:read",
+            "SELECT current_setting('application_name')",
+        ),
+        "m01_test.transaction_read_only": (
+            StatementMode.READ,
+            "probe:read",
+            "SELECT current_setting('transaction_read_only')",
         ),
     }
 )
@@ -119,11 +135,22 @@ async def _drop_runtime_login_role(connection: AsyncConnection) -> None:
         await connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN_ROLE)))
 
 
-def _apply_migrations(conninfo: str) -> None:
+def _database_url(params: dict[str, object], dbname: str) -> str:
+    """Build a postgresql:// URL, which is what alembic/env.py can rewrite."""
+
+    user = params.get("user") or "postgres"
+    password = params.get("password")
+    credentials = f"{user}:{password}" if password else f"{user}"
+    host = params.get("host") or "127.0.0.1"
+    port = params.get("port") or 5432
+    return f"postgresql://{credentials}@{host}:{port}/{dbname}"
+
+
+def _apply_migrations(conninfo: str, revision: str = "head") -> None:
     previous = os.environ.get("HALOFLOW_MIGRATION_DATABASE_URL")
     os.environ["HALOFLOW_MIGRATION_DATABASE_URL"] = conninfo
     try:
-        command.upgrade(Config("alembic.ini"), "head")
+        command.upgrade(Config("alembic.ini"), revision)
     finally:
         if previous is None:
             os.environ.pop("HALOFLOW_MIGRATION_DATABASE_URL", None)
@@ -229,11 +256,7 @@ async def tenant_pool(postgres_harness: PostgresHarness) -> AsyncIterator[Tenant
 
 @pytest_asyncio.fixture
 async def gateway(tenant_pool: TenantPool) -> TenantTransactionGateway:
-    return TenantTransactionGateway(
-        tenant_pool,
-        statement_catalog=TEST_STATEMENT_CATALOG,
-        write_capabilities={"probe:write"},
-    )
+    return TenantTransactionGateway(tenant_pool, TEST_CATALOG)
 
 
 @pytest_asyncio.fixture
@@ -260,15 +283,17 @@ async def _context(
     tenant_id: str,
     operation_label: str,
     *,
-    capability: str = "probe:write",
+    capabilities: frozenset[str] = frozenset({"probe:write"}),
 ) -> TenantContext:
     return await resolver.resolve(
         principal=_principal("clinic-a", "clinic-b"),
         tenant_hint=tenant_id,
         purpose="operations",
-        capability=capability,
+        capabilities=capabilities,
         source=TrustedSource.WORKER,
-        operation_id=str(uuid5(NAMESPACE_URL, f"haloflow-test:{operation_label}")),
+        execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:{operation_label}"),
+        correlation_id=uuid4(),
+        correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE,
     )
 
 
@@ -280,7 +305,7 @@ async def test_same_business_id_isolated_between_tenants(
     context_b = await _context(resolver, "clinic-b", "op-b")
 
     async def read_marker(tx: TenantRepositoryHandle) -> tuple[str, list[str], int]:
-        row = await tx.fetch_one("probe.marker_path", (42,))
+        row = await tx.fetch_one("m01_test.marker_path", (42,))
         assert row is not None
         return row[0], row[1], row[2]
 
@@ -299,7 +324,7 @@ async def test_alternating_tenants_reuse_one_clean_physical_connection(
     gateway: TenantTransactionGateway, resolver: TenantResolver
 ) -> None:
     async def backend_and_marker(tx: TenantRepositoryHandle) -> tuple[int, str]:
-        row = await tx.fetch_one("probe.backend_marker")
+        row = await tx.fetch_one("m01_test.backend_marker")
         assert row is not None
         return row[0], row[1]
 
@@ -322,14 +347,14 @@ async def test_callback_failure_rolls_back_and_connection_is_reusable(
     context_a = await _context(resolver, "clinic-a", "rollback-a")
 
     async def fail_after_write(tx: TenantRepositoryHandle) -> None:
-        await tx.execute("probe.insert", (99, "must-roll-back"))
+        await tx.execute("m01_test.insert", (99, "must-roll-back"))
         raise RuntimeError("synthetic failure")
 
     with pytest.raises(RuntimeError, match="synthetic failure"):
         await gateway.with_tenant_transaction(context_a, fail_after_write)
 
     async def count_probe(tx: TenantRepositoryHandle) -> int:
-        row = await tx.fetch_one("probe.count_99")
+        row = await tx.fetch_one("m01_test.count_99")
         assert row is not None
         return row[0]
 
@@ -350,13 +375,13 @@ async def test_read_capability_cannot_execute_registered_write(
         resolver,
         "clinic-a",
         "read-capability",
-        capability="probe:read",
+        capabilities=frozenset({"probe:read"}),
     )
 
     async def attempt_write(tx: TenantRepositoryHandle) -> None:
-        assert await tx.fetch_one("probe.select_one") == (1,)
+        assert await tx.fetch_one("m01_test.select_one") == (1,)
         with pytest.raises(CapabilityDenied):
-            await tx.execute("probe.insert", (100, "must-not-write"))
+            await tx.execute("m01_test.insert", (100, "must-not-write"))
 
     await gateway.with_tenant_transaction(read_context, attempt_write)
 
@@ -369,7 +394,7 @@ async def test_write_capability_cannot_execute_another_capability_statement(
 
     async def attempt_other_write(tx: TenantRepositoryHandle) -> None:
         with pytest.raises(CapabilityDenied) as error:
-            await tx.execute("probe.other_insert", (101, "must-not-write"))
+            await tx.execute("m01_test.other_insert", (101, "must-not-write"))
         assert error.value.reason_code == "STATEMENT_CAPABILITY_DENIED"
 
     await gateway.with_tenant_transaction(context, attempt_other_write)
@@ -390,7 +415,7 @@ async def test_repository_handle_expires_after_callback(
     )
     assert captured is not None
     with pytest.raises(RepositoryHandleExpired):
-        await captured.fetch_one("probe.select_one")
+        await captured.fetch_one("m01_test.select_one")
     assert object.__getattribute__(captured, "_TenantRepositoryHandle__connection") is None
     assert object.__getattribute__(captured, "_TenantRepositoryHandle__catalog") is None
 
@@ -650,7 +675,7 @@ async def test_transaction_timeout_is_local_and_connection_remains_reusable(
     gateway: TenantTransactionGateway, resolver: TenantResolver
 ) -> None:
     async def backend(tx: TenantRepositoryHandle) -> int:
-        row = await tx.fetch_one("probe.backend_marker")
+        row = await tx.fetch_one("m01_test.backend_marker")
         assert row is not None
         return row[0]
 
@@ -659,7 +684,7 @@ async def test_transaction_timeout_is_local_and_connection_remains_reusable(
     )
 
     async def exceed_timeout(tx: TenantRepositoryHandle) -> None:
-        await tx.execute("probe.sleep_one")
+        await tx.execute("m01_test.sleep_one")
 
     with pytest.raises(QueryCanceled):
         await gateway.with_tenant_transaction(
@@ -673,7 +698,7 @@ async def test_transaction_timeout_is_local_and_connection_remains_reusable(
         )
 
     async def backend_and_marker(tx: TenantRepositoryHandle) -> tuple[int, str]:
-        row = await tx.fetch_one("probe.backend_marker")
+        row = await tx.fetch_one("m01_test.backend_marker")
         assert row is not None
         return row[0], row[1]
 
@@ -696,8 +721,7 @@ async def test_sub_millisecond_context_lifetime_fails_before_checkout(
 
     edge_gateway = TenantTransactionGateway(
         tenant_pool,
-        statement_catalog=TEST_STATEMENT_CATALOG,
-        write_capabilities={"probe:write"},
+        TEST_CATALOG,
         clock=edge_clock,
     )
 
@@ -720,8 +744,7 @@ async def test_context_without_transaction_timeout_margin_fails_before_checkout(
 
     edge_gateway = TenantTransactionGateway(
         tenant_pool,
-        statement_catalog=TEST_STATEMENT_CATALOG,
-        write_capabilities={"probe:write"},
+        TEST_CATALOG,
         clock=edge_clock,
     )
 
@@ -741,7 +764,7 @@ async def test_cancellation_does_not_contaminate_next_tenant(
 
     async def wait_in_database(tx: TenantRepositoryHandle) -> None:
         started.set()
-        await tx.execute("probe.sleep_ten")
+        await tx.execute("m01_test.sleep_ten")
 
     task = asyncio.create_task(
         gateway.with_tenant_transaction(
@@ -754,7 +777,7 @@ async def test_cancellation_does_not_contaminate_next_tenant(
         await task
 
     async def marker(tx: TenantRepositoryHandle) -> str:
-        row = await tx.fetch_one("probe.marker")
+        row = await tx.fetch_one("m01_test.marker")
         assert row is not None
         return row[0]
 
@@ -764,3 +787,297 @@ async def test_cancellation_does_not_contaminate_next_tenant(
         )
         == "tenant-b"
     )
+
+
+@pytest.mark.asyncio
+async def test_application_name_carries_the_execution_id(
+    gateway: TenantTransactionGateway, resolver: TenantResolver
+) -> None:
+    """TC-A4."""
+
+    context = await _context(
+        resolver,
+        "clinic-a",
+        "application-name",
+        capabilities=frozenset({"probe:read"}),
+    )
+
+    async def read_application_name(tx: TenantRepositoryHandle) -> str:
+        row = await tx.fetch_one("m01_test.application_name")
+        assert row is not None
+        return str(row[0])
+
+    observed = await gateway.with_tenant_transaction(context, read_application_name)
+    assert observed == f"haloflow:{context.execution_id}"
+
+
+@pytest.mark.asyncio
+async def test_per_statement_enforcement_survives_a_multi_capability_context(
+    gateway: TenantTransactionGateway, resolver: TenantResolver
+) -> None:
+    """TC-C5. A context holding read+write still cannot reach a third capability."""
+
+    context = await _context(
+        resolver,
+        "clinic-a",
+        "multi-capability",
+        capabilities=frozenset({"probe:read", "probe:write"}),
+    )
+    assert context.capabilities == frozenset({"probe:read", "probe:write"})
+
+    async def attempt_unauthorised(tx: TenantRepositoryHandle) -> None:
+        assert await tx.fetch_one("m01_test.select_one") == (1,)
+        await tx.execute("m01_test.insert", (77, "multi"))
+        with pytest.raises(CapabilityDenied) as error:
+            await tx.execute("m01_test.other_insert", (78, "denied"))
+        assert error.value.reason_code == "STATEMENT_CAPABILITY_DENIED"
+
+    await gateway.with_tenant_transaction(context, attempt_unauthorised)
+
+
+@pytest.mark.asyncio
+async def test_mixed_capability_context_yields_a_read_write_transaction(
+    gateway: TenantTransactionGateway, resolver: TenantResolver
+) -> None:
+    """TC-C7. The accepted consequence of F1, pinned so it cannot change silently.
+
+    `allow_writes` is the intersection of context capabilities with the derived
+    write set, so one write capability makes the whole transaction read-write.
+    Least privilege for such flows rests on the per-statement check above.
+    """
+
+    context = await _context(
+        resolver,
+        "clinic-a",
+        "mixed-read-write",
+        capabilities=frozenset({"probe:read", "probe:write"}),
+    )
+
+    async def assert_read_write(tx: TenantRepositoryHandle) -> None:
+        row = await tx.fetch_one("m01_test.transaction_read_only")
+        assert row is not None
+        assert row[0] == "off"
+
+    await gateway.with_tenant_transaction(context, assert_read_write)
+
+
+@pytest.mark.asyncio
+async def test_read_only_context_yields_a_read_only_transaction(
+    gateway: TenantTransactionGateway, resolver: TenantResolver
+) -> None:
+    """TC-C6."""
+
+    context = await _context(
+        resolver,
+        "clinic-a",
+        "read-only-transaction",
+        capabilities=frozenset({"probe:read"}),
+    )
+
+    async def assert_read_only(tx: TenantRepositoryHandle) -> None:
+        row = await tx.fetch_one("m01_test.transaction_read_only")
+        assert row is not None
+        assert row[0] == "on"
+
+    await gateway.with_tenant_transaction(context, assert_read_only)
+
+
+@pytest.mark.asyncio
+async def test_gateway_requires_an_explicit_catalogue(tenant_pool: TenantPool) -> None:
+    """TC-D5. No silent empty-catalogue default."""
+
+    with pytest.raises(TypeError):
+        TenantTransactionGateway(tenant_pool)  # type: ignore[call-arg]
+
+
+@pytest.mark.postgres
+def test_migration_002_renamed_and_retyped_the_execution_id_columns(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """TC-A6 and TC-A7, asserted from the catalogue rather than from the migration source."""
+
+    import psycopg
+
+    with psycopg.connect(postgres_harness.admin_conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT table_name, column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'shared' AND column_name IN ('execution_id', 'operation_id')
+            ORDER BY table_name
+            """
+        ).fetchall()
+
+    assert rows == [
+        ("access_audit_log", "execution_id", "uuid", "NO"),
+        ("isolation_alerts", "execution_id", "uuid", "YES"),
+        ("tenant_state_history", "execution_id", "uuid", "NO"),
+    ]
+
+
+@pytest.mark.postgres
+def test_migration_002_downgrade_raises() -> None:
+    """TC-A8. Consistent with 001."""
+
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "m01_migration_002", "alembic/versions/002_execution_id_rename.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(RuntimeError):
+        module.downgrade()
+
+
+@pytest.mark.postgres
+def test_migration_002_preflight_blocks_a_non_castable_value(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """TC-A9.
+
+    The guard is the only thing standing between an unanticipated value and a
+    cast failure partway through a deploy, so it is tested against a real one
+    rather than asserted to exist. `isolation_alerts` is used because it carries
+    no append-only trigger and can therefore be seeded and corrected; the other
+    two tables cannot, which is what the guard's own message says.
+    """
+
+    import psycopg
+    from psycopg.errors import DataException
+    from sqlalchemy.exc import DataError
+
+    scratch = "haloflow_test_m01_preflight"
+    params = conninfo_to_dict(postgres_harness.admin_conninfo)
+    admin_conninfo = make_conninfo(**{**params, "dbname": "postgres"})
+    # psycopg accepts a keyword/value conninfo, but alembic/env.py expects a URL
+    # it can rewrite to postgresql+psycopg://, so the migration target is built
+    # as a URL rather than reusing the keyword form.
+    scratch_url = _database_url(params, scratch)
+    scratch_conninfo = make_conninfo(**{**params, "dbname": scratch})
+
+    with psycopg.connect(admin_conninfo, autocommit=True) as admin:
+        admin.execute(f"DROP DATABASE IF EXISTS {scratch}")
+        admin.execute(f"CREATE DATABASE {scratch}")
+
+    try:
+        _apply_migrations(scratch_url, revision="001")
+
+        with psycopg.connect(scratch_conninfo, autocommit=True) as conn:
+            conn.execute(
+                """
+                INSERT INTO shared.tenants
+                    (tenant_id, schema_key, lifecycle_state, schema_version)
+                VALUES ('clinic-x', 'tenant_xxxxxxxx', 'active', 1)
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO shared.isolation_alerts
+                    (alert_id, tenant_id, source_code, alert_type, severity, operation_id)
+                VALUES (gen_random_uuid(), 'clinic-x', 'seed', 'seed', 1, 'legacy-trace-00042')
+                """
+            )
+
+        with pytest.raises((DataError, DataException)) as error:
+            _apply_migrations(scratch_url, revision="002")
+        message = str(error.value)
+        assert "preflight failed" in message
+        assert "No schema change has been made" in message
+        # PHI-safe: the offending value is counted, never echoed.
+        assert "legacy-trace-00042" not in message
+
+        with psycopg.connect(scratch_conninfo) as conn:
+            still_unchanged = conn.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'shared' AND table_name = 'isolation_alerts'
+                  AND column_name IN ('operation_id', 'execution_id')
+                """
+            ).fetchall()
+            head = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+
+        assert still_unchanged == [("operation_id", "character varying")]
+        assert head == ("001",)
+
+        # Correct the value; 002 then applies.
+        with psycopg.connect(scratch_conninfo, autocommit=True) as conn:
+            conn.execute(
+                "UPDATE shared.isolation_alerts SET operation_id = gen_random_uuid()::text"
+            )
+        _apply_migrations(scratch_url, revision="002")
+
+        with psycopg.connect(scratch_conninfo) as conn:
+            converted = conn.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'shared' AND table_name = 'isolation_alerts'
+                  AND column_name IN ('operation_id', 'execution_id')
+                """
+            ).fetchall()
+        assert converted == [("execution_id", "uuid")]
+    finally:
+        with psycopg.connect(admin_conninfo, autocommit=True) as admin:
+            admin.execute(f"DROP DATABASE IF EXISTS {scratch}")
+
+
+@pytest.mark.postgres
+def test_append_only_triggers_still_fire_after_the_rename(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """TC-A10. The triggers are defined on the table, but that is asserted, not assumed."""
+
+    import psycopg
+
+    with psycopg.connect(postgres_harness.admin_conninfo, autocommit=True) as conn:
+        conn.execute(
+            """
+            INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version)
+            VALUES ('clinic-trigger', 'tenant_tttttttt', 'active', 1)
+            ON CONFLICT (tenant_id) DO NOTHING
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO shared.tenant_state_history
+                (tenant_id, new_state, reason_code, actor_kind, actor_id, execution_id)
+            VALUES ('clinic-trigger', 'active', 'seed', 'workload', 'w1', gen_random_uuid())
+            """
+        )
+        try:
+            with pytest.raises(RaiseException):
+                conn.execute(
+                    "UPDATE shared.tenant_state_history SET reason_code = 'x' "
+                    "WHERE tenant_id = 'clinic-trigger'"
+                )
+            with pytest.raises(RaiseException):
+                conn.execute(
+                    "DELETE FROM shared.tenant_state_history WHERE tenant_id = 'clinic-trigger'"
+                )
+        finally:
+            conn.execute("DELETE FROM shared.isolation_alerts WHERE tenant_id = 'clinic-trigger'")
+
+
+@pytest.mark.postgres
+def test_no_correlation_column_was_added_to_the_shared_schema(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """TC-B7. M01 carries correlation; M02 persists it."""
+
+    import psycopg
+
+    with psycopg.connect(postgres_harness.admin_conninfo) as conn:
+        rows = conn.execute(
+            """
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'shared'
+              AND column_name IN ('correlation_id', 'correlation_source')
+            """
+        ).fetchall()
+
+    assert rows == []

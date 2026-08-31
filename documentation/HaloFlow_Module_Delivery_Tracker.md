@@ -117,6 +117,27 @@ Last updated: 2026-08-30
   covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
   **not** granted here — each module registers its own prefix at its own design/content freeze.
 - **Next gate: the M01 debt PR.** No M02 migration is written until it lands.
+- Debt-PR review completed and **signed off 2026-08-31** (Requirements, Architecture, Unit Test Cases),
+  satisfying the project's pre-coding review rule. Package:
+  `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_m01-debt-pr-review-package.md` (v5).
+  Reviewed by ChatGPT; 12 decisions (D1-D12) resolved; 67 test cases. Delivered as **two PRs**:
+  PR-1 = `execution_id` rename, correlation contract, multi-capability issuance, public statement
+  catalogue, migration `002`. PR-2 = tenant provisioner, per-tenant migration runner, migration `003`.
+- Four findings against the merged `001`/M01 code were raised during the review and are scheduled into
+  those PRs:
+  - **F-1** `haloflow_provisioner` and `haloflow_migrator` are created by `001` with **no grants at
+    all**, though `permissions.json` already specifies the intended split. Closed by `003` (PR-2).
+  - **F-2** the private-API ownership check substring-matches a dotted name and so misses
+    `from ... import ...` forms. Closed by an AST check (PR-1).
+  - **F-3** `permissions.json` is never verified against actual database grants - both manifest tests
+    assert about the JSON itself - so M01-FR-013's acceptance criterion is not met, which is why F-1
+    went unnoticed. Closed by a catalogue-vs-manifest test (PR-2).
+  - **F-4** `001` grants `USAGE, SELECT` on `shared.access_audit_log_audit_id_seq` to two audit roles
+    that need neither (the column is `GENERATED ALWAYS AS IDENTITY`); the `SELECT` lets a role denied
+    SELECT on the table read `last_value`, i.e. the global audit row count across all tenants.
+    Verified on PostgreSQL 17.11. Revoked by `003` (PR-2).
+- Migration `002` data risk cleared 2026-08-31: all three `operation_id` columns verified empty on the
+  only environment where `001` has been applied. A PHI-safe preflight castability guard ships anyway.
 - Remaining production gates: OI-005 (provider capability evidence), OI-006 (retention, legal hold,
   disposition, correction authority), OI-009 (measured objectives, now including the Cloud KMS and
   reference-catalogue cold-start dependencies), and OI-010 revalidation before pilot.
