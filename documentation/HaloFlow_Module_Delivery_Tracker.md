@@ -8,15 +8,14 @@ Last updated: 2026-08-31
 per-tenant migration runner — is the single gate in front of all M02 implementation, and has not been
 started.** Its scope is fixed and needs no fresh review; see the M01 delivery notes below.
 
-Two items to check at the start of the next session:
+**CI is green on `main`.** The run was still pending when PR #5 was merged, and has since passed —
+confirming that PR-1's edit to `.github/workflows/m01.yml`, which added `src/haloflow/composition.py`
+to the ruff and mypy lines, works on GitHub's runner and not only locally. The gate is healthy going
+into PR-2. Merged branches have been deleted.
 
-1. **CI on `5eccdb7` was still pending when the PR was merged.** The merged tree is byte-identical to
-   `bbb9efc`, which passed the full gate locally (ruff, strict mypy, 125 tests on PostgreSQL 17.10), so
-   the code risk is nil — but the CI *run* has not been confirmed green. PR-1 edited
-   `.github/workflows/m01.yml`, so if anything is wrong it will be there.
-2. **Session handoff:** `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_session-handoff-next-session.md`
-   carries the working detail — environment traps, the test loop, decisions closed, and mistakes worth
-   not repeating.
+**Session handoff:** `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_session-handoff-next-session.md`
+carries the working detail — environment traps, the test loop, decisions closed, and mistakes worth not
+repeating.
 
 ## Status legend
 
