@@ -1081,3 +1081,71 @@ def test_no_correlation_column_was_added_to_the_shared_schema(
         ).fetchall()
 
     assert rows == []
+
+
+@pytest.mark.postgres
+def test_migration_002_lock_prevents_a_writer_racing_the_preflight(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """F-3. The guard scans, then converts; a writer must not slip in between.
+
+    What this proves: `002` takes ACCESS EXCLUSIVE on all three tables before it
+    scans, and while that lock is held a concurrent INSERT cannot land. What it
+    does not prove is the full interleaving of a real migration against a live
+    writer -- that is not deterministically testable -- so the mechanism the
+    migration depends on is asserted directly instead.
+    """
+
+    import psycopg
+    from psycopg.errors import QueryCanceled
+
+    holder_conninfo = postgres_harness.admin_conninfo
+    with (
+        psycopg.connect(holder_conninfo) as holder,
+        psycopg.connect(holder_conninfo, autocommit=True) as writer,
+    ):
+        # Same lock, same order, as LOCK_SQL in the migration.
+        holder.execute("LOCK TABLE shared.tenant_state_history IN ACCESS EXCLUSIVE MODE")
+        holder.execute("LOCK TABLE shared.access_audit_log IN ACCESS EXCLUSIVE MODE")
+        holder.execute("LOCK TABLE shared.isolation_alerts IN ACCESS EXCLUSIVE MODE")
+
+        writer.execute("SET statement_timeout = '750ms'")
+        with pytest.raises(QueryCanceled):
+            writer.execute(
+                """
+                INSERT INTO shared.isolation_alerts
+                    (alert_id, tenant_id, source_code, alert_type, severity, execution_id)
+                VALUES (gen_random_uuid(), NULL, 'race', 'race', 1, gen_random_uuid())
+                """
+            )
+        holder.rollback()
+
+        # Once the lock is released the same insert succeeds, proving the block
+        # above was the lock and not a broken statement.
+        writer.execute("SET statement_timeout = '5s'")
+        writer.execute(
+            """
+            INSERT INTO shared.isolation_alerts
+                (alert_id, tenant_id, source_code, alert_type, severity, execution_id)
+            VALUES (gen_random_uuid(), NULL, 'race', 'race', 1, gen_random_uuid())
+            """
+        )
+        writer.execute("DELETE FROM shared.isolation_alerts WHERE source_code = 'race'")
+
+
+@pytest.mark.postgres
+def test_migration_002_takes_the_lock_before_scanning(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """F-3. Ordering is the property that matters, so it is asserted on the source."""
+
+    from pathlib import Path
+
+    source = Path("alembic/versions/002_execution_id_rename.py").read_text()
+    upgrade_body = source[source.index("def upgrade()") :]
+
+    lock_at = upgrade_body.index("LOCK_SQL")
+    preflight_at = upgrade_body.index("PREFLIGHT_SQL")
+    rename_at = upgrade_body.index("RENAME_SQL")
+
+    assert lock_at < preflight_at < rename_at

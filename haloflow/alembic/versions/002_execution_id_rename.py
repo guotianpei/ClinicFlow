@@ -24,7 +24,9 @@ A note the guard's message carries, found by exercising it against a seeded bad
 value: `tenant_state_history` and `access_audit_log` are append-only, enforced by
 `001`'s `reject_append_only_change` trigger. A bad value in either cannot be
 fixed with an UPDATE, so "remediate and re-run" is not advice an operator could
-actually follow there. Only `isolation_alerts` is directly correctable.
+actually follow there. Only `isolation_alerts` is directly correctable. The
+message says plainly that no recovery procedure for the append-only tables is
+defined today rather than implying that one exists.
 """
 
 from alembic import op
@@ -44,6 +46,19 @@ depends_on = None
 #
 # The per-row loop is O(rows). These are control-plane tables, and all three are
 # empty in every environment where 001 has been applied.
+# The lock is taken BEFORE the scan and held to commit, closing a check/use race:
+# without it a concurrent writer could insert a non-castable value after its table
+# was scanned but before the ALTER, and the cast would then raise PostgreSQL's raw
+# error instead of the named, value-suppressing one this guard promises.
+# ACCESS EXCLUSIVE is what the ALTER TABLE needs anyway, so taking it up front adds
+# no blocking the migration did not already require.
+LOCK_SQL = """
+LOCK TABLE shared.tenant_state_history IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE shared.access_audit_log     IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE shared.isolation_alerts     IN ACCESS EXCLUSIVE MODE;
+"""
+
+
 PREFLIGHT_SQL = """
 DO $m01_002$
 DECLARE
@@ -75,11 +90,11 @@ BEGIN
         RAISE EXCEPTION
             'M01 migration 002 preflight failed: % value(s) in shared.*.operation_id '
             'cannot be cast to uuid. No schema change has been made. Values are '
-            'deliberately not reported. Note that tenant_state_history and '
-            'access_audit_log are append-only: their rows cannot be corrected by '
-            'UPDATE or DELETE, so remediation there requires the same '
-            'operator-approved procedure as an M01 downgrade. isolation_alerts '
-            'carries no append-only trigger and can be corrected directly.',
+            'deliberately not reported. isolation_alerts carries no append-only '
+            'trigger and can be corrected with an UPDATE. tenant_state_history and '
+            'access_audit_log are append-only and cannot be corrected by UPDATE or '
+            'DELETE: no recovery procedure for them is defined today, and one must '
+            'be approved before this migration is retried against such data.',
             offenders
         USING ERRCODE = 'data_exception';
     END IF;
@@ -110,6 +125,7 @@ COMMENT ON COLUMN shared.isolation_alerts.execution_id IS
 
 
 def upgrade() -> None:
+    op.execute(LOCK_SQL)
     op.execute(PREFLIGHT_SQL)
     op.execute(RENAME_SQL)
 

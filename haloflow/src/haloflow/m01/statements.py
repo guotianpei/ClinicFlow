@@ -110,14 +110,23 @@ class TenantStatementCatalog:
 
 @dataclass(frozen=True, slots=True)
 class CompiledCatalog:
-    """A composed, frozen catalogue plus the write capabilities derived from it.
+    """A composed, frozen catalogue whose write capabilities are derived from it.
 
-    ``write_capabilities`` is derived rather than supplied, so it cannot drift
-    from the SQL it describes (B2.9).
+    ``write_capabilities`` is a property computed from the catalogue's WRITE
+    statements, not a stored field. B2.9 requires that the two cannot drift; a
+    stored field could be supplied inconsistently by any caller, so there is
+    nothing to supply.
     """
 
     catalog: TenantStatementCatalog
-    write_capabilities: frozenset[str]
+
+    @property
+    def write_capabilities(self) -> frozenset[str]:
+        return frozenset(
+            statement.required_capability
+            for statement in self.catalog.statements()
+            if statement.mode is StatementMode.WRITE
+        )
 
 
 def _build_statement_catalog(definitions: StatementDefinitions) -> TenantStatementCatalog:
@@ -147,17 +156,16 @@ def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledC
                 raise RepositoryStatementRejected(reason_code="DUPLICATE_STATEMENT_KEY")
             merged[key] = definition
 
-    catalog = _build_statement_catalog(merged)
-    write_capabilities = frozenset(
-        statement.required_capability
-        for statement in catalog.statements()
-        if statement.mode is StatementMode.WRITE
-    )
-    return CompiledCatalog(catalog=catalog, write_capabilities=write_capabilities)
+    return CompiledCatalog(catalog=_build_statement_catalog(merged))
 
 
 # M01 owns no tenant-schema SQL of its own: its only shared-control read runs on
 # the control connection in `control_store`, outside this catalogue. The empty
 # set exists so the composition root has an M01 entry to compose and so the
 # convention is visible where a future M01 statement would be added.
+#
+# Production definition sets are named `M<NN>_STATEMENTS` and live only in
+# `haloflow.mNN.statements`. Both facts are enforced by repository-control tests,
+# because the statement-catalogue manifest is only a review gate if there is
+# exactly one composition path it can pin.
 M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({})

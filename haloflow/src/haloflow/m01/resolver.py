@@ -132,19 +132,21 @@ class TenantResolver:
         correlation_id: UUID,
         correlation_source: CorrelationSource,
     ) -> None:
+        # Request shape and runtime types are validated before any authorization
+        # comparison. Besides being the clearer failure taxonomy, it keeps a
+        # malformed container out of the subset test below: `["a"] <= frozenset()`
+        # raises a raw TypeError rather than a sanitized TenantDenied.
         if not TENANT_ID_PATTERN.fullmatch(tenant_hint):
             raise TenantDenied(reason_code="TENANT_HINT_INVALID")
-        if tenant_hint not in principal.authorized_tenant_ids:
-            raise TenantDenied(reason_code="TENANT_BINDING_MISMATCH")
+        if not isinstance(capabilities, frozenset | set):
+            raise TenantDenied(reason_code="CAPABILITIES_INVALID")
         # An empty request is malformed, not unauthorized: a context carrying no
         # capability can execute no statement. Reporting it as CAPABILITY_DENIED
         # would send an operator to look at the principal's grants instead.
         if not capabilities:
             raise TenantDenied(reason_code="CAPABILITIES_EMPTY")
-        if not capabilities <= principal.capabilities:
-            raise TenantDenied(reason_code="CAPABILITY_DENIED")
-        if purpose not in self._allowed_purposes or not PURPOSE_PATTERN.fullmatch(purpose):
-            raise TenantDenied(reason_code="PURPOSE_DENIED")
+        if not all(isinstance(capability, str) for capability in capabilities):
+            raise TenantDenied(reason_code="CAPABILITIES_INVALID")
         # Typed UUIDs, not parsed strings: canonical identity holds by
         # construction and parsing belongs to the entry point. The runtime check
         # stands because static typing does not bind an untyped caller.
@@ -154,3 +156,11 @@ class TenantResolver:
             raise TenantDenied(reason_code="CORRELATION_ID_INVALID")
         if not isinstance(correlation_source, CorrelationSource):
             raise TenantDenied(reason_code="CORRELATION_SOURCE_INVALID")
+        if purpose not in self._allowed_purposes or not PURPOSE_PATTERN.fullmatch(purpose):
+            raise TenantDenied(reason_code="PURPOSE_DENIED")
+
+        # Authorization comparisons, only once the request is well formed.
+        if tenant_hint not in principal.authorized_tenant_ids:
+            raise TenantDenied(reason_code="TENANT_BINDING_MISMATCH")
+        if not capabilities <= principal.capabilities:
+            raise TenantDenied(reason_code="CAPABILITY_DENIED")
