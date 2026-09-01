@@ -1,17 +1,24 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-01
+Last updated: 2026-09-01 (correction pass)
 
 ## Current position — read this first
 
 **PR-1 merged 2026-08-31** (PR #5, `5eccdb7`). **PR-2 — the tenant provisioner and per-tenant
-migration runner — is written, verified, and awaiting independent code review.** It is committed on
-`feat/m01-debt-pr2-provisioner` (`595593b`, 16 files, +2944 / -124) and **not yet pushed**. It remains
-the single gate in front of all M02 implementation until it merges.
+migration runner — is written, independently reviewed, corrected, and ready for Rachel to push.** It is
+committed on `feat/m01-debt-pr2-provisioner` (`595593b` implementation, `29d6599` tracker, `53d6425`
+review corrections) and **not yet pushed**. It remains the single gate in front of all M02
+implementation until it merges.
 
-**PR-2 gate result**, on PostgreSQL 17.10, run against a database created fresh from `001` → `003` and
-again as an upgrade over an existing `001`/`002` database: ruff clean, strict mypy clean, **182 tests
-pass**, up from the 125 baseline. Run twice, identical. `.github/workflows/m01.yml` needed no change —
+**ChatGPT reviewed it on 2026-09-01 and requested changes: four findings, two high.** All four are
+addressed in `53d6425`. Two were real transaction-correctness defects — an unrecoverable crash window
+between the DDL commit and the `applied` ledger write, and a silent dependency on `autocommit=True`
+that only the test factory supplied. The full disposition is in
+`Shared Workspace/ClinicFlow/Work Session 2026-09-01/claude_pr2-review-corrections.md`.
+
+**PR-2 gate result** after the corrections, on PostgreSQL 17.10 against a freshly created database:
+ruff clean, strict mypy clean, **188 tests pass**, up from the 125 baseline. Run twice, identical.
+126 of those need no database, which is the subset reviewable on the Mac without a server running. `.github/workflows/m01.yml` needed no change —
 the new package sits under `src/haloflow/m01`, which the ruff and mypy lines already cover, and
 `test_ci_workflow_covers_every_checked_production_path` still passes.
 
@@ -61,8 +68,8 @@ the PR-2 review package.
 
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and debt PR-1 merged; debt PR-2 written and verified, in review, not pushed; production readiness remains |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; implementation gated on M01 debt PR-2, which is now in review |
+| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and debt PR-1 merged; debt PR-2 written, reviewed and corrected, not pushed; production readiness remains |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; implementation gated on M01 debt PR-2, which is now reviewed and corrected, awaiting push |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -159,6 +166,19 @@ the PR-2 review package.
     units cannot enter the production registry, only the composition root composes one, and no
     production module passes `allow_test_units`.
 
+- **R-E7 IS NOT SATISFIED BY PR-2 — carried forward to M02 as an explicit gate.** The provisioner
+  originally shipped a `TenantObjectInstaller` hook, and ChatGPT's review found that it handed a
+  module-supplied callback the live provisioner-role connection: a role that owns every tenant schema
+  and can write the tenant registry, with nothing in the interface confining an installer to the schema
+  it was given. Rachel's disposition on 2026-09-01 was to **remove it rather than narrow it**, because
+  M02 has no current consumer and PR-2 should not freeze a privileged contract against guessed
+  requirements. Ordinary per-tenant objects are contributed as migration units through the registry,
+  which the runner already takes as an argument; that extension point is retained and tested.
+  **M02 must settle its own per-tenant installation mechanism — with the function owner, ACL and pinned
+  `search_path` its SECURITY DEFINER functions actually require — before its implementation begins.**
+  A repository control now fails on any Protocol method taking a connection, or any constructor
+  parameter named like a module callback, anywhere in the provisioning package.
+
 - **D13 — tenant-schema ownership (decided 2026-09-01, Rachel).** Tenant schemas are owned by
   `haloflow_provisioner`; `permissions.json` moves the `tenant_schema:ownership` token from
   `haloflow_owner` to `haloflow_provisioner`. The signed-off Part 2E step 2 —
@@ -213,8 +233,9 @@ the PR-2 review package.
   covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
   **not** granted here — each module registers its own prefix at its own design/content freeze.
 - **Next gate: M01 debt PR-2** (tenant provisioner and per-tenant migration runner). PR-1 merged
-  2026-08-31; PR-2 written and verified 2026-09-01 and now in code review. No M02 migration is
-  written until PR-2 merges.
+  2026-08-31; PR-2 written, reviewed and corrected 2026-09-01. No M02 migration is written until
+  PR-2 merges. **A second M02 precondition was added by that review: R-E7 is not satisfied, so M02
+  must settle its own per-tenant object-installation mechanism before implementation begins.**
 - Debt-PR review completed and **signed off 2026-08-31** (Requirements, Architecture, Unit Test Cases),
   satisfying the project's pre-coding review rule. Package:
   `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_m01-debt-pr-review-package.md` (v5).
