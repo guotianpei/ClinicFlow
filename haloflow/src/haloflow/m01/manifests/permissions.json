@@ -1,6 +1,6 @@
 {
   "haloflow_owner": {
-    "allow": ["shared:ownership", "tenant_schema:ownership"],
+    "allow": ["shared:ownership"],
     "deny": ["database:login"]
   },
   "haloflow_runtime": {
@@ -18,11 +18,30 @@
   },
   "haloflow_migrator": {
     "allow": ["tenant_schema:checksummed_ddl", "shared.schema_migrations:controlled_write"],
-    "deny": ["database:login", "tenant_schema:business_runtime"]
+    "deny": [
+      "database:login",
+      "tenant_schema:business_runtime",
+      "tenant_schema:ownership",
+      "shared.tenants:write",
+      "shared.tenant_state_history:any",
+      "role:standing_membership"
+    ]
   },
   "haloflow_provisioner": {
-    "allow": ["tenant_schema:provision", "shared.tenants:controlled_write"],
-    "deny": ["database:login", "tenant_schema:business_runtime"]
+    "allow": [
+      "tenant_schema:ownership",
+      "tenant_schema:provision",
+      "shared.tenants:controlled_write",
+      "shared.tenant_state_history:insert",
+      "shared.schema_migrations:read"
+    ],
+    "deny": [
+      "database:login",
+      "tenant_schema:business_runtime",
+      "shared.schema_migrations:write",
+      "shared.tenant_state_history:update,delete",
+      "role:standing_membership"
+    ]
   },
   "haloflow_audit_projector": {
     "allow": [
@@ -31,20 +50,24 @@
     ],
     "deny": [
       "tenant_schema:business_dml",
-      "shared.access_audit_log:update,delete,truncate"
+      "shared.access_audit_log:update,delete,truncate",
+      "shared.access_audit_log_audit_id_seq:usage,select"
     ]
   },
   "haloflow_control_audit_writer": {
     "allow": ["shared.access_audit_log:insert"],
-    "deny": ["shared.access_audit_log:update,delete,truncate"]
+    "deny": [
+      "shared.access_audit_log:update,delete,truncate",
+      "shared.access_audit_log_audit_id_seq:usage,select"
+    ]
   },
   "haloflow_support_ro": {
     "allow": ["tenant_schema:approved_support_read"],
-    "deny": ["database:login", "tenant_schema:write"]
+    "deny": ["database:login", "tenant_schema:write", "role:standing_membership"]
   },
   "haloflow_breakglass_ro": {
     "allow": ["tenant_schema:approved_emergency_read"],
-    "deny": ["database:login", "tenant_schema:write"]
+    "deny": ["database:login", "tenant_schema:write", "role:standing_membership"]
   },
   "haloflow_breakglass_rw": {
     "allow": ["tenant_schema:separately_approved_emergency_write"],

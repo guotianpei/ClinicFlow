@@ -1,0 +1,383 @@
+"""Tenant-schema provisioner (M01-FR-017).
+
+Ownership, settled as decision D13 on 2026-08-31 and verified on PostgreSQL
+17.10: a tenant schema is owned by ``haloflow_provisioner``. The signed-off
+design had the provisioner run ``CREATE SCHEMA ... AUTHORIZATION haloflow_owner``,
+which PostgreSQL refuses -- ``must be able to SET ROLE "haloflow_owner"`` -- and
+the membership that would allow it also hands the provisioner INSERT, DELETE and
+DROP over ``shared.access_audit_log``. Provisioner-owned tenant schemas need no
+membership anywhere and leave the control plane unreachable from this path.
+
+The sequence commits between steps so that a partially provisioned tenant is
+resumable rather than ambiguous (R-E2). A tenant that does not reach ``active``
+is refused by ``TenantResolver`` with ``TENANT_NOT_ACTIVE``: the fail-closed path
+that already exists does the work, and this module adds no second denial
+mechanism that could disagree with it.
+"""
+
+from collections.abc import Awaitable, Sequence
+from dataclasses import dataclass
+from typing import Protocol
+from uuid import UUID
+
+from psycopg import AsyncConnection, sql
+from psycopg import Error as PsycopgError
+
+from haloflow.m01.errors import ProvisioningFailed
+from haloflow.m01.provisioning.codes import SanitizedErrorCode
+from haloflow.m01.provisioning.roles import (
+    AUDIT_PROJECTOR_ROLE,
+    MIGRATOR_ROLE,
+    PROVISIONER_ROLE,
+    RUNTIME_ROLE,
+)
+from haloflow.m01.provisioning.runner import ConnectionFactory, TenantMigrationRunner
+from haloflow.m01.resolver import (
+    SCHEMA_KEY_PATTERN,
+    TENANT_ID_PATTERN,
+    LifecycleState,
+)
+
+_ACTOR_KINDS = frozenset({"actor", "workload"})
+
+
+class TenantObjectInstaller(Protocol):
+    """R-E7: the per-tenant object-installation extension point.
+
+    M02 contributes ``m02_lock_operation`` and ``m02_begin_key_scope`` through
+    this hook without changing the provisioner contract. M01 ships the mechanism
+    and none of those objects.
+
+    Installers are trusted and supplied once at composition time, in the same
+    sense as an approved statement definition set: an installer receives a live
+    provisioner-role connection, so it is production code under review, not a
+    runtime plug-in point.
+    """
+
+    @property
+    def module_id(self) -> str: ...
+
+    def install(self, connection: AsyncConnection, *, schema_key: str) -> Awaitable[None]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisioningRequest:
+    tenant_id: str
+    schema_key: str
+    actor_id: str
+    execution_id: UUID
+    actor_kind: str = "workload"
+    display_reference: str | None = None
+    reason_code: str = "tenant_provisioned"
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisioningOutcome:
+    tenant_id: str
+    schema_key: str
+    schema_version: int
+    applied_migrations: tuple[str, ...]
+    resumed: bool
+
+
+class TenantProvisioner:
+    """Allocates, builds, verifies and activates one tenant schema."""
+
+    def __init__(
+        self,
+        connect: ConnectionFactory,
+        runner: TenantMigrationRunner,
+        *,
+        supported_schema_versions: Sequence[int] | frozenset[int] | range,
+        object_installers: tuple[TenantObjectInstaller, ...] = (),
+    ) -> None:
+        self._connect = connect
+        self._runner = runner
+        self._supported_schema_versions = frozenset(supported_schema_versions)
+        self._object_installers = object_installers
+
+    async def provision(self, request: ProvisioningRequest) -> ProvisioningOutcome:
+        _validate_request(request)
+        target_version = self._runner.registry.target_version
+        if target_version not in self._supported_schema_versions:
+            # R-E10. Provisioning a tenant the resolver would then refuse is a
+            # configuration error, and it is cheaper to fail before the schema
+            # exists than to leave an unusable tenant behind.
+            raise ProvisioningFailed(reason_code="SCHEMA_VERSION_UNSUPPORTED")
+
+        connection = await self._connect()
+        try:
+            await _assume_provisioner(connection)
+            # One lock for the whole sequence, so a second provisioner cannot
+            # interleave with this one between its commits either.
+            async with self._runner.tenant_lock(request.tenant_id):
+                resumed = await self._register_tenant(connection, request, target_version)
+                await self._create_schema(connection, request)
+                applied = await self._runner.apply_within_lock(
+                    tenant_id=request.tenant_id, schema_key=request.schema_key
+                )
+                await self._install_module_objects(connection, request)
+                await self._apply_grants(connection, request)
+                await self._verify(connection, request)
+                await self._activate(connection, request, target_version)
+        finally:
+            await connection.close()
+
+        return ProvisioningOutcome(
+            tenant_id=request.tenant_id,
+            schema_key=request.schema_key,
+            schema_version=target_version,
+            applied_migrations=tuple(
+                outcome.migration_id for outcome in applied if outcome.applied
+            ),
+            resumed=resumed,
+        )
+
+    # -- step 1 ------------------------------------------------------------
+    async def _register_tenant(
+        self, connection: AsyncConnection, request: ProvisioningRequest, version: int
+    ) -> bool:
+        """Insert or resume the registry row. Returns True when resuming."""
+
+        try:
+            async with connection.transaction():
+                row = await (
+                    await connection.execute(
+                        """
+                        SELECT schema_key, lifecycle_state, schema_version
+                        FROM shared.tenants
+                        WHERE tenant_id = %s
+                        """,
+                        (request.tenant_id,),
+                    )
+                ).fetchone()
+
+                if row is None:
+                    await connection.execute(
+                        """
+                        INSERT INTO shared.tenants
+                            (tenant_id, schema_key, lifecycle_state, schema_version,
+                             display_reference)
+                        VALUES (%s, %s, 'provisioning', %s, %s)
+                        """,
+                        (
+                            request.tenant_id,
+                            request.schema_key,
+                            version,
+                            request.display_reference,
+                        ),
+                    )
+                    return False
+
+                schema_key, lifecycle_state, _ = row
+                if lifecycle_state != LifecycleState.PROVISIONING.value:
+                    # An active, suspended or archived tenant is not something a
+                    # provisioning run may adopt. R-E2's resume window is exactly
+                    # the `provisioning` state, which is also the only state the
+                    # 001 immutability trigger permits a schema_key change in.
+                    raise ProvisioningFailed(reason_code="TENANT_NOT_RESUMABLE")
+                if schema_key != request.schema_key:
+                    # Never a second identity for one tenant (R-E2): the run is
+                    # refused rather than silently rebinding the tenant to a new
+                    # schema and orphaning the first one.
+                    raise ProvisioningFailed(reason_code="SCHEMA_KEY_CONFLICT")
+                return True
+        except PsycopgError as error:
+            raise ProvisioningFailed(
+                reason_code=SanitizedErrorCode.REGISTRY_WRITE_FAILED.value
+            ) from _sanitize(error)
+
+    # -- step 2 ------------------------------------------------------------
+    async def _create_schema(
+        self, connection: AsyncConnection, request: ProvisioningRequest
+    ) -> None:
+        schema = sql.Identifier(request.schema_key)
+        try:
+            async with connection.transaction():
+                # IF NOT EXISTS makes step 2 resumable. The schema is owned by the
+                # provisioner (D13), so no AUTHORIZATION clause and no membership.
+                await connection.execute(
+                    sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(schema)
+                )
+                # The migrator needs CREATE to run per-tenant DDL, and USAGE to
+                # reach what it created. It gets nothing else here, and the
+                # runtime role deliberately never gets CREATE.
+                await connection.execute(
+                    sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {}").format(
+                        schema, sql.Identifier(MIGRATOR_ROLE)
+                    )
+                )
+        except PsycopgError as error:
+            raise ProvisioningFailed(
+                reason_code=SanitizedErrorCode.SCHEMA_CREATE_FAILED.value
+            ) from _sanitize(error)
+
+    # -- step 3.5 ----------------------------------------------------------
+    async def _install_module_objects(
+        self, connection: AsyncConnection, request: ProvisioningRequest
+    ) -> None:
+        for installer in self._object_installers:
+            try:
+                async with connection.transaction():
+                    await installer.install(connection, schema_key=request.schema_key)
+            except PsycopgError as error:
+                raise ProvisioningFailed(
+                    reason_code=SanitizedErrorCode.OBJECT_INSTALL_FAILED.value
+                ) from _sanitize(error)
+
+    # -- step 4 ------------------------------------------------------------
+    async def _apply_grants(
+        self, connection: AsyncConnection, request: ProvisioningRequest
+    ) -> None:
+        schema = sql.Identifier(request.schema_key)
+        try:
+            async with connection.transaction():
+                await connection.execute(
+                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                        schema, sql.Identifier(RUNTIME_ROLE)
+                    )
+                )
+                await connection.execute(
+                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                        schema, sql.Identifier(AUDIT_PROJECTOR_ROLE)
+                    )
+                )
+        except PsycopgError as error:
+            raise ProvisioningFailed(
+                reason_code=SanitizedErrorCode.GRANT_APPLY_FAILED.value
+            ) from _sanitize(error)
+
+    # -- step 5 ------------------------------------------------------------
+    async def _verify(self, connection: AsyncConnection, request: ProvisioningRequest) -> None:
+        """Read the outcome back from the catalogue rather than assuming it.
+
+        Every check is a catalogue question, not an inference from a statement
+        having succeeded: a GRANT that ran is not evidence that the privilege
+        landed the way the manifest says it should.
+        """
+
+        row = await (
+            await connection.execute(
+                """
+                SELECT
+                    (SELECT count(*) FROM pg_namespace WHERE nspname = %s),
+                    has_schema_privilege(%s, %s, 'USAGE'),
+                    has_schema_privilege(%s, %s, 'CREATE'),
+                    has_schema_privilege(%s, %s, 'USAGE'),
+                    to_regclass(%s) IS NOT NULL
+                """,
+                (
+                    request.schema_key,
+                    RUNTIME_ROLE,
+                    request.schema_key,
+                    RUNTIME_ROLE,
+                    request.schema_key,
+                    AUDIT_PROJECTOR_ROLE,
+                    request.schema_key,
+                    f"{request.schema_key}.access_audit_outbox",
+                ),
+            )
+        ).fetchone()
+
+        if row is None:
+            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+        schema_count, runtime_usage, runtime_create, projector_usage, outbox_present = row
+        if not (
+            schema_count == 1
+            and runtime_usage
+            and not runtime_create  # the runtime role must never hold DDL
+            and projector_usage
+            and outbox_present
+        ):
+            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+
+        await self._verify_cross_tenant_probe(connection, request)
+
+    async def _verify_cross_tenant_probe(
+        self, connection: AsyncConnection, request: ProvisioningRequest
+    ) -> None:
+        """A negative probe: the runtime role must not reach another tenant.
+
+        Asserted against every *other* provisioned schema, so the check has real
+        content on the second tenant onward rather than being vacuously true.
+        """
+
+        rows = await (
+            await connection.execute(
+                """
+                SELECT n.nspname, has_schema_privilege(%s, n.nspname, 'CREATE')
+                FROM pg_namespace AS n
+                JOIN shared.tenants AS t ON t.schema_key = n.nspname
+                WHERE n.nspname <> %s
+                """,
+                (RUNTIME_ROLE, request.schema_key),
+            )
+        ).fetchall()
+        if any(can_create for _, can_create in rows):
+            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+
+    # -- step 6 ------------------------------------------------------------
+    async def _activate(
+        self, connection: AsyncConnection, request: ProvisioningRequest, version: int
+    ) -> None:
+        try:
+            async with connection.transaction():
+                await connection.execute(
+                    """
+                    UPDATE shared.tenants
+                       SET lifecycle_state = 'active',
+                           schema_version = %s,
+                           updated_at = statement_timestamp()
+                     WHERE tenant_id = %s AND lifecycle_state = 'provisioning'
+                    """,
+                    (version, request.tenant_id),
+                )
+                await connection.execute(
+                    """
+                    INSERT INTO shared.tenant_state_history
+                        (tenant_id, prior_state, new_state, reason_code,
+                         actor_kind, actor_id, execution_id)
+                    VALUES (%s, 'provisioning', 'active', %s, %s, %s, %s)
+                    """,
+                    (
+                        request.tenant_id,
+                        request.reason_code,
+                        request.actor_kind,
+                        request.actor_id,
+                        request.execution_id,
+                    ),
+                )
+        except PsycopgError as error:
+            raise ProvisioningFailed(
+                reason_code=SanitizedErrorCode.REGISTRY_WRITE_FAILED.value
+            ) from _sanitize(error)
+
+async def _assume_provisioner(connection: AsyncConnection) -> None:
+    await connection.execute("SET search_path = pg_catalog")
+    await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+
+
+def _validate_request(request: ProvisioningRequest) -> None:
+    if not TENANT_ID_PATTERN.fullmatch(request.tenant_id):
+        raise ProvisioningFailed(reason_code="TENANT_ID_INVALID")
+    if not SCHEMA_KEY_PATTERN.fullmatch(request.schema_key):
+        raise ProvisioningFailed(reason_code="SCHEMA_KEY_INVALID")
+    if request.actor_kind not in _ACTOR_KINDS:
+        raise ProvisioningFailed(reason_code="ACTOR_KIND_INVALID")
+    if not request.actor_id:
+        raise ProvisioningFailed(reason_code="ACTOR_ID_REQUIRED")
+    if not isinstance(request.execution_id, UUID):
+        raise ProvisioningFailed(reason_code="EXECUTION_ID_INVALID")
+
+
+def _sanitize(error: PsycopgError) -> Exception:
+    sqlstate = getattr(error, "sqlstate", None) or "unknown"
+    return RuntimeError(f"database error, sqlstate {sqlstate}")
+
+
+__all__ = [
+    "ProvisioningOutcome",
+    "ProvisioningRequest",
+    "TenantObjectInstaller",
+    "TenantProvisioner",
+]

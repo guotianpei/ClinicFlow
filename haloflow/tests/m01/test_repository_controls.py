@@ -384,3 +384,88 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
         if str(path).startswith("src/haloflow/modules/"):
             continue  # legacy bypass modules, tracked separately
         assert any(str(path).startswith(prefix.rstrip(".py")) for prefix in checked), path
+
+
+# --- per-tenant migration registry controls (R-E12) ------------------------
+
+
+def _migration_composition_violations_in(path: str, source: str) -> list[str]:
+    """Production code outside the composition root may not compose a registry.
+
+    The same rule as the statement catalogue, for the same reason: a second
+    composition path would mean the production registry is not reviewable in one
+    place, and a test-only unit could reach a real tenant schema through it.
+    """
+
+    violations: list[str] = []
+    if path == COMPOSITION_ROOT:
+        return violations
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "build_tenant_migration_registry":
+                    violations.append(f"{path}: imports build_tenant_migration_registry")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else func.id
+                if isinstance(func, ast.Name)
+                else ""
+            )
+            if name == "build_tenant_migration_registry":
+                violations.append(f"{path}: calls build_tenant_migration_registry")
+    return violations
+
+
+def _test_unit_escape_violations_in(path: str, source: str) -> list[str]:
+    """R-E12: no production module may switch the test-unit gate off."""
+
+    violations: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.keyword) and node.arg == "allow_test_units":
+            violations.append(f"{path}: passes allow_test_units")
+    return violations
+
+
+def test_only_the_composition_root_composes_a_tenant_migration_registry() -> None:
+    violations: list[str] = []
+    for path in Path("src/haloflow").rglob("*.py"):
+        # The package that defines the builder necessarily names it; the rule is
+        # about *composing* a registry, which is a call or an import elsewhere.
+        if str(path) == "src/haloflow/m01/provisioning/units.py":
+            continue
+        violations.extend(_migration_composition_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_no_production_module_allows_test_migration_units() -> None:
+    """R-E12. A test-only unit cannot enter the production registry."""
+
+    violations: list[str] = []
+    for path in Path("src/haloflow").rglob("*.py"):
+        if str(path) == "src/haloflow/m01/provisioning/units.py":
+            continue  # defines the parameter; does not pass it
+        violations.extend(_test_unit_escape_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_the_test_unit_controls_fail_when_they_should() -> None:
+    """Negative control: both checks above catch the thing they name."""
+
+    app = "src/haloflow/modules/rogue/service.py"
+    assert _migration_composition_violations_in(
+        app, "from haloflow.m01.provisioning import build_tenant_migration_registry\n"
+    )
+    assert _migration_composition_violations_in(
+        app, "registry = build_tenant_migration_registry({})\n"
+    )
+    assert _test_unit_escape_violations_in(
+        app, "registry = build_tenant_migration_registry({}, allow_test_units=True)\n"
+    )
+    assert _migration_composition_violations_in(
+        COMPOSITION_ROOT, "registry = build_tenant_migration_registry({})\n"
+    ) == []

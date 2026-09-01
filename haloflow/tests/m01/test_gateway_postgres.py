@@ -1,7 +1,6 @@
 import asyncio
 import json
-import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -9,7 +8,6 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import pytest
 import pytest_asyncio
-from alembic.config import Config
 from psycopg import AsyncConnection, sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg.errors import (
@@ -19,7 +17,6 @@ from psycopg.errors import (
     UndefinedTable,
 )
 
-from alembic import command
 from haloflow.m01.context import (
     CorrelationSource,
     Principal,
@@ -42,14 +39,24 @@ from haloflow.m01.gateway import (
     TransactionOptions,
 )
 from haloflow.m01.pool import TenantPool
+from haloflow.m01.provisioning import (
+    MIGRATOR_ROLE,
+    PROVISIONER_ROLE,
+    ProvisioningRequest,
+    TenantMigrationRegistry,
+    TenantMigrationRunner,
+    TenantProvisioner,
+)
+from haloflow.m01.provisioning.units import (
+    TENANT_MIGRATIONS,
+    build_tenant_migration_registry,
+)
 from haloflow.m01.resolver import TenantResolver
 from haloflow.m01.statements import StatementMode, build_statement_catalog
 
 pytestmark = pytest.mark.postgres
 
 RUNTIME_ROLE = "haloflow_runtime"
-RUNTIME_LOGIN_ROLE = "haloflow_test_runtime_login"
-RUNTIME_PASSWORD = "m01-local-test-only"
 M01_ROOT = Path("src/haloflow/m01")
 
 TEST_CATALOG = build_statement_catalog(
@@ -108,11 +115,53 @@ class PostgresHarness:
     runtime_conninfo: str
 
 
-def _test_conninfo() -> str:
-    conninfo = os.getenv("HALOFLOW_TEST_DATABASE_URL")
-    if not conninfo:
-        pytest.skip("HALOFLOW_TEST_DATABASE_URL is not configured")
-    return conninfo
+# D11, as refined in review: the isolation suite runs against **provisioner-built**
+# schemas, which is the strongest available evidence that the provisioner is
+# correct, and one deliberately minimal hand-built schema is kept alongside them.
+# A consistently wrong provisioner would otherwise become the test oracle for
+# every gateway behaviour it is supposed to be validated by; `tenant_cccccccc` is
+# the independent control, exercised in `test_provisioning_postgres.py`.
+PROVISIONED_TENANTS: tuple[tuple[str, str, str], ...] = (
+    ("clinic-a", "tenant_aaaaaaaa", "tenant-a"),
+    ("clinic-b", "tenant_bbbbbbbb", "tenant-b"),
+)
+CONTROL_TENANT = ("clinic-c", "tenant_cccccccc", "tenant-c")
+
+# A test-only migration unit, supplied explicitly by the tests and composed
+# through the same trusted builder as production (R-E12). It installs the probe
+# table the isolation suite needs. It cannot reach the production registry: that
+# is `build_production_tenant_migrations`, which never passes `allow_test_units`.
+TEST_ISOLATION_PROBE_SQL = """
+CREATE TABLE {schema}.isolation_probe (
+    business_id integer PRIMARY KEY,
+    marker text NOT NULL
+);
+"""
+TEST_TENANT_MIGRATIONS = {"t001_test_isolation_probe": TEST_ISOLATION_PROBE_SQL}
+
+
+def _connection_factory(conninfo: str) -> Callable[[], Awaitable[AsyncConnection]]:
+    async def _connect() -> AsyncConnection:
+        return await AsyncConnection.connect(conninfo, autocommit=True)
+
+    return _connect
+
+
+def build_test_registry() -> TenantMigrationRegistry:
+    return build_tenant_migration_registry(
+        TENANT_MIGRATIONS, TEST_TENANT_MIGRATIONS, allow_test_units=True
+    )
+
+
+def build_test_provisioner(role_logins: dict[str, str]) -> TenantProvisioner:
+    runner = TenantMigrationRunner(
+        _connection_factory(role_logins[MIGRATOR_ROLE]), build_test_registry()
+    )
+    return TenantProvisioner(
+        _connection_factory(role_logins[PROVISIONER_ROLE]),
+        runner,
+        supported_schema_versions=range(1, 2),
+    )
 
 
 async def _execute_admin(conninfo: str, *statements: str) -> None:
@@ -121,129 +170,91 @@ async def _execute_admin(conninfo: str, *statements: str) -> None:
             await conn.execute(statement)
 
 
-async def _drop_runtime_login_role(connection: AsyncConnection) -> None:
-    exists = await (
-        await connection.execute(
-            "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = %s)",
-            (RUNTIME_LOGIN_ROLE,),
-        )
-    ).fetchone()
-    if exists and exists[0]:
-        await connection.execute(
-            sql.SQL("DROP OWNED BY {}").format(sql.Identifier(RUNTIME_LOGIN_ROLE))
-        )
-        await connection.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(RUNTIME_LOGIN_ROLE)))
-
-
-def _database_url(params: dict[str, object], dbname: str) -> str:
-    """Build a postgresql:// URL, which is what alembic/env.py can rewrite."""
-
-    user = params.get("user") or "postgres"
-    password = params.get("password")
-    credentials = f"{user}:{password}" if password else f"{user}"
-    host = params.get("host") or "127.0.0.1"
-    port = params.get("port") or 5432
-    return f"postgresql://{credentials}@{host}:{port}/{dbname}"
-
-
-def _apply_migrations(conninfo: str, revision: str = "head") -> None:
-    previous = os.environ.get("HALOFLOW_MIGRATION_DATABASE_URL")
-    os.environ["HALOFLOW_MIGRATION_DATABASE_URL"] = conninfo
-    try:
-        command.upgrade(Config("alembic.ini"), revision)
-    finally:
-        if previous is None:
-            os.environ.pop("HALOFLOW_MIGRATION_DATABASE_URL", None)
-        else:
-            os.environ["HALOFLOW_MIGRATION_DATABASE_URL"] = previous
-
-
 @pytest_asyncio.fixture(scope="session")
-async def postgres_harness() -> AsyncIterator[PostgresHarness]:
-    admin_conninfo = _test_conninfo()
-    _apply_migrations(admin_conninfo)
-    async with await AsyncConnection.connect(admin_conninfo, autocommit=True) as admin:
-        version = int((await (await admin.execute("SHOW server_version_num")).fetchone())[0])
-        database = (await (await admin.execute("SELECT current_database()")).fetchone())[0]
-        if version < 170000:
-            pytest.fail(f"M01 tests require PostgreSQL 17+, found {version}")
-        if not str(database).startswith("haloflow_test"):
-            pytest.fail("Refusing to initialize a database not named haloflow_test*")
+async def postgres_harness(
+    migrated_database: str,
+    role_logins: dict[str, str],
+    reset_tenants: Callable[[str, Sequence[str], Sequence[str]], None],
+) -> AsyncIterator[PostgresHarness]:
+    admin_conninfo = migrated_database
+    tenants = (*PROVISIONED_TENANTS, CONTROL_TENANT)
+    reset_tenants(
+        admin_conninfo,
+        [tenant_id for tenant_id, _, _ in tenants],
+        [schema_key for _, schema_key, _ in tenants],
+    )
 
-        await admin.execute("DROP SCHEMA IF EXISTS tenant_aaaaaaaa CASCADE")
-        await admin.execute("DROP SCHEMA IF EXISTS tenant_bbbbbbbb CASCADE")
-        await _drop_runtime_login_role(admin)
+    provisioner = build_test_provisioner(role_logins)
+    for tenant_id, schema_key, _ in PROVISIONED_TENANTS:
+        await provisioner.provision(
+            ProvisioningRequest(
+                tenant_id=tenant_id,
+                schema_key=schema_key,
+                actor_id="integration-test-harness",
+                execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:provision:{tenant_id}"),
+            )
+        )
+
+    async with await AsyncConnection.connect(admin_conninfo, autocommit=True) as admin:
+        # The independent hand-built control. Deliberately minimal: schema, probe
+        # table, outbox, grants -- enough to prove isolation and per-statement
+        # capability enforcement against a schema the provisioner did not produce.
+        control_id, control_schema, control_marker = CONTROL_TENANT
+        control = sql.Identifier(control_schema)
+        await admin.execute(sql.SQL("CREATE SCHEMA {}").format(control))
         await admin.execute(
-            "DELETE FROM shared.tenants WHERE tenant_id IN ('clinic-a', 'clinic-b')"
+            sql.SQL(
+                "CREATE TABLE {}.isolation_probe "
+                "(business_id integer PRIMARY KEY, marker text NOT NULL)"
+            ).format(control)
         )
         await admin.execute(
-            sql.SQL("CREATE ROLE {} LOGIN PASSWORD {} IN ROLE {}").format(
-                sql.Identifier(RUNTIME_LOGIN_ROLE),
-                sql.Literal(RUNTIME_PASSWORD),
-                sql.Identifier(RUNTIME_ROLE),
+            sql.SQL(
+                "CREATE TABLE {}.access_audit_outbox "
+                "(source_event_id uuid PRIMARY KEY, action_code text NOT NULL)"
+            ).format(control)
+        )
+        await admin.execute(
+            sql.SQL("INSERT INTO {}.isolation_probe VALUES (42, %s)").format(control),
+            (control_marker,),
+        )
+        await admin.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                control, sql.Identifier(RUNTIME_ROLE)
             )
         )
         await admin.execute(
-            sql.SQL("ALTER ROLE {} SET search_path = ''").format(sql.Identifier(RUNTIME_LOGIN_ROLE))
+            sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}").format(
+                control, sql.Identifier(RUNTIME_ROLE)
+            )
         )
-
         await admin.execute(
             """
             INSERT INTO shared.tenants
                 (tenant_id, schema_key, lifecycle_state, schema_version)
-            VALUES
-                ('clinic-a', 'tenant_aaaaaaaa', 'active', 1),
-                ('clinic-b', 'tenant_bbbbbbbb', 'active', 1)
-            """
+            VALUES (%s, %s, 'active', 1)
+            """,
+            (control_id, control_schema),
         )
 
-        for schema_key, marker in (
-            ("tenant_aaaaaaaa", "tenant-a"),
-            ("tenant_bbbbbbbb", "tenant-b"),
-        ):
-            schema_identifier = sql.Identifier(schema_key)
-            await admin.execute(sql.SQL("CREATE SCHEMA {}").format(schema_identifier))
+        # Seed the probe rows the isolation suite reads. The provisioner installs
+        # no business data, which is correct: `t001` is an infrastructure
+        # baseline, not a fixture.
+        for _, schema_key, marker in PROVISIONED_TENANTS:
             await admin.execute(
-                sql.SQL(
-                    "CREATE TABLE {}.isolation_probe "
-                    "(business_id integer PRIMARY KEY, marker text NOT NULL)"
-                ).format(schema_identifier)
-            )
-            await admin.execute(
-                sql.SQL(
-                    "CREATE TABLE {}.access_audit_outbox "
-                    "(source_event_id uuid PRIMARY KEY, action_code text NOT NULL)"
-                ).format(schema_identifier)
-            )
-            await admin.execute(
-                sql.SQL("INSERT INTO {}.isolation_probe VALUES (42, %s)").format(schema_identifier),
+                sql.SQL("INSERT INTO {}.isolation_probe VALUES (42, %s)").format(
+                    sql.Identifier(schema_key)
+                ),
                 (marker,),
             )
 
-        for schema_key in ("tenant_aaaaaaaa", "tenant_bbbbbbbb"):
-            await admin.execute(
-                sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                    sql.Identifier(schema_key), sql.Identifier(RUNTIME_ROLE)
-                )
-            )
-            await admin.execute(
-                sql.SQL(
-                    "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {} TO {}"
-                ).format(sql.Identifier(schema_key), sql.Identifier(RUNTIME_ROLE))
-            )
+    yield PostgresHarness(admin_conninfo, role_logins[RUNTIME_ROLE])
 
-    params = conninfo_to_dict(admin_conninfo)
-    params.update(user=RUNTIME_LOGIN_ROLE, password=RUNTIME_PASSWORD)
-    runtime_conninfo = make_conninfo(**params)
-    yield PostgresHarness(admin_conninfo, runtime_conninfo)
-
-    async with await AsyncConnection.connect(admin_conninfo, autocommit=True) as admin:
-        await admin.execute("DROP SCHEMA IF EXISTS tenant_aaaaaaaa CASCADE")
-        await admin.execute("DROP SCHEMA IF EXISTS tenant_bbbbbbbb CASCADE")
-        await admin.execute(
-            "DELETE FROM shared.tenants WHERE tenant_id IN ('clinic-a', 'clinic-b')"
-        )
-        await _drop_runtime_login_role(admin)
+    reset_tenants(
+        admin_conninfo,
+        [tenant_id for tenant_id, _, _ in tenants],
+        [schema_key for _, schema_key, _ in tenants],
+    )
 
 
 @pytest_asyncio.fixture
@@ -935,6 +946,8 @@ def test_migration_002_downgrade_raises() -> None:
 @pytest.mark.postgres
 def test_migration_002_preflight_blocks_a_non_castable_value(
     postgres_harness: PostgresHarness,
+    database_url: Callable[[dict[str, object], str], str],
+    apply_migrations: Callable[..., None],
 ) -> None:
     """TC-A9.
 
@@ -955,7 +968,7 @@ def test_migration_002_preflight_blocks_a_non_castable_value(
     # psycopg accepts a keyword/value conninfo, but alembic/env.py expects a URL
     # it can rewrite to postgresql+psycopg://, so the migration target is built
     # as a URL rather than reusing the keyword form.
-    scratch_url = _database_url(params, scratch)
+    scratch_url = database_url(params, scratch)
     scratch_conninfo = make_conninfo(**{**params, "dbname": scratch})
 
     with psycopg.connect(admin_conninfo, autocommit=True) as admin:
@@ -963,7 +976,7 @@ def test_migration_002_preflight_blocks_a_non_castable_value(
         admin.execute(f"CREATE DATABASE {scratch}")
 
     try:
-        _apply_migrations(scratch_url, revision="001")
+        apply_migrations(scratch_url, revision="001")
 
         with psycopg.connect(scratch_conninfo, autocommit=True) as conn:
             conn.execute(
@@ -982,7 +995,7 @@ def test_migration_002_preflight_blocks_a_non_castable_value(
             )
 
         with pytest.raises((DataError, DataException)) as error:
-            _apply_migrations(scratch_url, revision="002")
+            apply_migrations(scratch_url, revision="002")
         message = str(error.value)
         assert "preflight failed" in message
         assert "No schema change has been made" in message
@@ -1008,7 +1021,7 @@ def test_migration_002_preflight_blocks_a_non_castable_value(
             conn.execute(
                 "UPDATE shared.isolation_alerts SET operation_id = gen_random_uuid()::text"
             )
-        _apply_migrations(scratch_url, revision="002")
+        apply_migrations(scratch_url, revision="002")
 
         with psycopg.connect(scratch_conninfo) as conn:
             converted = conn.execute(
@@ -1149,3 +1162,46 @@ def test_migration_002_takes_the_lock_before_scanning(
     rename_at = upgrade_body.index("RENAME_SQL")
 
     assert lock_at < preflight_at < rename_at
+
+
+@pytest.mark.asyncio
+async def test_the_isolation_suite_schemas_were_built_by_the_provisioner(
+    postgres_harness: PostgresHarness,
+) -> None:
+    """TC-E14 and the D11 hybrid control.
+
+    `clinic-a` and `clinic-b` carry applied ledger rows and provisioner-owned
+    schemas, so every test in this module now runs against schemas the
+    provisioner produced. `clinic-c` deliberately does not: it is hand-built, so
+    a consistently wrong provisioner cannot become the oracle for every gateway
+    behaviour it is itself meant to be validated by.
+    """
+
+    async with await AsyncConnection.connect(
+        postgres_harness.admin_conninfo, autocommit=True
+    ) as admin:
+        rows = await (
+            await admin.execute(
+                """
+                SELECT t.tenant_id,
+                       pg_get_userbyid(n.nspowner),
+                       (SELECT count(*) FROM shared.schema_migrations AS m
+                         WHERE m.tenant_id = t.tenant_id AND m.state = 'applied')
+                FROM shared.tenants AS t
+                JOIN pg_namespace AS n ON n.nspname = t.schema_key
+                WHERE t.tenant_id IN ('clinic-a', 'clinic-b', 'clinic-c')
+                ORDER BY t.tenant_id
+                """
+            )
+        ).fetchall()
+
+    by_tenant = {tenant: (owner, applied) for tenant, owner, applied in rows}
+
+    for provisioned in ("clinic-a", "clinic-b"):
+        owner, applied = by_tenant[provisioned]
+        assert owner == PROVISIONER_ROLE
+        assert applied == 2  # the baseline plus the test-only isolation-probe unit
+
+    control_owner, control_applied = by_tenant["clinic-c"]
+    assert control_owner != PROVISIONER_ROLE
+    assert control_applied == 0

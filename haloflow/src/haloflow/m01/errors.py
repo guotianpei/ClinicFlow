@@ -61,3 +61,25 @@ class RepositoryStatementRejected(M01Error):
 
 class CapabilityDenied(M01Error):
     code = "CAPABILITY_DENIED"
+
+
+class MigrationUnitRejected(M01Error):
+    """A per-tenant migration unit or registry failed trusted construction."""
+
+    code = "MIGRATION_UNIT_REJECTED"
+
+
+class TenantMigrationFailed(M01Error):
+    """A per-tenant migration did not reach `applied`.
+
+    `reason_code` is always a member of `provisioning.SanitizedErrorCode` or a
+    request-shape code; it never carries a database message, SQL text, or a value.
+    """
+
+    code = "TENANT_MIGRATION_FAILED"
+
+
+class ProvisioningFailed(M01Error):
+    """Tenant provisioning stopped before activation. The tenant stays unusable."""
+
+    code = "PROVISIONING_FAILED"
