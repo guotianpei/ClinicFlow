@@ -8,6 +8,12 @@ produces. Without a single composition path the manifest would pin a constant
 rather than the catalogue the application actually runs.
 """
 
+from haloflow.m01.provisioning import TenantMigrationRegistry
+from haloflow.m01.provisioning.units import (
+    TENANT_MIGRATIONS,
+    UnitDefinitions,
+    build_tenant_migration_registry,
+)
 from haloflow.m01.statements import (
     M01_STATEMENTS,
     CompiledCatalog,
@@ -20,8 +26,20 @@ from haloflow.m01.statements import (
 # commit because the manifest test composes through this tuple.
 APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
 
+# Approved per-tenant migration definition sets. Same rule, same reason: one
+# composition path, so what a tenant schema receives is reviewable in one place.
+# `allow_test_units` is never passed here -- a test-only unit cannot reach
+# production through this function (R-E12).
+APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (TENANT_MIGRATIONS,)
+
 
 def build_production_catalog() -> CompiledCatalog:
     """Compose the production statement catalogue. Startup-only."""
 
     return build_statement_catalog(*APPROVED_MODULE_STATEMENTS)
+
+
+def build_production_tenant_migrations() -> TenantMigrationRegistry:
+    """Compose the production per-tenant migration registry. Startup-only."""
+
+    return build_tenant_migration_registry(*APPROVED_TENANT_MIGRATIONS)

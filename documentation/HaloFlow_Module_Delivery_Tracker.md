@@ -1,21 +1,40 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-08-31
+Last updated: 2026-09-01 (correction pass)
 
 ## Current position — read this first
 
-**PR-1 of the M01 debt PR merged 2026-08-31** (PR #5, `5eccdb7`). **PR-2 — the tenant provisioner and
-per-tenant migration runner — is the single gate in front of all M02 implementation, and has not been
-started.** Its scope is fixed and needs no fresh review; see the M01 delivery notes below.
+**PR-1 merged 2026-08-31** (PR #5, `5eccdb7`). **PR-2 — the tenant provisioner and per-tenant
+migration runner — is written, independently reviewed, corrected, and ready for Rachel to push.** It is
+committed on `feat/m01-debt-pr2-provisioner` (`595593b` implementation, `29d6599` tracker, `53d6425`
+review corrections) and **not yet pushed**. It remains the single gate in front of all M02
+implementation until it merges.
 
-**CI is green on `main`.** The run was still pending when PR #5 was merged, and has since passed —
-confirming that PR-1's edit to `.github/workflows/m01.yml`, which added `src/haloflow/composition.py`
-to the ruff and mypy lines, works on GitHub's runner and not only locally. The gate is healthy going
-into PR-2. Merged branches have been deleted.
+**ChatGPT reviewed it on 2026-09-01 and requested changes: four findings, two high.** All four are
+addressed in `53d6425`. Two were real transaction-correctness defects — an unrecoverable crash window
+between the DDL commit and the `applied` ledger write, and a silent dependency on `autocommit=True`
+that only the test factory supplied. The full disposition is in
+`Shared Workspace/ClinicFlow/Work Session 2026-09-01/claude_pr2-review-corrections.md`.
 
-**Session handoff:** `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_session-handoff-next-session.md`
-carries the working detail — environment traps, the test loop, decisions closed, and mistakes worth not
-repeating.
+**PR-2 gate result** after the corrections, on PostgreSQL 17.10 against a freshly created database:
+ruff clean, strict mypy clean, **188 tests pass**, up from the 125 baseline. Run twice, identical.
+126 of those need no database, which is the subset reviewable on the Mac without a server running. `.github/workflows/m01.yml` needed no change —
+the new package sits under `src/haloflow/m01`, which the ruff and mypy lines already cover, and
+`test_ci_workflow_covers_every_checked_production_path` still passes.
+
+**One decision changed during implementation: D13** (2026-09-01). The signed-off design had the
+provisioner run `CREATE SCHEMA ... AUTHORIZATION haloflow_owner`, which PostgreSQL refuses without
+membership in that role — and that membership would give the provisioner INSERT, DELETE and DROP over
+`shared.access_audit_log`. Tenant schemas are therefore owned by `haloflow_provisioner`, and
+`permissions.json` moves the `tenant_schema:ownership` token accordingly. Evidence:
+`Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_d13-tenant-schema-ownership-finding.md`.
+
+**CI is green on `main`**, confirming PR-1's workflow edit works on GitHub's runner and not only
+locally. Merged branches have been deleted.
+
+**Session handoffs:** `Work Session 2026-08-31/claude_session-handoff-next-session.md` carries the
+environment traps and the test loop; `Work Session 2026-09-01/claude_pr2-for-chatgpt-code-review.md` is
+the PR-2 review package.
 
 ## Status legend
 
@@ -49,8 +68,8 @@ repeating.
 
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
-| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and debt PR-1 merged; debt PR-2 (provisioner) outstanding; production readiness remains |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; implementation gated on M01 debt PR-2 |
+| M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and debt PR-1 merged; debt PR-2 written, reviewed and corrected, not pushed; production readiness remains |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; implementation gated on M01 debt PR-2, which is now reviewed and corrected, awaiting push |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -122,8 +141,57 @@ repeating.
   - `.github/workflows/m01.yml` extended to lint and type-check `src/haloflow/composition.py`, with a test
     asserting CI coverage from the workflow file.
 
-- **PR-2 — NOT STARTED. This is the gate in front of all M02 implementation.** Scope is fixed by the
-  signed-off package (test cases TC-E1 through TC-E26) and needs no fresh review:
+- **PR-2 — WRITTEN AND VERIFIED, IN REVIEW, NOT PUSHED** (branch `feat/m01-debt-pr2-provisioner`,
+  commit `595593b`). Delivered exactly the scope the signed-off package fixed (TC-E1 through TC-E26),
+  with one departure recorded as D13 below. Contents:
+  - New package `haloflow.m01.provisioning`: `units.py` (ordered, checksummed migration units and the
+    trusted startup-only registry builder; checksums over the template, not the rendered text, so one
+    migration has one checksum across every tenant), `runner.py` (the ledger state machine),
+    `provisioner.py` (the FR-017 sequence and the R-E7 installer hook), `drift.py`, `codes.py`
+    (the closed sanitized-error vocabulary), `roles.py`.
+  - The advisory lock is session-level on a dedicated connection, so it survives the `running` commit
+    that opens the DDL window. TC-E7/TC-E16 prove it: a slow unit commits `running` and then sleeps
+    inside the DDL, and a second runner is refused during that window.
+  - On failure the DDL is rolled back **before** `failed` is committed, asserted by observing that the
+    table the failing unit created is absent at the moment `failed` is visible.
+  - Migration `003` implements the split `permissions.json` had specified since `001`: **F-1** closed,
+    **D12** (provisioner INSERT-only on `shared.tenant_state_history`, no sequence privilege) and
+    **F-4** (audit sequence revocations) applied. Both re-confirmed on 17.10.
+  - **F-3** closed: `permissions.json` is now verified against actual database grants, exhaustively
+    over every role × every shared table × all seven table privileges, failing on unauthorized grants
+    as loudly as on missing ones.
+  - **D11** applied: the gateway isolation suite runs against provisioner-built schemas, with one
+    deliberately minimal hand-built control (`clinic-c`) retained.
+  - **R-E12** enforced by three new repository controls, each with a negative case: test-only migration
+    units cannot enter the production registry, only the composition root composes one, and no
+    production module passes `allow_test_units`.
+
+- **R-E7 IS NOT SATISFIED BY PR-2 — carried forward to M02 as an explicit gate.** The provisioner
+  originally shipped a `TenantObjectInstaller` hook, and ChatGPT's review found that it handed a
+  module-supplied callback the live provisioner-role connection: a role that owns every tenant schema
+  and can write the tenant registry, with nothing in the interface confining an installer to the schema
+  it was given. Rachel's disposition on 2026-09-01 was to **remove it rather than narrow it**, because
+  M02 has no current consumer and PR-2 should not freeze a privileged contract against guessed
+  requirements. Ordinary per-tenant objects are contributed as migration units through the registry,
+  which the runner already takes as an argument; that extension point is retained and tested.
+  **M02 must settle its own per-tenant installation mechanism — with the function owner, ACL and pinned
+  `search_path` its SECURITY DEFINER functions actually require — before its implementation begins.**
+  A repository control now fails on any Protocol method taking a connection, or any constructor
+  parameter named like a module callback, anywhere in the provisioning package.
+
+- **D13 — tenant-schema ownership (decided 2026-09-01, Rachel).** Tenant schemas are owned by
+  `haloflow_provisioner`; `permissions.json` moves the `tenant_schema:ownership` token from
+  `haloflow_owner` to `haloflow_provisioner`. The signed-off Part 2E step 2 —
+  `CREATE SCHEMA ... AUTHORIZATION haloflow_owner` run as the provisioner — does not execute:
+  PostgreSQL 17.10 answers `must be able to SET ROLE "haloflow_owner"`, and the membership that would
+  allow it lets the provisioner INSERT into, DELETE from and DROP the shared audit table.
+  `WITH SET FALSE, INHERIT FALSE` does not rescue it. A consequence: the runtime's default privileges
+  moved into the `t001` baseline, which runs as the migrator, because default privileges apply to
+  their creating role's future objects and the provisioner could only set the migrator's by being a
+  member of it — which R-E6 forbids. Full probe evidence in
+  `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_d13-tenant-schema-ownership-finding.md`.
+
+- PR-2's original scope, for reference, as the signed-off package fixed it:
   - Tenant-schema provisioner and per-tenant migration runner writing the full lifecycle to
     `shared.schema_migrations`. Migration `001` creates only the `shared` schema; there is still no code
     that creates a tenant schema, and the M01 tests build them by hand.
@@ -165,7 +233,9 @@ repeating.
   covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
   **not** granted here — each module registers its own prefix at its own design/content freeze.
 - **Next gate: M01 debt PR-2** (tenant provisioner and per-tenant migration runner). PR-1 merged
-  2026-08-31; no M02 migration is written until PR-2 lands.
+  2026-08-31; PR-2 written, reviewed and corrected 2026-09-01. No M02 migration is written until
+  PR-2 merges. **A second M02 precondition was added by that review: R-E7 is not satisfied, so M02
+  must settle its own per-tenant object-installation mechanism before implementation begins.**
 - Debt-PR review completed and **signed off 2026-08-31** (Requirements, Architecture, Unit Test Cases),
   satisfying the project's pre-coding review rule. Package:
   `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_m01-debt-pr-review-package.md` (v5).
@@ -175,18 +245,17 @@ repeating.
 - Four findings against the merged `001`/M01 code were raised during the review and are scheduled into
   those PRs:
   - **F-1** `haloflow_provisioner` and `haloflow_migrator` are created by `001` with **no grants at
-    all**, though `permissions.json` already specifies the intended split. **Open — closed by `003`
-    in PR-2.**
+    all**, though `permissions.json` already specifies the intended split. **CLOSED in PR-2** by migration `003`.
   - **F-2 — CLOSED in PR-1.** The private-API ownership check substring-matched a dotted name and so
     missed `from ... import ...` forms entirely. Replaced with an AST check covering eight import forms,
     including submodule-via-parent-package and wildcard imports.
   - **F-3** `permissions.json` is never verified against actual database grants - both manifest tests
     assert about the JSON itself - so M01-FR-013's acceptance criterion is not met, which is why F-1
-    went unnoticed. **Open — closed by a catalogue-versus-database grant test in PR-2.**
+    went unnoticed. **CLOSED in PR-2** by an exhaustive manifest-versus-database grant test.
   - **F-4** `001` grants `USAGE, SELECT` on `shared.access_audit_log_audit_id_seq` to two audit roles
     that need neither (the column is `GENERATED ALWAYS AS IDENTITY`); the `SELECT` lets a role denied
     SELECT on the table read `last_value`, i.e. the global audit row count across all tenants.
-    Verified on PostgreSQL 17.11. **Open — revoked by `003` in PR-2.**
+    Verified on PostgreSQL 17.11 and re-confirmed on 17.10. **CLOSED in PR-2** — revoked by `003`.
 - Migration `002` data risk cleared 2026-08-31: all three `operation_id` columns verified empty on the
   only environment where `001` has been applied. A PHI-safe preflight castability guard ships anyway.
 - Remaining production gates: OI-005 (provider capability evidence), OI-006 (retention, legal hold,

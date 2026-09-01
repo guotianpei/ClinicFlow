@@ -384,3 +384,251 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
         if str(path).startswith("src/haloflow/modules/"):
             continue  # legacy bypass modules, tracked separately
         assert any(str(path).startswith(prefix.rstrip(".py")) for prefix in checked), path
+
+
+# --- per-tenant migration registry controls (R-E12) ------------------------
+
+
+def _migration_composition_violations_in(path: str, source: str) -> list[str]:
+    """Production code outside the composition root may not compose a registry.
+
+    The same rule as the statement catalogue, for the same reason: a second
+    composition path would mean the production registry is not reviewable in one
+    place, and a test-only unit could reach a real tenant schema through it.
+    """
+
+    violations: list[str] = []
+    if path == COMPOSITION_ROOT:
+        return violations
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == "build_tenant_migration_registry":
+                    violations.append(f"{path}: imports build_tenant_migration_registry")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = (
+                func.attr
+                if isinstance(func, ast.Attribute)
+                else func.id
+                if isinstance(func, ast.Name)
+                else ""
+            )
+            if name == "build_tenant_migration_registry":
+                violations.append(f"{path}: calls build_tenant_migration_registry")
+    return violations
+
+
+def _test_unit_escape_violations_in(path: str, source: str) -> list[str]:
+    """R-E12: no production module may switch the test-unit gate off."""
+
+    violations: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.keyword) and node.arg == "allow_test_units":
+            violations.append(f"{path}: passes allow_test_units")
+    return violations
+
+
+def test_only_the_composition_root_composes_a_tenant_migration_registry() -> None:
+    violations: list[str] = []
+    for path in Path("src/haloflow").rglob("*.py"):
+        # The package that defines the builder necessarily names it; the rule is
+        # about *composing* a registry, which is a call or an import elsewhere.
+        if str(path) == "src/haloflow/m01/provisioning/units.py":
+            continue
+        violations.extend(_migration_composition_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_no_production_module_allows_test_migration_units() -> None:
+    """R-E12. A test-only unit cannot enter the production registry."""
+
+    violations: list[str] = []
+    for path in Path("src/haloflow").rglob("*.py"):
+        if str(path) == "src/haloflow/m01/provisioning/units.py":
+            continue  # defines the parameter; does not pass it
+        violations.extend(_test_unit_escape_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_the_test_unit_controls_fail_when_they_should() -> None:
+    """Negative control: both checks above catch the thing they name."""
+
+    app = "src/haloflow/modules/rogue/service.py"
+    assert _migration_composition_violations_in(
+        app, "from haloflow.m01.provisioning import build_tenant_migration_registry\n"
+    )
+    assert _migration_composition_violations_in(
+        app, "registry = build_tenant_migration_registry({})\n"
+    )
+    assert _test_unit_escape_violations_in(
+        app, "registry = build_tenant_migration_registry({}, allow_test_units=True)\n"
+    )
+    assert _migration_composition_violations_in(
+        COMPOSITION_ROOT, "registry = build_tenant_migration_registry({})\n"
+    ) == []
+
+
+# --- no privileged module callback in the provisioning path ---------------
+#
+# Defense in depth, NOT proof of confinement. The review that asked for this
+# check was right that it is a heuristic: it recognizes connection-taking
+# `Protocol` methods, connection-taking `Callable` annotations, and constructor
+# parameters named like a callback. A callback hidden behind an opaque alias, or
+# a parameter named something innocuous and untyped, would still get past it.
+# What it does buy is that the specific contract PR-2 removed cannot come back
+# unnoticed, and that the obvious ways of reintroducing one are noisy.
+
+PROVISIONING_ROOT = Path("src/haloflow/m01/provisioning")
+CALLBACK_PARAMETER_NAMES = re.compile(
+    r"(installer|hook|callback|plugin|extension)s?$", re.IGNORECASE
+)
+
+
+def _takes_a_connection(annotation: ast.expr | None) -> bool:
+    """True when this annotation describes something *given* a connection.
+
+    A `Callable[[AsyncConnection], ...]` parameter is a callback handed a live
+    connection, which is the contract under prohibition. `ConnectionFactory =
+    Callable[[], Awaitable[AsyncConnection]]` *returns* one, which is the
+    mechanism this whole package is built on, so only the parameter positions of
+    a callable are inspected.
+    """
+
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Subscript):
+        value = ast.unparse(annotation.value)
+        if value.split(".")[-1] in {"Callable", "Coroutine", "Awaitable"}:
+            arguments = annotation.slice
+            if isinstance(arguments, ast.Tuple) and arguments.elts:
+                parameters = arguments.elts[0]
+                return "Connection" in ast.unparse(parameters)
+            return False
+        return any(
+            _takes_a_connection(element)
+            for element in (
+                annotation.slice.elts if isinstance(annotation.slice, ast.Tuple)
+                else [annotation.slice]
+            )
+        )
+    return False
+
+
+def _connection_callback_violations_in(path: str, source: str) -> list[str]:
+    """No module-supplied callback may be handed a live database connection.
+
+    PR-2 removed `TenantObjectInstaller`, which received the provisioner-role
+    connection — a role that owns every tenant schema and can write the tenant
+    registry — with nothing confining an installer to the schema it was handed.
+    Per-tenant objects are contributed as migration units instead, and M02 will
+    define whatever narrow mechanism its SECURITY DEFINER functions actually
+    need. This check exists so that contract cannot quietly come back.
+    """
+
+    violations: list[str] = []
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            is_protocol = any(
+                (isinstance(base, ast.Name) and base.id == "Protocol")
+                or (isinstance(base, ast.Attribute) and base.attr == "Protocol")
+                for base in node.bases
+            )
+            if not is_protocol:
+                continue
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                arguments = [*member.args.args, *member.args.kwonlyargs, *member.args.posonlyargs]
+                for argument in arguments:
+                    annotation = ast.unparse(argument.annotation) if argument.annotation else ""
+                    if "Connection" in annotation:
+                        violations.append(
+                            f"{path}: Protocol {node.name}.{member.name} takes a connection"
+                        )
+
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == "__init__":
+            arguments = [*node.args.args, *node.args.kwonlyargs, *node.args.posonlyargs]
+            for argument in arguments:
+                if CALLBACK_PARAMETER_NAMES.search(argument.arg):
+                    violations.append(f"{path}: __init__ accepts module callback {argument.arg!r}")
+                elif _takes_a_connection(argument.annotation):
+                    violations.append(
+                        f"{path}: __init__ parameter {argument.arg!r} is a callback "
+                        "annotated to receive a connection"
+                    )
+
+        # A callable type alias is the obvious way to launder the annotation above.
+        if isinstance(node, ast.Assign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = node.value
+            for target in targets:
+                if isinstance(target, ast.Name) and _takes_a_connection(value):
+                    violations.append(
+                        f"{path}: type alias {target.id!r} describes a callback "
+                        "that receives a connection"
+                    )
+    return violations
+
+
+def test_no_module_callback_receives_a_privileged_connection() -> None:
+    """Requested in the PR-2 review disposition, 2026-09-01. Defense in depth."""
+
+    violations: list[str] = []
+    for path in PROVISIONING_ROOT.rglob("*.py"):
+        violations.extend(_connection_callback_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_the_module_callback_control_fails_when_it_should() -> None:
+    """Negative control: each half catches a way of reintroducing the contract."""
+
+    path = "src/haloflow/m01/provisioning/provisioner.py"
+    protocol_form = (
+        "from typing import Protocol\n"
+        "from psycopg import AsyncConnection\n"
+        "class TenantObjectInstaller(Protocol):\n"
+        "    def install(self, connection: AsyncConnection, *, schema_key: str) -> None: ...\n"
+    )
+    constructor_form = (
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect, runner, *, object_installers=()) -> None:\n"
+        "        self._object_installers = object_installers\n"
+    )
+    # The evasions the review named: an innocuous parameter name, and an alias.
+    annotated_form = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect, *, operations: "
+        "tuple[Callable[[AsyncConnection, str], Awaitable[None]], ...] = ()) -> None: ...\n"
+    )
+    alias_form = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "ModuleOperation = Callable[[AsyncConnection, str], Awaitable[None]]\n"
+    )
+
+    assert _connection_callback_violations_in(path, protocol_form)
+    assert _connection_callback_violations_in(path, constructor_form)
+    assert _connection_callback_violations_in(path, annotated_form)
+    assert _connection_callback_violations_in(path, alias_form)
+
+    # ...and the legitimate factory, which RETURNS a connection, must not fire.
+    factory_alias = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "ConnectionFactory = Callable[[], Awaitable[AsyncConnection]]\n"
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect: ConnectionFactory) -> None: ...\n"
+    )
+    assert _connection_callback_violations_in(path, factory_alias) == []
+
+    # ...and every shipped file passes.
+    for shipped in PROVISIONING_ROOT.rglob("*.py"):
+        assert _connection_callback_violations_in(str(shipped), shipped.read_text()) == []
