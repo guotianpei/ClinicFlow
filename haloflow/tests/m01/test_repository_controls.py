@@ -469,3 +469,89 @@ def test_the_test_unit_controls_fail_when_they_should() -> None:
     assert _migration_composition_violations_in(
         COMPOSITION_ROOT, "registry = build_tenant_migration_registry({})\n"
     ) == []
+
+
+# --- no privileged module callback in the provisioning path ---------------
+
+PROVISIONING_ROOT = Path("src/haloflow/m01/provisioning")
+CALLBACK_PARAMETER_NAMES = re.compile(
+    r"(installer|hook|callback|plugin|extension)s?$", re.IGNORECASE
+)
+
+
+def _connection_callback_violations_in(path: str, source: str) -> list[str]:
+    """No module-supplied callback may be handed a live database connection.
+
+    PR-2 removed `TenantObjectInstaller`, which received the provisioner-role
+    connection — a role that owns every tenant schema and can write the tenant
+    registry — with nothing confining an installer to the schema it was handed.
+    Per-tenant objects are contributed as migration units instead, and M02 will
+    define whatever narrow mechanism its SECURITY DEFINER functions actually
+    need. This check exists so that contract cannot quietly come back: it fails
+    on a Protocol method that takes a connection, and on a constructor parameter
+    named like a module callback.
+    """
+
+    violations: list[str] = []
+    tree = ast.parse(source)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            is_protocol = any(
+                (isinstance(base, ast.Name) and base.id == "Protocol")
+                or (isinstance(base, ast.Attribute) and base.attr == "Protocol")
+                for base in node.bases
+            )
+            if not is_protocol:
+                continue
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                arguments = [*member.args.args, *member.args.kwonlyargs, *member.args.posonlyargs]
+                for argument in arguments:
+                    annotation = ast.unparse(argument.annotation) if argument.annotation else ""
+                    if "Connection" in annotation:
+                        violations.append(
+                            f"{path}: Protocol {node.name}.{member.name} takes a connection"
+                        )
+
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == "__init__":
+            arguments = [*node.args.args, *node.args.kwonlyargs, *node.args.posonlyargs]
+            for argument in arguments:
+                if CALLBACK_PARAMETER_NAMES.search(argument.arg):
+                    violations.append(f"{path}: __init__ accepts module callback {argument.arg!r}")
+    return violations
+
+
+def test_no_module_callback_receives_a_privileged_connection() -> None:
+    """Requested in the PR-2 review disposition, 2026-09-01."""
+
+    violations: list[str] = []
+    for path in PROVISIONING_ROOT.rglob("*.py"):
+        violations.extend(_connection_callback_violations_in(str(path), path.read_text()))
+
+    assert violations == []
+
+
+def test_the_module_callback_control_fails_when_it_should() -> None:
+    """Negative control: both halves catch the contract that was removed."""
+
+    protocol_form = (
+        "from typing import Protocol\n"
+        "from psycopg import AsyncConnection\n"
+        "class TenantObjectInstaller(Protocol):\n"
+        "    def install(self, connection: AsyncConnection, *, schema_key: str) -> None: ...\n"
+    )
+    constructor_form = (
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect, runner, *, object_installers=()) -> None:\n"
+        "        self._object_installers = object_installers\n"
+    )
+    path = "src/haloflow/m01/provisioning/provisioner.py"
+
+    assert _connection_callback_violations_in(path, protocol_form)
+    assert _connection_callback_violations_in(path, constructor_form)
+
+    # ...and the shipped provisioner passes the same check.
+    provisioner = PROVISIONING_ROOT / "provisioner.py"
+    assert _connection_callback_violations_in(str(provisioner), provisioner.read_text()) == []

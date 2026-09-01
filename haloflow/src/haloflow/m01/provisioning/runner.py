@@ -181,28 +181,43 @@ class TenantMigrationRunner:
         rendered = unit.render(schema_key)
         await self._record_running(connection, tenant_id, unit, exists=recorded is not None)
 
+        # The DDL and its `applied` ledger transition commit **together**.
+        #
+        # They were two commits in the first version of this runner, and that left a
+        # durability window with no recovery: a crash after the DDL commit and
+        # before the ledger write leaves `running` over a schema the DDL has already
+        # changed. The next run reads `running`, re-executes the same DDL, and the
+        # baseline's `CREATE TABLE` fails as a duplicate — so the retry records
+        # `failed` and no further retry can ever succeed. The tenant is stranded
+        # until an operator repairs it by hand, which is precisely what R-E2's
+        # "safely resumable" forbids.
+        #
+        # One transaction removes the window rather than narrowing it. Either the
+        # tenant has the objects and the ledger says `applied`, or it has neither and
+        # the ledger still says `running`, which is the state a retry handles.
+        # `stage` records which half raised, so the ledger's sanitized code names the
+        # real failure instead of always blaming the DDL.
+        stage = SanitizedErrorCode.MIGRATION_DDL_FAILED
         try:
             async with connection.transaction():
                 await connection.execute(rendered)
+                stage = SanitizedErrorCode.LEDGER_WRITE_FAILED
+                await self._mark_applied(connection, tenant_id, unit)
+                stage = SanitizedErrorCode.MIGRATION_COMMIT_FAILED
         except PsycopgError as error:
-            # Rolled back by the transaction block above, so the tenant schema is
-            # already clean at the moment `failed` becomes visible (R-E3).
+            # Rolled back by the transaction block above — both halves — so the
+            # tenant schema is clean at the moment `failed` becomes visible (R-E3).
             try:
-                await self._record_failed(
-                    connection, tenant_id, unit, SanitizedErrorCode.MIGRATION_DDL_FAILED
-                )
+                await self._record_failed(connection, tenant_id, unit, stage)
             except PsycopgError as ledger_error:
-                # The DDL failed and the evidence could not be recorded. Report the
-                # ledger failure: it is the more serious of the two, because the
-                # tenant is now in a state no later run can reason about.
+                # The migration failed and the evidence could not be recorded.
+                # Report the ledger failure: it is the more serious of the two,
+                # because the tenant is now in a state no later run can reason about.
                 raise TenantMigrationFailed(
                     reason_code=SanitizedErrorCode.LEDGER_WRITE_FAILED.value
                 ) from _sanitize(ledger_error)
-            raise TenantMigrationFailed(
-                reason_code=SanitizedErrorCode.MIGRATION_DDL_FAILED.value
-            ) from _sanitize(error)
+            raise TenantMigrationFailed(reason_code=stage.value) from _sanitize(error)
 
-        await self._record_applied(connection, tenant_id, unit)
         return MigrationOutcome(unit.migration_id, applied=True)
 
     async def _read_ledger(
@@ -260,25 +275,26 @@ class TenantMigrationRunner:
                 reason_code=SanitizedErrorCode.LEDGER_WRITE_FAILED.value
             ) from _sanitize(error)
 
-    async def _record_applied(
+    async def _mark_applied(
         self, connection: AsyncConnection, tenant_id: str, unit: TenantMigrationUnit
     ) -> None:
-        try:
-            async with connection.transaction():
-                await connection.execute(
-                    """
-                    UPDATE shared.schema_migrations
-                       SET state = 'applied',
-                           completed_at = statement_timestamp(),
-                           sanitized_error_code = NULL
-                     WHERE tenant_id = %s AND migration_id = %s
-                    """,
-                    (tenant_id, unit.migration_id),
-                )
-        except PsycopgError as error:
-            raise TenantMigrationFailed(
-                reason_code=SanitizedErrorCode.LEDGER_WRITE_FAILED.value
-            ) from _sanitize(error)
+        """Record `applied`. Deliberately opens no transaction of its own.
+
+        This runs inside the DDL's transaction so the two commit together; a
+        `transaction()` block here would be a savepoint, not a second commit, and
+        would read as though the two were still separable.
+        """
+
+        await connection.execute(
+            """
+            UPDATE shared.schema_migrations
+               SET state = 'applied',
+                   completed_at = statement_timestamp(),
+                   sanitized_error_code = NULL
+             WHERE tenant_id = %s AND migration_id = %s
+            """,
+            (tenant_id, unit.migration_id),
+        )
 
     async def _record_failed(
         self,
@@ -300,7 +316,29 @@ class TenantMigrationRunner:
             )
 
 
+async def require_explicit_transactions(connection: AsyncConnection) -> None:
+    """Put a freshly acquired connection into autocommit, or refuse it.
+
+    Every transaction boundary in this package is explicit, and the ledger's
+    intermediate commits have to be real commits. On a connection left in
+    psycopg's default `autocommit=False`, the first statement opens an implicit
+    transaction, every `transaction()` block below it degrades to a savepoint,
+    and closing the connection rolls the whole sequence back — silently, because
+    each step still appears to succeed.
+
+    `ConnectionFactory` cannot express that in its type, so it is enforced here
+    on every connection this package acquires. A factory that hands back a
+    connection with work already in flight is rejected rather than adopted.
+    """
+
+    try:
+        await connection.set_autocommit(True)
+    except PsycopgError as error:
+        raise TenantMigrationFailed(reason_code="CONNECTION_NOT_IDLE") from _sanitize(error)
+
+
 async def _assume_migrator(connection: AsyncConnection) -> None:
+    await require_explicit_transactions(connection)
     await connection.execute("SET search_path = pg_catalog")
     await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
 

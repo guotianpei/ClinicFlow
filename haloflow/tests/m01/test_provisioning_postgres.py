@@ -78,6 +78,26 @@ TOKEN_TABLE_GRANTS: dict[str, dict[str, frozenset[str]]] = {
     "shared.access_audit_log:insert": {"access_audit_log": frozenset({"INSERT"})},
 }
 
+# Allow tokens that deliberately grant nothing on a shared table, each with the
+# reason it is out of this control's scope. Every allow token in the manifest must
+# appear either here or in TOKEN_TABLE_GRANTS, so a token nobody translated cannot
+# pass unnoticed.
+NON_SHARED_TABLE_TOKENS: dict[str, str] = {
+    "shared:ownership": "ownership, not a grant; asserted separately by table owner",
+    "shared.tenants:select(tenant_id,schema_key,lifecycle_state,schema_version)": (
+        "column-scoped, not table-level; asserted by the runtime column-grant test"
+    ),
+    "tenant_schema:ownership": "per-tenant schema ownership; asserted on a provisioned schema",
+    "tenant_schema:provision": "CREATE on the database; asserted by the provisioning tests",
+    "tenant_schema:checksummed_ddl": "per-tenant CREATE; asserted on a provisioned schema",
+    "tenant_schema:business_dml": "per-tenant table DML; asserted on a provisioned schema",
+    "tenant_schema.access_audit_outbox:insert": "per-tenant table; asserted once provisioned",
+    "tenant_schema.access_audit_outbox:select": "per-tenant table; asserted once provisioned",
+    "tenant_schema:approved_support_read": "grant-mediated, never a standing privilege",
+    "tenant_schema:approved_emergency_read": "grant-mediated, never a standing privilege",
+    "tenant_schema:separately_approved_emergency_write": "grant-mediated, never standing",
+}
+
 
 # --- harness ---------------------------------------------------------------
 
@@ -109,7 +129,6 @@ def make_provisioner(
     registry: TenantMigrationRegistry | None = None,
     *,
     supported_schema_versions: Sequence[int] | range = range(1, 2),
-    object_installers: tuple[object, ...] = (),
     lock_timeout_seconds: float = 30.0,
 ) -> TenantProvisioner:
     runner = TenantMigrationRunner(
@@ -121,7 +140,6 @@ def make_provisioner(
         connection_factory(harness.role_logins[PROVISIONER_ROLE]),
         runner,
         supported_schema_versions=supported_schema_versions,
-        object_installers=object_installers,  # type: ignore[arg-type]
     )
 
 
@@ -624,52 +642,34 @@ async def test_a_tenant_outside_the_supported_versions_is_refused_at_resolution(
         await pool.close()
 
 
-# --- TC-E12: the module object-installation hook --------------------------
-
-
-class _RecordingInstaller:
-    """A test double for R-E7. M02 would install its per-tenant functions here."""
-
-    module_id = "m02_test"
-
-    def __init__(self) -> None:
-        self.schemas: list[str] = []
-
-    async def install(self, connection: AsyncConnection, *, schema_key: str) -> None:
-        self.schemas.append(schema_key)
-        await connection.execute(f"CREATE TABLE {schema_key}.installed_by_module (id integer)")
-
-
-async def test_a_module_can_install_per_tenant_objects_through_the_hook(
-    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str]
-) -> None:
-    """TC-E12."""
-
-    _, schema_key = new_tenant
-    installer = _RecordingInstaller()
-    provisioner = make_provisioner(
-        provisioning_harness, make_registry(), object_installers=(installer,)
-    )
-
-    await provisioner.provision(request_for(new_tenant))
-
-    assert installer.schemas == [schema_key]
-    (present,) = await admin_row(
-        provisioning_harness,
-        "SELECT to_regclass(%s) IS NOT NULL",
-        (f"{schema_key}.installed_by_module",),
-    )
-    assert present is True
-
-
 # --- TC-E15, TC-E22: migration 003 grants against the catalogue -----------
 
 
+class UntranslatedToken(AssertionError):
+    """A manifest token this control does not know how to check."""
+
+
 def _expected_shared_table_grants(policy: dict[str, list[str]]) -> dict[str, frozenset[str]]:
+    """Translate a role's allow tokens into the shared-table privileges they authorize.
+
+    Fails closed. An earlier version used `TOKEN_TABLE_GRANTS.get(token, {})`, so a
+    misspelled or newly added shared token translated to *no* expected privileges —
+    and if the migration also omitted the grant, this supposedly exhaustive control
+    passed. That is the same fail-open shape as finding F-3 itself, one level up:
+    a check that cannot see a thing reports no problem with it.
+    """
+
     expected: dict[str, frozenset[str]] = {table: frozenset() for table in SHARED_TABLES}
     for token in policy["allow"]:
-        for table, privileges in TOKEN_TABLE_GRANTS.get(token, {}).items():
-            expected[table] = expected[table] | privileges
+        if token in TOKEN_TABLE_GRANTS:
+            for table, privileges in TOKEN_TABLE_GRANTS[token].items():
+                expected[table] = expected[table] | privileges
+        elif token not in NON_SHARED_TABLE_TOKENS:
+            raise UntranslatedToken(
+                f"{token!r} is not translated to shared-table privileges and is not "
+                "listed as deliberately out of scope; add it to TOKEN_TABLE_GRANTS or "
+                "to NON_SHARED_TABLE_TOKENS with a reason"
+            )
     return expected
 
 
@@ -951,3 +951,212 @@ async def test_neither_audit_role_can_read_the_audit_sequence_but_both_can_inser
         )
         with pytest.raises(InsufficientPrivilege):
             await conn.execute(f"SELECT last_value FROM {AUDIT_SEQUENCE}")
+
+
+# --- corrections from the PR-2 code review, 2026-09-01 ---------------------
+
+
+async def test_the_ddl_and_its_applied_ledger_row_commit_in_one_transaction(
+    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str]
+) -> None:
+    """Review finding 1. The crash window between the two commits is closed.
+
+    Proven by transaction identity, not by timing. The migration records the
+    transaction id it runs in; the ledger row's `xmin` is the transaction that
+    last wrote it. If those are the same transaction, the DDL and the `applied`
+    transition committed together and no crash can land between them.
+
+    Timing cannot prove this. An observation partway through a slow migration
+    looks identical under either design, because the window the review describes
+    is the microseconds between two commits, not the seconds the DDL takes. An
+    earlier version of this test slept partway through and passed against the
+    very design it was written to reject.
+    """
+
+    tenant_id, schema_key = new_tenant
+    await make_provisioner(provisioning_harness, make_registry()).provision(request_for(new_tenant))
+
+    probe = {
+        "t001_test_atomic": (
+            "CREATE TABLE {schema}.atomic_probe (id integer PRIMARY KEY, ddl_xid bigint NOT NULL);"
+            "INSERT INTO {schema}.atomic_probe VALUES (1, pg_current_xact_id()::text::bigint);"
+        )
+    }
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        make_registry(probe),
+    )
+    await runner.apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    ddl_xid, ledger_xmin, state = await admin_row(
+        provisioning_harness,
+        f"""
+        SELECT (SELECT ddl_xid FROM {schema_key}.atomic_probe WHERE id = 1),
+               (SELECT xmin::text::bigint FROM shared.schema_migrations
+                 WHERE tenant_id = %s AND migration_id = 't001_test_atomic'),
+               (SELECT state FROM shared.schema_migrations
+                 WHERE tenant_id = %s AND migration_id = 't001_test_atomic')
+        """,
+        (tenant_id, tenant_id),
+    )
+
+    assert state == "applied"
+    # `xmin` is a 32-bit xid; pg_current_xact_id() is the 64-bit epoch-extended
+    # form of the same number.
+    assert ledger_xmin == ddl_xid % 2**32, (
+        "the DDL and the `applied` ledger row were written by different "
+        "transactions, so a crash can land between their commits"
+    )
+
+
+async def test_a_run_killed_mid_migration_recovers_on_an_ordinary_retry(
+    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str]
+) -> None:
+    """R-E2 resumability against a real killed backend.
+
+    This does not prove finding 1 -- the test above does that, by transaction
+    identity -- because a kill lands inside the DDL under either design. What it
+    proves is the resumability the finding was about: the tenant comes back with
+    a clean schema and a non-terminal ledger row, and an ordinary retry reaches
+    `applied` with no operator repair and no hand-written restart contract.
+    """
+
+    tenant_id, schema_key = new_tenant
+    await make_provisioner(provisioning_harness, make_registry()).provision(request_for(new_tenant))
+
+    slow_ddl = {
+        "t001_test_crash": (
+            "CREATE TABLE {schema}.crash_probe (id integer PRIMARY KEY);"
+            "SELECT pg_sleep(3);"
+        )
+    }
+    registry = make_registry(slow_ddl)
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]), registry
+    )
+
+    async def kill_the_migrator() -> None:
+        await asyncio.sleep(1.0)
+        async with await AsyncConnection.connect(
+            provisioning_harness.admin_conninfo, autocommit=True
+        ) as admin:
+            await admin.execute(
+                """
+                SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+                WHERE query LIKE '%crash_probe%' AND pid <> pg_backend_pid()
+                """
+            )
+
+    interrupted, _ = await asyncio.gather(
+        runner.apply(tenant_id=tenant_id, schema_key=schema_key),
+        kill_the_migrator(),
+        return_exceptions=True,
+    )
+    assert isinstance(interrupted, BaseException)
+
+    state, attempt, _, _, _ = await ledger_row(
+        provisioning_harness, tenant_id, "t001_test_crash"
+    )
+    (schema_clean,) = await admin_row(
+        provisioning_harness,
+        "SELECT to_regclass(%s) IS NULL",
+        (f"{schema_key}.crash_probe",),
+    )
+    # Not `applied`, and the schema carries nothing the retry would collide with.
+    assert state != "applied"
+    assert schema_clean is True
+
+    retried = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]), registry
+    )
+    outcomes = await retried.apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    assert any(outcome.migration_id == "t001_test_crash" and outcome.applied
+               for outcome in outcomes)
+    final_state, final_attempt, _, final_error, _ = await ledger_row(
+        provisioning_harness, tenant_id, "t001_test_crash"
+    )
+    assert (final_state, final_error) == ("applied", None)
+    assert final_attempt > attempt
+
+
+async def test_the_runner_works_on_a_factory_using_psycopg_default_settings(
+    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str]
+) -> None:
+    """Review finding 2.
+
+    The harness elsewhere passes `autocommit=True`, which concealed the runner's
+    dependency on it. This factory uses psycopg's defaults, where the first
+    statement opens an implicit transaction and every `transaction()` block below
+    it would degrade to a savepoint — so the ledger's intermediate commits would
+    not be commits, and closing the connection would discard the sequence.
+    """
+
+    tenant_id, schema_key = new_tenant
+
+    def default_factory(conninfo: str) -> Callable[[], Awaitable[AsyncConnection]]:
+        async def _connect() -> AsyncConnection:
+            return await AsyncConnection.connect(conninfo)  # autocommit=False
+
+        return _connect
+
+    runner = TenantMigrationRunner(
+        default_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]), make_registry()
+    )
+    provisioner = TenantProvisioner(
+        default_factory(provisioning_harness.role_logins[PROVISIONER_ROLE]),
+        runner,
+        supported_schema_versions=range(1, 2),
+    )
+
+    outcome = await provisioner.provision(request_for(new_tenant))
+
+    assert outcome.applied_migrations == ("t001_m01_baseline",)
+    # Durable, not rolled back with the connection.
+    lifecycle, = await admin_row(
+        provisioning_harness,
+        "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    state, _, _, _, _ = await ledger_row(provisioning_harness, tenant_id, "t001_m01_baseline")
+    (outbox,) = await admin_row(
+        provisioning_harness,
+        "SELECT to_regclass(%s) IS NOT NULL",
+        (f"{schema_key}.access_audit_outbox",),
+    )
+    assert (lifecycle, state, outbox) == ("active", "applied", True)
+
+
+def test_every_manifest_allow_token_is_explicitly_classified() -> None:
+    """Review finding 3. The F-3 control must not fail open on an unknown token."""
+
+    manifest = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    classified = set(TOKEN_TABLE_GRANTS) | set(NON_SHARED_TABLE_TOKENS)
+    unclassified = {
+        token
+        for role, policy in manifest.items()
+        if role != OWNER_ROLE
+        for token in policy["allow"]
+        if token not in classified
+    }
+
+    assert unclassified == set(), (
+        f"manifest allow tokens with no translation: {sorted(unclassified)}"
+    )
+
+
+def test_the_grant_control_rejects_an_untranslated_token() -> None:
+    """Review finding 3, the negative control.
+
+    A misspelled shared token previously translated to no expected privileges, so
+    a missing grant went unnoticed. It must now fail loudly instead.
+    """
+
+    with pytest.raises(UntranslatedToken):
+        _expected_shared_table_grants({"allow": ["shared.tenants:controled_write"], "deny": []})
+
+    # ...and a correctly spelled one still translates.
+    expected = _expected_shared_table_grants(
+        {"allow": ["shared.tenants:controlled_write"], "deny": []}
+    )
+    assert expected["tenants"] == frozenset({"SELECT", "INSERT", "UPDATE"})

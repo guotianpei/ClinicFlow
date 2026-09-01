@@ -13,11 +13,22 @@ resumable rather than ambiguous (R-E2). A tenant that does not reach ``active``
 is refused by ``TenantResolver`` with ``TENANT_NOT_ACTIVE``: the fail-closed path
 that already exists does the work, and this module adds no second denial
 mechanism that could disagree with it.
+
+**There is deliberately no module-callback extension point here (R-E7).** An
+earlier draft let a module supply an installer that received this class's live
+provisioner-role connection -- a role that owns every tenant schema and can write
+the tenant registry. Nothing in that interface confined an installer to the schema
+it was handed, and it would have frozen a privileged contract against M02's
+requirements before those requirements exist. Ordinary per-tenant objects are
+contributed as migration units through the registry, which the runner already
+takes as an argument. M02 must settle its own installation mechanism -- with the
+function owner, ACL and pinned ``search_path`` its SECURITY DEFINER functions
+actually need -- before its implementation begins. A repository control asserts
+that no callback taking a connection reappears here.
 """
 
-from collections.abc import Awaitable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
 from uuid import UUID
 
 from psycopg import AsyncConnection, sql
@@ -31,7 +42,11 @@ from haloflow.m01.provisioning.roles import (
     PROVISIONER_ROLE,
     RUNTIME_ROLE,
 )
-from haloflow.m01.provisioning.runner import ConnectionFactory, TenantMigrationRunner
+from haloflow.m01.provisioning.runner import (
+    ConnectionFactory,
+    TenantMigrationRunner,
+    require_explicit_transactions,
+)
 from haloflow.m01.resolver import (
     SCHEMA_KEY_PATTERN,
     TENANT_ID_PATTERN,
@@ -39,25 +54,6 @@ from haloflow.m01.resolver import (
 )
 
 _ACTOR_KINDS = frozenset({"actor", "workload"})
-
-
-class TenantObjectInstaller(Protocol):
-    """R-E7: the per-tenant object-installation extension point.
-
-    M02 contributes ``m02_lock_operation`` and ``m02_begin_key_scope`` through
-    this hook without changing the provisioner contract. M01 ships the mechanism
-    and none of those objects.
-
-    Installers are trusted and supplied once at composition time, in the same
-    sense as an approved statement definition set: an installer receives a live
-    provisioner-role connection, so it is production code under review, not a
-    runtime plug-in point.
-    """
-
-    @property
-    def module_id(self) -> str: ...
-
-    def install(self, connection: AsyncConnection, *, schema_key: str) -> Awaitable[None]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,12 +85,10 @@ class TenantProvisioner:
         runner: TenantMigrationRunner,
         *,
         supported_schema_versions: Sequence[int] | frozenset[int] | range,
-        object_installers: tuple[TenantObjectInstaller, ...] = (),
     ) -> None:
         self._connect = connect
         self._runner = runner
         self._supported_schema_versions = frozenset(supported_schema_versions)
-        self._object_installers = object_installers
 
     async def provision(self, request: ProvisioningRequest) -> ProvisioningOutcome:
         _validate_request(request)
@@ -116,7 +110,6 @@ class TenantProvisioner:
                 applied = await self._runner.apply_within_lock(
                     tenant_id=request.tenant_id, schema_key=request.schema_key
                 )
-                await self._install_module_objects(connection, request)
                 await self._apply_grants(connection, request)
                 await self._verify(connection, request)
                 await self._activate(connection, request, target_version)
@@ -211,19 +204,6 @@ class TenantProvisioner:
             raise ProvisioningFailed(
                 reason_code=SanitizedErrorCode.SCHEMA_CREATE_FAILED.value
             ) from _sanitize(error)
-
-    # -- step 3.5 ----------------------------------------------------------
-    async def _install_module_objects(
-        self, connection: AsyncConnection, request: ProvisioningRequest
-    ) -> None:
-        for installer in self._object_installers:
-            try:
-                async with connection.transaction():
-                    await installer.install(connection, schema_key=request.schema_key)
-            except PsycopgError as error:
-                raise ProvisioningFailed(
-                    reason_code=SanitizedErrorCode.OBJECT_INSTALL_FAILED.value
-                ) from _sanitize(error)
 
     # -- step 4 ------------------------------------------------------------
     async def _apply_grants(
@@ -353,6 +333,11 @@ class TenantProvisioner:
             ) from _sanitize(error)
 
 async def _assume_provisioner(connection: AsyncConnection) -> None:
+    # Same contract as the runner's, and enforced by the same function: the
+    # provisioning sequence commits between steps so a partial tenant is
+    # resumable, and on a non-autocommit connection those commits would be
+    # savepoints that a close() discards.
+    await require_explicit_transactions(connection)
     await connection.execute("SET search_path = pg_catalog")
     await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
 
@@ -378,6 +363,5 @@ def _sanitize(error: PsycopgError) -> Exception:
 __all__ = [
     "ProvisioningOutcome",
     "ProvisioningRequest",
-    "TenantObjectInstaller",
     "TenantProvisioner",
 ]

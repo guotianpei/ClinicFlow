@@ -12,7 +12,6 @@ from haloflow.m01.provisioning.drift import TenantDrift, report_drift, report_dr
 from haloflow.m01.provisioning.provisioner import (
     ProvisioningOutcome,
     ProvisioningRequest,
-    TenantObjectInstaller,
     TenantProvisioner,
 )
 from haloflow.m01.provisioning.roles import (
@@ -25,6 +24,7 @@ from haloflow.m01.provisioning.runner import (
     ConnectionFactory,
     MigrationOutcome,
     TenantMigrationRunner,
+    require_explicit_transactions,
     tenant_lock_key,
 )
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
@@ -43,9 +43,9 @@ __all__ = [
     "TenantMigrationRegistry",
     "TenantMigrationRunner",
     "TenantMigrationUnit",
-    "TenantObjectInstaller",
     "TenantProvisioner",
     "report_drift",
+    "require_explicit_transactions",
     "report_drift_on",
     "tenant_lock_key",
 ]
