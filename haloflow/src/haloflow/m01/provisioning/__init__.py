@@ -45,7 +45,7 @@ __all__ = [
     "TenantMigrationUnit",
     "TenantProvisioner",
     "report_drift",
-    "require_explicit_transactions",
     "report_drift_on",
+    "require_explicit_transactions",
     "tenant_lock_key",
 ]

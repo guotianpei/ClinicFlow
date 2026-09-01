@@ -472,11 +472,49 @@ def test_the_test_unit_controls_fail_when_they_should() -> None:
 
 
 # --- no privileged module callback in the provisioning path ---------------
+#
+# Defense in depth, NOT proof of confinement. The review that asked for this
+# check was right that it is a heuristic: it recognizes connection-taking
+# `Protocol` methods, connection-taking `Callable` annotations, and constructor
+# parameters named like a callback. A callback hidden behind an opaque alias, or
+# a parameter named something innocuous and untyped, would still get past it.
+# What it does buy is that the specific contract PR-2 removed cannot come back
+# unnoticed, and that the obvious ways of reintroducing one are noisy.
 
 PROVISIONING_ROOT = Path("src/haloflow/m01/provisioning")
 CALLBACK_PARAMETER_NAMES = re.compile(
     r"(installer|hook|callback|plugin|extension)s?$", re.IGNORECASE
 )
+
+
+def _takes_a_connection(annotation: ast.expr | None) -> bool:
+    """True when this annotation describes something *given* a connection.
+
+    A `Callable[[AsyncConnection], ...]` parameter is a callback handed a live
+    connection, which is the contract under prohibition. `ConnectionFactory =
+    Callable[[], Awaitable[AsyncConnection]]` *returns* one, which is the
+    mechanism this whole package is built on, so only the parameter positions of
+    a callable are inspected.
+    """
+
+    if annotation is None:
+        return False
+    if isinstance(annotation, ast.Subscript):
+        value = ast.unparse(annotation.value)
+        if value.split(".")[-1] in {"Callable", "Coroutine", "Awaitable"}:
+            arguments = annotation.slice
+            if isinstance(arguments, ast.Tuple) and arguments.elts:
+                parameters = arguments.elts[0]
+                return "Connection" in ast.unparse(parameters)
+            return False
+        return any(
+            _takes_a_connection(element)
+            for element in (
+                annotation.slice.elts if isinstance(annotation.slice, ast.Tuple)
+                else [annotation.slice]
+            )
+        )
+    return False
 
 
 def _connection_callback_violations_in(path: str, source: str) -> list[str]:
@@ -487,9 +525,7 @@ def _connection_callback_violations_in(path: str, source: str) -> list[str]:
     registry — with nothing confining an installer to the schema it was handed.
     Per-tenant objects are contributed as migration units instead, and M02 will
     define whatever narrow mechanism its SECURITY DEFINER functions actually
-    need. This check exists so that contract cannot quietly come back: it fails
-    on a Protocol method that takes a connection, and on a constructor parameter
-    named like a module callback.
+    need. This check exists so that contract cannot quietly come back.
     """
 
     violations: list[str] = []
@@ -520,11 +556,27 @@ def _connection_callback_violations_in(path: str, source: str) -> list[str]:
             for argument in arguments:
                 if CALLBACK_PARAMETER_NAMES.search(argument.arg):
                     violations.append(f"{path}: __init__ accepts module callback {argument.arg!r}")
+                elif _takes_a_connection(argument.annotation):
+                    violations.append(
+                        f"{path}: __init__ parameter {argument.arg!r} is a callback "
+                        "annotated to receive a connection"
+                    )
+
+        # A callable type alias is the obvious way to launder the annotation above.
+        if isinstance(node, ast.Assign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            value = node.value
+            for target in targets:
+                if isinstance(target, ast.Name) and _takes_a_connection(value):
+                    violations.append(
+                        f"{path}: type alias {target.id!r} describes a callback "
+                        "that receives a connection"
+                    )
     return violations
 
 
 def test_no_module_callback_receives_a_privileged_connection() -> None:
-    """Requested in the PR-2 review disposition, 2026-09-01."""
+    """Requested in the PR-2 review disposition, 2026-09-01. Defense in depth."""
 
     violations: list[str] = []
     for path in PROVISIONING_ROOT.rglob("*.py"):
@@ -534,8 +586,9 @@ def test_no_module_callback_receives_a_privileged_connection() -> None:
 
 
 def test_the_module_callback_control_fails_when_it_should() -> None:
-    """Negative control: both halves catch the contract that was removed."""
+    """Negative control: each half catches a way of reintroducing the contract."""
 
+    path = "src/haloflow/m01/provisioning/provisioner.py"
     protocol_form = (
         "from typing import Protocol\n"
         "from psycopg import AsyncConnection\n"
@@ -547,11 +600,35 @@ def test_the_module_callback_control_fails_when_it_should() -> None:
         "    def __init__(self, connect, runner, *, object_installers=()) -> None:\n"
         "        self._object_installers = object_installers\n"
     )
-    path = "src/haloflow/m01/provisioning/provisioner.py"
+    # The evasions the review named: an innocuous parameter name, and an alias.
+    annotated_form = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect, *, operations: "
+        "tuple[Callable[[AsyncConnection, str], Awaitable[None]], ...] = ()) -> None: ...\n"
+    )
+    alias_form = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "ModuleOperation = Callable[[AsyncConnection, str], Awaitable[None]]\n"
+    )
 
     assert _connection_callback_violations_in(path, protocol_form)
     assert _connection_callback_violations_in(path, constructor_form)
+    assert _connection_callback_violations_in(path, annotated_form)
+    assert _connection_callback_violations_in(path, alias_form)
 
-    # ...and the shipped provisioner passes the same check.
-    provisioner = PROVISIONING_ROOT / "provisioner.py"
-    assert _connection_callback_violations_in(str(provisioner), provisioner.read_text()) == []
+    # ...and the legitimate factory, which RETURNS a connection, must not fire.
+    factory_alias = (
+        "from collections.abc import Awaitable, Callable\n"
+        "from psycopg import AsyncConnection\n"
+        "ConnectionFactory = Callable[[], Awaitable[AsyncConnection]]\n"
+        "class TenantProvisioner:\n"
+        "    def __init__(self, connect: ConnectionFactory) -> None: ...\n"
+    )
+    assert _connection_callback_violations_in(path, factory_alias) == []
+
+    # ...and every shipped file passes.
+    for shipped in PROVISIONING_ROOT.rglob("*.py"):
+        assert _connection_callback_violations_in(str(shipped), shipped.read_text()) == []

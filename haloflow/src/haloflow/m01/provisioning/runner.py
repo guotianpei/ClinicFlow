@@ -32,8 +32,8 @@ from typing import Final
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import TenantMigrationFailed
-from haloflow.m01.provisioning.codes import SanitizedErrorCode
+from haloflow.m01.errors import ConnectionModeRejected, TenantMigrationFailed
+from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
 from haloflow.m01.resolver import TENANT_ID_PATTERN
@@ -329,23 +329,33 @@ async def require_explicit_transactions(connection: AsyncConnection) -> None:
     `ConnectionFactory` cannot express that in its type, so it is enforced here
     on every connection this package acquires. A factory that hands back a
     connection with work already in flight is rejected rather than adopted.
+
+    Raises the neutral `ConnectionModeRejected`, never a caller's exception type.
+    This helper serves both the runner and the provisioner, and a shared helper
+    that picks one caller's taxonomy is how a provisioning call came to raise
+    `TenantMigrationFailed`. Each entry point translates it below.
     """
 
     try:
         await connection.set_autocommit(True)
     except PsycopgError as error:
-        raise TenantMigrationFailed(reason_code="CONNECTION_NOT_IDLE") from _sanitize(error)
+        raise ConnectionModeRejected(
+            reason_code=PreconditionCode.CONNECTION_NOT_IDLE.value
+        ) from _sanitize(error)
 
 
 async def _assume_migrator(connection: AsyncConnection) -> None:
-    await require_explicit_transactions(connection)
+    try:
+        await require_explicit_transactions(connection)
+    except ConnectionModeRejected as error:
+        raise TenantMigrationFailed(reason_code=error.reason_code) from None
     await connection.execute("SET search_path = pg_catalog")
     await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
 
 
 def _validate_tenant_id(tenant_id: str) -> None:
     if not TENANT_ID_PATTERN.fullmatch(tenant_id):
-        raise TenantMigrationFailed(reason_code="TENANT_ID_INVALID")
+        raise TenantMigrationFailed(reason_code=PreconditionCode.TENANT_ID_INVALID.value)
 
 
 def _sanitize(error: PsycopgError) -> Exception:

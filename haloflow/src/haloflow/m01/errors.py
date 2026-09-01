@@ -83,3 +83,15 @@ class ProvisioningFailed(M01Error):
     """Tenant provisioning stopped before activation. The tenant stays unusable."""
 
     code = "PROVISIONING_FAILED"
+
+
+class ConnectionModeRejected(M01Error):
+    """A connection cannot carry this package's explicit transaction boundaries.
+
+    Internal and neutral by design: it is raised by the shared connection-mode
+    check and never escapes, because the runner and the provisioner each catch it
+    and re-raise in their own taxonomy. A shared helper raising one caller's
+    exception type is how `TenantMigrationFailed` came out of a provisioning call.
+    """
+
+    code = "CONNECTION_MODE_REJECTED"

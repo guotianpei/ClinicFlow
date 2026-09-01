@@ -6,6 +6,8 @@ because a privilege that is asserted about rather than exercised is exactly the
 gap finding F-3 was raised over.
 """
 
+import ast
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -21,7 +23,10 @@ from haloflow.m01.provisioning import (
     TenantMigrationUnit,
     tenant_lock_key,
 )
-from haloflow.m01.provisioning.codes import LEDGER_ERROR_CODE_MAX_LENGTH
+from haloflow.m01.provisioning.codes import (
+    LEDGER_ERROR_CODE_MAX_LENGTH,
+    PreconditionCode,
+)
 from haloflow.m01.provisioning.provisioner import ProvisioningRequest, _validate_request
 from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
 
@@ -250,3 +255,82 @@ def test_the_execution_id_guard_does_not_rely_on_static_typing_alone() -> None:
 
     with pytest.raises(ProvisioningFailed):
         _validate_request(_request(execution_id=str(UUID(int=1))))
+
+
+# --- the failure vocabulary is closed, and enforced rather than described ---
+
+
+PROVISIONING_ROOT = Path("src/haloflow/m01/provisioning")
+
+
+def _raised_reason_codes() -> set[str]:
+    """Every literal `reason_code=` value raised in the provisioning package."""
+
+    found: set[str] = set()
+    for path in PROVISIONING_ROOT.rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.Call):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg != "reason_code":
+                    continue
+                if isinstance(keyword.value, ast.Constant) and isinstance(
+                    keyword.value.value, str
+                ):
+                    found.add(keyword.value.value)
+    return found
+
+
+def test_no_reason_code_is_raised_as_a_bare_string() -> None:
+    """Review finding: `CONNECTION_NOT_IDLE` belonged to no documented vocabulary.
+
+    It was not alone — sixteen other codes were bare strings in the same position.
+    Both vocabularies are now enumerated, so a code that belongs to neither is a
+    lint-visible literal rather than a plausible-looking string. The check reads
+    the source rather than the enums, because an enum can only be complete about
+    codes something actually raises.
+    """
+
+    assert _raised_reason_codes() == set(), (
+        "raise these through SanitizedErrorCode or PreconditionCode instead of as "
+        f"string literals: {sorted(_raised_reason_codes())}"
+    )
+
+
+def test_the_two_failure_vocabularies_do_not_overlap() -> None:
+    """A code means one thing: written to the ledger, or raised before one exists."""
+
+    ledger = {code.value for code in SanitizedErrorCode}
+    precondition = {code.value for code in PreconditionCode}
+
+    assert ledger & precondition == set()
+
+
+def test_precondition_codes_carry_no_request_content() -> None:
+    for code in PreconditionCode:
+        assert code.value.isupper()
+        assert code.value.replace("_", "").isalnum()
+        assert len(code.value) <= LEDGER_ERROR_CODE_MAX_LENGTH
+
+
+def test_the_connection_mode_check_raises_neutrally_and_each_caller_translates() -> None:
+    """Review finding: a shared helper raised one caller's exception type.
+
+    `require_explicit_transactions` served both the runner and the provisioner but
+    always raised `TenantMigrationFailed`, so a provisioning call could fail as a
+    migration error. It now raises the neutral `ConnectionModeRejected`, and the
+    two entry points each translate it — asserted here from the source, since
+    reaching the failure itself needs a database.
+    """
+
+    runner_source = (PROVISIONING_ROOT / "runner.py").read_text()
+    provisioner_source = (PROVISIONING_ROOT / "provisioner.py").read_text()
+
+    assert "raise ConnectionModeRejected(" in runner_source
+    assert "except ConnectionModeRejected as error:" in runner_source
+    assert "raise TenantMigrationFailed(reason_code=error.reason_code)" in runner_source
+
+    assert "except ConnectionModeRejected as error:" in provisioner_source
+    assert "raise ProvisioningFailed(reason_code=error.reason_code)" in provisioner_source
+    # ...and the neutral error is never what a caller of either entry point sees.
+    assert "raise ConnectionModeRejected(" not in provisioner_source

@@ -22,6 +22,7 @@ from types import MappingProxyType
 from typing import Final
 
 from haloflow.m01.errors import MigrationUnitRejected
+from haloflow.m01.provisioning.codes import PreconditionCode
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
@@ -43,16 +44,18 @@ class TenantMigrationUnit:
 
     def __post_init__(self, _issuer: object | None) -> None:
         if _issuer is not _UNIT_ISSUER:
-            raise MigrationUnitRejected(reason_code="UNTRUSTED_MIGRATION_UNIT")
+            raise MigrationUnitRejected(reason_code=PreconditionCode.UNTRUSTED_MIGRATION_UNIT.value)
         if not MIGRATION_ID_PATTERN.fullmatch(self.migration_id):
-            raise MigrationUnitRejected(reason_code="MIGRATION_ID_INVALID")
+            raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_ID_INVALID.value)
         if not self.template.strip():
-            raise MigrationUnitRejected(reason_code="MIGRATION_TEMPLATE_EMPTY")
+            raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_TEMPLATE_EMPTY.value)
         if _SCHEMA_PLACEHOLDER not in self.template:
             # A unit that names no schema is either unqualified DDL, which would
             # land wherever search_path points, or shared-schema DDL, which is
             # Alembic's territory and not a per-tenant migration at all.
-            raise MigrationUnitRejected(reason_code="MIGRATION_TEMPLATE_UNSCOPED")
+            raise MigrationUnitRejected(
+                reason_code=PreconditionCode.MIGRATION_TEMPLATE_UNSCOPED.value
+            )
 
     @property
     def is_test_unit(self) -> bool:
@@ -74,7 +77,7 @@ class TenantMigrationUnit:
         """Substitute the tenant schema after re-validating it as an identifier."""
 
         if not SCHEMA_KEY_PATTERN.fullmatch(schema_key):
-            raise MigrationUnitRejected(reason_code="SCHEMA_KEY_INVALID")
+            raise MigrationUnitRejected(reason_code=PreconditionCode.SCHEMA_KEY_INVALID.value)
         return self.template.replace(_SCHEMA_PLACEHOLDER, schema_key)
 
 
@@ -90,7 +93,9 @@ class TenantMigrationRegistry:
         _issuer: object | None = None,
     ) -> None:
         if _issuer is not _UNIT_ISSUER:
-            raise MigrationUnitRejected(reason_code="UNTRUSTED_MIGRATION_REGISTRY")
+            raise MigrationUnitRejected(
+                reason_code=PreconditionCode.UNTRUSTED_MIGRATION_REGISTRY.value
+            )
         self.__units = units
 
     def __iter__(self) -> Iterator[TenantMigrationUnit]:
@@ -116,7 +121,7 @@ class TenantMigrationRegistry:
         """
 
         if not self.__units:
-            raise MigrationUnitRejected(reason_code="MIGRATION_REGISTRY_EMPTY")
+            raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_REGISTRY_EMPTY.value)
         return int(self.__units[-1].migration_id[1:4])
 
 
@@ -136,7 +141,9 @@ def build_tenant_migration_registry(
     for definitions in definition_sets:
         for migration_id, template in definitions.items():
             if migration_id in merged:
-                raise MigrationUnitRejected(reason_code="DUPLICATE_MIGRATION_ID")
+                raise MigrationUnitRejected(
+                    reason_code=PreconditionCode.DUPLICATE_MIGRATION_ID.value
+                )
             merged[migration_id] = template
 
     units = tuple(
@@ -146,7 +153,9 @@ def build_tenant_migration_registry(
     if not allow_test_units:
         for unit in units:
             if unit.is_test_unit:
-                raise MigrationUnitRejected(reason_code="TEST_MIGRATION_UNIT_REJECTED")
+                raise MigrationUnitRejected(
+                    reason_code=PreconditionCode.TEST_MIGRATION_UNIT_REJECTED.value
+                )
     return TenantMigrationRegistry(units, _issuer=_UNIT_ISSUER)
 
 

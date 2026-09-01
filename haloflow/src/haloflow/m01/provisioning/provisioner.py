@@ -34,8 +34,8 @@ from uuid import UUID
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import ProvisioningFailed
-from haloflow.m01.provisioning.codes import SanitizedErrorCode
+from haloflow.m01.errors import ConnectionModeRejected, ProvisioningFailed
+from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
 from haloflow.m01.provisioning.roles import (
     AUDIT_PROJECTOR_ROLE,
     MIGRATOR_ROLE,
@@ -97,7 +97,7 @@ class TenantProvisioner:
             # R-E10. Provisioning a tenant the resolver would then refuse is a
             # configuration error, and it is cheaper to fail before the schema
             # exists than to leave an unusable tenant behind.
-            raise ProvisioningFailed(reason_code="SCHEMA_VERSION_UNSUPPORTED")
+            raise ProvisioningFailed(reason_code=PreconditionCode.SCHEMA_VERSION_UNSUPPORTED.value)
 
         connection = await self._connect()
         try:
@@ -168,12 +168,14 @@ class TenantProvisioner:
                     # provisioning run may adopt. R-E2's resume window is exactly
                     # the `provisioning` state, which is also the only state the
                     # 001 immutability trigger permits a schema_key change in.
-                    raise ProvisioningFailed(reason_code="TENANT_NOT_RESUMABLE")
+                    raise ProvisioningFailed(
+                        reason_code=PreconditionCode.TENANT_NOT_RESUMABLE.value
+                    )
                 if schema_key != request.schema_key:
                     # Never a second identity for one tenant (R-E2): the run is
                     # refused rather than silently rebinding the tenant to a new
                     # schema and orphaning the first one.
-                    raise ProvisioningFailed(reason_code="SCHEMA_KEY_CONFLICT")
+                    raise ProvisioningFailed(reason_code=PreconditionCode.SCHEMA_KEY_CONFLICT.value)
                 return True
         except PsycopgError as error:
             raise ProvisioningFailed(
@@ -336,23 +338,27 @@ async def _assume_provisioner(connection: AsyncConnection) -> None:
     # Same contract as the runner's, and enforced by the same function: the
     # provisioning sequence commits between steps so a partial tenant is
     # resumable, and on a non-autocommit connection those commits would be
-    # savepoints that a close() discards.
-    await require_explicit_transactions(connection)
+    # savepoints that a close() discards. The shared check raises neutrally; a
+    # provisioning call must fail as ProvisioningFailed, not as a migration error.
+    try:
+        await require_explicit_transactions(connection)
+    except ConnectionModeRejected as error:
+        raise ProvisioningFailed(reason_code=error.reason_code) from None
     await connection.execute("SET search_path = pg_catalog")
     await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
 
 
 def _validate_request(request: ProvisioningRequest) -> None:
     if not TENANT_ID_PATTERN.fullmatch(request.tenant_id):
-        raise ProvisioningFailed(reason_code="TENANT_ID_INVALID")
+        raise ProvisioningFailed(reason_code=PreconditionCode.TENANT_ID_INVALID.value)
     if not SCHEMA_KEY_PATTERN.fullmatch(request.schema_key):
-        raise ProvisioningFailed(reason_code="SCHEMA_KEY_INVALID")
+        raise ProvisioningFailed(reason_code=PreconditionCode.SCHEMA_KEY_INVALID.value)
     if request.actor_kind not in _ACTOR_KINDS:
-        raise ProvisioningFailed(reason_code="ACTOR_KIND_INVALID")
+        raise ProvisioningFailed(reason_code=PreconditionCode.ACTOR_KIND_INVALID.value)
     if not request.actor_id:
-        raise ProvisioningFailed(reason_code="ACTOR_ID_REQUIRED")
+        raise ProvisioningFailed(reason_code=PreconditionCode.ACTOR_ID_REQUIRED.value)
     if not isinstance(request.execution_id, UUID):
-        raise ProvisioningFailed(reason_code="EXECUTION_ID_INVALID")
+        raise ProvisioningFailed(reason_code=PreconditionCode.EXECUTION_ID_INVALID.value)
 
 
 def _sanitize(error: PsycopgError) -> Exception:
