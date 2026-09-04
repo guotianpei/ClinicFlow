@@ -14,7 +14,6 @@ text, so one migration has one checksum across every tenant and drift means the
 same thing everywhere.
 """
 
-import hashlib
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import InitVar, dataclass, field
@@ -22,6 +21,7 @@ from types import MappingProxyType
 from typing import Final
 
 from haloflow.m01.errors import MigrationUnitRejected
+from haloflow.m01.provisioning.checksum import unit_checksum
 from haloflow.m01.provisioning.codes import PreconditionCode
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
@@ -63,15 +63,21 @@ class TenantMigrationUnit:
 
     @property
     def checksum(self) -> str:
-        """SHA-256 over the whitespace-normalized template.
+        """SHA-256 over the versioned canonical payload (R-P4.1, A6).
 
-        Normalizing means reindenting a unit does not read as drift, while any
-        change to a token does. The digest is over the template, so the value is
-        identical for every tenant the unit is applied to.
+        Normalizing the template means reindenting a unit does not read as
+        drift, while any change to a token does. The digest is over the
+        template, not the rendered text, so the value is identical for every
+        tenant the unit is applied to.
+
+        v2 digests a payload rather than the template alone, because the
+        execution role and the verification specification must be covered too
+        and concatenating fields is ambiguous. ``checksum.py`` holds the
+        canonicalization and explains why. Every existing checksum changes as a
+        result -- known, intended, and gated by R-P4.4.
         """
 
-        normalized = " ".join(self.template.split())
-        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        return unit_checksum(migration_id=self.migration_id, template=self.template)
 
     def render(self, schema_key: str) -> str:
         """Substitute the tenant schema after re-validating it as an identifier."""

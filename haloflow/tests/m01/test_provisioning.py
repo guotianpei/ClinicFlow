@@ -334,3 +334,433 @@ def test_the_connection_mode_check_raises_neutrally_and_each_caller_translates()
     assert "raise ProvisioningFailed(reason_code=error.reason_code)" in provisioner_source
     # ...and the neutral error is never what a caller of either entry point sees.
     assert "raise ConnectionModeRejected(" not in provisioner_source
+
+
+# --- CP-1: checksum v2, canonical payload and ordering ---------------------
+#
+# Traceability: TC-P39 (R-P4.1, R-P4.3), TC-P40 (R-P4.2), TC-P41 (R-P4.4 churn
+# asserted, not silently absorbed), TC-P55 (R-P4.5), TC-P56 (R-P4.5), TC-P57
+# (R-P4.3, R-P4.5, R-P4.6). Design v7 A6 is authoritative for the payload shape.
+#
+# The golden vectors below were produced by an oracle written from the A6 text
+# alone, independently of `provisioning/checksum.py`, so a digest here disagreeing
+# with the module is a real signal rather than the module agreeing with itself.
+
+# The digest checksum v1 produced for the sole production unit. Pinned so the
+# v2 churn (R-P4.4) is asserted explicitly rather than absorbed by editing a
+# constant to whatever the new code emits.
+V1_T001_CHECKSUM = "a2db1ef35b4a2901637ff5d0c057bbbf1bebeee3940b990aa1966eb646b7ff37"
+V2_T001_CHECKSUM = "5e232d1563edb413560a939b4564194b268ebda631266900f1ddfa5aa75d0ebd"
+
+V2_SIMPLE_TEMPLATE = "CREATE TABLE {schema}.a (id integer);"
+V2_SIMPLE_CHECKSUM = "54dfd1447d43914bcad1861e14896a98a1dcc614d74d80bc303466df3a76aab5"
+V2_BRACES_CHECKSUM = "ae14cee61b96ad55183e2bf34d3f39a3099eee7a80e652a53caa494147e36bca"
+V2_NON_ASCII_CHECKSUM = "f5303756caca3f52e97a6dff10e82fc85f09ed3bb318c7ffc8ed8c1fc6ec5b56"
+V2_ROLE_SET_CHECKSUM = "e1bc9ac7564c95b48c5c39240d25759b702ef5ced48c9fe976fc3a6091fbda82"
+
+
+def test_checksum_v2_changes_the_production_unit_and_the_change_is_asserted() -> None:
+    """TC-P41. Every existing checksum changes under v2 (R-P4.4).
+
+    The old value is pinned beside the new one so the churn is visible in the
+    diff. Editing one constant to the value the new code emits would assert
+    nothing; asserting the inequality against the recorded v1 digest does.
+    """
+
+    unit = build_production_tenant_migrations().units[0]
+
+    assert unit.migration_id == "t001_m01_baseline"
+    assert unit.checksum != V1_T001_CHECKSUM
+    assert unit.checksum == V2_T001_CHECKSUM
+
+
+def test_the_checksum_is_taken_over_a_versioned_payload_not_a_concatenation() -> None:
+    """TC-P39, R-P4.1. The pair that collides when fields are concatenated.
+
+    ``execution_role="a"`` with ``template="b"`` and ``execution_role="ab"`` with
+    an empty template are one string under concatenation and two payloads under
+    v2. The unit constructor rejects an empty template, so this addresses the
+    payload builder directly -- which is where the ambiguity would live.
+    """
+
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    collide_a = unit_checksum(migration_id="t001_a", template="b", execution_role="a")
+    collide_b = unit_checksum(migration_id="t001_a", template="", execution_role="ab")
+
+    assert collide_a != collide_b
+
+
+def test_the_canonical_encoding_is_stable_across_unicode_form_and_newline_style() -> None:
+    """TC-P40, R-P4.2. Asserted through the public property, not the internals."""
+
+    import unicodedata
+
+    nfc = "CREATE TABLE {schema}.café (id integer);"
+    nfd = unicodedata.normalize("NFD", nfc)
+    assert nfc != nfd
+
+    composed = _registry({"t001_a": nfc}).units[0]
+    decomposed = _registry({"t001_a": nfd}).units[0]
+    crlf = _registry({"t001_a": "CREATE TABLE {schema}.a\r\n    (id integer);"}).units[0]
+    lf = _registry({"t001_a": "CREATE TABLE {schema}.a\n    (id integer);"}).units[0]
+
+    assert composed.checksum == decomposed.checksum
+    assert composed.checksum == V2_NON_ASCII_CHECKSUM
+    assert crlf.checksum == lf.checksum
+
+
+def test_the_checksum_payload_carries_the_execution_role_slot_before_it_is_populated() -> None:
+    """R-P4.1 and the A6 shape: the payload churns once, at CP-1.
+
+    ``execution_role`` and ``verification`` are in the payload as ``null`` while
+    the fields do not yet exist on the unit, so CP-2 and CP-7 populate them
+    without changing the shape or moving every checksum a second time.
+    """
+
+    from haloflow.m01.provisioning.checksum import CHECKSUM_VERSION, unit_payload
+
+    assert CHECKSUM_VERSION == 2
+
+    payload = unit_payload(migration_id="t001_a", template=V2_SIMPLE_TEMPLATE)
+
+    assert set(payload) == {
+        "checksum_version",
+        "execution_role",
+        "migration_id",
+        "template",
+        "verification",
+    }
+    assert payload["checksum_version"] == 2
+    assert payload["execution_role"] is None
+    assert payload["verification"] is None
+
+
+def test_reordering_any_collection_leaves_the_checksum_unchanged() -> None:
+    """TC-P55, R-P4.5. Every collection, including the nested ones.
+
+    The collections belong to the verification specification, which CP-7 builds.
+    The ordering is written here so CP-7 supplies data to an already-ordered
+    structure rather than adding ordering to a payload that shipped without it.
+    """
+
+    from haloflow.m01.provisioning.checksum import digest, unit_payload
+
+    def spec(functions, acl, config):
+        return {"functions": functions, "acl": acl, "config": config}
+
+    functions_a = [
+        {"name": "b_fn", "argument_types": ["uuid"]},
+        {"name": "a_fn", "argument_types": ["text", "uuid"]},
+        {"name": "a_fn", "argument_types": ["text"]},
+    ]
+    functions_b = [functions_a[2], functions_a[0], functions_a[1]]
+
+    acl_a = [
+        {"grantee": "haloflow_runtime", "privileges": ["EXECUTE", "ALL"]},
+        {"grantee": "haloflow_audit_projector", "privileges": ["EXECUTE"]},
+    ]
+    acl_b = [
+        {"grantee": "haloflow_audit_projector", "privileges": ["EXECUTE"]},
+        {"grantee": "haloflow_runtime", "privileges": ["ALL", "EXECUTE"]},
+    ]
+
+    config_a = ["search_path=tenant_x", "role=haloflow_runtime"]
+    config_b = ["role=haloflow_runtime", "search_path=tenant_x"]
+
+    first = digest(
+        unit_payload(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification=spec(functions_a, acl_a, config_a),
+        )
+    )
+    second = digest(
+        unit_payload(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification=spec(functions_b, acl_b, config_b),
+        )
+    )
+
+    assert first == second
+
+
+def test_duplicates_and_conflicting_config_keys_are_rejected_at_construction() -> None:
+    """TC-P56, R-P4.5. Ordering resolves presentation; it must not hide a contradiction."""
+
+    from haloflow.m01.provisioning.checksum import (
+        ordered_acl,
+        ordered_config,
+        ordered_functions,
+    )
+
+    with pytest.raises(MigrationUnitRejected) as duplicate_function:
+        ordered_functions(
+            [
+                {"name": "a_fn", "argument_types": ["uuid"]},
+                {"name": "a_fn", "argument_types": ["uuid"]},
+            ]
+        )
+    assert duplicate_function.value.reason_code == (
+        PreconditionCode.DUPLICATE_FUNCTION_IDENTITY.value
+    )
+
+    with pytest.raises(MigrationUnitRejected) as duplicate_acl:
+        ordered_acl(
+            [
+                {"grantee": "haloflow_runtime", "privileges": ["EXECUTE"]},
+                {"grantee": "haloflow_runtime", "privileges": ["ALL"]},
+            ]
+        )
+    assert duplicate_acl.value.reason_code == PreconditionCode.DUPLICATE_ACL_ENTRY.value
+
+    with pytest.raises(MigrationUnitRejected) as conflicting_config:
+        ordered_config(["search_path=a", "search_path=b"])
+    assert conflicting_config.value.reason_code == PreconditionCode.CONFLICTING_CONFIG_KEY.value
+
+    # A differing argument list is a different identity, not a duplicate.
+    assert len(
+        ordered_functions(
+            [
+                {"name": "a_fn", "argument_types": ["uuid"]},
+                {"name": "a_fn", "argument_types": ["text"]},
+            ]
+        )
+    ) == 2
+
+
+def test_config_entries_are_ordered_by_parsed_key_not_by_raw_string() -> None:
+    """TC-P55, R-P4.5. ``proconfig`` entries are ``key=value`` text.
+
+    Sorting the raw strings would order by the value whenever two keys share a
+    prefix, so equivalent specifications could digest differently.
+    """
+
+    from haloflow.m01.provisioning.checksum import ordered_config
+
+    assert ordered_config(["b=1", "a=2"]) == ("a=2", "b=1")
+    # `search_path=a` sorts before `role=z` only if the value is doing the work.
+    assert ordered_config(["search_path=a", "role=z"]) == ("role=z", "search_path=a")
+
+
+def test_golden_vectors_pin_the_canonical_encoding() -> None:
+    """TC-P57, TC-P39, R-P4.3. Ordinary braces, non-ASCII, CRLF, and a set role.
+
+    A template containing ``{}`` that is not the ``{schema}`` sentinel must pass
+    through untouched -- the payload is built by substitution nowhere and by
+    ``str.format`` never (A2b).
+    """
+
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    braces = "CREATE TABLE {schema}.a (v jsonb DEFAULT '{}'::jsonb);"
+
+    assert unit_checksum(migration_id="t001_a", template=V2_SIMPLE_TEMPLATE) == (
+        V2_SIMPLE_CHECKSUM
+    )
+    assert unit_checksum(migration_id="t001_a", template=braces) == V2_BRACES_CHECKSUM
+    assert unit_checksum(
+        migration_id="t001_a",
+        template=V2_SIMPLE_TEMPLATE,
+        execution_role="haloflow_m02_migrator",
+    ) == V2_ROLE_SET_CHECKSUM
+
+
+def test_the_template_collapses_whitespace_and_a_function_body_does_not() -> None:
+    """R-P4.6. Two normalizations that must not be merged.
+
+    A reindented migration is not drift; a reindented function body is, because
+    the body is compared against ``prosrc`` where drift is meant to be exact.
+    Merging these would let the checksum and the verifier disagree about one
+    string, which is the failure A6 exists to prevent.
+    """
+
+    from haloflow.m01.provisioning.checksum import normalize_body, normalize_template
+
+    spaced = "CREATE TABLE {schema}.a\n    (id integer);"
+    tight = "CREATE TABLE {schema}.a (id integer);"
+
+    assert normalize_template(spaced) == normalize_template(tight)
+    assert normalize_body(spaced) != normalize_body(tight)
+
+    # Both share the pinned newline and Unicode normalization.
+    assert normalize_body("a\r\nb") == "a\nb"
+    assert normalize_template("a\r\nb") == "a b"
+
+
+# --- CP-1 fix: canonicalization fails closed (Codex note-07) ----------------
+#
+# Both findings were reachable collisions: two distinct supplied specifications
+# receiving one digest. A checksum used as a drift control cannot do that, so
+# these are regression tests in the strict sense -- each reproduces the exact
+# pre-fix collision and asserts it is now a refusal.
+
+
+def _verified(spec: object) -> str:
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    return unit_checksum(
+        migration_id="t001_a",
+        template=V2_SIMPLE_TEMPLATE,
+        verification={"spec": spec} if not isinstance(spec, dict) else spec,
+    )
+
+
+def test_a_malformed_member_of_a_collection_is_refused_not_dropped() -> None:
+    """Finding 1. Filtering made a malformed specification digest as a valid one.
+
+    Pre-fix, each pair below produced an identical checksum: the member that
+    could not be ordered was silently removed from the payload. The collision is
+    the defect -- the malformed input must fail construction instead.
+    """
+
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    valid_functions = [{"name": "f", "argument_types": ["uuid"]}]
+    valid_config = ["a=1"]
+    valid_acl = [{"grantee": "haloflow_runtime", "privileges": ["EXECUTE"]}]
+
+    malformed: list[dict[str, object]] = [
+        {"functions": [*valid_functions, 42]},
+        {"config": [*valid_config, 42]},
+        {"acl": [{"grantee": "haloflow_runtime", "privileges": ["EXECUTE", 7]}]},
+        {"functions": [{"name": "f", "argument_types": ["uuid", 99]}]},
+        {"functions": "not a collection"},
+        {"config": {"a": 1}},
+    ]
+    for spec in malformed:
+        with pytest.raises(MigrationUnitRejected) as rejected:
+            unit_checksum(migration_id="t001_a", template=V2_SIMPLE_TEMPLATE, verification=spec)
+        assert rejected.value.reason_code == PreconditionCode.CHECKSUM_PAYLOAD_MALFORMED.value
+
+    # The valid forms of the same specifications still digest.
+    assert len(
+        unit_checksum(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification={"functions": valid_functions, "config": valid_config, "acl": valid_acl},
+        )
+    ) == 64
+
+
+def test_two_argument_lists_that_differ_only_past_a_dropped_member_stay_distinct() -> None:
+    """Finding 1, the other direction: filtering rejected valid input too.
+
+    ``["uuid", 99]`` and ``["uuid", 100]`` both filtered down to ``("uuid",)``,
+    so two distinct identities collided and the pair was refused as duplicates.
+    Both are now refused as malformed, for the right reason.
+    """
+
+    from haloflow.m01.provisioning.checksum import ordered_functions
+
+    with pytest.raises(MigrationUnitRejected) as rejected:
+        ordered_functions(
+            [
+                {"name": "f", "argument_types": ["uuid", 99]},
+                {"name": "f", "argument_types": ["uuid", 100]},
+            ]
+        )
+    assert rejected.value.reason_code == PreconditionCode.CHECKSUM_PAYLOAD_MALFORMED.value
+
+    # Two genuinely distinct string identities remain two.
+    assert len(
+        ordered_functions(
+            [
+                {"name": "f", "argument_types": ["uuid", "text"]},
+                {"name": "f", "argument_types": ["uuid", "jsonb"]},
+            ]
+        )
+    ) == 2
+
+
+def test_mapping_keys_that_collide_under_normalization_are_refused() -> None:
+    """Finding 2. Composed and decomposed keys became one, and a value was lost.
+
+    Pre-fix, ``{"é": "FIRST", "é": "SECOND"}`` (composed, then decomposed)
+    digested identically to ``{"é": "SECOND"}`` — the first value overwritten
+    during key normalization, two specifications reduced to one digest.
+    """
+
+    import unicodedata
+
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    composed = "é"
+    decomposed = unicodedata.normalize("NFD", composed)
+    assert composed != decomposed
+
+    with pytest.raises(MigrationUnitRejected) as collision:
+        unit_checksum(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification={composed: "FIRST", decomposed: "SECOND"},
+        )
+    assert collision.value.reason_code == PreconditionCode.DUPLICATE_PAYLOAD_KEY.value
+
+    with pytest.raises(MigrationUnitRejected) as non_string_key:
+        unit_checksum(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification={"functions": [{"name": "f", 7: "value"}]},
+        )
+    assert non_string_key.value.reason_code == (
+        PreconditionCode.CHECKSUM_PAYLOAD_MALFORMED.value
+    )
+
+    # Either key alone is fine, and the two still digest differently.
+    one = unit_checksum(
+        migration_id="t001_a", template=V2_SIMPLE_TEMPLATE, verification={composed: "FIRST"}
+    )
+    two = unit_checksum(
+        migration_id="t001_a", template=V2_SIMPLE_TEMPLATE, verification={composed: "SECOND"}
+    )
+    assert one != two
+
+
+def test_an_absent_collection_is_empty_not_malformed() -> None:
+    """The fix must not turn optional structure into a refusal.
+
+    ``argument_types`` is absent on a function that takes none, and the payload
+    shape is CP-7a's to settle. Absent stays absent; present must be well-formed.
+    """
+
+    from haloflow.m01.provisioning.checksum import ordered_functions, unit_checksum
+
+    assert len(ordered_functions([{"name": "f"}])) == 1
+    assert len(
+        unit_checksum(
+            migration_id="t001_a",
+            template=V2_SIMPLE_TEMPLATE,
+            verification={"functions": [], "acl": [], "config": []},
+        )
+    ) == 64
+
+
+def test_a_bare_string_is_not_a_collection_of_config_entries() -> None:
+    """Codex note-09. The container is validated before it is iterated.
+
+    A string is iterable and yields strings, so materializing first turned
+    ``ordered_config("ab")`` into ``("a", "b")`` — a malformed container quietly
+    becoming two well-formed entries. `unit_checksum` rejected this earlier on
+    its own path, but the public helper's contract was inconsistent, and CP-7a
+    is expected to reuse it.
+    """
+
+    from haloflow.m01.provisioning.checksum import ordered_acl, ordered_config, ordered_functions
+
+    for malformed in ("ab", b"ab", {"a": "1"}, 7):
+        with pytest.raises(MigrationUnitRejected) as rejected:
+            ordered_config(malformed)  # type: ignore[arg-type]
+        assert rejected.value.reason_code == PreconditionCode.CHECKSUM_PAYLOAD_MALFORMED.value
+
+    for helper in (ordered_functions, ordered_acl):
+        with pytest.raises(MigrationUnitRejected) as refused:
+            helper("ab")  # type: ignore[arg-type]
+        assert refused.value.reason_code == PreconditionCode.CHECKSUM_PAYLOAD_MALFORMED.value
+
+    # Legitimate iterables still work, generators included — validation
+    # materializes once rather than consuming the iterator to check it.
+    assert ordered_config(["b=2", "a=1"]) == ("a=1", "b=2")
+    assert ordered_config(("b=2", "a=1")) == ("a=1", "b=2")
+    assert ordered_config(entry for entry in ["b=2", "a=1"]) == ("a=1", "b=2")

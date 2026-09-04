@@ -72,6 +72,21 @@ class PreconditionCode(StrEnum):
     DUPLICATE_MIGRATION_ID = "DUPLICATE_MIGRATION_ID"
     TEST_MIGRATION_UNIT_REJECTED = "TEST_MIGRATION_UNIT_REJECTED"
 
+    # Canonical checksum payload (R-P4.5). Ordering resolves presentation, not
+    # contradiction: a collection that states the same identity twice is refused
+    # rather than sorted, because sorting only hides which one the digest took.
+    DUPLICATE_FUNCTION_IDENTITY = "DUPLICATE_FUNCTION_IDENTITY"
+    DUPLICATE_ACL_ENTRY = "DUPLICATE_ACL_ENTRY"
+    CONFLICTING_CONFIG_KEY = "CONFLICTING_CONFIG_KEY"
+
+    # Canonicalization must not erase supplied data (Codex note-07). A member of
+    # a recognized collection that is not the type the payload requires, and two
+    # mapping keys that normalize to one, are both refused: a canonicalizer that
+    # drops what it cannot order produces one digest for two specifications,
+    # which is the collision the versioned payload exists to prevent.
+    CHECKSUM_PAYLOAD_MALFORMED = "CHECKSUM_PAYLOAD_MALFORMED"
+    DUPLICATE_PAYLOAD_KEY = "DUPLICATE_PAYLOAD_KEY"
+
 
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than
