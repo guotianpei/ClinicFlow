@@ -97,6 +97,32 @@ class PreconditionCode(StrEnum):
     EXECUTION_ROLE_NOT_APPROVED = "EXECUTION_ROLE_NOT_APPROVED"
     EXECUTION_ROLE_IS_INFRASTRUCTURE = "EXECUTION_ROLE_IS_INFRASTRUCTURE"
 
+    # The provisioning manifest, refused at load (R-P1B.12, R-P3.2, R-P3.4, A5,
+    # A7). Distinct causes rather than one code, on the same principle as the
+    # execution-role refusals: an operator reading a code should know whether the
+    # file is structurally wrong, names something that does not exist, contradicts
+    # itself, or declares an access widening that the design forbids outright.
+    PROVISIONING_MANIFEST_MALFORMED = "PROVISIONING_MANIFEST_MALFORMED"
+    MANIFEST_TOKEN_UNRECOGNIZED = "MANIFEST_TOKEN_UNRECOGNIZED"
+    MANIFEST_ROLE_UNKNOWN = "MANIFEST_ROLE_UNKNOWN"
+    MANIFEST_TABLE_UNKNOWN = "MANIFEST_TABLE_UNKNOWN"
+    MANIFEST_PRIVILEGE_UNKNOWN = "MANIFEST_PRIVILEGE_UNKNOWN"
+    MANIFEST_DUPLICATE_DECLARATION = "MANIFEST_DUPLICATE_DECLARATION"
+    MANIFEST_OVERRIDE_INVALID = "MANIFEST_OVERRIDE_INVALID"
+    # The tenant-schema ACL declaration (D22). A missing entry is an error rather
+    # than an empty set: a silently absent entry is how the audit-projector gap
+    # arose, and it is the reason stage 3 declares all five grantee classes.
+    SCHEMA_PRIVILEGE_DECLARATION_INVALID = "SCHEMA_PRIVILEGE_DECLARATION_INVALID"
+    SCHEMA_PRIVILEGE_DECLARATION_MISSING = "SCHEMA_PRIVILEGE_DECLARATION_MISSING"
+    # The manifest declares fixed invariants, not options (Codex note-17). Stages
+    # 1-3 compare the live catalogue against these declarations, so a manifest
+    # able to describe unsafe state would make those controls agree with the
+    # danger rather than catch it. The safe profile (R-P1B.4) and the membership
+    # edge (R-P1B.3) are pinned by value, not merely type-checked.
+    EXECUTION_ROLE_PROFILE_UNSAFE = "EXECUTION_ROLE_PROFILE_UNSAFE"
+    ROLE_MEMBERSHIP_DECLARATION_UNSAFE = "ROLE_MEMBERSHIP_DECLARATION_UNSAFE"
+    ROLE_MEMBERSHIP_DECLARATION_MISSING = "ROLE_MEMBERSHIP_DECLARATION_MISSING"
+
 
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than

@@ -7,6 +7,7 @@ gap finding F-3 was raised over.
 """
 
 import ast
+import json
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -953,3 +954,586 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
 
     assert registry.migration_ids == ("t001_m01_baseline",)
     assert len(registry.units[0].checksum) == 64
+
+
+# --- CP-3: the provisioning manifest ---------------------------------------
+#
+# Traceability: TC-P31 (R-P3.2), TC-P34 (R-P3.4, A5), TC-P68 loader half
+# (R-P1B.12, A7). Architecture A5 and A7.
+#
+# Design variance, approved: the four structured blocks live in
+# `m01/manifests/provisioning.json`, not in `permissions.json`. v7 A5/A7 say
+# `permissions.json` "gains a sibling block", but four consumers iterate its
+# top-level keys as roles and index `policy["allow"]` -- one of them a prohibited
+# file. Measured and recorded in claude_note-14; approved in chatgpt_note-15.
+#
+# Every refusal below is asserted by code, never by message, and the loader takes
+# an injected document so a refusal can be exercised without writing a file.
+
+VALID_PROFILE = {
+    "login": False,
+    "superuser": False,
+    "createdb": False,
+    "createrole": False,
+    "replication": False,
+    "bypassrls": False,
+    "tenant_schema_privileges": ["CREATE"],
+}
+
+INFRASTRUCTURE_SCHEMA_PRIVILEGES = {
+    "haloflow_provisioner": {
+        "privileges": ["USAGE", "CREATE"],
+        "is_grantable": False,
+        "grantor": "haloflow_provisioner",
+        "role_class": "owner",
+    },
+    "haloflow_migrator": {
+        "privileges": ["USAGE", "CREATE"],
+        "is_grantable": False,
+        "grantor": "haloflow_provisioner",
+        "role_class": "infrastructure",
+    },
+    "haloflow_runtime": {
+        "privileges": ["USAGE"],
+        "is_grantable": False,
+        "grantor": "haloflow_provisioner",
+        "role_class": "infrastructure",
+    },
+    "haloflow_audit_projector": {
+        "privileges": ["USAGE"],
+        "is_grantable": False,
+        "grantor": "haloflow_provisioner",
+        "role_class": "infrastructure",
+    },
+}
+
+
+def _manifest_document(**overrides: object) -> dict[str, object]:
+    """A minimal well-formed provisioning manifest, with targeted damage applied."""
+
+    document: dict[str, object] = {
+        "execution_role_profiles": {},
+        "role_memberships": [],
+        "tenant_schema_role_privileges": {
+            role: dict(entry) for role, entry in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()
+        },
+        "tenant_table_overrides": [],
+    }
+    document.update(overrides)
+    return document
+
+
+def test_the_shipped_provisioning_manifest_loads() -> None:
+    """R-P1B.12. The file in the repository is itself valid, not merely the fixtures."""
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    manifest = load_provisioning_manifest()
+
+    assert set(manifest.tenant_schema_role_privileges) >= PROVISIONING_ROLES
+    assert manifest.tenant_schema_role_privileges["haloflow_runtime"].privileges == ("USAGE",)
+    for entry in manifest.tenant_schema_role_privileges.values():
+        assert entry.is_grantable is False
+        assert entry.grantor == "haloflow_provisioner"
+
+
+def test_permissions_json_is_not_read_for_the_provisioning_blocks() -> None:
+    """Codex note-15, condition 2. One authoritative source, no fallback.
+
+    `permissions.json` is still consulted to resolve which capability tokens a
+    role holds -- A5 requires an override's `narrows` token to be one the role
+    actually has -- but never for the four blocks themselves.
+    """
+
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    source = Path(manifest_module.__file__).read_text()
+
+    assert "provisioning.json" in source
+    for block in (
+        "execution_role_profiles",
+        "role_memberships",
+        "tenant_schema_role_privileges",
+        "tenant_table_overrides",
+    ):
+        assert block in source
+    # No merge or fallback: the blocks are never sought in the permissions file.
+    assert ".get(" not in source.split("PERMISSIONS")[-1].split("\n")[0]
+
+
+def test_an_unrecognized_tenant_schema_token_fails_the_control() -> None:
+    """TC-P31, R-P3.2.
+
+    The token vocabulary is enumerated rather than inferred, so a token nobody
+    has classified cannot pass through the control unnoticed -- which is the
+    shape of finding F-3, where `permissions.json` had been verified only against
+    itself.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        classify_tenant_schema_token,
+    )
+
+    assert classify_tenant_schema_token("tenant_schema:business_dml") is not None
+
+    for unrecognized in (
+        "tenant_schema:invented_capability",
+        "tenant_schema:",
+        "tenant_schema:business_dml_extra",
+        "tenant_schema.unknown_table:select",
+    ):
+        with pytest.raises(MigrationManifestRejected) as refused:
+            classify_tenant_schema_token(unrecognized)
+        assert refused.value.reason_code == (
+            PreconditionCode.MANIFEST_TOKEN_UNRECOGNIZED.value
+        ), unrecognized
+
+
+def test_every_tenant_schema_token_in_the_permissions_manifest_is_classified() -> None:
+    """TC-P31, the other direction. The vocabulary must cover what ships.
+
+    An enumerated vocabulary that has drifted behind `permissions.json` would
+    pass the test above while failing on the real file.
+    """
+
+    from haloflow.m01.provisioning.manifest import classify_tenant_schema_token
+
+    permissions = json.loads(
+        (Path("src/haloflow/m01/manifests/permissions.json")).read_text()
+    )
+    for role, policy in permissions.items():
+        for token in list(policy.get("allow", ())) + list(policy.get("deny", ())):
+            if token.startswith("tenant_schema"):
+                assert classify_tenant_schema_token(token) is not None, (role, token)
+
+
+def test_override_validation_refuses_every_way_an_override_can_be_wrong() -> None:
+    """TC-P34, R-P3.4, A5. An override may only ever reduce."""
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    valid = {
+        "role": "haloflow_runtime",
+        "table": "operation_registry",
+        "narrows": "tenant_schema:business_dml",
+        "privileges": ["SELECT", "INSERT"],
+    }
+    # The valid form loads, so each refusal below is about the damage and not
+    # about the shape being unacceptable in general.
+    load_provisioning_manifest(_manifest_document(tenant_table_overrides=[valid]))
+
+    cases: list[tuple[list[object], PreconditionCode]] = [
+        ([{**valid, "role": "haloflow_nonexistent"}], PreconditionCode.MANIFEST_ROLE_UNKNOWN),
+        ([{**valid, "table": "no_such_table"}], PreconditionCode.MANIFEST_TABLE_UNKNOWN),
+        (
+            [{**valid, "privileges": ["SELECT", "TELEPORT"]}],
+            PreconditionCode.MANIFEST_PRIVILEGE_UNKNOWN,
+        ),
+        ([valid, dict(valid)], PreconditionCode.MANIFEST_DUPLICATE_DECLARATION),
+        (
+            [valid, {**valid, "privileges": ["SELECT"]}],
+            PreconditionCode.MANIFEST_DUPLICATE_DECLARATION,
+        ),
+        (
+            [{**valid, "narrows": "tenant_schema:checksummed_ddl"}],
+            PreconditionCode.MANIFEST_OVERRIDE_INVALID,
+        ),
+        (
+            [{**valid, "privileges": ["SELECT", "INSERT", "UPDATE", "DELETE"]}],
+            PreconditionCode.MANIFEST_OVERRIDE_INVALID,
+        ),
+    ]
+    for overrides, expected in cases:
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(_manifest_document(tenant_table_overrides=overrides))
+        assert refused.value.reason_code == expected.value, overrides
+
+
+def test_the_loader_refuses_a_runtime_create_declaration() -> None:
+    """TC-P68, loader half. R-P1B.12, A7.
+
+    The runtime role holds `USAGE` and never `CREATE`. Stage 3 enforces that
+    against a live catalogue at CP-5; this is the half that stops the invariant
+    being relaxed by editing data, which is the cheaper attack.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    damaged = {
+        role: dict(entry) for role, entry in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()
+    }
+    damaged["haloflow_runtime"]["privileges"] = ["USAGE", "CREATE"]
+
+    with pytest.raises(MigrationManifestRejected) as refused:
+        load_provisioning_manifest(
+            _manifest_document(tenant_schema_role_privileges=damaged)
+        )
+    assert refused.value.reason_code == (
+        PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value
+    )
+
+
+def test_the_schema_privilege_block_refuses_every_declared_way_of_being_wrong() -> None:
+    """A7, D22. Absence is an error, not an empty set.
+
+    A silently missing entry is how the audit-projector gap arose in the first
+    place, so a missing infrastructure role is a refusal rather than a default.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    def damaged(**changes: object) -> dict[str, object]:
+        block = {r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()}
+        for role, patch in changes.items():
+            block[role].update(patch)  # type: ignore[arg-type]
+        return block
+
+    cases: list[tuple[object, PreconditionCode]] = [
+        (damaged(haloflow_migrator={"is_grantable": True}),
+         PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID),
+        (damaged(haloflow_migrator={"grantor": "haloflow_migrator"}),
+         PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID),
+        (damaged(haloflow_migrator={"privileges": ["USAGE", "SELECT"]}),
+         PreconditionCode.MANIFEST_PRIVILEGE_UNKNOWN),
+    ]
+    for block, expected in cases:
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(_manifest_document(tenant_schema_role_privileges=block))
+        assert refused.value.reason_code == expected.value
+
+    # A missing infrastructure role is a refusal, not a default.
+    for absent in sorted(PROVISIONING_ROLES):
+        block = {r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()}
+        del block[absent]
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(_manifest_document(tenant_schema_role_privileges=block))
+        assert refused.value.reason_code == (
+            PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_MISSING.value
+        ), absent
+
+    # An unknown role name in the block is refused too.
+    block = {r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()}
+    block["haloflow_not_a_role"] = dict(INFRASTRUCTURE_SCHEMA_PRIVILEGES["haloflow_runtime"])
+    with pytest.raises(MigrationManifestRejected) as refused:
+        load_provisioning_manifest(_manifest_document(tenant_schema_role_privileges=block))
+    assert refused.value.reason_code == PreconditionCode.MANIFEST_ROLE_UNKNOWN.value
+
+
+def test_the_top_level_shape_is_validated_strictly_not_heuristically() -> None:
+    """Codex note-15, condition 3. Blocks are named, not sniffed by child keys."""
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    unknown = _manifest_document()
+    unknown["tenant_table_overides"] = []  # a plausible typo
+    with pytest.raises(MigrationManifestRejected) as extra:
+        load_provisioning_manifest(unknown)
+    assert extra.value.reason_code == PreconditionCode.PROVISIONING_MANIFEST_MALFORMED.value
+
+    for block in (
+        "execution_role_profiles",
+        "role_memberships",
+        "tenant_schema_role_privileges",
+        "tenant_table_overrides",
+    ):
+        missing = _manifest_document()
+        del missing[block]
+        with pytest.raises(MigrationManifestRejected) as absent:
+            load_provisioning_manifest(missing)
+        assert absent.value.reason_code == (
+            PreconditionCode.PROVISIONING_MANIFEST_MALFORMED.value
+        ), block
+
+    # An empty list is a *valid* value -- the shipped manifest declares no
+    # membership edge today -- so the wrong-type cases must not include it.
+    for wrong in ("text", 7, None, {"role": "haloflow_m02_migrator"}):
+        with pytest.raises(MigrationManifestRejected) as mistyped:
+            load_provisioning_manifest(_manifest_document(role_memberships=wrong))
+        assert mistyped.value.reason_code == (
+            PreconditionCode.PROVISIONING_MANIFEST_MALFORMED.value
+        ), wrong
+
+
+def test_an_execution_role_profile_contributes_its_schema_privilege_entry() -> None:
+    """A7. All five grantee classes reach the builder in one shape."""
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    manifest = load_provisioning_manifest(
+        _manifest_document(
+            execution_role_profiles={"haloflow_m02_migrator": dict(VALID_PROFILE)},
+            role_memberships=[
+                {
+                    "role": "haloflow_m02_migrator",
+                    "member": "haloflow_migrator",
+                    "set": True,
+                    "inherit": False,
+                    "admin": False,
+                }
+            ],
+        )
+    )
+
+    entry = manifest.tenant_schema_role_privileges["haloflow_m02_migrator"]
+    assert entry.privileges == ("CREATE",)
+    assert entry.is_grantable is False
+    assert entry.grantor == "haloflow_provisioner"
+    assert entry.role_class == "execution"
+    assert len(manifest.tenant_schema_role_privileges) == 5
+
+
+def test_manifest_collections_are_canonically_ordered() -> None:
+    """Codex note-15, condition 7. Deterministic ordering where it feeds a digest."""
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    first = load_provisioning_manifest(_manifest_document())
+    shuffled = _manifest_document(
+        tenant_schema_role_privileges={
+            role: dict(INFRASTRUCTURE_SCHEMA_PRIVILEGES[role])
+            for role in reversed(list(INFRASTRUCTURE_SCHEMA_PRIVILEGES))
+        }
+    )
+    second = load_provisioning_manifest(shuffled)
+
+    assert list(first.tenant_schema_role_privileges) == list(
+        second.tenant_schema_role_privileges
+    )
+    assert list(first.tenant_schema_role_privileges) == sorted(
+        first.tenant_schema_role_privileges
+    )
+    assert first.tenant_schema_role_privileges["haloflow_provisioner"].privileges == (
+        "CREATE",
+        "USAGE",
+    )
+
+
+# --- CP-3 correction: the manifest declares fixed invariants, not options ---
+#
+# Codex note-17, three blocking findings. The loader validated the *shape* of
+# declarations that v7 fixes by *value*. Because stages 1-3 compare the live
+# catalogue against this manifest, a manifest able to declare unsafe state makes
+# those controls agree with the danger instead of catching it. Reproduced before
+# fixing: a profile with all six attributes true, a membership to `attacker` with
+# `admin: true`, and every infrastructure ACL baseline emptied -- all accepted.
+
+
+def _profile(**changes: object) -> dict[str, object]:
+    profile = dict(VALID_PROFILE)
+    profile.update(changes)
+    return profile
+
+
+def _safe_edge(**changes: object) -> dict[str, object]:
+    edge: dict[str, object] = {
+        "role": "haloflow_m02_migrator",
+        "member": "haloflow_migrator",
+        "set": True,
+        "inherit": False,
+        "admin": False,
+    }
+    edge.update(changes)
+    return edge
+
+
+def _with_execution_role(**changes: object) -> dict[str, object]:
+    return _manifest_document(
+        execution_role_profiles={"haloflow_m02_migrator": _profile()},
+        role_memberships=[_safe_edge(**changes)],
+    )
+
+
+def test_an_execution_role_profile_cannot_declare_an_unsafe_attribute() -> None:
+    """Codex note-17 finding 1. R-P1B.4(b) fixes the safe profile.
+
+    NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS.
+    Stage 1 compares the database role against this declaration, so a
+    declaration that may say `true` lets a dangerous role match dangerous data
+    and pass. Each attribute is exercised on its own, so no single check can
+    stand in for the other five.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    for attribute in ("login", "superuser", "createdb", "createrole", "replication", "bypassrls"):
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(
+                _manifest_document(
+                    execution_role_profiles={
+                        "haloflow_m02_migrator": _profile(**{attribute: True})
+                    },
+                    role_memberships=[_safe_edge()],
+                )
+            )
+        assert refused.value.reason_code == (
+            PreconditionCode.EXECUTION_ROLE_PROFILE_UNSAFE.value
+        ), attribute
+
+    # All six false is the only accepted profile.
+    load_provisioning_manifest(_with_execution_role())
+
+
+def test_a_membership_declaration_cannot_describe_an_unsafe_edge() -> None:
+    """Codex note-17 finding 2. R-P1B.3, R-P1B.4(c) and A7 fix the edge.
+
+    `member = haloflow_migrator`, `SET true`, `INHERIT false`, `ADMIN false`.
+    `INHERIT FALSE` is deliberate and measured (V15): the migrator's ordinary
+    statements must not carry the execution role's privileges -- only an explicit
+    `SET ROLE` does. `ADMIN FALSE` stops the migrator granting the role onward.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    unsafe: list[dict[str, object]] = [
+        {"member": "attacker"},
+        {"member": "haloflow_provisioner"},
+        {"set": False},
+        {"inherit": True},
+        {"admin": True},
+    ]
+    for change in unsafe:
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(_with_execution_role(**change))
+        assert refused.value.reason_code == (
+            PreconditionCode.ROLE_MEMBERSHIP_DECLARATION_UNSAFE.value
+        ), change
+
+
+def test_every_declared_execution_role_must_declare_its_membership_edge() -> None:
+    """Codex note-17 finding 2, completeness half.
+
+    A profile with no edge would leave stage 1 with nothing to compare, and an
+    absent expectation is how a grantee escapes a completeness check -- the same
+    shape as the audit-projector gap D22 exists to close.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    with pytest.raises(MigrationManifestRejected) as missing:
+        load_provisioning_manifest(
+            _manifest_document(
+                execution_role_profiles={"haloflow_m02_migrator": _profile()}
+            )
+        )
+    assert missing.value.reason_code == (
+        PreconditionCode.ROLE_MEMBERSHIP_DECLARATION_MISSING.value
+    )
+
+    # And an edge for a role with no profile is refused from the other side.
+    with pytest.raises(MigrationManifestRejected) as orphan:
+        load_provisioning_manifest(_manifest_document(role_memberships=[_safe_edge()]))
+    assert orphan.value.reason_code == PreconditionCode.MANIFEST_ROLE_UNKNOWN.value
+
+
+def test_the_infrastructure_acl_baselines_are_fixed_not_declared() -> None:
+    """Codex note-17 finding 3. R-P1B.13, A7, D22 fix all four sets exactly.
+
+    Provisioner and migrator hold exactly `USAGE, CREATE`; runtime and the audit
+    projector exactly `USAGE`. Stage 2 installs and stage 3 verifies whatever
+    this file says, so a weakened declaration is faithfully installed as policy.
+    Both directions are refused: narrower and broader.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    expected = {
+        "haloflow_provisioner": ["USAGE", "CREATE"],
+        "haloflow_migrator": ["USAGE", "CREATE"],
+        "haloflow_runtime": ["USAGE"],
+        "haloflow_audit_projector": ["USAGE"],
+    }
+
+    def block(role: str, privileges: list[str]) -> dict[str, object]:
+        damaged = {r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()}
+        damaged[role]["privileges"] = privileges
+        return damaged
+
+    for role, correct in expected.items():
+        narrower = [] if len(correct) == 1 else ["USAGE"]
+        broader = ["USAGE", "CREATE"] if len(correct) == 1 else ["USAGE", "CREATE", "USAGE"]
+
+        with pytest.raises(MigrationManifestRejected) as narrowed:
+            load_provisioning_manifest(
+                _manifest_document(tenant_schema_role_privileges=block(role, narrower))
+            )
+        assert narrowed.value.reason_code in {
+            PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value,
+            PreconditionCode.MANIFEST_DUPLICATE_DECLARATION.value,
+        }, (role, narrower)
+
+        with pytest.raises(MigrationManifestRejected) as widened:
+            load_provisioning_manifest(
+                _manifest_document(tenant_schema_role_privileges=block(role, broader))
+            )
+        assert widened.value.reason_code in {
+            PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value,
+            PreconditionCode.MANIFEST_DUPLICATE_DECLARATION.value,
+        }, (role, broader)
+
+    # Emptying any baseline is refused -- the case Codex reproduced.
+    for role in expected:
+        with pytest.raises(MigrationManifestRejected) as emptied:
+            load_provisioning_manifest(
+                _manifest_document(tenant_schema_role_privileges=block(role, []))
+            )
+        assert emptied.value.reason_code == (
+            PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value
+        ), role
+
+
+def test_the_role_class_is_derived_from_the_role_not_taken_on_trust() -> None:
+    """Beyond note-17's three findings, and flagged as such.
+
+    `role_class` was the fourth field in the same function accepting any value.
+    It is the same defect class, so leaving it would have meant fixing three
+    instances of a bug and leaving the fourth in the code Codex had just
+    reviewed. The owner is the provisioner, the other three fixed roles are
+    infrastructure, and a declared execution role is execution.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    mislabelled = {r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()}
+    mislabelled["haloflow_runtime"]["role_class"] = "owner"
+
+    with pytest.raises(MigrationManifestRejected) as refused:
+        load_provisioning_manifest(
+            _manifest_document(tenant_schema_role_privileges=mislabelled)
+        )
+    assert refused.value.reason_code == (
+        PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value
+    )
+
+    manifest = load_provisioning_manifest(_with_execution_role())
+    entries = manifest.tenant_schema_role_privileges
+    assert entries["haloflow_provisioner"].role_class == "owner"
+    assert entries["haloflow_migrator"].role_class == "infrastructure"
+    assert entries["haloflow_m02_migrator"].role_class == "execution"

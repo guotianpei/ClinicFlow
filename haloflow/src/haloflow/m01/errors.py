@@ -69,6 +69,19 @@ class MigrationUnitRejected(M01Error):
     code = "MIGRATION_UNIT_REJECTED"
 
 
+class MigrationManifestRejected(M01Error):
+    """The provisioning manifest failed validation at load.
+
+    Separate from `MigrationUnitRejected` because the two are different
+    surfaces: a unit is rejected during trusted construction of the registry, a
+    manifest is rejected when the declarations the provisioning controls are
+    checked against are themselves wrong. Merging them would report a malformed
+    grant declaration as a malformed migration.
+    """
+
+    code = "MIGRATION_MANIFEST_REJECTED"
+
+
 class TenantMigrationFailed(M01Error):
     """A per-tenant migration did not reach `applied`.
 

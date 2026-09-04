@@ -686,3 +686,77 @@ def test_the_embedded_role_control_fails_when_it_should() -> None:
     }
     # The fixed vocabulary is not a violation, and neither is an unrelated string.
     assert _module_role_literals_in('R = "haloflow_migrator"\nS = "tenant_abcdefgh"') == set()
+
+
+# --- CP-3: one authoritative source for the provisioning blocks ------------
+
+
+PROVISIONING_BLOCKS = (
+    "execution_role_profiles",
+    "role_memberships",
+    "tenant_schema_role_privileges",
+    "tenant_table_overrides",
+)
+
+
+def test_permissions_manifest_stays_a_flat_role_policy_map() -> None:
+    """Codex note-15, condition 6, first half.
+
+    Four consumers iterate `permissions.json`'s top-level keys as roles and index
+    `policy["allow"]` -- one of them `test_gateway_postgres.py`, which PR-3 may
+    not touch. That is why the provisioning blocks went to their own file. This
+    control is what stops someone reintroducing the break later: every top-level
+    value must remain a role policy.
+    """
+
+    manifest = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+
+    assert isinstance(manifest, dict)
+    for role, policy in manifest.items():
+        assert role.startswith("haloflow_"), role
+        assert isinstance(policy, dict), role
+        assert "allow" in policy, role
+        assert isinstance(policy["allow"], list), role
+        assert isinstance(policy.get("deny", []), list), role
+
+    for block in PROVISIONING_BLOCKS:
+        assert block not in manifest, (
+            f"{block} belongs in manifests/provisioning.json; putting it here breaks "
+            "four consumers that read every top-level key as a role"
+        )
+
+
+def test_the_provisioning_blocks_have_exactly_one_authoritative_source() -> None:
+    """Codex note-15, condition 6, second half. No merge, no fallback.
+
+    Each block name must appear as a top-level key in exactly one manifest, so
+    there is no second place a reviewer would have to check and no order of
+    precedence for anyone to get wrong.
+    """
+
+    manifests = sorted((M01_ROOT / "manifests").glob("*.json"))
+    assert len(manifests) >= 2, "expected at least permissions.json and provisioning.json"
+
+    for block in PROVISIONING_BLOCKS:
+        sources = [
+            path.name
+            for path in manifests
+            if block in json.loads(path.read_text())
+        ]
+        assert sources == ["provisioning.json"], (block, sources)
+
+
+def test_the_provisioning_manifest_is_resolved_through_the_package() -> None:
+    """Codex note-15, condition 5. Not the process working directory.
+
+    A path built from `Path("src/...")` works under pytest from the repository
+    root and fails everywhere else. The loader resolves through the package, so
+    a process started from any directory reads the same file.
+    """
+
+    source = (Path("src/haloflow/m01/provisioning/manifest.py")).read_text()
+
+    assert "from importlib import resources" in source
+    assert "resources.files(" in source
+    assert 'Path("src/' not in source
+    assert "os.getcwd" not in source
