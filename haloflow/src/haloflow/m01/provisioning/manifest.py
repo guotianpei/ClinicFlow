@@ -127,7 +127,6 @@ _INFRASTRUCTURE_SCHEMA_PRIVILEGES: Final[Mapping[str, tuple[str, ...]]] = {
     AUDIT_PROJECTOR_ROLE: ("USAGE",),
 }
 
-# The role class is derived from which role it is, never taken on trust.
 # The complete key set of each nested entry. Unknown keys are refused, not
 # ignored, so a typo or an unimplemented future option cannot pass silently.
 _PROFILE_KEYS: Final[frozenset[str]] = frozenset(
@@ -139,6 +138,7 @@ _SCHEMA_PRIVILEGE_KEYS: Final[frozenset[str]] = frozenset(
 )
 _OVERRIDE_KEYS: Final[frozenset[str]] = frozenset({"role", "table", "narrows", "privileges"})
 
+# The role class is derived from which role it is, never taken on trust.
 _INFRASTRUCTURE_ROLE_CLASSES: Final[Mapping[str, str]] = {
     PROVISIONER_ROLE: "owner",
     MIGRATOR_ROLE: "infrastructure",
