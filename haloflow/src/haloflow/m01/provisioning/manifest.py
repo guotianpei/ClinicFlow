@@ -128,6 +128,17 @@ _INFRASTRUCTURE_SCHEMA_PRIVILEGES: Final[Mapping[str, tuple[str, ...]]] = {
 }
 
 # The role class is derived from which role it is, never taken on trust.
+# The complete key set of each nested entry. Unknown keys are refused, not
+# ignored, so a typo or an unimplemented future option cannot pass silently.
+_PROFILE_KEYS: Final[frozenset[str]] = frozenset(
+    {*_PROFILE_SAFETY_ATTRIBUTES, "tenant_schema_privileges"}
+)
+_MEMBERSHIP_KEYS: Final[frozenset[str]] = frozenset({"role", "member", "set", "inherit", "admin"})
+_SCHEMA_PRIVILEGE_KEYS: Final[frozenset[str]] = frozenset(
+    {"privileges", "is_grantable", "grantor", "role_class"}
+)
+_OVERRIDE_KEYS: Final[frozenset[str]] = frozenset({"role", "table", "narrows", "privileges"})
+
 _INFRASTRUCTURE_ROLE_CLASSES: Final[Mapping[str, str]] = {
     PROVISIONER_ROLE: "owner",
     MIGRATOR_ROLE: "infrastructure",
@@ -264,6 +275,22 @@ def _require_sequence(value: object) -> tuple[object, ...]:
     return tuple(value)
 
 
+def _require_exact_keys(entry: Mapping[str, object], allowed: frozenset[str]) -> None:
+    """Every key in a nested entry must be one the loader knows (Codex note-19).
+
+    Note-15 condition 3 made the *top-level* block shape strict and named. One
+    level down was not: an unknown key was ignored, so ``"bypassrIs"`` -- a
+    capital I where an l belongs -- read as accepted configuration, and a future
+    option added to this file but not to the loader would pass unchecked while
+    the database carried something nobody compared. Silently ignoring a key in a
+    security declaration is the same fail-open shape as the note-17 findings, so
+    it is refused rather than tolerated.
+    """
+
+    if not set(entry) <= allowed:
+        raise _reject(PreconditionCode.PROVISIONING_MANIFEST_MALFORMED)
+
+
 def _require_bool(value: object) -> bool:
     if not isinstance(value, bool):
         raise _reject(PreconditionCode.PROVISIONING_MANIFEST_MALFORMED)
@@ -297,6 +324,7 @@ def _load_execution_role_profiles(block: object) -> Mapping[str, ExecutionRolePr
     profiles: dict[str, ExecutionRoleProfile] = {}
     for role, raw in sorted(_require_mapping(block).items()):
         entry = _require_mapping(raw)
+        _require_exact_keys(entry, _PROFILE_KEYS)
         if role in PROVISIONING_ROLES:
             # R-P1B.22(a): an infrastructure role is never an execution role, so
             # it never has a profile here either.
@@ -330,6 +358,7 @@ def _load_role_memberships(
     seen: set[str] = set()
     for raw in _require_sequence(block):
         entry = _require_mapping(raw)
+        _require_exact_keys(entry, _MEMBERSHIP_KEYS)
         role = _require_str(entry.get("role"))
         member = _require_str(entry.get("member"))
         if role not in profiles:
@@ -346,6 +375,10 @@ def _load_role_memberships(
             "inherit": _require_bool(entry.get("inherit")),
             "admin": _require_bool(entry.get("admin")),
         }
+        # The whole mapping is compared, and `_require_exact_keys` above means
+        # the entry has no key outside `_MEMBERSHIP_KEYS` -- so a newly added
+        # option genuinely cannot escape detection, which this comment claimed
+        # before the check existed to make it true (Codex note-19).
         if declared != _REQUIRED_MEMBERSHIP:
             # R-P1B.3 and R-P1B.4(c) fix this edge by value. Letting the file
             # define it would make stage 1's exact-set check bless an unsafe
@@ -382,6 +415,7 @@ def _load_schema_privileges(
 
     for role, raw in sorted(declared.items()):
         entry = _require_mapping(raw)
+        _require_exact_keys(entry, _SCHEMA_PRIVILEGE_KEYS)
         if role not in PROVISIONING_ROLES and role not in profiles:
             raise _reject(PreconditionCode.MANIFEST_ROLE_UNKNOWN)
         privileges = _require_privileges(
@@ -444,6 +478,7 @@ def _load_table_overrides(
 
     for raw in _require_sequence(block):
         entry = _require_mapping(raw)
+        _require_exact_keys(entry, _OVERRIDE_KEYS)
         role = _require_str(entry.get("role"))
         table = _require_str(entry.get("table"))
         narrows = _require_str(entry.get("narrows"))

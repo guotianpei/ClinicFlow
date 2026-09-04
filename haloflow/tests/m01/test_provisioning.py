@@ -1537,3 +1537,89 @@ def test_the_role_class_is_derived_from_the_role_not_taken_on_trust() -> None:
     assert entries["haloflow_provisioner"].role_class == "owner"
     assert entries["haloflow_migrator"].role_class == "infrastructure"
     assert entries["haloflow_m02_migrator"].role_class == "execution"
+
+
+def test_an_unknown_key_in_any_nested_entry_is_refused() -> None:
+    """Codex note-19. Strictness applies one level down, not only at the top.
+
+    Note-15 condition 3 required the *top-level* block shape to be strict and
+    named. The nested entries were not: every one of the four blocks silently
+    ignored an unknown key, so `"bypassrIs"` — a capital I where an l belongs,
+    indistinguishable in most fonts — read as accepted configuration.
+
+    The narrower risk Codex named is the durable one: a future option added to
+    this file but not to the loader would be ignored rather than refused, and the
+    manifest would pass while the database carried an option nobody checked.
+
+    Fixing the code rather than narrowing the comment, because silently ignoring
+    an unknown key in a security declaration is the same fail-open shape as the
+    three note-17 findings.
+    """
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    malformed = PreconditionCode.PROVISIONING_MANIFEST_MALFORMED.value
+    valid_override = {
+        "role": "haloflow_runtime",
+        "table": "operation_registry",
+        "narrows": "tenant_schema:business_dml",
+        "privileges": ["SELECT", "INSERT"],
+    }
+
+    cases: list[tuple[str, dict[str, object]]] = [
+        (
+            "membership entry",
+            _manifest_document(
+                execution_role_profiles={"haloflow_m02_migrator": _profile()},
+                role_memberships=[_safe_edge(adnim=True)],
+            ),
+        ),
+        (
+            "execution-role profile",
+            _manifest_document(
+                execution_role_profiles={
+                    "haloflow_m02_migrator": _profile(bypassrIs=True)
+                },
+                role_memberships=[_safe_edge()],
+            ),
+        ),
+        (
+            "schema-privilege entry",
+            _manifest_document(
+                tenant_schema_role_privileges={
+                    **{r: dict(e) for r, e in INFRASTRUCTURE_SCHEMA_PRIVILEGES.items()},
+                    "haloflow_runtime": {
+                        **INFRASTRUCTURE_SCHEMA_PRIVILEGES["haloflow_runtime"],
+                        "is_grantible": True,
+                    },
+                }
+            ),
+        ),
+        (
+            "table override",
+            _manifest_document(
+                tenant_table_overrides=[{**valid_override, "privilages": ["UPDATE"]}]
+            ),
+        ),
+    ]
+    for label, document in cases:
+        with pytest.raises(MigrationManifestRejected) as refused:
+            load_provisioning_manifest(document)
+        assert refused.value.reason_code == malformed, label
+
+    # A missing required key stays a refusal too, from the other direction.
+    incomplete = dict(_safe_edge())
+    del incomplete["admin"]
+    with pytest.raises(MigrationManifestRejected):
+        load_provisioning_manifest(
+            _manifest_document(
+                execution_role_profiles={"haloflow_m02_migrator": _profile()},
+                role_memberships=[incomplete],
+            )
+        )
+
+    # And the shipped manifest, which has no stray keys, still loads.
+    assert load_provisioning_manifest() is not None
