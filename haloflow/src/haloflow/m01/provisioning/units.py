@@ -23,15 +23,38 @@ from typing import Final
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.checksum import unit_checksum
 from haloflow.m01.provisioning.codes import PreconditionCode
-from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
+from haloflow.m01.provisioning.roles import (
+    AUDIT_PROJECTOR_ROLE,
+    PROVISIONING_ROLES,
+    RUNTIME_ROLE,
+)
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
 MIGRATION_ID_PATTERN: Final = re.compile(r"^t\d{3}(_test)?_[a-z0-9_]{1,64}$")
+# A1. Narrower than PostgreSQL allows, deliberately: the name reaches SQL as an
+# identifier, and a pattern that admits only what M01 needs is a smaller thing to
+# reason about than quoting rules.
+EXECUTION_ROLE_PATTERN: Final = re.compile(r"^haloflow_[a-z0-9_]{1,48}$")
 _TEST_UNIT_PATTERN: Final = re.compile(r"^t\d{3}_test_")
 _SCHEMA_PLACEHOLDER: Final = "{schema}"
 _UNIT_ISSUER: Final = object()
 
-UnitDefinitions = Mapping[str, str]
+@dataclass(frozen=True, slots=True)
+class UnitDefinition:
+    """A unit's definition when it needs to say more than its template.
+
+    A definition set maps a migration id to either a bare template string --
+    which is every M01 unit today -- or to this record. Keeping the bare string
+    valid means adding the execution role did not touch a single production
+    definition, so TC-P5 characterizes the baseline rather than a rewrite of it.
+    A later checkpoint adds ``verification`` here, for the same reason.
+    """
+
+    template: str
+    execution_role: str | None = None
+
+
+UnitDefinitions = Mapping[str, "str | UnitDefinition"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +63,7 @@ class TenantMigrationUnit:
 
     migration_id: str
     template: str = field(repr=False)
+    execution_role: str | None = None
     _issuer: InitVar[object | None] = None
 
     def __post_init__(self, _issuer: object | None) -> None:
@@ -56,6 +80,27 @@ class TenantMigrationUnit:
             raise MigrationUnitRejected(
                 reason_code=PreconditionCode.MIGRATION_TEMPLATE_UNSCOPED.value
             )
+        if self.execution_role is not None:
+            # R-P1.3: two controls, and they are independent on purpose. The
+            # allow-list says which roles this deployment approved; the pattern
+            # says what may reach an identifier position at all. A role can pass
+            # one and fail the other, and a single merged check would let a name
+            # the allow-list happened to contain through to SQL.
+            if not EXECUTION_ROLE_PATTERN.fullmatch(self.execution_role):
+                raise MigrationUnitRejected(
+                    reason_code=PreconditionCode.EXECUTION_ROLE_INVALID.value
+                )
+            # R-P1B.22(a), D23. Checked here rather than only against the
+            # approved set, so supplying a permissive set cannot reach it.
+            # `haloflow_provisioner` is the load-bearing case: it owns every
+            # tenant schema, and V29 measured that an execution role owning the
+            # schema can mutate `nspacl` during stage 4 -- which would break
+            # R-P1B.20 outright. Read from the role vocabulary rather than
+            # copied, so a role added to it is covered without a second edit.
+            if self.execution_role in PROVISIONING_ROLES:
+                raise MigrationUnitRejected(
+                    reason_code=PreconditionCode.EXECUTION_ROLE_IS_INFRASTRUCTURE.value
+                )
 
     @property
     def is_test_unit(self) -> bool:
@@ -77,7 +122,11 @@ class TenantMigrationUnit:
         result -- known, intended, and gated by R-P4.4.
         """
 
-        return unit_checksum(migration_id=self.migration_id, template=self.template)
+        return unit_checksum(
+            migration_id=self.migration_id,
+            template=self.template,
+            execution_role=self.execution_role,
+        )
 
     def render(self, schema_key: str) -> str:
         """Substitute the tenant schema after re-validating it as an identifier."""
@@ -133,6 +182,7 @@ class TenantMigrationRegistry:
 
 def build_tenant_migration_registry(
     *definition_sets: UnitDefinitions,
+    approved_execution_roles: frozenset[str] = frozenset(),
     allow_test_units: bool = False,
 ) -> TenantMigrationRegistry:
     """Compose approved per-tenant migration definition sets. Startup-only.
@@ -141,19 +191,44 @@ def build_tenant_migration_registry(
     so composition order across sets cannot change what a tenant receives.
     ``allow_test_units`` is for tests only; a repository-control test asserts
     that no production module passes it (R-E12).
+
+    ``approved_execution_roles`` arrives from the composition root and defaults
+    to empty (R-P1.2). M01 embeds no module role name, so a module cannot run a
+    migration as a role this deployment did not approve in a reviewable place --
+    and the default being empty means forgetting to pass the set denies rather
+    than permits. The identifier pattern and the infrastructure-role exclusion
+    are enforced on the unit itself, independently of this list (R-P1.3).
+
+    This function performs **no database access** (R-P1B.5). Every control here
+    is static, which is what lets the single-composition-path control call it
+    with nothing configured.
     """
 
-    merged: dict[str, str] = {}
+    merged: dict[str, UnitDefinition] = {}
     for definitions in definition_sets:
-        for migration_id, template in definitions.items():
+        for migration_id, definition in definitions.items():
             if migration_id in merged:
                 raise MigrationUnitRejected(
                     reason_code=PreconditionCode.DUPLICATE_MIGRATION_ID.value
                 )
-            merged[migration_id] = template
+            merged[migration_id] = (
+                UnitDefinition(definition) if isinstance(definition, str) else definition
+            )
+
+    for definition in merged.values():
+        role = definition.execution_role
+        if role is not None and role not in approved_execution_roles:
+            raise MigrationUnitRejected(
+                reason_code=PreconditionCode.EXECUTION_ROLE_NOT_APPROVED.value
+            )
 
     units = tuple(
-        TenantMigrationUnit(migration_id, merged[migration_id], _issuer=_UNIT_ISSUER)
+        TenantMigrationUnit(
+            migration_id,
+            merged[migration_id].template,
+            merged[migration_id].execution_role,
+            _issuer=_UNIT_ISSUER,
+        )
         for migration_id in sorted(merged)
     )
     if not allow_test_units:

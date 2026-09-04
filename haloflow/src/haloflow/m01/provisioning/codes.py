@@ -87,6 +87,16 @@ class PreconditionCode(StrEnum):
     CHECKSUM_PAYLOAD_MALFORMED = "CHECKSUM_PAYLOAD_MALFORMED"
     DUPLICATE_PAYLOAD_KEY = "DUPLICATE_PAYLOAD_KEY"
 
+    # A unit's declared execution role, refused at composition (R-P1.2, R-P1.3,
+    # R-P1B.22). Three codes because there are three independent controls, and a
+    # single code would make it impossible to tell an unapproved role from a
+    # malformed one from an infrastructure role in an incident.
+    # `EXECUTION_ROLE_UNAVAILABLE` is a different failure -- the stage-1
+    # preflight against a live catalogue -- and is not these.
+    EXECUTION_ROLE_INVALID = "EXECUTION_ROLE_INVALID"
+    EXECUTION_ROLE_NOT_APPROVED = "EXECUTION_ROLE_NOT_APPROVED"
+    EXECUTION_ROLE_IS_INFRASTRUCTURE = "EXECUTION_ROLE_IS_INFRASTRUCTURE"
+
 
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than

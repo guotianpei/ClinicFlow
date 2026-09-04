@@ -28,6 +28,7 @@ from haloflow.m01.provisioning.codes import (
     PreconditionCode,
 )
 from haloflow.m01.provisioning.provisioner import ProvisioningRequest, _validate_request
+from haloflow.m01.provisioning.roles import PROVISIONING_ROLES
 from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
 
 VALID_TEMPLATE = "CREATE TABLE {schema}.thing (id integer PRIMARY KEY);"
@@ -764,3 +765,191 @@ def test_a_bare_string_is_not_a_collection_of_config_entries() -> None:
     assert ordered_config(["b=2", "a=1"]) == ("a=1", "b=2")
     assert ordered_config(("b=2", "a=1")) == ("a=1", "b=2")
     assert ordered_config(entry for entry in ["b=2", "a=1"]) == ("a=1", "b=2")
+
+
+# --- CP-2: the execution role on a unit ------------------------------------
+#
+# Traceability: TC-P3 (R-P1.2), TC-P4 (R-P1.3), TC-P5 (C, R-P1.2), the checksum
+# half of TC-P6 (R-P1.4), TC-P14 (C, R-P1B.5), TC-P78 (R-P1B.22, D23).
+# Architecture A1. Design v7 is authoritative.
+#
+# Two controls, deliberately independent (R-P1.3): the identifier pattern and
+# membership of an approved set supplied at composition time. Neither
+# substitutes for the other, which is what TC-P4 exists to prove.
+
+APPROVED_M02 = frozenset({"haloflow_m02_migrator"})
+
+
+def test_a_role_outside_the_approved_set_is_refused_at_composition() -> None:
+    """TC-P3, R-P1.2. The allow-list arrives from composition; M01 embeds none."""
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    definitions = {
+        "t002_a": UnitDefinition(VALID_TEMPLATE, execution_role="haloflow_m02_migrator")
+    }
+
+    with pytest.raises(MigrationUnitRejected) as refused:
+        build_tenant_migration_registry(definitions, approved_execution_roles=frozenset())
+    assert refused.value.reason_code == PreconditionCode.EXECUTION_ROLE_NOT_APPROVED.value
+
+    # The same unit composes once the role is approved.
+    registry = build_tenant_migration_registry(
+        definitions, approved_execution_roles=APPROVED_M02
+    )
+    assert registry.units[0].execution_role == "haloflow_m02_migrator"
+
+
+def test_a_role_failing_the_identifier_pattern_is_refused_even_when_approved() -> None:
+    """TC-P4, R-P1.3. Two controls, not one.
+
+    Each malformed name below is placed *in the approved set*, so the allow-list
+    cannot be what refuses it. A single combined control would pass every one of
+    these, which is why the requirement asks for two.
+    """
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    malformed = [
+        "haloflow_m02; DROP SCHEMA public",
+        "haloflow_M02",
+        "haloflow_m02-migrator",
+        "m02_migrator",
+        "haloflow_",
+        "haloflow_" + "x" * 49,
+        'haloflow_m02"',
+    ]
+    for name in malformed:
+        with pytest.raises(MigrationUnitRejected) as refused:
+            build_tenant_migration_registry(
+                {"t002_a": UnitDefinition(VALID_TEMPLATE, execution_role=name)},
+                approved_execution_roles=frozenset({name}),
+            )
+        assert refused.value.reason_code == PreconditionCode.EXECUTION_ROLE_INVALID.value, name
+
+    # The boundary case the length bound allows.
+    longest = "haloflow_" + "x" * 48
+    registry = build_tenant_migration_registry(
+        {"t002_a": UnitDefinition(VALID_TEMPLATE, execution_role=longest)},
+        approved_execution_roles=frozenset({longest}),
+    )
+    assert registry.units[0].execution_role == longest
+
+
+def test_no_infrastructure_role_may_be_an_execution_role() -> None:
+    """TC-P78, R-P1B.22(a), D23. Refused at composition, before any database access.
+
+    `haloflow_provisioner` is the load-bearing case: it owns every tenant schema,
+    and V29 measured that an execution role which owns the schema *can* mutate
+    `nspacl` during stage 4 — which would break R-P1B.20 outright. The preflight
+    would catch this too late; it has to fail before anything is provisioned.
+
+    Each role is placed in the approved set, so approval cannot be what saves us.
+    """
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    assert "haloflow_provisioner" in PROVISIONING_ROLES
+
+    for role in sorted(PROVISIONING_ROLES):
+        with pytest.raises(MigrationUnitRejected) as refused:
+            build_tenant_migration_registry(
+                {"t002_a": UnitDefinition(VALID_TEMPLATE, execution_role=role)},
+                approved_execution_roles=frozenset({role}),
+            )
+        assert refused.value.reason_code == (
+            PreconditionCode.EXECUTION_ROLE_IS_INFRASTRUCTURE.value
+        ), role
+
+
+def test_the_infrastructure_refusal_reads_the_role_vocabulary_rather_than_a_copy() -> None:
+    """TC-P78, second half. A hand-listed set would drift from `roles.py`.
+
+    Asserted from the source: the refusal must test membership of
+    `PROVISIONING_ROLES`, so a role added to that frozenset is covered without
+    anyone remembering to update a second list here.
+    """
+
+    source = (PROVISIONING_ROOT / "units.py").read_text()
+
+    assert "PROVISIONING_ROLES" in source
+    for role in PROVISIONING_ROLES:
+        assert f'"{role}"' not in source, (
+            f"{role} is written as a literal in units.py; the control must read "
+            "PROVISIONING_ROLES so it cannot drift from roles.py"
+        )
+
+
+def test_the_production_registry_declares_no_execution_role() -> None:
+    """TC-P5 (C). Characterizes today's production baseline.
+
+    `t001` runs as `haloflow_migrator` by absence, not by declaration, and no
+    module role exists yet. When M02 adds one this test is the thing that makes
+    the change visible rather than silent.
+    """
+
+    registry = build_production_tenant_migrations()
+
+    assert [unit.execution_role for unit in registry.units] == [None]
+    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS,)
+
+
+def test_changing_the_execution_role_changes_the_checksum() -> None:
+    """TC-P6, checksum half (R-P1.4). The postgres half of TC-P6 is CP-6's.
+
+    Re-applying a unit whose role changed against an `applied` ledger row is
+    drift, and that only works if the role is inside the digest.
+    """
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    without = build_tenant_migration_registry(
+        {"t002_a": VALID_TEMPLATE}, approved_execution_roles=APPROVED_M02
+    ).units[0]
+    with_role = build_tenant_migration_registry(
+        {"t002_a": UnitDefinition(VALID_TEMPLATE, execution_role="haloflow_m02_migrator")},
+        approved_execution_roles=APPROVED_M02,
+    ).units[0]
+
+    assert without.execution_role is None
+    assert without.checksum != with_role.checksum
+
+    # A bare template and an explicit `execution_role=None` are the same unit.
+    explicit_none = build_tenant_migration_registry(
+        {"t002_a": UnitDefinition(VALID_TEMPLATE, execution_role=None)},
+        approved_execution_roles=APPROVED_M02,
+    ).units[0]
+    assert explicit_none.checksum == without.checksum
+
+
+def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TC-P14 (C), R-P1B.5. Composition is the static half only.
+
+    Asserted with every database setting removed from the environment: if
+    composition read one, this would fail rather than quietly connect. The
+    single-composition-path control depends on this staying pure.
+    """
+
+    for variable in (
+        "DATABASE_URL",
+        "HALOFLOW_MIGRATION_DATABASE_URL",
+        "HALOFLOW_TEST_DATABASE_URL",
+        "PGHOST",
+        "PGPORT",
+        "PGDATABASE",
+        "PGUSER",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+
+    def _refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("composition opened a database connection")
+
+    import psycopg
+
+    monkeypatch.setattr(psycopg, "connect", _refuse)
+    monkeypatch.setattr(psycopg.AsyncConnection, "connect", _refuse)
+
+    registry = build_production_tenant_migrations()
+
+    assert registry.migration_ids == ("t001_m01_baseline",)
+    assert len(registry.units[0].checksum) == 64

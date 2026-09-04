@@ -27,7 +27,11 @@ from haloflow.m01.provisioning.runner import (
     require_explicit_transactions,
     tenant_lock_key,
 )
-from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
+from haloflow.m01.provisioning.units import (
+    TenantMigrationRegistry,
+    TenantMigrationUnit,
+    UnitDefinition,
+)
 
 __all__ = [
     "AUDIT_PROJECTOR_ROLE",
@@ -44,6 +48,7 @@ __all__ = [
     "TenantMigrationRunner",
     "TenantMigrationUnit",
     "TenantProvisioner",
+    "UnitDefinition",
     "report_drift",
     "report_drift_on",
     "require_explicit_transactions",

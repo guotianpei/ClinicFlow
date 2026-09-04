@@ -632,3 +632,57 @@ def test_the_module_callback_control_fails_when_it_should() -> None:
     # ...and every shipped file passes.
     for shipped in PROVISIONING_ROOT.rglob("*.py"):
         assert _connection_callback_violations_in(str(shipped), shipped.read_text()) == []
+
+
+# --- CP-2: M01 embeds no module execution role name (R-P1.2, R-P1B.1) ------
+
+
+def _module_role_literals_in(source: str) -> set[str]:
+    """Every `haloflow_*` string literal that is not part of the fixed vocabulary.
+
+    Read as literals rather than by grep so a name inside a comment or a
+    docstring does not trip the control -- the rule is about what the code
+    *embeds*, not what it discusses.
+    """
+
+    from haloflow.m01.provisioning.roles import PROVISIONING_ROLES
+
+    found: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            value = node.value
+            if value.startswith("haloflow_") and value not in PROVISIONING_ROLES:
+                found.add(value)
+    return found
+
+
+def test_m01_embeds_no_module_execution_role_name() -> None:
+    """R-P1.2 and R-P1B.1. The approved set arrives from composition, not from M01.
+
+    A module role name compiled into M01 would make the allow-list decorative:
+    the point of supplying it at composition time is that adding a module is a
+    reviewable change in one file, and that M01 cannot grant a module something
+    the composition root never approved. M01 also creates no execution role and
+    no membership -- those are an Alembic revision's work, under the deploy
+    identity (R-P1B.2).
+    """
+
+    embedded: dict[str, set[str]] = {}
+    for path in list(Path("src/haloflow/m01/provisioning").rglob("*.py")) + [
+        Path("src/haloflow/composition.py")
+    ]:
+        names = _module_role_literals_in(path.read_text())
+        if names:
+            embedded[str(path)] = names
+
+    assert embedded == {}, f"module role names embedded in M01: {embedded}"
+
+
+def test_the_embedded_role_control_fails_when_it_should() -> None:
+    """Negative control: the check above catches the thing it names."""
+
+    assert _module_role_literals_in('ROLE = "haloflow_m02_migrator"') == {
+        "haloflow_m02_migrator"
+    }
+    # The fixed vocabulary is not a violation, and neither is an unrelated string.
+    assert _module_role_literals_in('R = "haloflow_migrator"\nS = "tenant_abcdefgh"') == set()
