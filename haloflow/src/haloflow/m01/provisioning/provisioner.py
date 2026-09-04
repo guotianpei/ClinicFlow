@@ -34,8 +34,13 @@ from uuid import UUID
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import ConnectionModeRejected, ProvisioningFailed
+from haloflow.m01.errors import (
+    ConnectionModeRejected,
+    ExecutionRoleUnavailable,
+    ProvisioningFailed,
+)
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
+from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import (
     AUDIT_PROJECTOR_ROLE,
     MIGRATOR_ROLE,
@@ -102,6 +107,14 @@ class TenantProvisioner:
         connection = await self._connect()
         try:
             await _assume_provisioner(connection)
+            # Stage 1, and the first thing this method does against the
+            # database (Q2). Before `_register_tenant`, before `_create_schema`,
+            # before the lock: a configuration fault must not leave a registry
+            # row, a schema, or a `running` ledger row behind it.
+            try:
+                await assert_execution_roles_safe(connection, self._runner.registry)
+            except ExecutionRoleUnavailable as error:
+                raise ProvisioningFailed(reason_code=error.reason_code) from error
             # One lock for the whole sequence, so a second provisioner cannot
             # interleave with this one between its commits either.
             async with self._runner.tenant_lock(request.tenant_id):

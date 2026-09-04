@@ -123,6 +123,14 @@ class PreconditionCode(StrEnum):
     ROLE_MEMBERSHIP_DECLARATION_UNSAFE = "ROLE_MEMBERSHIP_DECLARATION_UNSAFE"
     ROLE_MEMBERSHIP_DECLARATION_MISSING = "ROLE_MEMBERSHIP_DECLARATION_MISSING"
 
+    # Stage 1, the role-safety preflight (R-P1B.4). One code for every cause:
+    # an operator learns that the role is unusable, and which of the six
+    # attributes or three options differed belongs in telemetry rather than in
+    # an exception payload a tenant-facing error might carry (R-E9). Raised
+    # before any schema grant and before any `running` row, so a configuration
+    # fault is never recorded as a tenant migration failure.
+    EXECUTION_ROLE_UNAVAILABLE = "EXECUTION_ROLE_UNAVAILABLE"
+
 
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than

@@ -827,7 +827,32 @@ async def test_the_migrator_cannot_touch_the_tenant_registry_or_its_history(
 async def test_neither_provisioning_role_can_assume_the_other(
     provisioning_harness: ProvisioningHarness,
 ) -> None:
-    """TC-E19. No membership exists, and 003 introduces none."""
+    """TC-E19, converted to the exact-set assertion R-P1B.7 requires.
+
+    The behavioural half is unchanged: neither provisioning role may `SET ROLE`
+    to the other, asserted against a live server.
+
+    The catalogue half **was** `memberships == []` over a `haloflow%` prefix on
+    both endpoints. R-P1B.7 says that control *becomes* an exact-set assertion,
+    and Codex note-22 approved the conversion: once a declared execution role
+    exists, its Alembic-created edge is legitimate and `== []` would fail on a
+    correctly configured database. Keeping it would preserve an obsolete
+    contract, not protect a valid one.
+
+    Two things change and both are deliberate. The scope is now the manifest's
+    **controlled role set** rather than a name prefix -- a prefix misses an
+    execution role named otherwise, and captures unrelated roles that merely
+    share it, which is why the old query needed its `NOT LIKE 'haloflow_test%'`
+    exclusion for the harness's own LOGIN shims. And the expectation is now the
+    **declaration** rather than the empty set, so the assertion states what the
+    graph should be instead of that it should be nothing.
+
+    With today's shipped manifest the declaration is empty, so this still
+    asserts an empty controlled graph -- the same fact, from the right source.
+    """
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+    from haloflow.m01.provisioning.role_safety import MembershipEdge, declared_edges
 
     async with await AsyncConnection.connect(
         provisioning_harness.role_logins[PROVISIONER_ROLE], autocommit=True
@@ -843,18 +868,28 @@ async def test_neither_provisioning_role_can_assume_the_other(
         with pytest.raises(InsufficientPrivilege):
             await conn.execute(f"SET ROLE {PROVISIONER_ROLE}")
 
-    memberships = await admin_rows(
+    manifest = load_provisioning_manifest()
+    controlled = sorted(manifest.controlled_roles)
+
+    rows = await admin_rows(
         provisioning_harness,
         """
-        SELECT r.rolname, m.rolname
+        SELECT r.rolname, m.rolname, a.set_option, a.inherit_option, a.admin_option
         FROM pg_auth_members AS a
         JOIN pg_roles AS r ON r.oid = a.roleid
         JOIN pg_roles AS m ON m.oid = a.member
-        WHERE r.rolname LIKE 'haloflow%' AND m.rolname LIKE 'haloflow%'
-          AND m.rolname NOT LIKE 'haloflow_test%'
+        WHERE r.rolname = ANY(%s) AND m.rolname = ANY(%s)
         """,
+        (controlled, controlled),
     )
-    assert memberships == []
+    observed = frozenset(
+        MembershipEdge(
+            role=row[0], member=row[1], set=row[2], inherit=row[3], admin=row[4]
+        )
+        for row in rows
+    )
+
+    assert observed == declared_edges(manifest.role_memberships)
 
 
 async def test_the_provisioner_may_append_but_never_amend_tenant_state_history(
@@ -1160,3 +1195,668 @@ def test_the_grant_control_rejects_an_untranslated_token() -> None:
         {"allow": ["shared.tenants:controlled_write"], "deny": []}
     )
     assert expected["tenants"] == frozenset({"SELECT", "INSERT", "UPDATE"})
+
+
+# --- CP-4: stage 1, the role-safety preflight against a live catalogue ------
+#
+# TC-P11, TC-P12, TC-P13, TC-P37, TC-P47, TC-P48, TC-P49, TC-P50, TC-P51.
+# R-P1B.4, R-P1B.6, R-P1B.7, R-P1B.15; architecture A7.
+#
+# The comparison rules are covered by unit tests in `test_provisioning.py`,
+# which is why they exist: every test in this section needs PostgreSQL 17, so
+# without that split no rule could be failed anywhere Claude can run. These
+# cover what only a real catalogue can show -- that the queries read the right
+# columns, and that a refusal leaves nothing behind.
+
+CP4_EXECUTION_ROLE = "haloflow_test_m02_migrator"
+
+CP4_PROFILE = {
+    "login": False,
+    "superuser": False,
+    "createdb": False,
+    "createrole": False,
+    "replication": False,
+    "bypassrls": False,
+    "tenant_schema_privileges": ["CREATE"],
+}
+
+
+def cp4_manifest(**overrides: object) -> object:
+    """A manifest declaring one execution role, loaded through the real loader."""
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    document: dict[str, object] = {
+        "execution_role_profiles": {CP4_EXECUTION_ROLE: dict(CP4_PROFILE)},
+        "role_memberships": [
+            {
+                "role": CP4_EXECUTION_ROLE,
+                "member": MIGRATOR_ROLE,
+                "set": True,
+                "inherit": False,
+                "admin": False,
+            }
+        ],
+        "tenant_schema_role_privileges": {
+            PROVISIONER_ROLE: {
+                "privileges": ["USAGE", "CREATE"],
+                "is_grantable": False,
+                "grantor": PROVISIONER_ROLE,
+                "role_class": "owner",
+            },
+            MIGRATOR_ROLE: {
+                "privileges": ["USAGE", "CREATE"],
+                "is_grantable": False,
+                "grantor": PROVISIONER_ROLE,
+                "role_class": "infrastructure",
+            },
+            RUNTIME_ROLE: {
+                "privileges": ["USAGE"],
+                "is_grantable": False,
+                "grantor": PROVISIONER_ROLE,
+                "role_class": "infrastructure",
+            },
+            AUDIT_PROJECTOR_ROLE: {
+                "privileges": ["USAGE"],
+                "is_grantable": False,
+                "grantor": PROVISIONER_ROLE,
+                "role_class": "infrastructure",
+            },
+        },
+        "tenant_table_overrides": [],
+    }
+    document.update(overrides)
+    return load_provisioning_manifest(document)
+
+
+# The safe attribute set, negations spelled out. `CREATE ROLE` defaults are safe
+# for all six, but a default is not a declaration: naming each one means a test
+# that flips one attribute differs from the safe shape in exactly that attribute.
+SAFE_ROLE_ATTRIBUTES: tuple[str, ...] = (
+    "NOLOGIN",
+    "NOSUPERUSER",
+    "NOCREATEDB",
+    "NOCREATEROLE",
+    "NOREPLICATION",
+    "NOBYPASSRLS",
+)
+
+SAFE_ROLE_ATTRIBUTE_SQL = " ".join(SAFE_ROLE_ATTRIBUTES)
+
+
+def attributes_with(unsafe: str) -> str:
+    """The safe attribute set with exactly one attribute flipped on.
+
+    The negation is *replaced*, not appended. PostgreSQL does not resolve
+    ``CREATE ROLE ... NOBYPASSRLS LOGIN`` in favour of the later option -- it
+    refuses the statement outright as ``conflicting or redundant options`` --
+    so an appended attribute produces a syntax error rather than the damaged
+    role the test means to observe.
+    """
+
+    replaced = tuple(
+        unsafe if attribute == f"NO{unsafe}" else attribute
+        for attribute in SAFE_ROLE_ATTRIBUTES
+    )
+    if unsafe not in replaced:
+        raise AssertionError(f"{unsafe} is not one of the six attributes this helper knows")
+    return " ".join(replaced)
+
+
+async def shape_execution_role(
+    harness: ProvisioningHarness,
+    *,
+    attributes: str = SAFE_ROLE_ATTRIBUTE_SQL,
+    grant: str | None = "SET TRUE, INHERIT FALSE, ADMIN FALSE",
+    extra_edge_from: str | None = None,
+    via_intermediate: bool = False,
+) -> None:
+    """Create the execution role in a named shape, dropping any prior one.
+
+    Every damaged shape this section needs is expressible here, so a test says
+    which shape it wants rather than carrying its own DDL. The role is dropped
+    first so a test never inherits a previous test's damage.
+    """
+
+    from psycopg import sql
+
+    intermediate = f"{CP4_EXECUTION_ROLE}_via"
+    async with await AsyncConnection.connect(harness.admin_conninfo, autocommit=True) as conn:
+        await refuse_on_unowned_role(conn)
+        for role in (intermediate, CP4_EXECUTION_ROLE):
+            await conn.execute(
+                sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role))
+            )
+        await conn.execute(
+            sql.SQL("CREATE ROLE {} " + attributes).format(sql.Identifier(CP4_EXECUTION_ROLE))
+        )
+        if via_intermediate:
+            await conn.execute(
+                sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(intermediate))
+            )
+            await conn.execute(
+                sql.SQL("GRANT {} TO {} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE").format(
+                    sql.Identifier(CP4_EXECUTION_ROLE), sql.Identifier(intermediate)
+                )
+            )
+            await conn.execute(
+                sql.SQL("GRANT {} TO {} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE").format(
+                    sql.Identifier(intermediate), sql.Identifier(MIGRATOR_ROLE)
+                )
+            )
+        if grant is not None:
+            await conn.execute(
+                sql.SQL("GRANT {} TO {} WITH " + grant).format(
+                    sql.Identifier(CP4_EXECUTION_ROLE), sql.Identifier(MIGRATOR_ROLE)
+                )
+            )
+        if extra_edge_from is not None:
+            # `extra_edge_from` must be an **existing controlled role**, and is
+            # never created here. Under note-22's both-endpoints scope an edge is
+            # governed only when both ends are controlled, so granting to a role
+            # this helper invented would produce an edge the control correctly
+            # ignores — the test would pass while measuring nothing. Dropping
+            # `CP4_EXECUTION_ROLE` removes the edge, so no revoke is needed and
+            # no controlled role is ever dropped.
+            await conn.execute(
+                sql.SQL("GRANT {} TO {} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE").format(
+                    sql.Identifier(CP4_EXECUTION_ROLE), sql.Identifier(extra_edge_from)
+                )
+            )
+
+
+# The roles this section creates. Fixed names, so the same protection the ACL
+# probe needed applies here: a fixed-name drop is only safe if the name could not
+# belong to anything else. `haloflow_test_m02_*` is reserved for this file, and
+# these helpers refuse rather than drop if one of them turns up already owning an
+# object or holding a membership nobody here granted.
+CP4_MANAGED_ROLES: tuple[str, ...] = (
+    f"{CP4_EXECUTION_ROLE}_via",
+    CP4_EXECUTION_ROLE,
+)
+
+
+async def refuse_on_unowned_role(conn: AsyncConnection) -> None:
+    """Refuse if a managed name already exists and owns anything.
+
+    An unconditional `DROP ROLE IF EXISTS` on a fixed name destroys whatever
+    happens to hold that name — the defect corrected in the ACL probe, applied
+    here to the same shape of code. A leftover from a previous run of this file
+    owns nothing and is safe to drop; anything else stops the test rather than
+    being deleted.
+    """
+
+    from psycopg import sql
+
+    for role in CP4_MANAGED_ROLES:
+        owned = await (
+            await conn.execute(
+                """SELECT 1
+                     FROM pg_class
+                     JOIN pg_roles ON pg_roles.oid = pg_class.relowner
+                    WHERE pg_roles.rolname = %s
+                    UNION ALL
+                   SELECT 1
+                     FROM pg_namespace
+                     JOIN pg_roles ON pg_roles.oid = pg_namespace.nspowner
+                    WHERE pg_roles.rolname = %s
+                    LIMIT 1""",
+                (role, role),
+            )
+        ).fetchall()
+        if owned:
+            raise AssertionError(
+                f"{role} exists and owns database objects; refusing to drop it. "
+                "This name is reserved for tests in this file — investigate before rerunning."
+            )
+        assert sql.Identifier(role) is not None  # name is quoted wherever it is used
+
+
+async def drop_execution_role(harness: ProvisioningHarness) -> None:
+    from psycopg import sql
+
+    async with await AsyncConnection.connect(harness.admin_conninfo, autocommit=True) as conn:
+        await refuse_on_unowned_role(conn)
+        for role in CP4_MANAGED_ROLES:
+            await conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+@pytest_asyncio.fixture
+async def cp4_role(provisioning_harness: ProvisioningHarness) -> AsyncIterator[None]:
+    """The execution role exists only for the duration of one test."""
+
+    await drop_execution_role(provisioning_harness)
+    yield
+    await drop_execution_role(provisioning_harness)
+
+
+VALID_CP4_TEMPLATE = "CREATE TABLE {schema}.cp4_probe (id integer PRIMARY KEY);"
+
+# `t002_test_m02` yields `target_version` 2 (the leading `tNNN` of the last
+# unit), so every provisioner built over this registry must widen
+# `supported_schema_versions` past the `range(1, 2)` default or the request is
+# refused with `SCHEMA_VERSION_UNSUPPORTED` before stage 1 is ever reached.
+CP4_SUPPORTED_SCHEMA_VERSIONS = range(1, 3)
+
+
+def make_registry_with_execution_role() -> TenantMigrationRegistry:
+    """The baseline plus one unit that declares the execution role.
+
+    The declaration is the point: `assert_execution_roles_safe` collects the
+    distinct `execution_role` values in the registry and returns immediately
+    when there are none, so a registry built from a bare template string checks
+    nothing and reports no refusal.
+    """
+
+    from haloflow.m01.provisioning.units import UnitDefinition, build_tenant_migration_registry
+
+    return build_tenant_migration_registry(
+        dict(TENANT_MIGRATIONS),
+        {
+            "t002_test_m02": UnitDefinition(
+                VALID_CP4_TEMPLATE, execution_role=CP4_EXECUTION_ROLE
+            )
+        },
+        approved_execution_roles=frozenset({CP4_EXECUTION_ROLE}),
+        allow_test_units=True,
+    )
+
+
+@pytest.fixture
+def cp4_declared_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declare the test execution role in the manifest stage 1 loads for itself.
+
+    The provisioner and the runner call `assert_execution_roles_safe` without a
+    manifest, so it loads the shipped `m01/manifests/provisioning.json` -- whose
+    `execution_role_profiles` block is empty, and must stay empty: a test role
+    in a production security declaration is the widening this checkpoint exists
+    to prevent.
+
+    Without this fixture every provisioner- and runner-path test below refuses
+    at the "composition approved the name; the manifest never described it"
+    branch and never reaches the catalogue comparison it is named for. The
+    assertion still passes, because the code under test is right either way --
+    which is precisely why the substitution is made explicit rather than left
+    to coincidence.
+
+    What is substituted is built by `cp4_manifest()` and therefore went through
+    the real loader: a validated `ProvisioningManifest`, not a stub. A call that
+    supplies its own document still reaches the original loader.
+    """
+
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    original = manifest_module.load_provisioning_manifest
+    declared = cp4_manifest()
+
+    def _load(document: object | None = None) -> object:
+        return declared if document is None else original(document)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(manifest_module, "load_provisioning_manifest", _load)
+
+
+async def preflight_against(
+    harness: ProvisioningHarness, manifest: object | None = None
+) -> str | None:
+    """Run stage 1 as the provisioner would. Returns the refusal code, or None."""
+
+    from haloflow.m01.errors import ExecutionRoleUnavailable
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    registry = make_registry_with_execution_role()
+    async with await AsyncConnection.connect(
+        harness.role_logins[PROVISIONER_ROLE], autocommit=True
+    ) as conn:
+        try:
+            await assert_execution_roles_safe(conn, registry, manifest=manifest or cp4_manifest())
+        except ExecutionRoleUnavailable as refusal:
+            return refusal.reason_code
+    return None
+
+
+@pytest.mark.asyncio
+async def test_the_preflight_fails_when_the_execution_role_does_not_exist(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P11 and TC-P13. Fails before any `running` row is written.
+
+    The role is absent from the catalogue entirely. R-P1B.4 requires the refusal
+    to precede the ledger, so a configuration fault is never recorded as a
+    tenant migration failure — the two are different problems with different
+    fixes, and a `failed` row would send an operator looking at the migration.
+    """
+
+    tenant_id, schema_key = new_tenant
+    provisioner = make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+
+    with pytest.raises(ProvisioningFailed) as refused:
+        await provisioner.provision(request_for(new_tenant))
+
+    assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"
+
+    ledger = await admin_rows(
+        provisioning_harness,
+        "SELECT state FROM shared.schema_migrations WHERE tenant_id = %s",
+        (tenant_id,),
+    )
+    assert ledger == []
+
+    schema = await admin_rows(
+        provisioning_harness,
+        "SELECT 1 FROM pg_namespace WHERE nspname = %s",
+        (schema_key,),
+    )
+    assert schema == []
+
+
+@pytest.mark.asyncio
+async def test_the_preflight_fails_a_role_granted_with_set_false(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """TC-P12. `WITH SET FALSE` satisfies MEMBER and cannot `SET ROLE` (V8).
+
+    The measurement this test exists for: asking `pg_has_role(..., 'MEMBER')`
+    would pass this exact configuration, and the runner would then attempt a
+    `SET ROLE` the database refuses — mid-DDL, inside a tenant transaction.
+    """
+
+    await shape_execution_role(
+        provisioning_harness, grant="SET FALSE, INHERIT FALSE, ADMIN FALSE"
+    )
+
+    assert await preflight_against(provisioning_harness) == "EXECUTION_ROLE_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_the_preflight_fails_on_each_unsafe_role_attribute_in_turn(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P47. Each attribute alone, and after each: no schema grant, no `running` row.
+
+    An allow-listed name is not a safe role. The composition allow-list is fixed
+    at startup; if the role later gained SUPERUSER the runner would assume it
+    deliberately, which is why this reads the catalogue rather than the manifest.
+    """
+
+    tenant_id, schema_key = new_tenant
+    unsafe = ("LOGIN", "SUPERUSER", "CREATEDB", "CREATEROLE", "REPLICATION", "BYPASSRLS")
+
+    for attribute in unsafe:
+        await shape_execution_role(
+            provisioning_harness, attributes=attributes_with(attribute)
+        )
+
+        provisioner = make_provisioner(
+            provisioning_harness,
+            make_registry_with_execution_role(),
+            supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+        )
+        with pytest.raises(ProvisioningFailed) as refused:
+            await provisioner.provision(request_for(new_tenant))
+        assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE", attribute
+
+        # No schema grant exists for the role: `nspacl` carries no entry for it,
+        # which also means the schema itself was never created.
+        acl = await admin_rows(
+            provisioning_harness,
+            """SELECT 1 FROM pg_namespace ns,
+                      LATERAL aclexplode(ns.nspacl) AS entry
+                LEFT JOIN pg_roles grantee ON grantee.oid = entry.grantee
+                    WHERE ns.nspname = %s AND grantee.rolname = %s""",
+            (schema_key, CP4_EXECUTION_ROLE),
+        )
+        assert acl == [], attribute
+
+        ledger = await admin_rows(
+            provisioning_harness,
+            "SELECT state FROM shared.schema_migrations WHERE tenant_id = %s",
+            (tenant_id,),
+        )
+        assert ledger == [], attribute
+
+
+@pytest.mark.asyncio
+async def test_the_preflight_fails_on_each_membership_option_in_turn(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P48. `SET FALSE`, `INHERIT TRUE`, `ADMIN TRUE` — same two assertions.
+
+    `INHERIT TRUE` is a failure rather than a convenience (V15): the migrator's
+    ordinary statements would silently carry the execution role's privileges.
+    `ADMIN TRUE` would let the migrator grant the role onward.
+    """
+
+    tenant_id, schema_key = new_tenant
+    mismatches = (
+        "SET FALSE, INHERIT FALSE, ADMIN FALSE",
+        "SET TRUE, INHERIT TRUE, ADMIN FALSE",
+        "SET TRUE, INHERIT FALSE, ADMIN TRUE",
+    )
+
+    for grant in mismatches:
+        await shape_execution_role(provisioning_harness, grant=grant)
+
+        provisioner = make_provisioner(
+            provisioning_harness,
+            make_registry_with_execution_role(),
+            supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+        )
+        with pytest.raises(ProvisioningFailed) as refused:
+            await provisioner.provision(request_for(new_tenant))
+        assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE", grant
+
+        acl = await admin_rows(
+            provisioning_harness,
+            """SELECT 1 FROM pg_namespace ns,
+                      LATERAL aclexplode(ns.nspacl) AS entry
+                LEFT JOIN pg_roles grantee ON grantee.oid = entry.grantee
+                    WHERE ns.nspname = %s AND grantee.rolname = %s""",
+            (schema_key, CP4_EXECUTION_ROLE),
+        )
+        assert acl == [], grant
+
+        ledger = await admin_rows(
+            provisioning_harness,
+            "SELECT state FROM shared.schema_migrations WHERE tenant_id = %s",
+            (tenant_id,),
+        )
+        assert ledger == [], grant
+
+
+@pytest.mark.asyncio
+async def test_the_preflight_rejects_transitive_only_satisfaction(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """TC-P49. The migrator reaches the role, but no direct declared edge exists.
+
+    `pg_has_role(..., 'SET')` is true here — the capability check passes — and
+    the structural check must still refuse. That is why R-P1B.4 asks for both:
+    either alone would accept a path nobody declared.
+    """
+
+    await shape_execution_role(provisioning_harness, grant=None, via_intermediate=True)
+
+    assert await preflight_against(provisioning_harness) == "EXECUTION_ROLE_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_an_undeclared_membership_edge_fails_the_exact_set_control(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """TC-P37 and TC-P50, second instance. The graph equals the declaration.
+
+    The declared edge is present and correct. A second, undeclared edge into the
+    execution role is what fails — an undeclared path into an execution role is a
+    path nobody reviewed, and the pre-R-P1B.7 control would have permitted it.
+
+    The extra edge comes from `haloflow_runtime`, a controlled role, and that is
+    load-bearing rather than incidental: note-22 scopes the control to edges with
+    **both** endpoints controlled, so the invented `_extra` role this test used
+    before the ruling would now produce an edge the control legitimately ignores.
+    The test would still have passed, for no reason.
+    """
+
+    await shape_execution_role(provisioning_harness, extra_edge_from=RUNTIME_ROLE)
+
+    assert await preflight_against(provisioning_harness) == "EXECUTION_ROLE_UNAVAILABLE"
+
+
+@pytest.mark.asyncio
+async def test_an_edge_between_two_infrastructure_roles_fails_the_preflight(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """TC-P50 proper, and the case the first CP-4 draft could not see.
+
+    `GRANT haloflow_migrator TO haloflow_runtime` lets the runtime role assume
+    the migrator. Neither endpoint is the registry's execution role, so the
+    per-execution-role query that shipped in the first draft never selected this
+    edge and no comparison considered it. It is exactly the escalation TC-E19 was
+    written to forbid, which is why R-P1B.7 says that control *becomes* this one.
+
+    Revoked in a `finally`: a leaked escalation would fail every later test in
+    this file, and the failure would look like anything but its cause.
+    """
+
+    from psycopg import sql
+
+    await shape_execution_role(provisioning_harness)
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(
+            sql.SQL("GRANT {} TO {} WITH SET TRUE, INHERIT FALSE, ADMIN FALSE").format(
+                sql.Identifier(MIGRATOR_ROLE), sql.Identifier(RUNTIME_ROLE)
+            )
+        )
+    try:
+        assert await preflight_against(provisioning_harness) == "EXECUTION_ROLE_UNAVAILABLE"
+    finally:
+        async with await AsyncConnection.connect(
+            provisioning_harness.admin_conninfo, autocommit=True
+        ) as conn:
+            await conn.execute(
+                sql.SQL("REVOKE {} FROM {}").format(
+                    sql.Identifier(MIGRATOR_ROLE), sql.Identifier(RUNTIME_ROLE)
+                )
+            )
+
+
+@pytest.mark.asyncio
+async def test_an_edge_between_two_uncontrolled_roles_passes_the_preflight(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """R-P1B.7 case 6. The control is scoped, not cluster-wide.
+
+    Two roles no declaration names are not HaloFlow's business, and a control
+    that failed on them would fail on every unrelated grant in the cluster. This
+    is also the boundary the deferred either-endpoint question sits on: it is a
+    deliberate scope, argued in note-22, not an oversight.
+
+    It is asserted alongside a *correctly* configured execution role, so a pass
+    here means the control ran and accepted, not that it never ran.
+    """
+
+    from psycopg import sql
+
+    await shape_execution_role(provisioning_harness)
+    outsiders = ("haloflow_test_m02_outsider_a", "haloflow_test_m02_outsider_b")
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        for role in outsiders:
+            await conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+            await conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
+        await conn.execute(
+            sql.SQL("GRANT {} TO {}").format(
+                sql.Identifier(outsiders[0]), sql.Identifier(outsiders[1])
+            )
+        )
+    try:
+        assert await preflight_against(provisioning_harness) is None
+    finally:
+        async with await AsyncConnection.connect(
+            provisioning_harness.admin_conninfo, autocommit=True
+        ) as conn:
+            for role in outsiders:
+                await conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+@pytest.mark.asyncio
+async def test_a_correctly_configured_execution_role_passes_the_preflight(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """The positive control. Without it every assertion above could pass vacuously."""
+
+    await shape_execution_role(provisioning_harness)
+
+    assert await preflight_against(provisioning_harness) is None
+
+
+@pytest.mark.asyncio
+async def test_set_true_inherit_false_keeps_set_while_usage_is_false(
+    provisioning_harness: ProvisioningHarness, cp4_role: None
+) -> None:
+    """TC-P51 (C). V15, characterized against the live catalogue.
+
+    The declared edge deliberately keeps `SET` while denying `USAGE`, so the
+    migrator can assume the role explicitly and does not silently carry its
+    privileges. This is the measurement the declaration rests on; if PostgreSQL
+    ever changed it, R-P1B.3's `INHERIT FALSE` would stop meaning what A7 says.
+    """
+
+    await shape_execution_role(provisioning_harness)
+
+    row = await admin_row(
+        provisioning_harness,
+        "SELECT pg_has_role(%s, %s, 'SET'), pg_has_role(%s, %s, 'USAGE')",
+        (MIGRATOR_ROLE, CP4_EXECUTION_ROLE, MIGRATOR_ROLE, CP4_EXECUTION_ROLE),
+    )
+
+    assert row[0] is True
+    assert row[1] is False
+
+
+@pytest.mark.asyncio
+async def test_the_runner_is_guarded_on_the_same_terms_as_the_provisioner(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """R-P1B.15. One component, two call sites — the runner invoked on its own.
+
+    A runner reached outside a provisioning flow must not assume a role nobody
+    checked. It raises in its own taxonomy, not the provisioner's, because a
+    shared helper raising one caller's exception type is how a provisioning call
+    once came to fail as a migration error.
+    """
+
+    tenant_id, schema_key = new_tenant
+    await shape_execution_role(
+        provisioning_harness, grant="SET FALSE, INHERIT FALSE, ADMIN FALSE"
+    )
+
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        make_registry_with_execution_role(),
+    )
+
+    with pytest.raises(TenantMigrationFailed) as refused:
+        await runner.apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"

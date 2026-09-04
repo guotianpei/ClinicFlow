@@ -205,6 +205,32 @@ class ProvisioningManifest:
     role_memberships: tuple[RoleMembership, ...]
     tenant_schema_role_privileges: Mapping[str, SchemaPrivilegeEntry]
     tenant_table_overrides: tuple[TableOverride, ...]
+    controlled_roles: frozenset[str]
+    """Every application role whose membership edges stage 1 governs (R-P1B.7).
+
+    The union of three declarations, and the union is the point (Codex note-22):
+
+    - **`permissions.json`'s top-level roles** -- the established M01 role-policy
+      vocabulary, including roles that hold no tenant-schema ACL at all. The
+      support, break-glass, owner and control-audit roles belong in the
+      membership graph precisely because they are privileged; an undeclared edge
+      between two of them must not be invisible merely because neither may hold
+      a tenant-schema privilege.
+    - **`execution_role_profiles`** -- module execution roles, whose names need
+      not carry the ``haloflow_`` prefix.
+    - **`tenant_schema_role_privileges`** -- keeps the infrastructure and
+      execution ACL declarations represented, so a future declared grantee joins
+      the controlled graph without a second edit.
+
+    Derived here and carried as a field rather than recomputed in the catalogue
+    layer, so stage 1 never reads a manifest file for itself and the four
+    provisioning blocks stay sourced only from ``provisioning.json`` (note-15).
+
+    Deliberately **not** ``rolname LIKE 'haloflow%'``. A prefix is a role-name
+    literal of the kind A7 forbids, and it is wrong in both directions: it misses
+    an execution role named otherwise, and it captures unrelated roles that merely
+    share the prefix -- the LOGIN shims a test harness creates among them.
+    """
 
 
 def classify_tenant_schema_token(token: str) -> tuple[str, ...]:
@@ -544,11 +570,14 @@ def load_provisioning_manifest(
     permissions = _permissions_document()
     profiles = _load_execution_role_profiles(blocks[_BLOCK_EXECUTION_ROLE_PROFILES])
 
+    schema_privileges = _load_schema_privileges(blocks[_BLOCK_SCHEMA_PRIVILEGES], profiles)
+
     return ProvisioningManifest(
         execution_role_profiles=profiles,
         role_memberships=_load_role_memberships(blocks[_BLOCK_ROLE_MEMBERSHIPS], profiles),
-        tenant_schema_role_privileges=_load_schema_privileges(
-            blocks[_BLOCK_SCHEMA_PRIVILEGES], profiles
-        ),
+        tenant_schema_role_privileges=schema_privileges,
         tenant_table_overrides=_load_table_overrides(blocks[_BLOCK_TABLE_OVERRIDES], permissions),
+        controlled_roles=(
+            _declared_roles(permissions) | frozenset(profiles) | frozenset(schema_privileges)
+        ),
     )

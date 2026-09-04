@@ -29,7 +29,13 @@ from haloflow.m01.provisioning.codes import (
     PreconditionCode,
 )
 from haloflow.m01.provisioning.provisioner import ProvisioningRequest, _validate_request
-from haloflow.m01.provisioning.roles import PROVISIONING_ROLES
+from haloflow.m01.provisioning.roles import (
+    AUDIT_PROJECTOR_ROLE,
+    MIGRATOR_ROLE,
+    PROVISIONER_ROLE,
+    PROVISIONING_ROLES,
+    RUNTIME_ROLE,
+)
 from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
 
 VALID_TEMPLATE = "CREATE TABLE {schema}.thing (id integer PRIMARY KEY);"
@@ -1623,3 +1629,431 @@ def test_an_unknown_key_in_any_nested_entry_is_refused() -> None:
 
     # And the shipped manifest, which has no stray keys, still loads.
     assert load_provisioning_manifest() is not None
+
+
+# --- CP-4: the role-safety preflight, pure comparison core ------------------
+#
+# Traceability: R-P1B.4(b)(c)(d), R-P1B.6, R-P1B.7, R-P1B.15; architecture A7.
+# The catalogue-reading half and the two call-site assertions (no schema grant,
+# no `running` row) are TC-P11/12/13/37/47/48/49/50/51, all Postgres, all
+# Rachel's. These cover the comparison the preflight makes once it has read.
+#
+# Split on Rachel's decision: every CP-4 test in the design is Postgres-only, so
+# with one monolithic component Claude could not establish a single genuine
+# pre-change failure and the load-bearing evidence would all be Rachel's. A pure
+# core moves the comparison rules back where they can be failed on demand.
+#
+# Plan v5 §14 is the rule under test here: where a requirement fixes a value,
+# assert the value is *enforced*, not that the field is present and well-typed.
+
+
+CONTROLLED_EXECUTION_ROLE = "module_m02_gateway_owner"
+"""Deliberately without the `haloflow_` prefix.
+
+A role's membership is governed because a declaration names it, not because its
+name starts a certain way. Using a prefixed name here would let a `LIKE` scope
+pass these tests while failing the requirement (Codex note-22).
+"""
+
+
+def _edge(**changes: object) -> object:
+    """The one declared membership edge, or a damaged variant of it."""
+
+    from haloflow.m01.provisioning.role_safety import MembershipEdge
+
+    fields: dict[str, object] = {
+        "role": CONTROLLED_EXECUTION_ROLE,
+        "member": "haloflow_migrator",
+        "set": True,
+        "inherit": False,
+        "admin": False,
+    }
+    fields.update(changes)
+    return MembershipEdge(**fields)  # type: ignore[arg-type]
+
+
+def _declared_edge(**changes: object) -> object:
+    """The same edge as the manifest loader produces it."""
+
+    from haloflow.m01.provisioning.manifest import RoleMembership
+
+    fields: dict[str, object] = {
+        "role": CONTROLLED_EXECUTION_ROLE,
+        "member": "haloflow_migrator",
+        "set": True,
+        "inherit": False,
+        "admin": False,
+    }
+    fields.update(changes)
+    return RoleMembership(**fields)  # type: ignore[arg-type]
+
+
+def _observed(**changes: object) -> object:
+    """A role whose catalogue state matches the declared safe profile.
+
+    Built as the real `ObservedRole`, not a dict: the pure core takes the type
+    the catalogue layer produces, so these tests exercise the contract the
+    production call sites use rather than a convenient stand-in.
+    """
+
+    from haloflow.m01.provisioning.role_safety import ObservedRole
+
+    fields: dict[str, object] = {
+        "exists": True,
+        "login": False,
+        "superuser": False,
+        "createdb": False,
+        "createrole": False,
+        "replication": False,
+        "bypassrls": False,
+        "has_role_set": True,
+    }
+    fields.update(changes)
+    return ObservedRole(**fields)  # type: ignore[arg-type]
+
+
+def _declared() -> object:
+    """The manifest's declared profile, as the loader produces it."""
+
+    from haloflow.m01.provisioning.manifest import ExecutionRoleProfile
+
+    return ExecutionRoleProfile(
+        login=False,
+        superuser=False,
+        createdb=False,
+        createrole=False,
+        replication=False,
+        bypassrls=False,
+        tenant_schema_privileges=("CREATE",),
+    )
+
+
+def test_the_preflight_accepts_only_a_role_whose_state_matches_the_declaration() -> None:
+    """R-P1B.4. The baseline: a correctly configured role passes."""
+
+    from haloflow.m01.provisioning.role_safety import assess_execution_role
+
+    assert assess_execution_role(observed=_observed(), declared=_declared()) is None
+
+
+def test_the_preflight_fails_on_each_unsafe_attribute_independently() -> None:
+    """R-P1B.4(b). NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION, NOBYPASSRLS.
+
+    Each attribute on its own, so no single check can stand in for the other
+    five. This is the live-catalogue half of the CP-3 finding: the manifest may
+    not *declare* an unsafe value, and the database may not *hold* one.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_execution_role
+
+    for attribute in ("login", "superuser", "createdb", "createrole", "replication", "bypassrls"):
+        outcome = assess_execution_role(
+            observed=_observed(**{attribute: True}), declared=_declared()
+        )
+        assert outcome == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value, attribute
+
+
+def test_the_preflight_fails_when_the_role_does_not_exist() -> None:
+    """R-P1B.4(a). TC-P11's comparison half."""
+
+    from haloflow.m01.provisioning.role_safety import assess_execution_role
+
+    assert assess_execution_role(
+        observed=_observed(exists=False), declared=_declared()
+    ) == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+
+
+# --- R-P1B.7: the membership graph -----------------------------------------
+#
+# The control is over the graph between controlled roles, not over one role's
+# edges, and it is asserted once per preflight. Codex note-22 fixed the scope at
+# **both** endpoints controlled: a deployment's LOGIN identities are legitimately
+# members of application group roles, and governing one-endpoint edges would pull
+# those identities into a security declaration they do not belong in. Widening is
+# deferred, not assumed.
+
+
+def _graph(*edges: object) -> frozenset[object]:
+    return frozenset(edges)  # type: ignore[arg-type]
+
+
+def test_the_membership_graph_accepts_a_catalogue_that_equals_the_declaration() -> None:
+    """R-P1B.7 case 1. The baseline, without which every refusal below is vacuous."""
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    assert (
+        assess_membership_graph(
+            observed=_graph(_edge()),  # type: ignore[arg-type]
+            declared=[_declared_edge()],  # type: ignore[list-item]
+        )
+        is None
+    )
+
+
+def test_an_undeclared_edge_between_two_infrastructure_roles_is_refused() -> None:
+    """R-P1B.7 case 2. `GRANT haloflow_migrator TO haloflow_runtime`.
+
+    The escalation the control this replaces was written for (TC-E19). The
+    per-execution-role check that shipped in the first CP-4 draft could not see
+    it: neither endpoint is the registry's execution role, so no query selected
+    it and no comparison considered it.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    escalation = _edge(role=MIGRATOR_ROLE, member=RUNTIME_ROLE)
+
+    assert (
+        assess_membership_graph(
+            observed=_graph(_edge(), escalation),  # type: ignore[arg-type]
+            declared=[_declared_edge()],  # type: ignore[list-item]
+        )
+        == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+    )
+
+
+def test_an_undeclared_edge_between_two_non_acl_roles_is_refused() -> None:
+    """R-P1B.7 case 5. Scope is not the tenant-schema ACL declaration.
+
+    `haloflow_support_ro` and `haloflow_breakglass_rw` hold no tenant-schema
+    privilege and are absent from `tenant_schema_role_privileges`. They are
+    controlled anyway, because `permissions.json` names them: an undeclared edge
+    between two privileged roles must not be invisible merely because neither may
+    hold a schema privilege. This is the test that fails if the controlled set is
+    narrowed back to the ACL block.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    assert (
+        assess_membership_graph(
+            observed=_graph(  # type: ignore[arg-type]
+                _edge(role="haloflow_breakglass_rw", member="haloflow_support_ro")
+            ),
+            declared=[],
+        )
+        == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+    )
+
+
+def test_a_declared_edge_missing_from_the_catalogue_is_refused() -> None:
+    """R-P1B.7 case 3, and TC-P49's comparison half.
+
+    Set equality refuses a missing edge as firmly as an extra one. This is also
+    how transitive-only satisfaction now presents: reaching the role through an
+    intermediate leaves the declared *direct* edge absent, and the intermediate
+    is not itself a controlled role, so the observed controlled graph is empty
+    while the declaration is not. `pg_has_role(..., 'SET')` is true in that
+    configuration — the capability check passes and this must still refuse,
+    which is the whole point of having both.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    assert (
+        assess_membership_graph(
+            observed=frozenset(),
+            declared=[_declared_edge()],  # type: ignore[list-item]
+        )
+        == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+    )
+
+
+def test_the_membership_graph_fails_on_each_option_independently() -> None:
+    """R-P1B.7 case 4, R-P1B.3. `SET FALSE`, `INHERIT TRUE`, `ADMIN TRUE`.
+
+    Each option alone, so no single one can stand in for the other two. `WITH SET
+    FALSE` satisfies MEMBER but cannot `SET ROLE` (V8), `INHERIT TRUE` would make
+    the migrator's ordinary statements carry the execution role's privileges
+    (V15), and `ADMIN TRUE` would let the migrator grant the role onward.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    unsafe: list[dict[str, object]] = [{"set": False}, {"inherit": True}, {"admin": True}]
+    for change in unsafe:
+        outcome = assess_membership_graph(
+            observed=_graph(_edge(**change)),  # type: ignore[arg-type]
+            declared=[_declared_edge()],  # type: ignore[list-item]
+        )
+        assert outcome == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value, change
+
+
+def test_an_empty_declaration_accepts_an_empty_controlled_graph() -> None:
+    """R-P1B.7 case 7. TC-E19's degenerate state, preserved by construction.
+
+    The shipped manifest declares no execution role, so the declared graph is
+    empty and the control reduces to the `memberships == []` assertion TC-E19
+    made before this checkpoint. R-P1B.7 says that assertion *becomes* the
+    exact-set comparison; this pins that the conversion did not lose it.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_membership_graph
+
+    assert assess_membership_graph(observed=frozenset(), declared=[]) is None
+
+
+def test_the_expected_graph_comes_from_the_declaration_and_nothing_else() -> None:
+    """R-P1B.7, A7. No role-name literal, no default, no supplement.
+
+    The first CP-4 draft rebuilt this expectation from a module constant while
+    `manifest.role_memberships` sat loaded and unused. A7 warns that the
+    requirement is "easy to satisfy today and easy to violate later with one
+    convenient constant"; this asserts the declaration is genuinely the source.
+    """
+
+    from haloflow.m01.provisioning.role_safety import declared_edges
+
+    assert declared_edges([]) == frozenset()
+
+    only = declared_edges([_declared_edge(role="some_other_role")])  # type: ignore[list-item]
+    assert {edge.role for edge in only} == {"some_other_role"}
+
+
+def test_the_controlled_role_set_is_the_union_of_three_declarations() -> None:
+    """R-P1B.7, Codex note-22. Not the schema-ACL block, and not a name prefix.
+
+    `permissions.json` contributes roles that hold no tenant-schema privilege at
+    all — support, break-glass, owner, control-audit — and they are governed
+    precisely because they are privileged. A LOGIN shim is not controlled, which
+    is what keeps a deployment's connection identities out of a security
+    declaration they do not belong in.
+    """
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    controlled = load_provisioning_manifest().controlled_roles
+
+    for role in (
+        PROVISIONER_ROLE,
+        MIGRATOR_ROLE,
+        RUNTIME_ROLE,
+        AUDIT_PROJECTOR_ROLE,
+        "haloflow_support_ro",
+        "haloflow_breakglass_ro",
+        "haloflow_breakglass_rw",
+        "haloflow_control_audit_writer",
+        "haloflow_owner",
+    ):
+        assert role in controlled, role
+
+    for role in ("haloflow_test_migrator_login", "postgres", "pg_read_all_stats"):
+        assert role not in controlled, role
+
+
+def test_the_effective_capability_check_is_required_on_top_of_the_structure() -> None:
+    """R-P1B.4(d). `pg_has_role(..., 'SET')`, never `'MEMBER'` (V8).
+
+    Structurally correct and effectively unusable is still a failure: the
+    catalogue can be right while the capability is not, and the preflight exists
+    so that discrepancy is found before anything is provisioned.
+    """
+
+    from haloflow.m01.provisioning.role_safety import assess_execution_role
+
+    assert assess_execution_role(
+        observed=_observed(has_role_set=False), declared=_declared()
+    ) == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+
+
+def test_the_preflight_reads_set_never_member() -> None:
+    """R-P1B.4(d), V8. Asserted from the source.
+
+    `MEMBER` is true for a role granted `WITH SET FALSE`, which cannot
+    `SET ROLE`. A preflight that asked for `MEMBER` would pass the exact
+    configuration TC-P12 exists to catch.
+    """
+
+    from haloflow.m01.provisioning.role_safety import _HAS_ROLE_SET_SQL
+
+    # Asserted on the query itself, not by grepping the file: the module
+    # docstring necessarily *discusses* `MEMBER` in order to explain why it is
+    # the wrong question, and a text search cannot tell the explanation from the
+    # mistake. The value is the thing that reaches PostgreSQL.
+    assert "'SET'" in _HAS_ROLE_SET_SQL
+    assert "MEMBER" not in _HAS_ROLE_SET_SQL
+
+
+@pytest.mark.asyncio
+async def test_a_declared_role_the_manifest_does_not_describe_is_refused() -> None:
+    """R-P1B.4. Composition approved the name; nothing declared the role.
+
+    The two allow-lists are independent and neither implies the other: a unit
+    may name an approved execution role that no manifest profile describes, and
+    there is then nothing for the catalogue to be compared against. Assuming a
+    role no declaration covers is the failure this stage exists to prevent, so
+    the refusal is the same one a damaged role gets.
+
+    The refusal must also precede the catalogue read, which is why the
+    connection here raises if it is touched: a missing declaration is decided
+    from data already in hand, and a query issued before that decision would be
+    a query issued on behalf of a role nobody described.
+    """
+
+    from haloflow.m01.errors import ExecutionRoleUnavailable
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+    from haloflow.m01.provisioning.role_safety import (
+        _CONTROLLED_EDGES_SQL,
+        assert_execution_roles_safe,
+    )
+    from haloflow.m01.provisioning.units import UnitDefinition, build_tenant_migration_registry
+
+    role = "haloflow_undeclared_execution_role"
+    registry = build_tenant_migration_registry(
+        {"t001_test_undeclared": UnitDefinition(VALID_TEMPLATE, execution_role=role)},
+        approved_execution_roles=frozenset({role}),
+        allow_test_units=True,
+    )
+
+    # The membership graph is read first and unconditionally (R-P1B.7), so a
+    # blanket "no query at all" guard would now assert the wrong thing. This
+    # serves that one query and refuses every other, which is the claim that
+    # actually matters: the missing declaration is decided from data already in
+    # hand, and no question is ever asked *about the undeclared role*.
+    class _ServesTheGraphQueryOnly:
+        def cursor(self) -> object:
+            return _Cursor()
+
+    class _Cursor:
+        async def __aenter__(self) -> "_Cursor":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def execute(self, statement: str, params: object = None) -> None:
+            if statement is not _CONTROLLED_EDGES_SQL:
+                raise AssertionError(
+                    "the role catalogue was read before the declaration was checked"
+                )
+
+        async def fetchall(self) -> list[object]:
+            return []
+
+        async def fetchone(self) -> object:
+            return None
+
+    # The shipped manifest, loaded for real. It declares no execution roles, so
+    # this is not a contrived document -- it is the file in the package, and its
+    # empty declaration matches the empty graph the stub serves.
+    manifest = load_provisioning_manifest()
+    assert manifest.execution_role_profiles == {}
+
+    with pytest.raises(ExecutionRoleUnavailable) as refused:
+        await assert_execution_roles_safe(_ServesTheGraphQueryOnly(), registry, manifest=manifest)
+
+    assert refused.value.reason_code == PreconditionCode.EXECUTION_ROLE_UNAVAILABLE.value
+
+
+def test_the_preflight_is_one_component_used_by_both_call_sites() -> None:
+    """R-P1B.15. One implementation, two call sites — not two checks that drift.
+
+    Asserted from the source because the behavioural halves need a database.
+    """
+
+    provisioner = (PROVISIONING_ROOT / "provisioner.py").read_text()
+    runner = (PROVISIONING_ROOT / "runner.py").read_text()
+
+    for source in (provisioner, runner):
+        assert "role_safety" in source

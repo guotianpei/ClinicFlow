@@ -32,8 +32,13 @@ from typing import Final
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import ConnectionModeRejected, TenantMigrationFailed
+from haloflow.m01.errors import (
+    ConnectionModeRejected,
+    ExecutionRoleUnavailable,
+    TenantMigrationFailed,
+)
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
+from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
 from haloflow.m01.resolver import TENANT_ID_PATTERN
@@ -147,6 +152,14 @@ class TenantMigrationRunner:
         connection = await self._connect()
         try:
             await _assume_migrator(connection)
+            # Stage 1, step 0 of A4. The runner is guarded on the same terms as
+            # the provisioner (R-P1B.15), so a runner invoked outside a
+            # provisioning flow does not assume a role nobody checked. One
+            # component, two call sites.
+            try:
+                await assert_execution_roles_safe(connection, self._registry)
+            except ExecutionRoleUnavailable as error:
+                raise TenantMigrationFailed(reason_code=error.reason_code) from error
             for unit in self._registry:
                 outcomes.append(
                     await self._apply_unit(
