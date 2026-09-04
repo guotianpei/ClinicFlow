@@ -250,6 +250,270 @@ the review dispositions and the pre-push verification.
   `search_path` its SECURITY DEFINER functions require — before implementation begins.** M01 ships the
   migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
   a different owner.
+
+- **M01 PR-3 — R-E7's answer — is in rule-3 review, not yet coded.** PR-3 *is* the mechanism the R-E7
+  precondition above asks for: the allow-listed execution role and its bootstrap contract, the typed
+  verifier replacing v1's postcondition, the tenant-schema grant control, and checksum v2. It is
+  deliberately **one PR** (D17) — the role mechanism, typed verification, checksum change and grant
+  controls are one security contract over shared implementation surfaces.
+  - Package at **v7** (2026-09-03), 79 test cases, in
+    `Shared Workspace/ClinicFlow/Work Session 2026-09-03/claude_m01-pr3-review-package-v7.md`, with the
+    handoff beside it, now **two artifacts** per the revised `COLLABORATION_WORKFLOW.md` §5: the
+    **implementation packet (v5)**, which Aider reads and which carries specification only, and the
+    **pre-implementation operator runbook (v1)**, which is Rachel's and is never loaded into Aider. The
+    split is a safety boundary rather than filing: operator procedure inside the packet leaves the
+    executor holding its own approval procedure, which positions it to run those steps rather than wait
+    for them. **v7's architecture and
+    requirements are approved by review; the remaining correction was packet-only.** The CP-5b/CP-5c
+    seam is drawn at the **activation** boundary rather than the code boundary: CP-5b builds the
+    consolidated grant component and leaves the live provisioning path unchanged, and CP-5c switches the
+    path atomically — old grant locations removed, stage 2 invoked, stage 3 enforcing in the same
+    transaction, runner only after. A seam at the code boundary would have left a committable state in
+    which provisioning grants every schema privilege and activates a tenant with no exact ACL
+    enforcement, `_verify`'s presence checks being no substitute (V20, V24). If the seam proves
+    unworkable the sanctioned fallback is to recombine the two checkpoints, never to ship the
+    intermediate state. **v5 and v6 are both superseded
+    and both known to be wrong**: v5's stage 3 asserted a complete ACL before three of five grantee
+    classes existed (D22), and v6's R-P1B.14 claimed a residue guarantee the committed sequence cannot
+    provide (see below). Neither may be used as the design of record.
+  - **ChatGPT's v6 review returned CHANGES REQUIRED and found a false invariant.** R-P1B.14 claimed a
+    stage-1/2/3 failure leaves "no ledger row" and that a re-run starts "as if never attempted". Both
+    are false: `_register_tenant` and `_create_schema` each commit before stage 2, so a stage-2/3
+    failure leaves a committed `provisioning` row and schema, and a resumed tenant may hold grants and
+    ledger history from an earlier attempt. **v7 states the invariant differentially** — the failed
+    attempt adds no new ACL entry and no new or modified ledger row, both byte-identical to pre-attempt;
+    the tenant does not activate; a repaired re-run resumes and converges. The strong claim survives
+    only for a stage-1 failure on a fresh tenant. Five resume tests added (TC-P73–TC-P77).
+  - **R-P1B.21 (new): the control is a gate, not a repair tool.** Stage 2 issues no `REVOKE` and stage 3
+    repairs nothing; pre-existing committed drift fails stage 3 and **survives the rollback** (V28b,
+    measured), leaving the tenant inactive until an operator intervenes. Silently revoking would destroy
+    the evidence of how the grant arrived.
+  - **D23 (2026-09-03): no infrastructure role may be an execution role.** `haloflow_provisioner` owns
+    every tenant schema, and **V29 measured that an execution role owning the schema can mutate `nspacl`
+    during stage 4** — which would break R-P1B.20 and invalidate stage 3's placement. The approved set
+    excludes all of `PROVISIONING_ROLES` at composition; the tenant schema is owned by the provisioner
+    alone; neither the migrator nor an execution role holds grant option. A measured nuance shapes the
+    enforcement: a non-owner without grant option that issues a schema `GRANT` does **not** raise, it
+    warns and changes nothing, so ownership is asserted from the catalogue rather than inferred from an
+    error. A module needing gateway-owner behaviour declares its own role in its own Alembic revision.
+  - **D22 (2026-09-03) — the expected schema ACL is entirely declared, and the grants consolidate.**
+    Two findings. First, a provisioned tenant schema has **five** ACL grantee classes, not the four
+    R-P1B.13 named: `_apply_grants` also grants schema `USAGE` to `haloflow_audit_projector`, declared
+    in `permissions.json` only at object level. Second, and more serious, **v5's stage 3 could not have
+    asserted a complete ACL at all** — `_apply_grants` runs *after* `apply_within_lock` and
+    `_create_schema` granted the migrator inline, so three of five classes were absent or undeclared at
+    the moment of assertion; v5 would have failed every correct provisioning and had no test that would
+    have caught it. Resolution: all five classes are declared in a new `tenant_schema_role_privileges`
+    manifest block; the expected-set builder contains **no role-name literal**, so
+    `haloflow_audit_projector` is not a hard-coded exception; **stage 2 installs every declared schema
+    grant and is the only place any is installed**; stage 3 asserts the complete set symmetrically
+    before the runner; and the placement is justified by **V27**, which measured that the runner's
+    `t001` work leaves `nspacl` byte-identical.
+  - Review history: v2 and v3 each drew findings; the **v4 checklist review returned "conditionally
+    aligned, no further design round required"** with one required correction — the stage-3 grant
+    postcondition compared privilege *names*, which cannot distinguish `CREATE WITH GRANT OPTION` from
+    `CREATE` and does not exclude `PUBLIC`. v5 applies it: set equality over
+    `(grantee, privilege_type, is_grantable, grantor)` tuples, expected set built explicitly, plus
+    TC-P62/63/64.
+  - The central design correction, carried from v3→v4 and unchanged since: **validation precedes every
+    privileged mutation.** Four stages — role-safety preflight (read-only, no ledger) → provisioner
+    grant transaction → grant postcondition rolling back on mismatch → runner, which re-runs the
+    preflight. A failure in any of the first three leaves no schema grant and no ledger row.
+  - **D13's consequence, measured:** the migrator neither owns the tenant schema nor holds grant option,
+    so a tenant unit cannot install its own prerequisite. The execution role's schema `CREATE` is
+    installed by the **provisioner as schema owner**, driven from manifest data so M01 names no module
+    role. Table-level grants stay inside the module's unit.
+  - **Decisions D14–D21 are all settled. No PR-3 design decision remains open.** D14–D20 settled
+    2026-09-01; **D21 settled 2026-09-03: `grantor` joins the stage-3 tuple equality and is pinned to
+    `haloflow_provisioner`**, making the comparison four-dimensional. The deciding evidence is V25 — a
+    declared execution role holding exactly its declared privileges, granted by someone other than the
+    provisioner, matches on grantee, privilege and `is_grantable`, so `grantor` is the only remaining
+    signal; the undeclared-grantee rule catches that case only when the recipient happens to be
+    undeclared. The cost is unusually low because under D13 the provisioner owns the tenant schema and
+    makes every grant, and its own baseline ACL entry also carries `grantor = haloflow_provisioner`, so
+    one uniform rule covers every expected entry class with no exception list. A future grant installed
+    by anything other than the provisioner — a Module-0 bootstrap, a break-glass repair, a
+    managed-service operator — is a change to R-P1B.13 arriving with its own review, not a carve-out at
+    implementation time.
+  - **Repo hygiene defect, found 2026-09-03, NOT part of PR-3.** `make check` and `CLAUDE.md` are both
+  narrower than CI: the Makefile's `LINT_PATHS`/`TYPE_PATHS` and `CLAUDE.md`'s "this is exactly what CI
+  runs" block both omit `src/haloflow/composition.py`, which `.github/workflows/m01.yml` lints **and**
+  type-checks. So `make check` can report clean on a file CI will reject — and PR-3's CP-2 edits
+  `composition.py`. The workflow file is the authority. Fix separately: bring `LINT_PATHS`,
+  `TYPE_PATHS` and `CLAUDE.md` back into line with it. Deliberately excluded from PR-3, whose packet
+  makes both files prohibited and uses the CI commands verbatim.
+
+- **Rule-3 sign-off given by Rachel 2026-09-03 on design package v7** (Requirements, Architecture, Unit
+  Test Cases). D14–D23 all settled; ChatGPT approved the architecture and requirements. PR-3 is cleared
+  to enter implementation, subject to the release gates below.
+
+- **Repository prepared 2026-09-03.** The stale `.git/index.lock` was identified — its holder was macOS
+  `Virtualization.framework`, the Cowork VM's folder share, holding a **read-only** descriptor rather
+  than a writer — and removed; `main` fast-forwarded; branch
+  `feat/m01-pr3-execution-role-typed-verification` created with the tracker change carried onto it.
+
+- **Release Gate 2 (R-P4.4) — PARTIAL, not yet closed.** `shared.schema_migrations` returned **0 rows**
+  on `haloflow_test_m01` (the local test database) on 2026-09-03. The gate requires **every** environment
+  where migration `001` has been applied. Still to check: **`haloflow_dev`**, which
+  `HALOFLOW_MIGRATION_DATABASE_URL` targets and which `make migrate` upgrades; and any cloud PostgreSQL
+  17 instance created from `Work Session 2026-08-30/claude_setup-cloud-pg17.sh`. The 2026-08-31 note
+  describing "the only environment where `001` has been applied" predates this check and should be
+  treated as unverified until those are covered.
+
+- **CP-0 baseline captured 2026-09-03, green.** On branch
+  `feat/m01-pr3-execution-role-typed-verification`, with the tracker as the only modified file:
+  `ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic` → all checks passed;
+  `mypy src/haloflow/m01 src/haloflow/composition.py` → no issues in 16 source files;
+  `pytest tests/m01 -q` → **192 passed, 0 skipped**, 7.85s. This is the reference the CP-9 evidence
+  compares against, and the 0-skipped figure is the starting point for TC-P41.
+
+- **CP-1 pilot outcome 2026-09-03 — the plan gate is not load-bearing, and the role boundary moved.**
+  Three `/ask` rounds produced a correct plan; the code that followed it invented a SQL-parsing contract
+  (M01 never parses SQL), asserted the **v1 flat digest** instead of the v2 canonical payload, invented
+  three reason codes outside both vocabularies, invented API, and omitted two of six requested tests.
+  Separately, Aider has no test runner configured and **fabricated test output** — "25 passed" for a
+  192-test suite. All edits reverted, nothing committed.
+
+  **Rachel's decision, final form: Claude is the implementation lead** — Claude writes the tests, writes
+  the production code, and runs the verification commands it can actually run. Aider/Qwen is no longer
+  the default coding executor for PR-3; the handoff and supervision costs are too high for
+  security-sensitive work, and it remains available only for a narrowly bounded mechanical task Rachel
+  approves. (An interim decision on 2026-09-03 split the work — Claude authoring tests, Aider writing
+  the production code — and was superseded the same day.) The governing finding is that **the plan gate
+  cannot catch this class of error**: an abstract plan line reads identically whether the model
+  understands the concept or not. See
+  `Work Session 2026-09-03/claude_note-05-cp1-pilot-finding-role-boundary-change.md`. Design v7, the
+  thirteen checkpoints and all 79 test cases are unchanged.
+
+- **CP-1 COMMITTED 2026-09-04 as `6ee11b4` — checksum v2.** Codex approved with no remaining findings (note-11); Rachel authorized. Four files, 816 insertions, 8 deletions, on `feat/m01-pr3-execution-role-typed-verification` over `d12c788`. The delivery tracker was deliberately excluded from that commit and still needs separate documentation authorization.
+  `provisioning/checksum.py` created (versioned canonical JSON payload; sorted keys, `(",",":")`
+  separators, NFC, `\n`, SHA-256; two normalizations kept apart — the migration template collapses
+  whitespace, a function body does not; every collection ordered by a stable semantic key, with
+  duplicate identities refused rather than sorted). `TenantMigrationUnit.checksum` delegates to it.
+  **The production unit's checksum moved `a2db1ef3…` → `5e232d15…`**, which TC-P41 asserts explicitly
+  against the pinned v1 value rather than absorbing.
+
+  Nine tests, all failing genuinely before the change (two as behavioural assertions against the
+  existing property, seven because the deliverable module did not exist) and passing after. Claude-run
+  gates: `pytest tests/m01 -m "not postgres"` **139 passed** (130 + 9, none lost); `ruff` clean; `mypy`
+  clean, 17 files. **Rachel ran the authoritative `pytest tests/m01 -q` on her Mac against PostgreSQL
+  17.10: 201 passed, 0 skipped, 7.76s** — the 192 baseline plus the 9 new tests, reconciling exactly.
+  The 0-skipped figure is the load-bearing part: all 62 Postgres-marked tests genuinely executed against
+  a live server, so checksum v2 is measured, not merely argued, not to have disturbed any
+  database-backed behaviour.
+
+  **CP-1's approved file list was extended by one file, with Rachel's approval:** `codes.py` gains three
+  additive `PreconditionCode` members — `DUPLICATE_FUNCTION_IDENTITY`, `DUPLICATE_ACL_ENTRY`,
+  `CONFLICTING_CONFIG_KEY` — because TC-P56 requires construction refusals and an existing repository
+  control fails on any bare-string reason code. No existing member changed.
+
+  Evidence: `Work Session 2026-09-03/claude_m01-pr3-checkpoint-evidence.md`.
+
+  **Codex review 2026-09-04 returned CHANGES REQUIRED, and found two real defects Claude did not.** Both
+  were reachable checksum collisions inside the canonicalizer: (1) a member of a recognized collection
+  that could not be ordered was *filtered out* rather than refused, so `config: ["a=1", 42]` and
+  `config: ["a=1"]` digested identically; (2) mapping keys were NFC-normalized without a collision check,
+  so a composed and a decomposed key became one and a value was silently overwritten. A checksum used as
+  a drift control cannot do either. Canonicalization now fails closed throughout, with two further
+  additive `PreconditionCode` members Rachel approved — `CHECKSUM_PAYLOAD_MALFORMED` and
+  `DUPLICATE_PAYLOAD_KEY` (five added by CP-1 in total).
+
+  **This is the independence weakness in plan v4 §11 doing exactly what it was recorded to do.** Claude
+  wrote both the filtering and the tests over it, and both encoded the same wrong assumption — that
+  dropping an unorderable member was tidying rather than data loss. No amount of Claude-authored testing
+  would have found it. Independent review did, on the first pass.
+
+  **A second review round (note-09) found a third defect:** `ordered_config("ab")` returned
+  `("a", "b")` — a bare string is iterable and yields strings, so the container was materialized before
+  it could be refused, turning a malformed argument into two well-formed entries. It did not reopen
+  either collision through `unit_checksum`, which rejects the case earlier, but the public helper
+  contract was wrong and CP-7a is expected to reuse these helpers. Fixed one level below the finding, in
+  the shared `_text_sequence`, because `ordered_config` was only the reachable instance of a pattern
+  three callers shared. No new reason code.
+
+  **All three findings shared a premise with the code Claude wrote** — filtering is tidying, key
+  normalization is safe, a container that iterates is a collection — and Claude's tests encoded the same
+  premises. No amount of Claude-authored testing would have found any of them. This is the concrete
+  instance of the independence weakness recorded in plan v4 §11, and the argument for keeping the CP-5c
+  pre-implementation test freeze exactly where it is.
+
+  Rachel ran the authoritative gate after each fix, on PG 17.10: **201 → 205 → 206 passed, 0 skipped
+  every time.** Zero skips matters: the 62 Postgres-backed tests genuinely executed after each change
+  rather than skipping into a green result. Codex's closing inspection of the note-09 correction is
+  outstanding — `claude_note-10-cp1-note09-correction.md`, focused diff 79 lines.
+
+  **Open documentation action:** R-P4.5's wording moves from "conflicting" to "repeated, whether
+  identical or conflicting" at the next approved documentation update. Design v7 is deliberately
+  unchanged for now, so the code is knowingly stricter than the design text rather than silently so.
+
+  **Open obligation:** the decision to order recognized collections by key name at any depth is accepted
+  for CP-1 only, and must be reassessed at **CP-7a** against the concrete typed verification structure.
+
+  **R-P4.4 — CLOSED 2026-09-04.** `shared.schema_migrations` holds **zero rows total** in `haloflow_dev`
+  and zero in `haloflow_test_m01`, so no ledger anywhere holds a v1 checksum and **checksum v2 needs no
+  compatibility or migration plan**. `haloflow/.env` declares exactly two Postgres URLs, both
+  `localhost:5432`; every other Postgres URL in the repository is documentation boilerplate, so there is
+  no cloud PostgreSQL 17 environment in configuration — subject to Rachel's confirmation that none exists
+  outside `.env`. The first attempt used a `NOT LIKE … ESCAPE` predicate that emitted a shell-quoting
+  `SyntaxWarning`; it was re-run without pattern matching so the captured evidence carries no asterisk.
+  This gate had been open since before implementation began.
+
+- **CP-2 COMMITTED 2026-09-04 as `555393f` — the execution role on a unit.** Codex approved with no code-review findings (note-13); Rachel authorized. Six files, 354 insertions, 9 deletions, over `6ee11b4`. The delivery tracker was again excluded and still needs separate documentation authorization.
+  `TenantMigrationUnit` gains `execution_role: str | None`; a new `UnitDefinition` record lets a
+  definition set declare one; `build_tenant_migration_registry` takes the approved set from the
+  composition root, which declares it **empty** for production. Three additive `PreconditionCode`
+  members. Seven tests plus two repository controls.
+
+  **Two independent controls, and the tests prove the independence rather than asserting it** (R-P1.3).
+  TC-P4 places each of seven malformed role names *inside* the approved set, so the allow-list cannot be
+  what refuses them — a single merged control would pass all seven. TC-P78 does the same with all four
+  infrastructure roles: each is approved and still refused, because the unit checks `PROVISIONING_ROLES`
+  itself. So **a permissive approved set cannot reach `haloflow_provisioner`** — the case V29 measured as
+  able to mutate `nspacl` during stage 4 and break R-P1B.20 outright (R-P1B.22(a), D23).
+
+  **No production definition changed.** `TENANT_MIGRATIONS` is byte-identical and **`t001`'s checksum is
+  unchanged at `5e232d15…`**, the value committed at CP-1. That is what putting `execution_role` in the
+  A6 payload as `null` at CP-1 bought: the churn R-P4.4 gates happened once, and R-P4.4 does not need
+  re-running.
+
+  Gates: 153 non-Postgres passed (147 + 6), ruff and mypy clean; **Rachel's authoritative run 215 passed,
+  0 skipped, 7.58s** on PG 17.10 — required at CP-2 rather than optional, because
+  `test_provisioning_postgres.py` imports from `composition.py` at module scope and a composition change
+  can take out collection of the whole file. It collected and ran.
+
+  Evidence: `Work Session 2026-09-03/claude_m01-pr3-checkpoint-evidence.md`. Codex handoff:
+  `claude_note-12-cp2-review-handoff.md`.
+
+  **A design decision v7 did not make:** A1 gives the unit's shape but not the definition's. Rachel chose
+  a definition value that stays a bare template string or becomes a frozen `UnitDefinition` record;
+  CP-7a inherits it and adds `verification` to the same record. Codex accepted it as preferable to a
+  parallel role mapping, because template, execution role and the future verification contract stay one
+  definition and cannot drift by migration identifier.
+
+  **Open action against the execution plan (Codex note-13, ruling 2):** plan v4 §3's checkpoint file
+  table should name `codes.py` wherever a checkpoint's approved requirements demand new refusal codes —
+  at least CP-3 and CP-7a — rather than treating each as an exception. Recorded for the next plan
+  revision, not edited in silently.
+
+- **Gates before PR-3 ships**, all evidence or authorization rather than design: Rachel's rule-3
+    sign-off (given); **R-P4.4, the v1-checksum ledger check — CLOSED 2026-09-04, zero rows in every
+    configured environment**; and re-running `claude_probe-pr3-acl-exactness-v2.sql` on the 17.10
+    baseline (R-P1B.17) — V21–V26 were measured on 16.13, and this remains **open**. Both gates require
+    captured command output, not an assertion that they passed.
+  - **PR-3 is the first task implemented under the collaboration workflow adopted 2026-09-04**
+    (`Shared Workspace/ClinicFlow/COLLABORATION_WORKFLOW.md`, ChatGPT's v5). Per checkpoint: Claude
+    confirms the requirements, writes the requirement-traceable tests, and stops; both parties run the
+    gates the measured verification split assigns them and confirm each failure is missing behaviour;
+    Claude implements the scoped change, re-runs its gates, reads the complete diff and records the
+    evidence; **Rachel reviews that evidence and authorizes the commit — nothing is committed before
+    that**; ChatGPT/Codex then reviews the diff independently. Push, PR, merge and deployment each
+    require separate authorization. Claude never commits, pushes, branches, merges, deploys, or touches
+    `.git`.
+  - **CP-5c is the one checkpoint whose tests Codex reviews and freezes *before* implementation** — the
+    stage-3 exact-ACL security core, nineteen tests. Every other checkpoint is reviewed after.
+  - The execution document is
+    `Work Session 2026-09-03/claude_m01-pr3-implementation-plan-v4.md` (approved 2026-09-04); the
+    evidence record is `claude_m01-pr3-checkpoint-evidence.md` in the same folder.
 - Debt-PR review completed and **signed off 2026-08-31** (Requirements, Architecture, Unit Test Cases),
   satisfying the project's pre-coding review rule. Package:
   `Shared Workspace/ClinicFlow/Work Session 2026-08-31/claude_m01-debt-pr-review-package.md` (v5).
