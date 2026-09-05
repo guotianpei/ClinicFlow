@@ -1,14 +1,15 @@
 """Closed, immutable M01 verification values (R-P2, A2).
 
-This checkpoint defines expected state and literal rendering only. Database
-evaluation belongs to CP-7b. Argument types are identity data: neither rendering
-nor serialization interprets them as SQL or replaces their schema sentinels.
+Expected state, fixed catalogue query, and pure comparison. The runner owns
+database execution. Argument types are identity data: neither rendering nor
+serialization interprets them as SQL or replaces their schema sentinels.
 """
 
+import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.checksum import normalize_body, ordered_config
@@ -175,3 +176,69 @@ def verification_payload(value: Verification) -> dict[str, object]:
          "body": f.body}
         for f in value.functions
     ]}
+
+
+# Executed only by the runner, after SET LOCAL search_path = pg_catalog, pg_temp.
+# format_type spelling is path-sensitive even when its call is qualified.
+# proargtypes includes input/INOUT/variadic types in order, excluding OUT-only
+# arguments. Canonical spellings (integer, text[], tenant_x.my_type) are compared
+# literally: aliases such as int4 and pg_catalog.int4 do not match integer.
+# Supplied argument strings never enter SQL resolution, casts or interpolation.
+FUNCTION_METADATA_QUERY = """
+    -- M01 function metadata verification
+    SELECT p.proname,
+           ARRAY(SELECT pg_catalog.format_type(a.type_oid, NULL)
+                   FROM pg_catalog.unnest(p.proargtypes) WITH ORDINALITY a(type_oid, position)
+                  ORDER BY a.position),
+           owner.rolname, p.prosecdef, p.proconfig, p.proacl IS NULL, p.prosrc,
+           COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_array(
+                                acl.grantee, grantee.rolname,
+                                acl.privilege_type, acl.is_grantable))
+                       FROM pg_catalog.aclexplode(p.proacl) acl
+                       LEFT JOIN pg_catalog.pg_roles grantee ON grantee.oid = acl.grantee),
+                    '[]'::pg_catalog.jsonb)
+      FROM pg_catalog.pg_proc p
+      JOIN pg_catalog.pg_namespace namespace ON namespace.oid = p.pronamespace
+      JOIN pg_catalog.pg_roles owner ON owner.oid = p.proowner
+     WHERE namespace.nspname = %s AND p.prokind = 'f'
+"""
+
+
+class VerificationMismatch(Exception):
+    """Internal, content-free signal: runner rolls back before recording failure."""
+
+
+def compare_function_metadata(
+    verification: Verification, schema_key: str, rows: Sequence[Sequence[Any]]
+) -> None:
+    """Compare declared identities only; no database calls or module callbacks.
+
+    NULL proacl is deliberately different from an explicit empty ACL. PUBLIC's
+    OID 0 survives the query's LEFT JOIN and is rejected before set comparison.
+    The expected model declares ordinary EXECUTE, never delegation rights.
+    Grantor is not an expected dimension; all grantee/privilege entries count.
+    """
+    _schema(schema_key)
+    actual = {(row[0], tuple(row[1])): row for row in rows}
+    for expected in verification.functions:
+        row = actual.get((expected.name, expected.argument_types))
+        if row is None or row[5]:
+            raise VerificationMismatch
+        if row[2] != expected.owner or row[3] != expected.security_definer:
+            raise VerificationMismatch
+        if {normalize_body(entry) for entry in row[4] or ()} != set(
+            expected.render_config(schema_key)
+        ):
+            raise VerificationMismatch
+        acl = row[7]
+        if any(entry[0] == 0 or entry[1] is None or entry[3] for entry in acl):
+            raise VerificationMismatch
+        actual_acl = {(entry[1], entry[2]) for entry in acl}
+        expected_acl = {(entry.grantee, privilege)
+                        for entry in expected.acl for privilege in entry.privileges}
+        if actual_acl != expected_acl:
+            raise VerificationMismatch
+        actual_digest = hashlib.sha256(normalize_body(row[6]).encode("utf-8")).digest()
+        expected_digest = hashlib.sha256(expected.render_body(schema_key).encode("utf-8")).digest()
+        if actual_digest != expected_digest:
+            raise VerificationMismatch

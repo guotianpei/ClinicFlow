@@ -3205,3 +3205,287 @@ def test_cp6_runner_never_emits_reset_role() -> None:
 
     source = (M01_ROOT / "provisioning/runner.py").read_text()
     assert "RESET ROLE" not in source
+
+
+# --- CP-7b: live function metadata verification ---------------------------
+
+def cp7b_function(**changes):
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionExpectation
+
+    values = dict(name="cp7b_probe", argument_types=("integer", "text[]"),
+                  owner=MIGRATOR_ROLE, security_definer=True,
+                  config=("search_path=pg_catalog",),
+                  acl=(AclEntry(MIGRATOR_ROLE, ("EXECUTE",)),), body="SELECT 1")
+    return FunctionExpectation(**(values | changes))
+
+
+def cp7b_ddl(*, body="SELECT 1", security="SECURITY DEFINER",
+             config="SET search_path = pg_catalog", acl=True, extra="",
+             arguments="integer, text[]", prefix=""):
+    revoke = ("REVOKE ALL ON FUNCTION {schema}.cp7b_probe(" + arguments +
+              ") FROM PUBLIC;") if acl else ""
+    return ("-- cp7b fixture\n" + prefix +
+            "CREATE TABLE {schema}.cp7b_marker (ddl_xid bigint);"
+            "INSERT INTO {schema}.cp7b_marker VALUES (pg_current_xact_id()::text::bigint);"
+            "CREATE FUNCTION {schema}.cp7b_probe(" + arguments + ") RETURNS integer "
+            "LANGUAGE sql " + security + " " + config + " AS $body$" + body + "$body$;" +
+            revoke + extra)
+
+
+def cp7b_registry(template, *functions, execution_role=None):
+    from haloflow.m01.provisioning.units import UnitDefinition
+    from haloflow.m01.provisioning.verification import FunctionMetadataVerification
+
+    return build_tenant_migration_registry(
+        dict(TENANT_MIGRATIONS),
+        {"t002_test_cp7b": UnitDefinition(template, execution_role=execution_role,
+            verification=FunctionMetadataVerification(tuple(functions)))},
+        approved_execution_roles=frozenset({CP4_EXECUTION_ROLE}), allow_test_units=True)
+
+
+@pytest.fixture
+def cp7b_observe(monkeypatch, new_tenant):
+    """Observe successful DDL before verification, and the actual verification call.
+
+    The independent snapshot proves fixture setup succeeded. The query guard
+    runs before forwarding verification SQL to PostgreSQL, including mutants.
+    """
+    from haloflow.m01.provisioning import verification
+
+    original = AsyncConnection.execute
+    observations = {"ddl": [], "verification": []}
+
+    async def execute(connection, query, params=None, **kwargs):
+        if (observations.get("require_order") and observations["ddl"]
+                and isinstance(query, str) and "SET state = 'applied'" in query):
+            assert observations["verification"], "verification must precede applied"
+        if isinstance(query, str) and "M01 function metadata verification" in query:
+            assert query == verification.FUNCTION_METADATA_QUERY
+            assert params == (new_tenant[1],)
+            role = await (await original(connection, "SELECT current_role")).fetchone()
+            assert role == (MIGRATOR_ROLE,)
+            observations["verification"].append((query, params))
+        result = await original(connection, query, params, **kwargs)
+        if isinstance(query, str) and query.startswith("-- cp7b fixture"):
+            rows = await (await original(connection, """
+                SELECT p.proname, r.rolname, p.prosecdef, p.proconfig,
+                       p.proacl IS NULL, p.prosrc,
+                       ARRAY(SELECT a.grantee::text || ':' || a.privilege_type || ':' ||
+                             a.is_grantable::text FROM pg_catalog.aclexplode(p.proacl) a),
+                       ARRAY(SELECT pg_catalog.format_type(t.oid, NULL)
+                             FROM pg_catalog.unnest(p.proargtypes) WITH ORDINALITY t(oid, pos)
+                             ORDER BY t.pos)
+                  FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n
+                    ON n.oid=p.pronamespace
+                  JOIN pg_catalog.pg_roles r ON r.oid=p.proowner
+                 WHERE n.nspname=%s ORDER BY p.proname
+                """, (new_tenant[1],))).fetchall()
+            observations["ddl"].extend(rows)
+        return result
+
+    monkeypatch.setattr(AsyncConnection, "execute", execute)
+    return observations
+
+
+async def cp7b_assert_failed(harness, tenant, registry, observed):
+    with pytest.raises(TenantMigrationFailed) as error:
+        await make_provisioner(harness, registry,
+                              supported_schema_versions=range(1, 3)).provision(request_for(tenant))
+    assert error.value.reason_code == "VERIFICATION_FAILED"
+    assert observed["ddl"], "DDL must have succeeded before the verifier refused it"
+    row = await ledger_row(harness, tenant[0], "t002_test_cp7b")
+    assert (row[0], row[1], row[3]) == ("failed", 1, "VERIFICATION_FAILED")
+    assert await admin_row(harness,
+        "SELECT to_regclass(%s), lifecycle_state FROM shared.tenants WHERE tenant_id=%s",
+        (tenant[1] + ".cp7b_marker", tenant[0])) == (None, "provisioning")
+    assert await admin_row(harness,
+        "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace "
+        "WHERE n.nspname=%s AND p.proname LIKE 'cp7b%%'", (tenant[1],)) == (0,)
+    # No function body, supplied type text, or schema in the public error chain.
+    assert tenant[1] not in str(error.value)
+    assert "SELECT" not in str(error.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["owner", "security", "config_missing", "config_wrong",
+    "config_extra", "acl_null", "acl_public", "acl_extra", "acl_missing", "acl_grantable",
+    "body", "body_whitespace", "missing", "argument_order", "alias_int4", "alias_qualified",
+    "hostile", "acl_owner_omitted", "argument_sentinel"])
+async def test_cp7b_metadata_mismatch_rolls_back(
+    provisioning_harness, new_tenant, cp7b_observe, fault
+):
+    """TC-P16–P22/P58, F1/F2: isolate each mismatch after successful DDL."""
+    function = cp7b_function()
+    options = {}
+    if fault == "owner":
+        function = cp7b_function(owner=OWNER_ROLE)
+    elif fault == "security":
+        options["security"] = "SECURITY INVOKER"
+    elif fault == "config_missing":
+        options["config"] = ""
+    elif fault == "config_wrong":
+        options["config"] = "SET search_path = public"
+    elif fault == "config_extra":
+        options["config"] = "SET search_path = pg_catalog SET work_mem = '4MB'"
+    elif fault == "acl_null":
+        options["acl"] = False
+    elif fault in {"acl_public", "acl_extra", "acl_grantable"}:
+        grantee = "PUBLIC" if fault == "acl_public" else RUNTIME_ROLE
+        options["extra"] = ("GRANT EXECUTE ON FUNCTION {schema}.cp7b_probe(integer,text[]) TO " +
+                            grantee +
+                            (" WITH GRANT OPTION" if fault == "acl_grantable" else "") + ";")
+        if fault == "acl_grantable":
+            from haloflow.m01.provisioning.verification import AclEntry
+            function = cp7b_function(acl=(AclEntry(MIGRATOR_ROLE, ("EXECUTE",)),
+                                        AclEntry(RUNTIME_ROLE, ("EXECUTE",))))
+    elif fault == "acl_missing":
+        from haloflow.m01.provisioning.verification import AclEntry
+        function = cp7b_function(acl=(AclEntry(MIGRATOR_ROLE, ("EXECUTE",)),
+                                    AclEntry(RUNTIME_ROLE, ("EXECUTE",))))
+    elif fault == "acl_owner_omitted":
+        function = cp7b_function(acl=())
+    elif fault == "argument_sentinel":
+        function = cp7b_function(argument_types=("{schema}.cp7b_type", "text[]"))
+    elif fault == "body":
+        options["body"] = "SELECT 2"
+    elif fault == "body_whitespace":
+        options["body"] = "SELECT  1"
+    elif fault == "missing":
+        function = cp7b_function(name="cp7b_absent")
+    elif fault == "argument_order":
+        function = cp7b_function(argument_types=("text[]", "integer"))
+    elif fault.startswith("alias"):
+        function = cp7b_function(argument_types=(
+            "int4" if fault == "alias_int4" else "pg_catalog.int4", "text[]"))
+    elif fault == "hostile":
+        function = cp7b_function(argument_types=(
+            "integer); SELECT 1/0; -- {schema}", "text[]"))
+    await cp7b_assert_failed(provisioning_harness, new_tenant,
+        cp7b_registry(cp7b_ddl(**options), function), cp7b_observe)
+    row = cp7b_observe["ddl"][0]
+    assert row[0] == "cp7b_probe" and row[1] == MIGRATOR_ROLE
+    assert row[2] is (fault != "security")
+    assert row[4] is (fault == "acl_null")
+    assert row[5] == options.get("body", "SELECT 1")
+    if fault == "acl_public":
+        assert "0:EXECUTE:false" in row[6]
+    if fault == "acl_extra":
+        assert len(row[6]) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", [
+    "exact", "unrelated", "overload", "rendered", "normalized", "empty_acl"])
+async def test_cp7b_matching_metadata_is_verified_and_applied_atomically(
+    provisioning_harness, new_tenant, cp7b_observe, variant
+):
+    """TC-P15/P21/P22/P58, F8: positive path must actually execute verification."""
+    function = cp7b_function()
+    options = {}
+    cp7b_observe["require_order"] = True
+    if variant in {"unrelated", "overload"}:
+        identity = "cp7b_other()" if variant == "unrelated" else "cp7b_probe(text)"
+        options["extra"] = ("CREATE FUNCTION {schema}." + identity +
+                            " RETURNS integer LANGUAGE sql AS 'SELECT 9';")
+    elif variant == "rendered":
+        body = "SELECT 1 /* {schema} {ordinary} */"
+        options["body"] = body
+        function = cp7b_function(body=body, config=("search_path={schema}, pg_catalog",))
+        options["config"] = "SET search_path = {schema}, pg_catalog"
+    elif variant == "normalized":
+        options["body"] = "SELECT 1 /* cafe\u0301\r\n */"
+        function = cp7b_function(body="SELECT 1 /* café\n */")
+    elif variant == "empty_acl":
+        options["extra"] = (
+            "REVOKE ALL ON FUNCTION {schema}.cp7b_probe(integer,text[]) FROM haloflow_migrator;")
+        function = cp7b_function(acl=())
+    registry = cp7b_registry(cp7b_ddl(**options), function)
+    await make_provisioner(provisioning_harness, registry,
+        supported_schema_versions=range(1, 3)).provision(request_for(new_tenant))
+    assert cp7b_observe["verification"], "declared verification must be executed before applied"
+    if variant == "empty_acl":
+        assert cp7b_observe["ddl"][0][4] is False
+        assert cp7b_observe["ddl"][0][6] == []
+    assert await admin_row(provisioning_harness,
+        "SELECT state, sanitized_error_code FROM shared.schema_migrations "
+        "WHERE tenant_id=%s AND migration_id='t002_test_cp7b'",
+        (new_tenant[0],)) == ("applied", None)
+    assert await admin_row(provisioning_harness,
+        f"SELECT m.xmin::text::bigint = probe.ddl_xid %% 4294967296 "
+        f"FROM shared.schema_migrations m CROSS JOIN {new_tenant[1]}.cp7b_marker probe "
+        "WHERE m.tenant_id=%s AND m.migration_id='t002_test_cp7b'", (new_tenant[0],)) == (True,)
+
+
+@pytest.mark.asyncio
+async def test_cp7b_ddl_search_path_cannot_change_argument_identity(
+    provisioning_harness, new_tenant, cp7b_observe
+):
+    """F7/F2: tenant enum and array stay schema-qualified after DDL changes path."""
+    arguments = "{schema}.cp7b_type, {schema}.cp7b_type[]"
+    ddl = cp7b_ddl(arguments=arguments,
+        prefix="CREATE TYPE {schema}.cp7b_type AS ENUM ('a');",
+        extra="SET LOCAL search_path = {schema}, pg_catalog;")
+    function = cp7b_function(argument_types=(new_tenant[1] + ".cp7b_type",
+                                             new_tenant[1] + ".cp7b_type[]"))
+    await make_provisioner(provisioning_harness, cp7b_registry(ddl, function),
+        supported_schema_versions=range(1, 3)).provision(request_for(new_tenant))
+    assert cp7b_observe["verification"], "path-independent verification was not exercised"
+    assert cp7b_observe["ddl"][0][7] == ["cp7b_type", "cp7b_type[]"]
+
+
+@pytest.mark.asyncio
+async def test_cp7b_verification_runs_after_execution_role_return(
+    provisioning_harness, cp4_role, cp6_declared_manifest, new_tenant, cp7b_observe
+):
+    """R-P2.8/F8: observe migrator at verification after execution-role DDL."""
+    await shape_execution_role(provisioning_harness)
+    from haloflow.m01.provisioning.verification import AclEntry
+    function = cp7b_function(owner=CP4_EXECUTION_ROLE,
+                             acl=(AclEntry(CP4_EXECUTION_ROLE, ("EXECUTE",)),))
+    await make_provisioner(provisioning_harness,
+        cp7b_registry(cp7b_ddl(), function, execution_role=CP4_EXECUTION_ROLE),
+        supported_schema_versions=range(1, 3)).provision(request_for(new_tenant))
+    assert cp7b_observe["verification"]
+
+
+@pytest.mark.asyncio
+async def test_cp7b_failed_verification_is_refused_by_real_resolver(
+    provisioning_harness, new_tenant, cp7b_observe
+):
+    """TC-P29: the refusal originates in verification, then resolver fails closed."""
+    await cp7b_assert_failed(provisioning_harness, new_tenant,
+        cp7b_registry(cp7b_ddl(body="SELECT 2"), cp7b_function()), cp7b_observe)
+    pool = TenantPool(provisioning_harness.role_logins[RUNTIME_ROLE], min_size=1, max_size=1)
+    await pool.open()
+    try:
+        resolver = TenantResolver(PsycopgControlStore(pool), supported_schema_versions=range(1, 3),
+                                  context_ttl=timedelta(seconds=10))
+        with pytest.raises(TenantUnavailable) as error:
+            await resolver.resolve(
+                principal=Principal(kind=PrincipalKind.WORKLOAD, id="cp7b-test", auth_method="test",
+                    authorized_tenant_ids=frozenset({new_tenant[0]}),
+                    capabilities=frozenset({"probe:read"})),
+                tenant_hint=new_tenant[0], purpose="operations",
+                capabilities=frozenset({"probe:read"}),
+                source=TrustedSource.WORKER, execution_id=uuid5(NAMESPACE_URL, "cp7b-resolver"),
+                correlation_id=uuid5(NAMESPACE_URL, "cp7b-correlation"),
+                correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+        assert error.value.reason_code == "TENANT_NOT_ACTIVE"
+    finally:
+        await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_cp7b_body_whitespace_and_migration_whitespace_do_not_cross(
+    provisioning_harness, new_tenant, cp7b_observe
+):
+    """TC-P58: independent checksum and live body-comparison consequences."""
+    from haloflow.m01.provisioning.checksum import unit_checksum
+
+    ddl = cp7b_ddl()
+    assert unit_checksum(migration_id="t002_test_cp7b", template=ddl) == unit_checksum(
+        migration_id="t002_test_cp7b", template=ddl.replace("CREATE TABLE", "CREATE  TABLE"))
+    first = cp7b_registry(ddl, cp7b_function())
+    spaced = cp7b_registry(ddl, cp7b_function(body="SELECT  1"))
+    assert tuple(first)[-1].checksum != tuple(spaced)[-1].checksum
+    await cp7b_assert_failed(provisioning_harness, new_tenant, spaced, cp7b_observe)

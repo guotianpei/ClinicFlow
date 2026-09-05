@@ -43,6 +43,11 @@ from haloflow.m01.provisioning.manifest import ProvisioningManifest
 from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
+from haloflow.m01.provisioning.verification import (
+    FUNCTION_METADATA_QUERY,
+    VerificationMismatch,
+    compare_function_metadata,
+)
 from haloflow.m01.resolver import TENANT_ID_PATTERN
 
 ConnectionFactory = Callable[[], Awaitable[AsyncConnection]]
@@ -237,10 +242,19 @@ class TenantMigrationRunner:
                 await connection.execute(
                     sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE))
                 )
+                if unit.verification is not None:
+                    stage = SanitizedErrorCode.VERIFICATION_FAILED
+                    # Role return does not restore a path changed by the DDL.
+                    # Pin type rendering and explicitly place pg_temp last.
+                    await connection.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+                    rows = await (
+                        await connection.execute(FUNCTION_METADATA_QUERY, (schema_key,))
+                    ).fetchall()
+                    compare_function_metadata(unit.verification, schema_key, rows)
                 stage = SanitizedErrorCode.LEDGER_WRITE_FAILED
                 await self._mark_applied(connection, tenant_id, unit)
                 stage = SanitizedErrorCode.MIGRATION_COMMIT_FAILED
-        except PsycopgError as error:
+        except (PsycopgError, VerificationMismatch) as error:
             # Rolled back by the transaction block above — both halves — so the
             # tenant schema is clean at the moment `failed` becomes visible (R-E3).
             try:
@@ -252,6 +266,8 @@ class TenantMigrationRunner:
                 raise TenantMigrationFailed(
                     reason_code=SanitizedErrorCode.LEDGER_WRITE_FAILED.value
                 ) from _sanitize(ledger_error)
+            if isinstance(error, VerificationMismatch):
+                raise TenantMigrationFailed(reason_code=stage.value) from None
             raise TenantMigrationFailed(reason_code=stage.value) from _sanitize(error)
 
         return MigrationOutcome(unit.migration_id, applied=True)
