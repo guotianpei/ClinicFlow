@@ -252,7 +252,7 @@ def build_tenant_migration_registry(
 # privileges work: they apply to the objects their *creating* role goes on to
 # create, and the migrator is that role. The provisioner could only set them on
 # the migrator's behalf by being a member of it, which R-E6 forbids -- verified
-# on PostgreSQL 17.10, 2026-08-31.
+# on PostgreSQL 17.11, 2026-08-31.
 # ---------------------------------------------------------------------------
 T001_BASELINE_SQL: Final = f"""
 ALTER DEFAULT PRIVILEGES IN SCHEMA {_SCHEMA_PLACEHOLDER}

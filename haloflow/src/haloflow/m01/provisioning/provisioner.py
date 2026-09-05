@@ -1,7 +1,7 @@
 """Tenant-schema provisioner (M01-FR-017).
 
 Ownership, settled as decision D13 on 2026-08-31 and verified on PostgreSQL
-17.10: a tenant schema is owned by ``haloflow_provisioner``. The signed-off
+17.11: a tenant schema is owned by ``haloflow_provisioner``. The signed-off
 design had the provisioner run ``CREATE SCHEMA ... AUTHORIZATION haloflow_owner``,
 which PostgreSQL refuses -- ``must be able to SET ROLE "haloflow_owner"`` -- and
 the membership that would allow it also hands the provisioner INSERT, DELETE and
