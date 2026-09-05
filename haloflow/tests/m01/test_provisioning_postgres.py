@@ -1542,8 +1542,9 @@ def make_registry_with_execution_role() -> TenantMigrationRegistry:
 def cp4_declared_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     """Declare the test execution role in the manifest stage 1 loads for itself.
 
-    The provisioner and the runner call `assert_execution_roles_safe` without a
-    manifest, so it loads the shipped `m01/manifests/provisioning.json` -- whose
+    The runner loads the shipped `m01/manifests/provisioning.json` during
+    construction and passes that object explicitly to stage 1. The provisioner
+    adopts the runner's same object for its stage-1 call and stages 2/3. Its
     `execution_role_profiles` block is empty, and must stay empty: a test role
     in a production security declaration is the widening this checkpoint exists
     to prevent.
@@ -1555,9 +1556,10 @@ def cp4_declared_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     which is precisely why the substitution is made explicit rather than left
     to coincidence.
 
-    What is substituted is built by `cp4_manifest()` and therefore went through
-    the real loader: a validated `ProvisioningManifest`, not a stub. A call that
-    supplies its own document still reaches the original loader.
+    The patch must therefore be installed before the runner is constructed.
+    What is substituted is built by `cp4_manifest()` and went
+    through the real loader: a validated `ProvisioningManifest`, not a stub. A
+    call that supplies its own document still reaches the original loader.
     """
 
     from haloflow.m01.provisioning import manifest as manifest_module
@@ -2017,13 +2019,15 @@ async def test_schema_grant_installer_participates_in_the_callers_transaction(
         assert await read_schema_acl(conn, schema_key) == frozenset()
 
 
-def test_schema_grant_installer_is_unreachable_from_the_live_path() -> None:
-    """CP5b-G1: activation waits for CP-5c's grant-plus-postcondition switch."""
+def test_schema_grant_installer_is_reachable_only_from_the_provisioner_path() -> None:
+    """CP5b-G1 transition: CP-5c activates the installer only with its guard."""
 
     provisioner = (M01_ROOT / "provisioning/provisioner.py").read_text()
     runner = (M01_ROOT / "provisioning/runner.py").read_text()
-    assert "install_schema_acl" not in provisioner
+    assert "install_schema_acl" in provisioner
+    assert "read_schema_acl" in provisioner
     assert "install_schema_acl" not in runner
+    assert "read_schema_acl" not in runner
 
 
 @pytest.mark.asyncio
@@ -2139,3 +2143,740 @@ async def test_production_runner_leaves_the_complete_schema_acl_unchanged(
         after = await read_schema_acl(conn, schema_key)
 
     assert after == before
+
+
+# --- CP-5c: atomic schema-ACL activation (tests frozen before production) --
+
+CP5C_ACL_MISMATCH_CODE = SanitizedErrorCode.SCHEMA_ACL_MISMATCH.value
+
+
+async def schema_acl(harness: ProvisioningHarness, schema_key: str) -> frozenset[object]:
+    """Read the complete four-dimensional ACL through the production reader."""
+
+    from haloflow.m01.provisioning.acl import read_schema_acl
+
+    async with await AsyncConnection.connect(harness.admin_conninfo, autocommit=True) as conn:
+        return await read_schema_acl(conn, schema_key)
+
+
+async def tenant_ledger_snapshot(
+    harness: ProvisioningHarness, tenant_id: str
+) -> list[tuple]:
+    """Capture every durable ledger field CP-5c is forbidden to change."""
+
+    return await admin_rows(
+        harness,
+        """
+        SELECT migration_id, checksum, state, attempt,
+               sanitized_error_code, started_at, completed_at
+          FROM shared.schema_migrations
+         WHERE tenant_id = %s
+         ORDER BY migration_id
+        """,
+        (tenant_id,),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_installs_and_verifies_acl_before_any_runner_ledger_write(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P45: stages 2/3 finish exactly before stage 4 can touch the ledger."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    tenant_id, schema_key = new_tenant
+    registry = make_registry_with_execution_role()
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]), registry
+    )
+    original_apply = runner.apply_within_lock
+    reached_runner = False
+
+    async def _observe_boundary(*, tenant_id: str, schema_key: str) -> object:
+        nonlocal reached_runner
+        reached_runner = True
+        assert await schema_acl(provisioning_harness, schema_key) == build_expected_schema_acl(
+            cp4_manifest()
+        )
+        assert await tenant_ledger_snapshot(provisioning_harness, tenant_id) == []
+        return await original_apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    monkeypatch.setattr(runner, "apply_within_lock", _observe_boundary)
+    provisioner = TenantProvisioner(
+        connection_factory(provisioning_harness.role_logins[PROVISIONER_ROLE]),
+        runner,
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+
+    outcome = await provisioner.provision(request_for(new_tenant))
+    assert reached_runner is True
+    assert outcome.schema_version == 2
+
+
+@pytest.mark.asyncio
+async def test_cp5c_unsafe_declared_role_never_receives_create_and_retry_converges(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P59: stage 1 leaves no residue; repairing the role makes retry succeed."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    tenant_id, schema_key = new_tenant
+    await shape_execution_role(
+        provisioning_harness, attributes=attributes_with("SUPERUSER")
+    )
+    provisioner = make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+
+    with pytest.raises(ProvisioningFailed) as refused:
+        await provisioner.provision(request_for(new_tenant))
+    assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"
+    assert await schema_acl(provisioning_harness, schema_key) == frozenset()
+    assert await tenant_ledger_snapshot(provisioning_harness, tenant_id) == []
+    assert await admin_rows(
+        provisioning_harness,
+        "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s",
+        (tenant_id,),
+    ) == []
+
+    await shape_execution_role(provisioning_harness)
+    outcome = await provisioner.provision(request_for(new_tenant))
+    assert outcome.resumed is False
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s",
+        (tenant_id,),
+    ) == ("active",)
+    assert await schema_acl(provisioning_harness, schema_key) == build_expected_schema_acl(
+        cp4_manifest()
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_overbroad_stage3_grant_rolls_back_all_new_acl_and_ledger_state(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P60: a postcondition mismatch rolls back the whole grant transaction."""
+
+    from haloflow.m01.provisioning import provisioner as provisioner_module
+    from haloflow.m01.provisioning.acl import install_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    tenant_id, schema_key = new_tenant
+
+    async def _install_overbroad(connection: object, key: str, manifest: object) -> None:
+        await install_schema_acl(connection, key, manifest)  # type: ignore[arg-type]
+        await connection.execute(  # type: ignore[attr-defined]
+            sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+                sql.Identifier(key), sql.Identifier(RUNTIME_ROLE)
+            )
+        )
+
+    monkeypatch.setattr(
+        provisioner_module, "install_schema_acl", _install_overbroad, raising=False
+    )
+    provisioner = make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+
+    with pytest.raises(ProvisioningFailed) as refused:
+        await provisioner.provision(request_for(new_tenant))
+    assert refused.value.reason_code == CP5C_ACL_MISMATCH_CODE
+    assert await schema_acl(provisioning_harness, schema_key) == frozenset()
+    assert await tenant_ledger_snapshot(provisioning_harness, tenant_id) == []
+
+
+async def assert_cp5c_catalogue_mismatch_rolls_back(
+    harness: ProvisioningHarness,
+    tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    mutate: Callable[[frozenset[object]], frozenset[object]],
+    *,
+    expected_ledger: list[tuple] | None = None,
+) -> None:
+    """Present one synthetic catalogue mismatch at stage 3 and assert residue."""
+
+    from haloflow.m01.provisioning import provisioner as provisioner_module
+    from haloflow.m01.provisioning.acl import read_schema_acl
+
+    async def _drifted_read(connection: object, schema_key: str) -> frozenset[object]:
+        return mutate(await read_schema_acl(connection, schema_key))
+
+    monkeypatch.setattr(provisioner_module, "read_schema_acl", _drifted_read, raising=False)
+    tenant_id, schema_key = tenant
+    provisioner = make_provisioner(
+        harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+    with pytest.raises(ProvisioningFailed) as refused:
+        await provisioner.provision(request_for(tenant))
+    assert refused.value.reason_code == CP5C_ACL_MISMATCH_CODE
+    assert await schema_acl(harness, schema_key) == frozenset()
+    assert await tenant_ledger_snapshot(harness, tenant_id) == (expected_ledger or [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shape", ("extra_usage", "missing_usage", "second_role"))
+async def test_cp5c_acl_postcondition_is_exact_not_a_presence_check(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    """TC-P61: surplus, deficit, and a second principal each fail equality."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+
+    def _mutate(actual: frozenset[object]) -> frozenset[object]:
+        usage = SchemaAclEntry(CP4_EXECUTION_ROLE, "USAGE", False, PROVISIONER_ROLE)
+        migrator_usage = SchemaAclEntry(MIGRATOR_ROLE, "USAGE", False, PROVISIONER_ROLE)
+        stray = SchemaAclEntry(RUNTIME_ROLE, "CREATE", False, PROVISIONER_ROLE)
+        if shape == "extra_usage":
+            return actual | {usage}
+        if shape == "missing_usage":
+            return actual - {migrator_usage}
+        return actual | {stray}
+
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness, new_tenant, monkeypatch, _mutate
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_acl_postcondition_compares_grant_option(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P62: matching privilege names with delegation still fail closed."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+
+    def _mutate(actual: frozenset[object]) -> frozenset[object]:
+        plain = SchemaAclEntry(CP4_EXECUTION_ROLE, "CREATE", False, PROVISIONER_ROLE)
+        delegated = SchemaAclEntry(CP4_EXECUTION_ROLE, "CREATE", True, PROVISIONER_ROLE)
+        return (actual - {plain}) | {delegated}
+
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness, new_tenant, monkeypatch, _mutate
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("grantee", ("PUBLIC", OWNER_ROLE))
+async def test_cp5c_acl_postcondition_rejects_every_undeclared_grantee(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    grantee: str,
+) -> None:
+    """TC-P63: PUBLIC and an undeclared role are both first-class ACL rows."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        lambda actual: actual
+        | {SchemaAclEntry(grantee, "USAGE", False, PROVISIONER_ROLE)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_complete_five_class_acl_activates(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P65: the complete declaration, including projector, passes live."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    outcome = await make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    ).provision(request_for(new_tenant))
+    assert outcome.schema_version == 2
+    assert await schema_acl(provisioning_harness, new_tenant[1]) == build_expected_schema_acl(
+        cp4_manifest()
+    )
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s",
+        (new_tenant[0],),
+    ) == ("active",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("direction", ("grant_without_declaration", "declaration_without_grant"))
+async def test_cp5c_missing_schema_acl_declaration_fails_in_both_directions(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    direction: str,
+) -> None:
+    """TC-P66: neither an undeclared grant nor an ungranted declaration passes."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    projector = SchemaAclEntry(AUDIT_PROJECTOR_ROLE, "USAGE", False, PROVISIONER_ROLE)
+    undeclared = SchemaAclEntry(OWNER_ROLE, "USAGE", False, PROVISIONER_ROLE)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        (lambda actual: actual | {undeclared})
+        if direction == "grant_without_declaration"
+        else (lambda actual: actual - {projector}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_extra_database_grantee_cannot_be_masked_by_expected_data(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P67(a): an extra live grantee always fails the public path."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        lambda actual: actual
+        | {SchemaAclEntry("PUBLIC", "CREATE", False, PROVISIONER_ROLE)},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_runtime_create_is_rejected_by_live_postcondition(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P68 postgres half: runtime is USAGE-only, never a DDL principal."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        lambda actual: actual
+        | {SchemaAclEntry(RUNTIME_ROLE, "CREATE", False, PROVISIONER_ROLE)},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shape", ("narrower", "delegated"))
+async def test_cp5c_migrator_privileges_match_the_declaration_exactly(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    shape: str,
+) -> None:
+    """TC-P69: migrator deficit and delegation widening both fail."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    create = SchemaAclEntry(MIGRATOR_ROLE, "CREATE", False, PROVISIONER_ROLE)
+    delegated = SchemaAclEntry(MIGRATOR_ROLE, "CREATE", True, PROVISIONER_ROLE)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        (lambda actual: actual - {create})
+        if shape == "narrower"
+        else (lambda actual: (actual - {create}) | {delegated}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_owner_baseline_and_grantor_are_compared_explicitly(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P70: owner tuples are not skipped and grantor is not inferred."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    expected = SchemaAclEntry(PROVISIONER_ROLE, "CREATE", False, PROVISIONER_ROLE)
+    wrong = SchemaAclEntry(PROVISIONER_ROLE, "CREATE", False, MIGRATOR_ROLE)
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        lambda actual: (actual - {expected}) | {wrong},
+    )
+
+
+async def prepare_cp5c_resume_state(
+    harness: ProvisioningHarness,
+    tenant: tuple[str, str],
+    *,
+    install_grants: bool = False,
+) -> None:
+    """Commit the durable boundary left by an interrupted stage 2 or stage 4."""
+
+    from haloflow.m01.provisioning.acl import install_schema_acl
+
+    tenant_id, schema_key = tenant
+    async with await AsyncConnection.connect(harness.admin_conninfo, autocommit=True) as conn:
+        await conn.execute(
+            """
+            INSERT INTO shared.tenants
+                (tenant_id, schema_key, lifecycle_state, schema_version)
+            VALUES (%s, %s, 'provisioning', 2)
+            """,
+            (tenant_id, schema_key),
+        )
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+        if install_grants:
+            async with conn.transaction():
+                await install_schema_acl(conn, schema_key, cp4_manifest())
+
+
+async def assert_cp5c_tenant_is_refused_at_resolution(
+    harness: ProvisioningHarness, tenant_id: str
+) -> None:
+    """Pin the caller-visible consequence of remaining in provisioning."""
+
+    pool = TenantPool(harness.role_logins[RUNTIME_ROLE], min_size=1, max_size=1)
+    await pool.open()
+    try:
+        resolver = TenantResolver(
+            PsycopgControlStore(pool),
+            supported_schema_versions=range(1, 3),
+            context_ttl=timedelta(seconds=10),
+        )
+        with pytest.raises(TenantUnavailable) as refused:
+            await resolver.resolve(
+                principal=Principal(
+                    kind=PrincipalKind.WORKLOAD,
+                    id="cp5c-resolution-test",
+                    auth_method="test",
+                    authorized_tenant_ids=frozenset({tenant_id}),
+                    capabilities=frozenset({"probe:read"}),
+                ),
+                tenant_hint=tenant_id,
+                purpose="operations",
+                capabilities=frozenset({"probe:read"}),
+                source=TrustedSource.WORKER,
+                execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:cp5c:{tenant_id}"),
+                correlation_id=uuid5(
+                    NAMESPACE_URL, f"haloflow-test:cp5c-correlation:{tenant_id}"
+                ),
+                correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE,
+            )
+        assert refused.value.reason_code == "TENANT_NOT_ACTIVE"
+    finally:
+        await pool.close()
+
+
+@pytest.mark.asyncio
+async def test_cp5c_resume_from_committed_schema_without_grants_activates(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P73: an empty-ACL schema is the ordinary repairable resume state."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    await prepare_cp5c_resume_state(provisioning_harness, new_tenant)
+    assert await schema_acl(provisioning_harness, new_tenant[1]) == frozenset()
+    outcome = await make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    ).provision(request_for(new_tenant))
+    assert outcome.resumed is True
+    assert await schema_acl(provisioning_harness, new_tenant[1]) == build_expected_schema_acl(
+        cp4_manifest()
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_resume_regrants_exact_acl_byte_identically(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P74: PostgreSQL's idempotence, not an application branch, preserves nspacl."""
+
+    from haloflow.m01.provisioning import provisioner as provisioner_module
+    from haloflow.m01.provisioning.acl import install_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    await prepare_cp5c_resume_state(
+        provisioning_harness, new_tenant, install_grants=True
+    )
+    query = "SELECT nspacl::text FROM pg_namespace WHERE nspname = %s"
+    before = await admin_row(provisioning_harness, query, (new_tenant[1],))
+    stage2_called = False
+
+    async def _observed_install(connection: object, key: str, manifest: object) -> None:
+        nonlocal stage2_called
+        stage2_called = True
+        await install_schema_acl(connection, key, manifest)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        provisioner_module, "install_schema_acl", _observed_install, raising=False
+    )
+    outcome = await make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    ).provision(request_for(new_tenant))
+    after = await admin_row(provisioning_harness, query, (new_tenant[1],))
+    assert outcome.resumed is True
+    assert stage2_called is True
+    assert after == before
+
+
+@pytest.mark.asyncio
+async def test_cp5c_stage3_failure_preserves_preexisting_ledger_byte_for_byte(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TC-P75: stage 2/3 neither creates nor edits migration history."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    await prepare_cp5c_resume_state(provisioning_harness, new_tenant)
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(
+            """
+            INSERT INTO shared.schema_migrations
+                (tenant_id, migration_id, checksum, state, attempt,
+                 sanitized_error_code, completed_at)
+            VALUES (%s, 'prior_failed', 'prior-checksum-a', 'failed', 3,
+                    'MIGRATION_DDL_FAILED', statement_timestamp()),
+                   (%s, 'prior_running', 'prior-checksum-b', 'running', 2, NULL, NULL)
+            """,
+            (new_tenant[0], new_tenant[0]),
+        )
+    before = await tenant_ledger_snapshot(provisioning_harness, new_tenant[0])
+    await assert_cp5c_catalogue_mismatch_rolls_back(
+        provisioning_harness,
+        new_tenant,
+        monkeypatch,
+        lambda actual: actual
+        | {SchemaAclEntry("PUBLIC", "USAGE", False, PROVISIONER_ROLE)},
+        expected_ledger=before,
+    )
+    assert await tenant_ledger_snapshot(provisioning_harness, new_tenant[0]) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift", ("public", "undeclared_role"))
+async def test_cp5c_committed_acl_drift_survives_refusal_and_tenant_stays_inactive(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    drift: str,
+) -> None:
+    """TC-P76: stage 2 issues no REVOKE and stage 3 performs no repair."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry
+
+    await shape_execution_role(provisioning_harness)
+    await prepare_cp5c_resume_state(provisioning_harness, new_tenant)
+    grantee = "PUBLIC" if drift == "public" else OWNER_ROLE
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        target = sql.SQL("PUBLIC") if grantee == "PUBLIC" else sql.Identifier(grantee)
+        await conn.execute(
+            sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(new_tenant[1]), target
+            )
+        )
+    drift_entry = SchemaAclEntry(grantee, "USAGE", False, PROVISIONER_ROLE)
+    provisioner = make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    )
+    with pytest.raises(ProvisioningFailed) as refused:
+        await provisioner.provision(request_for(new_tenant))
+    assert refused.value.reason_code == CP5C_ACL_MISMATCH_CODE
+    assert drift_entry in await schema_acl(provisioning_harness, new_tenant[1])
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s",
+        (new_tenant[0],),
+    ) == ("provisioning",)
+    if drift == "public":
+        await assert_cp5c_tenant_is_refused_at_resolution(
+            provisioning_harness, new_tenant[0]
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("resume_state", ("empty_acl", "exact_acl", "prior_history", "stage1"))
+async def test_cp5c_each_repairable_state_converges_on_retry(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    resume_state: str,
+) -> None:
+    """TC-P77: all documented repairable boundaries reach one exact outcome."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    if resume_state == "stage1":
+        await shape_execution_role(
+            provisioning_harness, attributes=attributes_with("SUPERUSER")
+        )
+        provisioner = make_provisioner(
+            provisioning_harness,
+            make_registry_with_execution_role(),
+            supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+        )
+        with pytest.raises(ProvisioningFailed):
+            await provisioner.provision(request_for(new_tenant))
+    else:
+        await shape_execution_role(provisioning_harness)
+        await prepare_cp5c_resume_state(
+            provisioning_harness,
+            new_tenant,
+            install_grants=resume_state == "exact_acl",
+        )
+        if resume_state == "prior_history":
+            async with await AsyncConnection.connect(
+                provisioning_harness.admin_conninfo, autocommit=True
+            ) as conn:
+                await conn.execute(
+                    """INSERT INTO shared.schema_migrations
+                       (tenant_id, migration_id, checksum, state, attempt,
+                        sanitized_error_code, completed_at)
+                       VALUES (%s, 'prior_failed', 'prior', 'failed', 1,
+                               'MIGRATION_DDL_FAILED', statement_timestamp())""",
+                    (new_tenant[0],),
+                )
+    if resume_state == "stage1":
+        await shape_execution_role(provisioning_harness)
+    outcome = await make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    ).provision(request_for(new_tenant))
+    assert outcome.schema_version == 2
+    assert await schema_acl(provisioning_harness, new_tenant[1]) == build_expected_schema_acl(
+        cp4_manifest()
+    )
+
+
+@pytest.mark.asyncio
+async def test_cp5c_schema_owner_and_all_grant_options_match_the_declaration(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P79: ownership and non-delegation are catalogue facts, not assumptions."""
+
+    from haloflow.m01.provisioning.acl import build_expected_schema_acl
+
+    await shape_execution_role(provisioning_harness)
+    await make_provisioner(
+        provisioning_harness,
+        make_registry_with_execution_role(),
+        supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+    ).provision(request_for(new_tenant))
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT owner.rolname
+             FROM pg_namespace ns JOIN pg_roles owner ON owner.oid = ns.nspowner
+            WHERE ns.nspname = %s""",
+        (new_tenant[1],),
+    ) == (PROVISIONER_ROLE,)
+    observed = await schema_acl(provisioning_harness, new_tenant[1])
+    assert observed == build_expected_schema_acl(cp4_manifest())
+    assert observed
+    assert all(entry.is_grantable is False for entry in observed)  # type: ignore[attr-defined]
+    assert all(
+        entry.grantee not in {MIGRATOR_ROLE, CP4_EXECUTION_ROLE}  # type: ignore[attr-defined]
+        or entry.grantor == PROVISIONER_ROLE  # type: ignore[attr-defined]
+        for entry in observed
+    )
+
+
+def test_cp5c_live_provisioning_path_cannot_bypass_stage3() -> None:
+    """CP5c-E1: every live runner call is guarded by install plus exact readback."""
+
+    source = (M01_ROOT / "provisioning/provisioner.py").read_text()
+    runner_source = (M01_ROOT / "provisioning/runner.py").read_text()
+    assert source.count("apply_within_lock(") == 1
+    assert "install_schema_acl" in source
+    assert "read_schema_acl" in source
+    assert "_apply_grants" not in source
+    assert "install_schema_acl" not in runner_source
+    assert "read_schema_acl" not in runner_source

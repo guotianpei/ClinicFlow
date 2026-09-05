@@ -37,7 +37,9 @@ from haloflow.m01.errors import (
     ExecutionRoleUnavailable,
     TenantMigrationFailed,
 )
+from haloflow.m01.provisioning import manifest as manifest_module
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
+from haloflow.m01.provisioning.manifest import ProvisioningManifest
 from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
@@ -78,14 +80,24 @@ class TenantMigrationRunner:
         registry: TenantMigrationRegistry,
         *,
         lock_timeout_seconds: float = 30.0,
+        manifest: ProvisioningManifest | None = None,
     ) -> None:
         self._connect = connect
         self._registry = registry
         self._lock_timeout_seconds = lock_timeout_seconds
+        self._manifest = (
+            manifest if manifest is not None else manifest_module.load_provisioning_manifest()
+        )
 
     @property
     def registry(self) -> TenantMigrationRegistry:
         return self._registry
+
+    @property
+    def manifest(self) -> ProvisioningManifest:
+        """The one declaration used by every stage-1 call on this runner."""
+
+        return self._manifest
 
     @asynccontextmanager
     async def tenant_lock(self, tenant_id: str) -> AsyncIterator[None]:
@@ -157,7 +169,9 @@ class TenantMigrationRunner:
             # provisioning flow does not assume a role nobody checked. One
             # component, two call sites.
             try:
-                await assert_execution_roles_safe(connection, self._registry)
+                await assert_execution_roles_safe(
+                    connection, self._registry, manifest=self._manifest
+                )
             except ExecutionRoleUnavailable as error:
                 raise TenantMigrationFailed(reason_code=error.reason_code) from error
             for unit in self._registry:
