@@ -1506,7 +1506,13 @@ async def cp4_role(provisioning_harness: ProvisioningHarness) -> AsyncIterator[N
     await drop_execution_role(provisioning_harness)
 
 
-VALID_CP4_TEMPLATE = "CREATE TABLE {schema}.cp4_probe (id integer PRIMARY KEY);"
+# CP-4 tests the declaration and role-safety preflight, not schema-object
+# installation. Its deliberately narrow CREATE-only profile lacks USAGE, so a
+# schema-qualified CREATE would start testing CP-6 once the runner honors the
+# declaration. Keep this seam limited to the catalogue behavior CP-4 owns.
+VALID_CP4_TEMPLATE = (
+    "SELECT has_schema_privilege(current_role, '{schema}', 'CREATE'), current_role;"
+)
 
 # `t002_test_m02` yields `target_version` 2 (the leading `tNNN` of the last
 # unit), so every provisioner built over this registry must widen
@@ -2880,3 +2886,322 @@ def test_cp5c_live_provisioning_path_cannot_bypass_stage3() -> None:
     assert "_apply_grants" not in source
     assert "install_schema_acl" not in runner_source
     assert "read_schema_acl" not in runner_source
+
+
+# --- CP-6: transaction-local execution-role switching ---------------------
+
+
+def make_cp6_registry(
+    *units: tuple[str, str, str | None],
+) -> TenantMigrationRegistry:
+    """Build the baseline plus ordered CP-6 test units."""
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    definitions = {
+        migration_id: UnitDefinition(template, execution_role=execution_role)
+        for migration_id, template, execution_role in units
+    }
+    return build_tenant_migration_registry(
+        dict(TENANT_MIGRATIONS),
+        definitions,
+        approved_execution_roles=frozenset({CP4_EXECUTION_ROLE}),
+        allow_test_units=True,
+    )
+
+
+@pytest.fixture
+def cp6_declared_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Declare the execution role with the privileges its CP-6 DDL exercises.
+
+    CP-4 deliberately uses CREATE without USAGE to prove PostgreSQL keeps the
+    privileges independent. These CP-6 units use schema-qualified object names,
+    so their validated declaration requests both privileges.
+    """
+
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    original = manifest_module.load_provisioning_manifest
+    profile = dict(CP4_PROFILE)
+    profile["tenant_schema_privileges"] = ["USAGE", "CREATE"]
+    declared = cp4_manifest(
+        execution_role_profiles={CP4_EXECUTION_ROLE: profile}
+    )
+
+    def _load(document: object | None = None) -> object:
+        return declared if document is None else original(document)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(manifest_module, "load_provisioning_manifest", _load)
+
+
+@pytest.mark.asyncio
+async def test_cp6_unit_without_declared_role_is_owned_by_the_migrator(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P1 (R): absence of a declaration preserves migrator execution."""
+
+    registry = make_cp6_registry(
+        (
+            "t002_test_cp6_default_role",
+            "CREATE TABLE {schema}.cp6_default_role (id integer PRIMARY KEY);",
+            None,
+        )
+    )
+    await make_provisioner(
+        provisioning_harness,
+        registry,
+        supported_schema_versions=range(1, 3),
+    ).provision(request_for(new_tenant))
+
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT owner.rolname
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+            WHERE namespace.nspname = %s AND relation.relname = 'cp6_default_role'""",
+        (new_tenant[1],),
+    ) == (MIGRATOR_ROLE,)
+
+
+@pytest.mark.asyncio
+async def test_cp6_declared_execution_role_owns_its_objects(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P2: a declared, approved role executes the unit's DDL."""
+
+    await shape_execution_role(provisioning_harness)
+    registry = make_cp6_registry(
+        (
+            "t002_test_cp6_declared_role",
+            "CREATE TABLE {schema}.cp6_declared_role (id integer PRIMARY KEY);",
+            CP4_EXECUTION_ROLE,
+        )
+    )
+    await make_provisioner(
+        provisioning_harness,
+        registry,
+        supported_schema_versions=range(1, 3),
+    ).provision(request_for(new_tenant))
+
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT owner.rolname
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+            WHERE namespace.nspname = %s AND relation.relname = 'cp6_declared_role'""",
+        (new_tenant[1],),
+    ) == (CP4_EXECUTION_ROLE,)
+
+
+@pytest.mark.asyncio
+async def test_cp6_execution_role_change_is_checksum_drift_on_reapplication(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P6: the database path enforces the checksum's role binding."""
+
+    await shape_execution_role(provisioning_harness)
+    migration_id = "t002_test_cp6_role_drift"
+    template = "CREATE TABLE {schema}.cp6_role_drift (id integer PRIMARY KEY);"
+    without_role = make_cp6_registry((migration_id, template, None))
+    await make_provisioner(
+        provisioning_harness,
+        without_role,
+        supported_schema_versions=range(1, 3),
+    ).provision(request_for(new_tenant))
+
+    with_role = make_cp6_registry((migration_id, template, CP4_EXECUTION_ROLE))
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        with_role,
+    )
+    with pytest.raises(TenantMigrationFailed) as drift:
+        await runner.apply(tenant_id=new_tenant[0], schema_key=new_tenant[1])
+
+    assert drift.value.reason_code == SanitizedErrorCode.MIGRATION_CHECKSUM_DRIFT.value
+
+
+@pytest.mark.asyncio
+async def test_cp6_returns_explicitly_to_migrator_before_the_next_unit(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P7: a later undeclared unit runs as migrator, never the login shim."""
+
+    await shape_execution_role(provisioning_harness)
+    registry = make_cp6_registry(
+        (
+            "t002_test_cp6_assumed",
+            "CREATE TABLE {schema}.cp6_assumed (id integer PRIMARY KEY);",
+            CP4_EXECUTION_ROLE,
+        ),
+        (
+            "t003_test_cp6_returned",
+            """CREATE TABLE {schema}.cp6_returned (
+                   id integer PRIMARY KEY,
+                   observed_role text NOT NULL DEFAULT current_role
+               );
+               INSERT INTO {schema}.cp6_returned (id) VALUES (1);""",
+            None,
+        ),
+    )
+    await make_provisioner(
+        provisioning_harness,
+        registry,
+        supported_schema_versions=range(1, 4),
+    ).provision(request_for(new_tenant))
+
+    assumed_owner = await admin_row(
+        provisioning_harness,
+        """SELECT owner.rolname
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+            WHERE namespace.nspname = %s AND relation.relname = 'cp6_assumed'""",
+        (new_tenant[1],),
+    )
+    returned_owner, observed_role = await admin_row(
+        provisioning_harness,
+        f"""SELECT owner.rolname, probe.observed_role
+              FROM {new_tenant[1]}.cp6_returned probe
+              JOIN pg_class relation ON relation.relname = 'cp6_returned'
+              JOIN pg_namespace namespace
+                ON namespace.oid = relation.relnamespace
+               AND namespace.nspname = %s
+              JOIN pg_roles owner ON owner.oid = relation.relowner
+             WHERE probe.id = 1""",
+        (new_tenant[1],),
+    )
+    assert assumed_owner == (CP4_EXECUTION_ROLE,)
+    assert returned_owner == MIGRATOR_ROLE
+    assert observed_role == MIGRATOR_ROLE
+
+
+@pytest.mark.asyncio
+async def test_cp6_role_switched_ddl_and_applied_row_share_one_transaction(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P8: role switching preserves PR-2's DDL/ledger atomic boundary."""
+
+    await shape_execution_role(provisioning_harness)
+    migration_id = "t002_test_cp6_atomic"
+    registry = make_cp6_registry(
+        (
+            migration_id,
+            """CREATE TABLE {schema}.cp6_atomic (ddl_xid bigint NOT NULL);
+               INSERT INTO {schema}.cp6_atomic
+               VALUES (pg_current_xact_id()::text::bigint);""",
+            CP4_EXECUTION_ROLE,
+        )
+    )
+    await make_provisioner(
+        provisioning_harness,
+        registry,
+        supported_schema_versions=range(1, 3),
+    ).provision(request_for(new_tenant))
+
+    owner, ddl_xid, ledger_xmin = await admin_row(
+        provisioning_harness,
+        f"""SELECT (SELECT owner.rolname
+                       FROM pg_class relation
+                       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+                       JOIN pg_roles owner ON owner.oid = relation.relowner
+                      WHERE namespace.nspname = %s
+                        AND relation.relname = 'cp6_atomic'),
+                   (SELECT ddl_xid FROM {new_tenant[1]}.cp6_atomic),
+                   (SELECT xmin::text::bigint FROM shared.schema_migrations
+                     WHERE tenant_id = %s AND migration_id = %s)""",
+        (new_tenant[1], new_tenant[0], migration_id),
+    )
+    assert owner == CP4_EXECUTION_ROLE
+    assert ledger_xmin == ddl_xid % 2**32
+
+
+@pytest.mark.asyncio
+async def test_cp6_failed_assumed_role_does_not_leak_into_the_next_run(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P9: rollback discards the local role; retry executes as migrator."""
+
+    await shape_execution_role(provisioning_harness)
+    await make_provisioner(provisioning_harness).provision(request_for(new_tenant))
+    migration_id = "t002_test_cp6_failed_role"
+    failing = make_cp6_registry(
+        (
+            migration_id,
+            """CREATE TABLE {schema}.cp6_rolled_back (id integer PRIMARY KEY);
+               SELECT 1 / CASE
+                   WHEN current_role = 'haloflow_test_m02_migrator' THEN 0
+                   ELSE 1
+               END;""",
+            CP4_EXECUTION_ROLE,
+        )
+    )
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        failing,
+    )
+    with pytest.raises(TenantMigrationFailed) as failed:
+        await runner.apply(tenant_id=new_tenant[0], schema_key=new_tenant[1])
+    assert failed.value.reason_code == SanitizedErrorCode.MIGRATION_DDL_FAILED.value
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT state, sanitized_error_code
+             FROM shared.schema_migrations
+            WHERE tenant_id = %s AND migration_id = %s""",
+        (new_tenant[0], migration_id),
+    ) == ("failed", SanitizedErrorCode.MIGRATION_DDL_FAILED.value)
+
+    retry = make_cp6_registry(
+        (
+            migration_id,
+            """CREATE TABLE {schema}.cp6_after_failure (
+                   id integer PRIMARY KEY,
+                   observed_role text NOT NULL DEFAULT current_role
+               );
+               INSERT INTO {schema}.cp6_after_failure (id) VALUES (1);""",
+            None,
+        )
+    )
+    await TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        retry,
+    ).apply(tenant_id=new_tenant[0], schema_key=new_tenant[1])
+
+    owner, observed_role = await admin_row(
+        provisioning_harness,
+        f"""SELECT owner.rolname, probe.observed_role
+              FROM {new_tenant[1]}.cp6_after_failure probe
+              JOIN pg_class relation ON relation.relname = 'cp6_after_failure'
+              JOIN pg_namespace namespace
+                ON namespace.oid = relation.relnamespace
+               AND namespace.nspname = %s
+              JOIN pg_roles owner ON owner.oid = relation.relowner
+             WHERE probe.id = 1""",
+        (new_tenant[1],),
+    )
+    assert owner == MIGRATOR_ROLE
+    assert observed_role == MIGRATOR_ROLE
+
+
+def test_cp6_runner_never_emits_reset_role() -> None:
+    """TC-P10 (G): explicit return is the only accepted implementation shape."""
+
+    source = (M01_ROOT / "provisioning/runner.py").read_text()
+    assert "RESET ROLE" not in source

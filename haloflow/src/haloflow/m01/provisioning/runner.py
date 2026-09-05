@@ -227,7 +227,16 @@ class TenantMigrationRunner:
         stage = SanitizedErrorCode.MIGRATION_DDL_FAILED
         try:
             async with connection.transaction():
+                if unit.execution_role is not None:
+                    await connection.execute(
+                        sql.SQL("SET LOCAL ROLE {}").format(
+                            sql.Identifier(unit.execution_role)
+                        )
+                    )
                 await connection.execute(rendered)
+                await connection.execute(
+                    sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE))
+                )
                 stage = SanitizedErrorCode.LEDGER_WRITE_FAILED
                 await self._mark_applied(connection, tenant_id, unit)
                 stage = SanitizedErrorCode.MIGRATION_COMMIT_FAILED
