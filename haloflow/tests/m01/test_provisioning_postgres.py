@@ -16,7 +16,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 import pytest_asyncio
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, sql
 from psycopg.errors import InsufficientPrivilege
 
 from haloflow.composition import build_production_tenant_migrations
@@ -189,6 +189,82 @@ async def admin_row(harness: ProvisioningHarness, query: str, params: object = N
 async def admin_rows(harness: ProvisioningHarness, query: str, params: object = None) -> list:
     async with await AsyncConnection.connect(harness.admin_conninfo, autocommit=True) as conn:
         return await (await conn.execute(query, params)).fetchall()  # type: ignore[arg-type]
+
+
+# --- CP-5a: tenant-schema ACL reader --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_acl_reader_reads_null_as_empty(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P64(b): nspacl is exploded as-is, so NULL safely yields no rows."""
+
+    from haloflow.m01.provisioning.acl import read_schema_acl
+
+    _, schema_key = new_tenant
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+
+        # A fresh schema has nspacl IS NULL. Exploding it as-is is safe and
+        # yields no rows; coalescing it to '{}' raises on PostgreSQL 17.
+        matched = await (
+            await conn.execute(
+                "SELECT 1 FROM pg_namespace WHERE nspname = %s", (schema_key,)
+            )
+        ).fetchone()
+        assert matched == (1,)
+        assert await read_schema_acl(conn, schema_key) == frozenset()
+
+@pytest.mark.asyncio
+async def test_acl_reader_returns_all_four_dimensions_including_public_and_delegation(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P64(a), V22, V23, V25: read the complete drifted ACL verbatim."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry, read_schema_acl
+
+    _, schema_key = new_tenant
+    schema = sql.Identifier(schema_key)
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(schema))
+        await conn.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO PUBLIC").format(schema))
+        await conn.execute(
+            sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+                schema, sql.Identifier(RUNTIME_ROLE)
+            )
+        )
+        await conn.execute(
+            sql.SQL("GRANT CREATE ON SCHEMA {} TO {} WITH GRANT OPTION").format(
+                schema, sql.Identifier(MIGRATOR_ROLE)
+            )
+        )
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
+        await conn.execute(
+            sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+                schema, sql.Identifier(AUDIT_PROJECTOR_ROLE)
+            )
+        )
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        observed = await read_schema_acl(conn, schema_key)
+
+    assert observed == frozenset(
+        {
+            SchemaAclEntry("PUBLIC", "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(RUNTIME_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(MIGRATOR_ROLE, "CREATE", True, PROVISIONER_ROLE),
+            SchemaAclEntry(AUDIT_PROJECTOR_ROLE, "CREATE", False, MIGRATOR_ROLE),
+            SchemaAclEntry(PROVISIONER_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(PROVISIONER_ROLE, "USAGE", False, PROVISIONER_ROLE),
+        }
+    )
 
 
 async def ledger_row(harness: ProvisioningHarness, tenant_id: str, migration_id: str) -> tuple:

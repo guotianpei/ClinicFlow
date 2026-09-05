@@ -8,6 +8,7 @@ gap finding F-3 was raised over.
 
 import ast
 import json
+from dataclasses import replace
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -2057,3 +2058,126 @@ def test_the_preflight_is_one_component_used_by_both_call_sites() -> None:
 
     for source in (provisioner, runner):
         assert "role_safety" in source
+
+
+# --- CP-5a: tenant-schema ACL representation ------------------------------
+
+
+def test_expected_schema_acl_is_the_exact_manifest_expansion() -> None:
+    """TC-P67(b): every emitted tuple traces to the complete declaration."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry, build_expected_schema_acl
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    manifest = load_provisioning_manifest(_with_execution_role())
+
+    assert build_expected_schema_acl(manifest) == frozenset(
+        {
+            SchemaAclEntry(PROVISIONER_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(PROVISIONER_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(MIGRATOR_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(MIGRATOR_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(RUNTIME_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(AUDIT_PROJECTOR_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry("haloflow_m02_migrator", "CREATE", False, PROVISIONER_ROLE),
+        }
+    )
+
+
+def test_expected_schema_acl_preserves_all_four_tuple_dimensions() -> None:
+    """R-P1B.18: no ACL dimension is discarded while expanding the manifest."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry, build_expected_schema_acl
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    manifest = load_provisioning_manifest(_with_execution_role())
+    expected = build_expected_schema_acl(manifest)
+
+    assert SchemaAclEntry(
+        grantee="haloflow_m02_migrator",
+        privilege_type="CREATE",
+        is_grantable=False,
+        grantor=PROVISIONER_ROLE,
+    ) in expected
+    assert len(expected) == sum(
+        len(entry.privileges) for entry in manifest.tenant_schema_role_privileges.values()
+    )
+
+
+def test_expected_schema_acl_propagates_future_grant_options_and_grantors() -> None:
+    """R-P1B.18: the builder reads policy fields rather than restating today's values."""
+
+    from haloflow.m01.provisioning.acl import SchemaAclEntry, build_expected_schema_acl
+    from haloflow.m01.provisioning.manifest import (
+        SchemaPrivilegeEntry,
+        load_provisioning_manifest,
+    )
+
+    baseline = load_provisioning_manifest()
+    future = replace(
+        baseline,
+        tenant_schema_role_privileges={
+            "future_role": SchemaPrivilegeEntry(
+                privileges=("CREATE",),
+                is_grantable=True,
+                grantor="future_grantor",
+                role_class="execution",
+            )
+        },
+    )
+
+    assert build_expected_schema_acl(future) == frozenset(
+        {SchemaAclEntry("future_role", "CREATE", True, "future_grantor")}
+    )
+
+
+def test_expected_schema_acl_builder_contains_no_role_name_literal() -> None:
+    """TC-P72: the builder cannot supplement the declaration from code."""
+
+    assert "haloflow_" not in (PROVISIONING_ROOT / "acl.py").read_text()
+
+
+@pytest.mark.asyncio
+async def test_acl_reader_binds_the_schema_name_as_data() -> None:
+    """R-P1B.16: the fixed catalogue query never interpolates a schema name."""
+
+    from haloflow.m01.provisioning.acl import read_schema_acl
+
+    calls: list[tuple[object, object]] = []
+
+    class Cursor:
+        async def __aenter__(self) -> "Cursor":
+            return self
+
+        async def __aexit__(self, *exc: object) -> bool:
+            return False
+
+        async def execute(self, statement: object, params: object = None) -> None:
+            calls.append((statement, params))
+
+        async def fetchall(self) -> list[object]:
+            return []
+
+    class Connection:
+        def cursor(self) -> Cursor:
+            return Cursor()
+
+    hostile = "tenant_x' OR true --"
+    assert await read_schema_acl(Connection(), hostile) == frozenset()
+    assert len(calls) == 1
+    statement, params = calls[0]
+    assert hostile not in str(statement)
+    assert params == (hostile,)
+
+
+@pytest.mark.parametrize(
+    "row",
+    [(None, "USAGE", False, "grantor"), ("grantee", "USAGE", False, None)],
+)
+def test_acl_reader_refuses_an_unresolved_role_oid(row: tuple[object, ...]) -> None:
+    """R-P1B.16: a nullable LEFT JOIN result cannot become a role named `None`."""
+
+    from haloflow.m01.provisioning.acl import entry_from_row
+
+    with pytest.raises(RuntimeError, match="unresolved role"):
+        entry_from_row(row)
