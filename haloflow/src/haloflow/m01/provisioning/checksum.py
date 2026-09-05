@@ -47,10 +47,13 @@ import hashlib
 import json
 import unicodedata
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.codes import PreconditionCode
+
+if TYPE_CHECKING:
+    from haloflow.m01.provisioning.verification import Verification
 
 CHECKSUM_VERSION: Final = 2
 
@@ -296,25 +299,33 @@ def unit_payload(
     migration_id: str,
     template: str,
     execution_role: str | None = None,
-    verification: Mapping[str, object] | None = None,
+    verification: "Mapping[str, object] | Verification | None" = None,
 ) -> dict[str, object]:
     """The A6 payload: normalized, canonically ordered, ready to digest.
 
-    ``execution_role`` and ``verification`` are in the shape now, as ``null``,
-    though no unit carries either field yet. Later checkpoints populate them
-    without changing the shape, so every checksum moves once rather than three
-    times.
+    Typed specifications use the closed, explicitly ordered serializer. The
+    mapping path remains a low-level canonicalization interface for the CP-1
+    collision/normalization controls; unit construction never accepts mappings.
     """
 
+    from haloflow.m01.provisioning.verification import verification_payload
+
+    specification: object
+    if verification is not None and not isinstance(verification, Mapping):
+        specification = verification_payload(verification)
+        typed = True
+    else:
+        specification = verification
+        typed = False
     payload: dict[str, object] = {
         "checksum_version": CHECKSUM_VERSION,
         "execution_role": execution_role,
         "migration_id": migration_id,
         "template": normalize_template(template),
-        "verification": verification,
+        "verification": specification,
     }
     normalized = _normalize_recursively(payload)
-    ordered = _order_known_collections(normalized)
+    ordered = normalized if typed else _order_known_collections(normalized)
     if not isinstance(ordered, dict):  # pragma: no cover - a mapping in, a mapping out
         raise MigrationUnitRejected(reason_code=PreconditionCode.UNTRUSTED_MIGRATION_UNIT.value)
     return ordered
@@ -343,7 +354,7 @@ def unit_checksum(
     migration_id: str,
     template: str,
     execution_role: str | None = None,
-    verification: Mapping[str, object] | None = None,
+    verification: "Mapping[str, object] | Verification | None" = None,
 ) -> str:
     """The checksum of one migration unit."""
 

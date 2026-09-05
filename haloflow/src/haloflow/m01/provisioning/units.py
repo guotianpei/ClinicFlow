@@ -28,6 +28,7 @@ from haloflow.m01.provisioning.roles import (
     PROVISIONING_ROLES,
     RUNTIME_ROLE,
 )
+from haloflow.m01.provisioning.verification import Verification, validate_verification
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
 MIGRATION_ID_PATTERN: Final = re.compile(r"^t\d{3}(_test)?_[a-z0-9_]{1,64}$")
@@ -47,11 +48,15 @@ class UnitDefinition:
     which is every M01 unit today -- or to this record. Keeping the bare string
     valid means adding the execution role did not touch a single production
     definition, so TC-P5 characterizes the baseline rather than a rewrite of it.
-    A later checkpoint adds ``verification`` here, for the same reason.
+    Verification is optional declarative metadata, validated at construction.
     """
 
     template: str
     execution_role: str | None = None
+    verification: Verification | None = None
+
+    def __post_init__(self) -> None:
+        validate_verification(self.verification)
 
 
 UnitDefinitions = Mapping[str, "str | UnitDefinition"]
@@ -65,10 +70,12 @@ class TenantMigrationUnit:
     template: str = field(repr=False)
     execution_role: str | None = None
     _issuer: InitVar[object | None] = None
+    verification: Verification | None = field(default=None, kw_only=True)
 
     def __post_init__(self, _issuer: object | None) -> None:
         if _issuer is not _UNIT_ISSUER:
             raise MigrationUnitRejected(reason_code=PreconditionCode.UNTRUSTED_MIGRATION_UNIT.value)
+        validate_verification(self.verification)
         if not MIGRATION_ID_PATTERN.fullmatch(self.migration_id):
             raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_ID_INVALID.value)
         if not self.template.strip():
@@ -126,6 +133,7 @@ class TenantMigrationUnit:
             migration_id=self.migration_id,
             template=self.template,
             execution_role=self.execution_role,
+            verification=self.verification,
         )
 
     def render(self, schema_key: str) -> str:
@@ -228,6 +236,7 @@ def build_tenant_migration_registry(
             merged[migration_id].template,
             merged[migration_id].execution_role,
             _issuer=_UNIT_ISSUER,
+            verification=merged[migration_id].verification,
         )
         for migration_id in sorted(merged)
     )

@@ -32,8 +32,18 @@ from haloflow.m01.provisioning.units import (
     TenantMigrationUnit,
     UnitDefinition,
 )
+from haloflow.m01.provisioning.verification import (
+    AclEntry,
+    FunctionExpectation,
+    FunctionMetadataVerification,
+    Verification,
+)
 
 __all__ = [
+    "AclEntry",
+    "FunctionExpectation",
+    "FunctionMetadataVerification",
+    "Verification",
     "AUDIT_PROJECTOR_ROLE",
     "MIGRATOR_ROLE",
     "PROVISIONER_ROLE",

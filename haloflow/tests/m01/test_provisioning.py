@@ -7,6 +7,7 @@ gap finding F-3 was raised over.
 """
 
 import ast
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -41,6 +42,284 @@ from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migr
 
 VALID_TEMPLATE = "CREATE TABLE {schema}.thing (id integer PRIMARY KEY);"
 TEST_UNITS = {"t001_test_probe": VALID_TEMPLATE}
+
+
+# CP-7a: R-P2.1-4/7/10-13, R-P4.5-7; local imports keep pre-change collection healthy.
+def _cp7a_function(**changes):
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionExpectation
+
+    values = dict(
+        name="gateway", argument_types=("uuid", "text"), owner="haloflow_m02_migrator",
+        security_definer=True, config=("search_path={schema}, pg_catalog",),
+        acl=(AclEntry("haloflow_runtime", ("EXECUTE",)),),
+        body="BEGIN\n  RETURN '{schema}';\nEND",
+    )
+    return FunctionExpectation(**(values | changes))
+
+
+def _cp7a_unit(verification):
+    from haloflow.m01.provisioning.units import UnitDefinition
+
+    return build_tenant_migration_registry(
+        {"t002_gateway": UnitDefinition(VALID_TEMPLATE, verification=verification)}
+    ).units[0]
+
+
+def _cp7a_builder_input(verification):
+    """Exercise the composition boundary independently of the new constructor signature."""
+    from types import SimpleNamespace
+
+    definition = SimpleNamespace(template=VALID_TEMPLATE, execution_role=None,
+                                 verification=verification)
+    return build_tenant_migration_registry({"t002_gateway": definition}).units[0]
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        ("SELECT true", "VERIFICATION_SQL_FORBIDDEN"),
+        ({"kind": "sql", "sql": "SELECT true"}, "VERIFICATION_SQL_FORBIDDEN"),
+        ({"kind": "function", "function": "looks_harmless"}, "VERIFICATION_CALL_FORBIDDEN"),
+        ({"kind": "catalogue", "query": "SELECT * FROM pg_proc"},
+         "VERIFICATION_QUERY_FORBIDDEN"),
+        ({"kind": "future_verifier"}, "VERIFICATION_KIND_UNKNOWN"),
+        ({"kind": "function_metadata", "functions": []}, "VERIFICATION_SPEC_INVALID"),
+    ],
+    ids=["TC-P23-text", "TC-P23-sql", "TC-P24-name", "TC-P25-query", "TC-P26-kind",
+         "raw-mapping"],
+)
+def test_cp7a_unit_refuses_untyped_verification(payload, code) -> None:
+    for construct in (_cp7a_builder_input, _cp7a_unit):
+        with pytest.raises(MigrationUnitRejected) as refused:
+            construct(payload)
+        assert refused.value.reason_code == code
+    assert code in {member.value for member in PreconditionCode}
+
+
+def test_cp7a_tc_p24_callback_is_refused_without_calling_it() -> None:
+    called = []
+
+    def looks_harmless():
+        called.append(True)
+        return True
+
+    for construct in (_cp7a_builder_input, _cp7a_unit):
+        with pytest.raises(MigrationUnitRejected) as refused:
+            construct(looks_harmless)
+        assert refused.value.reason_code == "VERIFICATION_CALL_FORBIDDEN"
+    assert called == []
+
+
+def test_cp7a_absent_verification_is_explicit_and_preserves_baseline() -> None:
+    unit = build_production_tenant_migrations().units[0]
+    assert hasattr(unit, "verification"), "A1 requires an explicit optional verification field"
+    assert unit.verification is None
+    assert unit.checksum == V2_T001_CHECKSUM
+
+
+def test_cp7a_composition_cannot_silently_drop_verification() -> None:
+    """Independent behavioral pre-change failure: old builder ignores this supplied value."""
+    from types import SimpleNamespace
+
+    supplied = SimpleNamespace(template=VALID_TEMPLATE, execution_role=None,
+                               verification="SELECT looks_harmless()")
+    with pytest.raises(MigrationUnitRejected) as refused:
+        build_tenant_migration_registry({"t002_gateway": supplied})
+    assert refused.value.reason_code == "VERIFICATION_SQL_FORBIDDEN"
+
+
+def test_cp7a_tc_p27_closed_shape_and_no_callback_escape_hatch() -> None:
+    from dataclasses import fields
+
+    from haloflow.m01.provisioning import verification as v
+
+    assert v.Verification is v.FunctionMetadataVerification
+    assert {f.name for f in fields(v.FunctionMetadataVerification)} == {"kind", "functions"}
+    assert {f.name for f in fields(v.FunctionExpectation)} == {
+        "name", "argument_types", "owner", "security_definer", "config", "acl", "body"
+    }
+    assert {f.name for f in fields(v.AclEntry)} == {"grantee", "privileges"}
+    with pytest.raises(TypeError):
+        v.FunctionMetadataVerification(functions=(), function="looks_harmless")
+    with pytest.raises(TypeError):
+        v.FunctionMetadataVerification(functions=(), complete_names=("gateway",))
+    with pytest.raises(MigrationUnitRejected) as refused:
+        v.FunctionMetadataVerification(functions=(), kind="sql")
+    assert refused.value.reason_code == "VERIFICATION_KIND_UNKNOWN"
+
+
+def test_cp7a_tc_p28_every_field_reaches_checksum_and_canonical_json() -> None:
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionMetadataVerification
+
+    original = _cp7a_function()
+    spec = FunctionMetadataVerification((original,))
+    unit = _cp7a_unit(spec)
+    # Oracle spells out the approved fields independently of the production serializer.
+    expected = {
+        "checksum_version": 2, "migration_id": "t002_gateway",
+        "template": VALID_TEMPLATE, "execution_role": None,
+        "verification": {"kind": "function_metadata", "functions": [{
+            "name": "gateway", "argument_types": ["uuid", "text"],
+            "owner": "haloflow_m02_migrator", "security_definer": True,
+            "config": ["search_path={schema}, pg_catalog"],
+            "acl": [{"grantee": "haloflow_runtime", "privileges": ["EXECUTE"]}],
+            "body": "BEGIN\n  RETURN '{schema}';\nEND",
+        }]},
+    }
+    encoded = json.dumps(expected, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    assert unit.checksum == hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    assert unit.verification == spec
+    variants = [
+        replace(original, name="other"),
+        replace(original, argument_types=("text", "uuid")),
+        replace(original, argument_types=("uuid",)),
+        replace(original, owner="haloflow_other"),
+        replace(original, security_definer=False),
+        replace(original, config=("search_path=pg_catalog",)),
+        replace(original, acl=(AclEntry("haloflow_other", ("EXECUTE",)),)),
+        replace(original, acl=()),
+        replace(original, body="BEGIN\n RETURN '{schema}';\nEND"),
+    ]
+    checksums = [_cp7a_unit(FunctionMetadataVerification((f,))).checksum for f in variants]
+    checksums += [_cp7a_unit(None).checksum,
+                  _cp7a_unit(FunctionMetadataVerification(())).checksum,
+                  _cp7a_unit(FunctionMetadataVerification((original, variants[0]))).checksum]
+    assert unit.checksum not in checksums
+    assert len(set(checksums)) == len(checksums)
+
+
+@pytest.mark.parametrize("text", [
+    "BEGIN RETURN '{1,2}'; END",  # TC-P52, ordinary braces
+    "{schema} {schema.x} {schema[0]} {schema!r} {schema:>20} {other} {{schema}}",  # TC-P53
+    "{schema.__class__.__mro__} {schema}\n{a,b}",
+])
+def test_cp7a_tc_p52_p53_body_and_config_render_literal_sentinel(text) -> None:
+    function = _cp7a_function(body=text, config=("search_path=" + text,))
+    expected = text.replace("{schema}", "tenant_aaaaaaaa")
+    assert function.render_body("tenant_aaaaaaaa") == expected
+    assert function.render_config("tenant_aaaaaaaa") == ("search_path=" + expected,)
+    assert function.body == text
+
+
+@pytest.mark.parametrize("schema", ["public", "tenant_SHORT", "tenant_aaaaaaaa;SELECT 1", None])
+def test_cp7a_render_validates_schema_even_without_placeholder(schema) -> None:
+    function = _cp7a_function(body="BEGIN END", config=("search_path=pg_catalog",))
+    for render in (function.render_body, function.render_config):
+        with pytest.raises(MigrationUnitRejected) as refused:
+            render(schema)
+        assert refused.value.reason_code == "SCHEMA_KEY_INVALID"
+
+
+def test_cp7a_tc_p54_argument_types_remain_ordered_unrendered_data() -> None:
+    from haloflow.m01.provisioning.verification import FunctionMetadataVerification
+
+    hostile = "uuid); SELECT looks_harmless(); -- {schema}"
+    f = _cp7a_function(argument_types=(hostile, "text"), body="constant")
+    unit = _cp7a_unit(FunctionMetadataVerification((f,)))
+    assert f.argument_types == (hostile, "text")
+    assert f.render_body("tenant_aaaaaaaa") == "constant"
+    assert hostile not in unit.render("tenant_aaaaaaaa")
+    assert f.argument_types == (hostile, "text")
+    # CP-7a has no query path. CP-7b must prove binding against its fixed query.
+    tree = ast.parse((PROVISIONING_ROOT / "verification.py").read_text())
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            assert not (isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "execute", "executemany", "format", "format_map"
+            })
+            assert not (isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"})
+
+
+def test_cp7a_concrete_collection_order_and_normalization() -> None:
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionMetadataVerification
+
+    a = _cp7a_function(name="a", config=("ab=2", "a=1"),
+                      acl=(AclEntry("role_b", ("EXECUTE",)), AclEntry("role_a", ("EXECUTE",))),
+                      body="BEGIN\r\n  RETURN 'cafe\u0301';\rEND")
+    b = _cp7a_function(name="b")
+    equivalent = replace(a, config=("a=1", "ab=2"), acl=tuple(reversed(a.acl)),
+                         body="BEGIN\n  RETURN 'café';\nEND")
+    assert a.body == "BEGIN\n  RETURN 'café';\nEND"
+    assert a.render_body("tenant_aaaaaaaa") == a.body
+    assert _cp7a_unit(FunctionMetadataVerification((a, b))).checksum == (
+        _cp7a_unit(FunctionMetadataVerification((b, equivalent))).checksum
+    )
+    reversed_args = replace(a, argument_types=tuple(reversed(a.argument_types)))
+    assert _cp7a_unit(FunctionMetadataVerification((a,))).checksum != (
+        _cp7a_unit(FunctionMetadataVerification((reversed_args,))).checksum
+    )
+
+
+@pytest.mark.parametrize(("field", "value", "code"), [
+    ("name", "shared.f", "VERIFICATION_IDENTIFIER_INVALID"),
+    ("name", "x;DROP", "VERIFICATION_IDENTIFIER_INVALID"),
+    ("name", "x" * 64, "VERIFICATION_IDENTIFIER_INVALID"),
+    ("owner", "role;SET ROLE", "VERIFICATION_IDENTIFIER_INVALID"),
+    ("security_definer", 1, "VERIFICATION_SPEC_INVALID"),
+    ("security_definer", "false", "VERIFICATION_SPEC_INVALID"),
+    ("argument_types", "uuid", "VERIFICATION_SPEC_INVALID"),
+    ("argument_types", ("uuid", 42), "VERIFICATION_SPEC_INVALID"),
+    ("argument_types", ("",), "VERIFICATION_SPEC_INVALID"),
+    ("body", lambda: True, "VERIFICATION_SPEC_INVALID"),
+    ("config", "search_path=pg_catalog", "VERIFICATION_SPEC_INVALID"),
+    ("config", ("not_an_entry",), "VERIFICATION_CONFIG_INVALID"),
+    ("config", ("=empty_key",), "VERIFICATION_CONFIG_INVALID"),
+    ("config", ("a=1", "a=1"), "CONFLICTING_CONFIG_KEY"),
+    ("config", ("a=1", "a=2"), "CONFLICTING_CONFIG_KEY"),
+    ("acl", ({"grantee": "role", "privileges": ["EXECUTE"]},), "VERIFICATION_SPEC_INVALID"),
+])
+def test_cp7a_fields_fail_closed(field, value, code) -> None:
+    with pytest.raises(MigrationUnitRejected) as refused:
+        _cp7a_function(**{field: value})
+    assert refused.value.reason_code == code
+
+
+def test_cp7a_duplicates_and_immutable_closed_objects() -> None:
+    from dataclasses import FrozenInstanceError
+
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionMetadataVerification
+
+    f = _cp7a_function()
+    with pytest.raises(MigrationUnitRejected) as duplicate:
+        FunctionMetadataVerification((f, replace(f, body="different")))
+    assert duplicate.value.reason_code == "DUPLICATE_FUNCTION_IDENTITY"
+    with pytest.raises(MigrationUnitRejected) as acl_duplicate:
+        replace(f, acl=f.acl + f.acl)
+    assert acl_duplicate.value.reason_code == "DUPLICATE_ACL_ENTRY"
+    with pytest.raises(MigrationUnitRejected) as normalized_duplicate:
+        FunctionMetadataVerification((replace(f, argument_types=("café",)),
+                                      replace(f, argument_types=("cafe\u0301",))))
+    assert normalized_duplicate.value.reason_code == "DUPLICATE_FUNCTION_IDENTITY"
+    for grantee in ("PUBLIC", "public", "role;SELECT 1"):
+        with pytest.raises(MigrationUnitRejected) as invalid:
+            AclEntry(grantee, ("EXECUTE",))
+        assert invalid.value.reason_code == "VERIFICATION_IDENTIFIER_INVALID"
+    for privileges in (("SELECT",), ("ALL",), ("EXECUTE", "EXECUTE"), (), "EXECUTE"):
+        with pytest.raises(MigrationUnitRejected) as invalid:
+            AclEntry("role", privileges)
+        assert invalid.value.reason_code == "VERIFICATION_ACL_INVALID"
+    with pytest.raises(FrozenInstanceError):
+        f.body = "different"
+    with pytest.raises(FrozenInstanceError):
+        f.acl[0].grantee = "other"
+
+    class ForeignKind(FunctionMetadataVerification):
+        pass
+
+    with pytest.raises(MigrationUnitRejected) as foreign:
+        _cp7a_unit(ForeignKind((f,)))
+    assert foreign.value.reason_code == "VERIFICATION_KIND_UNKNOWN"
+
+
+def test_cp7a_unknown_nested_keys_are_not_ignored() -> None:
+    from haloflow.m01.provisioning.verification import AclEntry, FunctionExpectation
+
+    with pytest.raises(TypeError):
+        AclEntry("role", ("EXECUTE",), grant_option=True)
+    with pytest.raises(TypeError):
+        FunctionExpectation(name="gateway", argument_types=(), owner="role",
+                            security_definer=True, config=(), acl=(), body="body", query="sql")
+
 
 
 def _registry(*definition_sets: dict[str, str], **kwargs: bool) -> TenantMigrationRegistry:

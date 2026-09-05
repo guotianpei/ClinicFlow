@@ -73,6 +73,17 @@ class PreconditionCode(StrEnum):
     DUPLICATE_MIGRATION_ID = "DUPLICATE_MIGRATION_ID"
     TEST_MIGRATION_UNIT_REJECTED = "TEST_MIGRATION_UNIT_REJECTED"
 
+    # Typed verification construction (R-P2.3): each prohibited input has its
+    # own cause; malformed expected state is distinct from executable input.
+    VERIFICATION_SQL_FORBIDDEN = "VERIFICATION_SQL_FORBIDDEN"
+    VERIFICATION_CALL_FORBIDDEN = "VERIFICATION_CALL_FORBIDDEN"
+    VERIFICATION_QUERY_FORBIDDEN = "VERIFICATION_QUERY_FORBIDDEN"
+    VERIFICATION_KIND_UNKNOWN = "VERIFICATION_KIND_UNKNOWN"
+    VERIFICATION_SPEC_INVALID = "VERIFICATION_SPEC_INVALID"
+    VERIFICATION_IDENTIFIER_INVALID = "VERIFICATION_IDENTIFIER_INVALID"
+    VERIFICATION_CONFIG_INVALID = "VERIFICATION_CONFIG_INVALID"
+    VERIFICATION_ACL_INVALID = "VERIFICATION_ACL_INVALID"
+
     # Canonical checksum payload (R-P4.5). Ordering resolves presentation, not
     # contradiction: a collection that states the same identity twice is refused
     # rather than sorted, because sorting only hides which one the digest took.
