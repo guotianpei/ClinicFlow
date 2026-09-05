@@ -1936,3 +1936,206 @@ async def test_the_runner_is_guarded_on_the_same_terms_as_the_provisioner(
         await runner.apply(tenant_id=tenant_id, schema_key=schema_key)
 
     assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"
+
+
+# --- CP-5b: manifest-driven schema grant installation --------------------
+
+
+@pytest.mark.asyncio
+async def test_schema_grant_installer_expands_only_the_manifest_declaration(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P46: M01 installs a module role without naming it in production code."""
+
+    from haloflow.m01.provisioning.acl import (
+        SchemaAclEntry,
+        build_expected_schema_acl,
+        install_schema_acl,
+        read_schema_acl,
+    )
+
+    await shape_execution_role(provisioning_harness)
+    manifest = cp4_manifest()
+    _, schema_key = new_tenant
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[PROVISIONER_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+        async with conn.transaction():
+            await install_schema_acl(conn, schema_key, manifest)
+        observed = await read_schema_acl(conn, schema_key)
+
+    literal_expected = frozenset(
+        {
+            SchemaAclEntry(PROVISIONER_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(PROVISIONER_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(MIGRATOR_ROLE, "CREATE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(MIGRATOR_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(RUNTIME_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(AUDIT_PROJECTOR_ROLE, "USAGE", False, PROVISIONER_ROLE),
+            SchemaAclEntry(CP4_EXECUTION_ROLE, "CREATE", False, PROVISIONER_ROLE),
+        }
+    )
+    assert observed == literal_expected
+    assert observed == build_expected_schema_acl(manifest)
+
+
+@pytest.mark.asyncio
+async def test_schema_grant_installer_participates_in_the_callers_transaction(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+) -> None:
+    """R-P1B.19 seam: CP-5c can roll back grant and postcondition together."""
+
+    from haloflow.m01.provisioning.acl import (
+        build_expected_schema_acl,
+        install_schema_acl,
+        read_schema_acl,
+    )
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    _, schema_key = new_tenant
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[PROVISIONER_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+
+        with pytest.raises(RuntimeError, match="force rollback"):
+            async with conn.transaction():
+                manifest = load_provisioning_manifest()
+                await install_schema_acl(conn, schema_key, manifest)
+                assert await read_schema_acl(conn, schema_key) == build_expected_schema_acl(
+                    manifest
+                )
+                raise RuntimeError("force rollback")
+
+        assert await read_schema_acl(conn, schema_key) == frozenset()
+
+
+def test_schema_grant_installer_is_unreachable_from_the_live_path() -> None:
+    """CP5b-G1: activation waits for CP-5c's grant-plus-postcondition switch."""
+
+    provisioner = (M01_ROOT / "provisioning/provisioner.py").read_text()
+    runner = (M01_ROOT / "provisioning/runner.py").read_text()
+    assert "install_schema_acl" not in provisioner
+    assert "install_schema_acl" not in runner
+
+
+@pytest.mark.asyncio
+async def test_migrator_cannot_grant_schema_create_to_the_execution_role(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P43 (C): the pre-CP5b grant location cannot work (V12)."""
+
+    await shape_execution_role(provisioning_harness)
+    _, schema_key = new_tenant
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[PROVISIONER_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[MIGRATOR_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
+        with pytest.raises(InsufficientPrivilege):
+            await conn.execute(
+                sql.SQL("GRANT CREATE ON SCHEMA {} TO {}").format(
+                    sql.Identifier(schema_key), sql.Identifier(CP4_EXECUTION_ROLE)
+                )
+            )
+
+    row = await admin_row(
+        provisioning_harness,
+        "SELECT has_schema_privilege(%s, %s, 'CREATE')",
+        (CP4_EXECUTION_ROLE, schema_key),
+    )
+    assert row == (False,)
+
+
+@pytest.mark.asyncio
+async def test_execution_role_without_schema_create_cannot_install_ddl(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P44 (C): assuming the role is not a fallback for the missing grant."""
+
+    await shape_execution_role(provisioning_harness)
+    _, schema_key = new_tenant
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[PROVISIONER_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.role_logins[MIGRATOR_ROLE], autocommit=True
+    ) as conn:
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(CP4_EXECUTION_ROLE)))
+        with pytest.raises(InsufficientPrivilege):
+            await conn.execute(
+                sql.SQL("CREATE TABLE {}.cp5b_probe (id integer)").format(
+                    sql.Identifier(schema_key)
+                )
+            )
+
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT to_regclass(%s) IS NULL",
+        (f"{schema_key}.cp5b_probe",),
+    ) == (True,)
+
+
+@pytest.mark.asyncio
+async def test_production_runner_leaves_the_complete_schema_acl_unchanged(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+) -> None:
+    """TC-P71 (C): the entire production registry preserves stage 2's ACL."""
+
+    from haloflow.m01.provisioning.acl import (
+        install_schema_acl,
+        read_schema_acl,
+    )
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    tenant_id, schema_key = new_tenant
+    manifest = load_provisioning_manifest()
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        await conn.execute(
+            """
+            INSERT INTO shared.tenants
+                (tenant_id, schema_key, lifecycle_state, schema_version)
+            VALUES (%s, %s, 'provisioning', 1)
+            """,
+            (tenant_id, schema_key),
+        )
+        await conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(PROVISIONER_ROLE)))
+        await conn.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(schema_key)))
+        async with conn.transaction():
+            await install_schema_acl(conn, schema_key, manifest)
+        before = await read_schema_acl(conn, schema_key)
+
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        build_production_tenant_migrations(),
+    )
+    await runner.apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        after = await read_schema_acl(conn, schema_key)
+
+    assert after == before

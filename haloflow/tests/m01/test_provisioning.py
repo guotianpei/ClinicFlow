@@ -1396,6 +1396,28 @@ def test_an_execution_role_profile_cannot_declare_an_unsafe_attribute() -> None:
     load_provisioning_manifest(_with_execution_role())
 
 
+def test_an_execution_role_must_declare_a_nonempty_schema_privilege_set() -> None:
+    """Claude note-31 F1: an empty set is neither valid SQL nor an ACL entry."""
+
+    from haloflow.m01.provisioning.manifest import (
+        MigrationManifestRejected,
+        load_provisioning_manifest,
+    )
+
+    with pytest.raises(MigrationManifestRejected) as refused:
+        load_provisioning_manifest(
+            _manifest_document(
+                execution_role_profiles={
+                    "haloflow_m02_migrator": _profile(tenant_schema_privileges=[])
+                },
+                role_memberships=[_safe_edge()],
+            )
+        )
+    assert refused.value.reason_code == (
+        PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID.value
+    )
+
+
 def test_a_membership_declaration_cannot_describe_an_unsafe_edge() -> None:
     """Codex note-17 finding 2. R-P1B.3, R-P1B.4(c) and A7 fix the edge.
 

@@ -361,6 +361,16 @@ def _load_execution_role_profiles(block: object) -> Mapping[str, ExecutionRolePr
                 # role against, so it may not declare the unsafe value: a
                 # dangerous role would match dangerous data and pass.
                 raise _reject(PreconditionCode.EXECUTION_ROLE_PROFILE_UNSAFE)
+        schema_privileges = _require_privileges(
+            entry.get("tenant_schema_privileges"),
+            SCHEMA_PRIVILEGES,
+            PreconditionCode.MANIFEST_PRIVILEGE_UNKNOWN,
+        )
+        if not schema_privileges:
+            # An execution role exists to install tenant DDL. An empty set
+            # produces malformed GRANT syntax and no expected ACL tuple, making
+            # the declared grantee invisible to both stage 2 and stage 3.
+            raise _reject(PreconditionCode.SCHEMA_PRIVILEGE_DECLARATION_INVALID)
         profiles[role] = ExecutionRoleProfile(
             login=False,
             superuser=False,
@@ -368,11 +378,7 @@ def _load_execution_role_profiles(block: object) -> Mapping[str, ExecutionRolePr
             createrole=False,
             replication=False,
             bypassrls=False,
-            tenant_schema_privileges=_require_privileges(
-                entry.get("tenant_schema_privileges"),
-                SCHEMA_PRIVILEGES,
-                PreconditionCode.MANIFEST_PRIVILEGE_UNKNOWN,
-            ),
+            tenant_schema_privileges=schema_privileges,
         )
     return profiles
 
