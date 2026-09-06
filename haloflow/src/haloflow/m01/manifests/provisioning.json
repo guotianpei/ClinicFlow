@@ -1,0 +1,38 @@
+{
+  "execution_role_profiles": {},
+  "role_memberships": [],
+  "tenant_schema_role_privileges": {
+    "haloflow_provisioner": {
+      "privileges": ["USAGE", "CREATE"],
+      "is_grantable": false,
+      "grantor": "haloflow_provisioner",
+      "role_class": "owner"
+    },
+    "haloflow_migrator": {
+      "privileges": ["USAGE", "CREATE"],
+      "is_grantable": false,
+      "grantor": "haloflow_provisioner",
+      "role_class": "infrastructure"
+    },
+    "haloflow_runtime": {
+      "privileges": ["USAGE"],
+      "is_grantable": false,
+      "grantor": "haloflow_provisioner",
+      "role_class": "infrastructure"
+    },
+    "haloflow_audit_projector": {
+      "privileges": ["USAGE"],
+      "is_grantable": false,
+      "grantor": "haloflow_provisioner",
+      "role_class": "infrastructure"
+    }
+  },
+  "tenant_table_overrides": [
+    {
+      "role": "haloflow_runtime",
+      "table": "operation_registry",
+      "narrows": "tenant_schema:business_dml",
+      "privileges": ["SELECT", "INSERT"]
+    }
+  ]
+}

@@ -32,10 +32,22 @@ from typing import Final
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import ConnectionModeRejected, TenantMigrationFailed
+from haloflow.m01.errors import (
+    ConnectionModeRejected,
+    ExecutionRoleUnavailable,
+    TenantMigrationFailed,
+)
+from haloflow.m01.provisioning import manifest as manifest_module
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
+from haloflow.m01.provisioning.manifest import ProvisioningManifest
+from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
+from haloflow.m01.provisioning.verification import (
+    FUNCTION_METADATA_QUERY,
+    VerificationMismatch,
+    compare_function_metadata,
+)
 from haloflow.m01.resolver import TENANT_ID_PATTERN
 
 ConnectionFactory = Callable[[], Awaitable[AsyncConnection]]
@@ -73,14 +85,24 @@ class TenantMigrationRunner:
         registry: TenantMigrationRegistry,
         *,
         lock_timeout_seconds: float = 30.0,
+        manifest: ProvisioningManifest | None = None,
     ) -> None:
         self._connect = connect
         self._registry = registry
         self._lock_timeout_seconds = lock_timeout_seconds
+        self._manifest = (
+            manifest if manifest is not None else manifest_module.load_provisioning_manifest()
+        )
 
     @property
     def registry(self) -> TenantMigrationRegistry:
         return self._registry
+
+    @property
+    def manifest(self) -> ProvisioningManifest:
+        """The one declaration used by every stage-1 call on this runner."""
+
+        return self._manifest
 
     @asynccontextmanager
     async def tenant_lock(self, tenant_id: str) -> AsyncIterator[None]:
@@ -147,6 +169,16 @@ class TenantMigrationRunner:
         connection = await self._connect()
         try:
             await _assume_migrator(connection)
+            # Stage 1, step 0 of A4. The runner is guarded on the same terms as
+            # the provisioner (R-P1B.15), so a runner invoked outside a
+            # provisioning flow does not assume a role nobody checked. One
+            # component, two call sites.
+            try:
+                await assert_execution_roles_safe(
+                    connection, self._registry, manifest=self._manifest
+                )
+            except ExecutionRoleUnavailable as error:
+                raise TenantMigrationFailed(reason_code=error.reason_code) from error
             for unit in self._registry:
                 outcomes.append(
                     await self._apply_unit(
@@ -200,11 +232,29 @@ class TenantMigrationRunner:
         stage = SanitizedErrorCode.MIGRATION_DDL_FAILED
         try:
             async with connection.transaction():
+                if unit.execution_role is not None:
+                    await connection.execute(
+                        sql.SQL("SET LOCAL ROLE {}").format(
+                            sql.Identifier(unit.execution_role)
+                        )
+                    )
                 await connection.execute(rendered)
+                await connection.execute(
+                    sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE))
+                )
+                if unit.verification is not None:
+                    stage = SanitizedErrorCode.VERIFICATION_FAILED
+                    # Role return does not restore a path changed by the DDL.
+                    # Pin type rendering and explicitly place pg_temp last.
+                    await connection.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+                    rows = await (
+                        await connection.execute(FUNCTION_METADATA_QUERY, (schema_key,))
+                    ).fetchall()
+                    compare_function_metadata(unit.verification, schema_key, rows)
                 stage = SanitizedErrorCode.LEDGER_WRITE_FAILED
                 await self._mark_applied(connection, tenant_id, unit)
                 stage = SanitizedErrorCode.MIGRATION_COMMIT_FAILED
-        except PsycopgError as error:
+        except (PsycopgError, VerificationMismatch) as error:
             # Rolled back by the transaction block above — both halves — so the
             # tenant schema is clean at the moment `failed` becomes visible (R-E3).
             try:
@@ -216,6 +266,8 @@ class TenantMigrationRunner:
                 raise TenantMigrationFailed(
                     reason_code=SanitizedErrorCode.LEDGER_WRITE_FAILED.value
                 ) from _sanitize(ledger_error)
+            if isinstance(error, VerificationMismatch):
+                raise TenantMigrationFailed(reason_code=stage.value) from None
             raise TenantMigrationFailed(reason_code=stage.value) from _sanitize(error)
 
         return MigrationOutcome(unit.migration_id, applied=True)

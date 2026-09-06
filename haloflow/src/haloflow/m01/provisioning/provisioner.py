@@ -1,7 +1,7 @@
 """Tenant-schema provisioner (M01-FR-017).
 
 Ownership, settled as decision D13 on 2026-08-31 and verified on PostgreSQL
-17.10: a tenant schema is owned by ``haloflow_provisioner``. The signed-off
+17.11: a tenant schema is owned by ``haloflow_provisioner``. The signed-off
 design had the provisioner run ``CREATE SCHEMA ... AUTHORIZATION haloflow_owner``,
 which PostgreSQL refuses -- ``must be able to SET ROLE "haloflow_owner"`` -- and
 the membership that would allow it also hands the provisioner INSERT, DELETE and
@@ -34,11 +34,21 @@ from uuid import UUID
 from psycopg import AsyncConnection, sql
 from psycopg import Error as PsycopgError
 
-from haloflow.m01.errors import ConnectionModeRejected, ProvisioningFailed
+from haloflow.m01.errors import (
+    ConnectionModeRejected,
+    ExecutionRoleUnavailable,
+    ProvisioningFailed,
+)
+from haloflow.m01.provisioning.acl import (
+    build_expected_schema_acl,
+    install_schema_acl,
+    read_schema_acl,
+)
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
+from haloflow.m01.provisioning.manifest import ProvisioningManifest
+from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
 from haloflow.m01.provisioning.roles import (
     AUDIT_PROJECTOR_ROLE,
-    MIGRATOR_ROLE,
     PROVISIONER_ROLE,
     RUNTIME_ROLE,
 )
@@ -85,10 +95,16 @@ class TenantProvisioner:
         runner: TenantMigrationRunner,
         *,
         supported_schema_versions: Sequence[int] | frozenset[int] | range,
+        manifest: ProvisioningManifest | None = None,
     ) -> None:
         self._connect = connect
         self._runner = runner
         self._supported_schema_versions = frozenset(supported_schema_versions)
+        if manifest is not None and manifest != runner.manifest:
+            raise ValueError("runner and provisioner manifests must match")
+        # Adopt the runner's object so both stage-1 call sites and stages 2/3
+        # are incapable of observing different declarations.
+        self._manifest = runner.manifest
 
     async def provision(self, request: ProvisioningRequest) -> ProvisioningOutcome:
         _validate_request(request)
@@ -102,15 +118,25 @@ class TenantProvisioner:
         connection = await self._connect()
         try:
             await _assume_provisioner(connection)
+            # Stage 1, and the first thing this method does against the
+            # database (Q2). Before `_register_tenant`, before `_create_schema`,
+            # before the lock: a configuration fault must not leave a registry
+            # row, a schema, or a `running` ledger row behind it.
+            try:
+                await assert_execution_roles_safe(
+                    connection, self._runner.registry, manifest=self._manifest
+                )
+            except ExecutionRoleUnavailable as error:
+                raise ProvisioningFailed(reason_code=error.reason_code) from error
             # One lock for the whole sequence, so a second provisioner cannot
             # interleave with this one between its commits either.
             async with self._runner.tenant_lock(request.tenant_id):
                 resumed = await self._register_tenant(connection, request, target_version)
                 await self._create_schema(connection, request)
+                await self._install_and_verify_schema_acl(connection, request)
                 applied = await self._runner.apply_within_lock(
                     tenant_id=request.tenant_id, schema_key=request.schema_key
                 )
-                await self._apply_grants(connection, request)
                 await self._verify(connection, request)
                 await self._activate(connection, request, target_version)
         finally:
@@ -194,40 +220,50 @@ class TenantProvisioner:
                 await connection.execute(
                     sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(schema)
                 )
-                # The migrator needs CREATE to run per-tenant DDL, and USAGE to
-                # reach what it created. It gets nothing else here, and the
-                # runtime role deliberately never gets CREATE.
-                await connection.execute(
-                    sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {}").format(
-                        schema, sql.Identifier(MIGRATOR_ROLE)
-                    )
-                )
         except PsycopgError as error:
             raise ProvisioningFailed(
                 reason_code=SanitizedErrorCode.SCHEMA_CREATE_FAILED.value
             ) from _sanitize(error)
 
-    # -- step 4 ------------------------------------------------------------
-    async def _apply_grants(
+    # -- stages 2 and 3 -----------------------------------------------------
+    async def _install_and_verify_schema_acl(
         self, connection: AsyncConnection, request: ProvisioningRequest
     ) -> None:
-        schema = sql.Identifier(request.schema_key)
+        """Install the manifest ACL and prove exact equality atomically.
+
+        The transaction belongs here rather than in the installer: a failed
+        comparison rolls back every grant from this attempt, while any drift
+        committed before the attempt remains untouched. No REVOKE or repair is
+        performed. Stage 4 cannot begin until this postcondition succeeds.
+        """
+
         try:
             async with connection.transaction():
-                await connection.execute(
-                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                        schema, sql.Identifier(RUNTIME_ROLE)
+                await install_schema_acl(connection, request.schema_key, self._manifest)
+                try:
+                    observed = await read_schema_acl(connection, request.schema_key)
+                except RuntimeError as error:
+                    raise ProvisioningFailed(
+                        reason_code=SanitizedErrorCode.SCHEMA_ACL_MISMATCH.value
+                    ) from error
+                expected = build_expected_schema_acl(self._manifest)
+                if observed != expected:
+                    raise ProvisioningFailed(
+                        reason_code=SanitizedErrorCode.SCHEMA_ACL_MISMATCH.value
                     )
-                )
-                await connection.execute(
-                    sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                        schema, sql.Identifier(AUDIT_PROJECTOR_ROLE)
-                    )
-                )
+        except ProvisioningFailed:
+            raise
         except PsycopgError as error:
             raise ProvisioningFailed(
                 reason_code=SanitizedErrorCode.GRANT_APPLY_FAILED.value
             ) from _sanitize(error)
+        except KeyError:
+            # The validated manifest cannot reach this branch. Keep a directly
+            # constructed invalid typed object inside the same sanitized
+            # boundary without attaching its value to the exception chain.
+            raise ProvisioningFailed(
+                reason_code=SanitizedErrorCode.GRANT_APPLY_FAILED.value
+            ) from RuntimeError("invalid schema privilege declaration")
 
     # -- step 5 ------------------------------------------------------------
     async def _verify(self, connection: AsyncConnection, request: ProvisioningRequest) -> None:
