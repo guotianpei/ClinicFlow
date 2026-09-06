@@ -1,14 +1,19 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-06 (M01 PR-3 CP-8 committed, pushed and CI green)
+Last updated: 2026-09-06 (M01 PR-3 CP-8 closed; REQ-CP9-01 migrator repair committed, pushed and CI green)
 
 ## Current position — read this first
 
-**M01 PR-3: 11 of 13 checkpoints committed, pushed and CI green through CP-8**
-(`f890b27`, M01 tenant isolation run #35, 1m 10s). Rachel's full gate passed **426 tests, 0 skipped**;
-ruff and strict mypy are clean. **CP-9 is next**: the readiness and evidence-consolidation checkpoint —
-it introduces no production code, which is why its plan row carries no requirements, architecture or
-files. PR #8 remains draft through that readiness gate.
+**M01 PR-3: 12 of 13 checkpoints committed, pushed and CI green — CP-8 (`f890b27`, run #35) and,
+within CP-9, the REQ-CP9-01 migrator repair (`af1bfd8`, M01 tenant isolation run #38, id 34049634725).**
+Rachel's full gate at `af1bfd8` passed **429 tests, 0 skipped** in 11.42s and again in 11.66s; ruff clean
+and strict mypy clean over 21 source files; `diff --check` silent. CI reports the same 429.
+**CP-9 is in progress**: the readiness and evidence-consolidation checkpoint. Its plan row carries no
+requirements, architecture or files and that remains correct — the migrator repair is a **narrowly scoped
+amendment Rachel authorized explicitly** (*"Please repair before PR-3 readiness, close it up now rather
+than defer later"*), recorded in `codex_cp9-readiness-contract-v3.md`, not a general licence for
+production change at CP-9. The bulk of CP-9 — the 79-row evidence register and the 56-row requirement
+register — is still open. PR #8 remains draft through that readiness gate.
 
 **The M01 debt PR is complete. PR-2 merged 2026-09-01** (pull request #6, merge commit `a3210e3`),
 following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-identical** to `95c507f`,
@@ -257,8 +262,9 @@ the review dispositions and the pre-push verification.
   migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
   a different owner.
 
-- **M01 PR-3 — R-E7's answer — is in implementation: 11 of 13 checkpoints are committed, pushed and
-  CI green through CP-8 (`f890b27`, GitHub Actions run #35).** PR-3 *is* the mechanism the R-E7
+- **M01 PR-3 — R-E7's answer — is in implementation: 12 of 13 checkpoints are committed, pushed and
+  CI green — through CP-8 (`f890b27`, GitHub Actions run #35) and the CP-9 migrator repair
+  (`af1bfd8`, run #38).** PR-3 *is* the mechanism the R-E7
   precondition above asks for: the allow-listed execution role and its bootstrap contract, the typed
   verifier replacing v1's postcondition, the tenant-schema grant control, and checksum v2. It is
   deliberately **one PR** (D17) — the role mechanism, typed verification, checksum change and grant
@@ -796,6 +802,71 @@ the review dispositions and the pre-push verification.
   - Review and evidence: `Shared Workspace/ClinicFlow/Work Session 2026-09-06/`, Codex notes 75, 76, 78,
     79, 80, 84; Claude notes 75, 77, 81, 82, 83, 85, 86; `evidence/cp8/`.
 
+- **REQ-CP9-01 REPAIRED and COMMITTED as `af1bfd8` (2026-09-06) — the migrator `CREATEROLE` gap;
+  pushed and CI green.** Rachel ruled **repair before PR-3 readiness, not deferral**.
+  - **The gap.** R-P1B.2 requires that `haloflow_migrator` not hold `CREATEROLE`. **No code path read the
+    migrator's attributes.** The stage-1 execution-role check iterated the declared execution-role
+    registry, and **that registry ships empty**, so in the shipped configuration the requirement had no
+    enforcement at all. Migration `001` creates the role with `IF NOT EXISTS … CREATE ROLE haloflow_migrator
+    NOLOGIN`, which **guarantees the role exists and never guarantees its attributes** — a role
+    pre-created by another deployment authority with `CREATEROLE` satisfies `IF NOT EXISTS` unchanged.
+  - **The repair**, in `role_safety.py` (18 lines) and `codes.py` (3 lines): a read-only,
+    parameterized `SELECT rolcreaterole FROM pg_catalog.pg_roles WHERE rolname = %s`, schema-qualified so
+    no `search_path` can shadow the catalogue, evaluated **on every entry** at the end of the shared
+    stage-1 component — so **both** the provisioner and the runner reach it, and it fires with the empty
+    registry, which is exactly the case the gap was. **No `ALTER`, no normalization**: a role another
+    deployment authority may own is refused, never modified.
+  - **Two distinct refusal codes, not one.** `MIGRATOR_ROLE_MISSING` (the row is absent — migration `001`
+    never ran) and `MIGRATOR_ROLE_UNSAFE` (the role holds `CREATEROLE`). The first draft raised the
+    pre-existing `EXECUTION_ROLE_UNAVAILABLE` for both, which would have given one reason code three
+    reachable producers and told an operator to inspect an execution role that does not exist — the same
+    §14 rule the project adopted for tests, applied to production. Both new codes were checked against the
+    existing vocabulary controls: raised as `PreconditionCode.X.value` not bare strings, no overlap with
+    `SanitizedErrorCode`, and carrying no request content.
+  - Exactly three approved paths changed — `codes.py` 3, `role_safety.py` 18,
+    `test_provisioning.py` 71 — **92 insertions, 0 deletions**. No pre-existing test was altered. A
+    positive control is retained: *an empty registry must not bypass the migrator read.*
+  - **The chain is provable by hash.** The three source content hashes are identical at review, at
+    Rachel's gate and inside the commit, so reviewed bytes, gated bytes and committed bytes are the same
+    bytes. Rachel's gate: **429 passed** in 11.42s, ruff clean, mypy clean over 21 files. CI **run #38**
+    (id 34049634725, `head_sha` `af1bfd8`) SUCCESS, its own log recording 429 passed in 32.47s.
+    Three human-observed results captured durably in `evidence/cp9/migrator-repair/`.
+  - Claude note 111: **APPROVED WITH CONDITIONS** (C1 blocking — distinct code; C2 — absent versus
+    unsafe). Note 113: **APPROVED** on the complete diff. Note 118: **CLOSED**, chain verified.
+  - **STILL OPEN, and the distinction must not blur — R-P1B.2's deployment-contract clause.** A future
+    module's execution role and its `GRANT … TO haloflow_migrator`, created by an Alembic revision under
+    the deploy identity, is the half about *how a module's role comes into existence*, and this repair does
+    not touch it. **Rachel's to rule.**
+  - **The `IF NOT EXISTS` property generalizes** beyond the migrator: migration `001` creates **nine**
+    `haloflow_*` roles — `owner`, `runtime`, `migrator`, `provisioner`, `audit_projector`,
+    `control_audit_writer`, `support_ro`, `breakglass_ro`, `breakglass_rw` — and for **every one of them**
+    it guarantees existence and never attributes. A pre-existing `haloflow_runtime` carrying `LOGIN`, say,
+    is still unexamined. **Not a defect and not in PR-3's scope**, recorded here so M02 does not rediscover
+    it. (Recorded in review as *eight* roles at first; corrected against migration `001` itself.)
+  - Also proposed and **not** taken into this repair: a `test_repository_controls.py` source assertion that
+    no DDL grants `CREATEROLE` to the migrator (clause (a)), and renaming `ExecutionRoleUnavailable`, whose
+    name now describes only one of its two subjects — precedent exists in `ConnectionModeRejected`. Both
+    are non-blocking follow-ups for a later checkpoint.
+
+- **CI-GAP-CP7a CLOSED by recovery.** Run #33 (id 33994406110, **349 passed**) was recovered with its
+  metadata and log into `evidence/cp9/`, closing the records gap noted at CP-7a where the run had been
+  evidenced only by a screenshot shown in chat.
+
+- **EVID-CP6-01 and EVID-CP6-02 CLOSED as reconstructed evidence — never as recovered captures, and the
+  distinction is load-bearing.** A paired run on two fresh disposable PostgreSQL clusters: the parent half
+  **4 failed / 3 passed** with the failures traced to genuine assertion mechanisms, the CP-6 half **7
+  passed**. Producer isolation for TC-P9 was settled by the server logs rather than by argument — the CP-6
+  log holds exactly one `ERROR: division by zero` in the whole file and the parent log holds none. One
+  test, `test_cp6_execution_role_change_is_checksum_drift_on_reapplication`, passes on **both** sides
+  because the role binding predates CP-6, so it is **not** CP-6 evidence and is not counted as such.
+  **A source argument cannot establish that a fixture was healthy or that no other producer explains a
+  result** — that is why this was reconstructed and run rather than reasoned.
+
+- **A reviewer claim withdrawn on evidence (F1).** It was asserted that no CI run could exist at a
+  docs-only commit. **False:** `m01.yml`'s `pull_request` `paths:` filter is evaluated over the whole PR
+  diff (base…head), not over the pushing commit, so a docs-only commit on PR #8 does trigger `verify-m01`.
+  Proved twice, by runs #36 and #37. **Configuration predicts; evidence decides.**
+
 - **CP-9 is readiness and evidence consolidation, not a code checkpoint.** Its plan v6 row carries no
   requirements, no architecture and no files, and that is **correct rather than an omission**: it appears
   in 19 test rows, 18 of them re-runs of tests other checkpoints authored, and its named risk is
@@ -833,10 +904,18 @@ the review dispositions and the pre-push verification.
   Correspondence, superseded design revisions and past commit messages are deliberately left as written:
   **every "17.10" in this project means this same server, and means 17.11.**
 
-- **PR-3 status: 11 of 13 checkpoints committed and CI green. Remaining: CP-9,
-  then the final PR readiness/merge gate.**
-  Authoritative runs, all on PostgreSQL 17.11, **0 skipped every time**:
-  192 → 201 → 205 → 206 → 215 → 228 → 233 → 234 → 253 → 260 → 269 → 276 → 304 → 311 → 349 → 378 → **426**.
+- **PR-3 status: 12 of 13 checkpoints committed and CI green. Remaining: CP-9's readiness audit,
+  then the final PR readiness/merge gate.** CP-9's remaining work is measured, not estimated:
+  **68 of 79** rows in `codex_cp9-test-evidence-register-v4.md` are still `NOT AUDITED`, **52 of 56**
+  requirement rows in `codex_cp9-requirement-register-v2.md` are still `NOT AUDITED`, and TC-P42's final
+  coverage assessment is open. That work is Codex's; Claude reviews it and must not perform it, or the
+  independent review becomes self-review.
+  Authoritative repository runs, all on PostgreSQL 17.11, **0 skipped every time**:
+  192 → 201 → 205 → 206 → 215 → 228 → 233 → 234 → 253 → 260 → 269 → 276 → 304 → 311 → 349 → 378 → 426 → **429**.
+  A `431` figure appears in two retained-and-excluded live-probe captures; it is **429 repository cases
+  plus 2 supplemental probes run outside the repository** and must never be published as a suite total.
+  **On the readiness gate: Rachel's 429 run and CI #38 both cover `af1bfd8`. If nothing further changes
+  the tree, that is the gate rather than something to repeat**; any later commit supersedes both.
   **No shipping gate remains open.** R-P4.4 and R-P1B.17 are both closed.
   **Deferred, deliberately** (note-22, not a gate): whether one-endpoint membership edges should be
   governed. That needs a policy decision about legitimate deployment login identities and a manifest
