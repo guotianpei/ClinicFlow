@@ -1,8 +1,14 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-01 (PR-2 merged)
+Last updated: 2026-09-06 (M01 PR-3 CP-8 committed, pushed and CI green)
 
 ## Current position — read this first
+
+**M01 PR-3: 11 of 13 checkpoints committed, pushed and CI green through CP-8**
+(`f890b27`, M01 tenant isolation run #35, 1m 10s). Rachel's full gate passed **426 tests, 0 skipped**;
+ruff and strict mypy are clean. **CP-9 is next**: the readiness and evidence-consolidation checkpoint —
+it introduces no production code, which is why its plan row carries no requirements, architecture or
+files. PR #8 remains draft through that readiness gate.
 
 **The M01 debt PR is complete. PR-2 merged 2026-09-01** (pull request #6, merge commit `a3210e3`),
 following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-identical** to `95c507f`,
@@ -251,20 +257,17 @@ the review dispositions and the pre-push verification.
   migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
   a different owner.
 
-- **M01 PR-3 — R-E7's answer — is in rule-3 review, not yet coded.** PR-3 *is* the mechanism the R-E7
+- **M01 PR-3 — R-E7's answer — is in implementation: 11 of 13 checkpoints are committed, pushed and
+  CI green through CP-8 (`f890b27`, GitHub Actions run #35).** PR-3 *is* the mechanism the R-E7
   precondition above asks for: the allow-listed execution role and its bootstrap contract, the typed
   verifier replacing v1's postcondition, the tenant-schema grant control, and checksum v2. It is
   deliberately **one PR** (D17) — the role mechanism, typed verification, checksum change and grant
   controls are one security contract over shared implementation surfaces.
-  - Package at **v7** (2026-09-03), 79 test cases, in
-    `Shared Workspace/ClinicFlow/Work Session 2026-09-03/claude_m01-pr3-review-package-v7.md`, with the
-    handoff beside it, now **two artifacts** per the revised `COLLABORATION_WORKFLOW.md` §5: the
-    **implementation packet (v5)**, which Aider reads and which carries specification only, and the
-    **pre-implementation operator runbook (v1)**, which is Rachel's and is never loaded into Aider. The
-    split is a safety boundary rather than filing: operator procedure inside the packet leaves the
-    executor holding its own approval procedure, which positions it to run those steps rather than wait
-    for them. **v7's architecture and
-    requirements are approved by review; the remaining correction was packet-only.** The CP-5b/CP-5c
+  - The design of record is **review package v8** and the execution document is
+    **`codex_m01-pr3-implementation-plan-v6.md`**, both in
+    `Shared Workspace/ClinicFlow/Work Session 2026-09-04/`. Codex is the implementation lead;
+    Claude independently reviews before every commit; Rachel alone commits, pushes and merges.
+    The CP-5b/CP-5c
     seam is drawn at the **activation** boundary rather than the code boundary: CP-5b builds the
     consolidated grant component and leaves the live provisioning path unchanged, and CP-5c switches the
     path atomically — old grant locations removed, stage 2 invoked, stage 3 enforcing in the same
@@ -315,10 +318,13 @@ the review dispositions and the pre-push verification.
     `CREATE` and does not exclude `PUBLIC`. v5 applies it: set equality over
     `(grantee, privilege_type, is_grantable, grantor)` tuples, expected set built explicitly, plus
     TC-P62/63/64.
-  - The central design correction, carried from v3→v4 and unchanged since: **validation precedes every
+  - The central design correction, carried from v3→v4 and now implemented through CP-5c:
+    **validation precedes every
     privileged mutation.** Four stages — role-safety preflight (read-only, no ledger) → provisioner
     grant transaction → grant postcondition rolling back on mismatch → runner, which re-runs the
-    preflight. A failure in any of the first three leaves no schema grant and no ledger row.
+    preflight. The residue guarantee is differential: stages 2/3 add no surviving grant and do not create
+    or modify a ledger row; committed resume history and pre-existing ACL drift remain byte-identical.
+    Only a fresh stage-1 failure supports the stronger “nothing exists” claim.
   - **D13's consequence, measured:** the migrator neither owns the tenant schema nor holds grant option,
     so a tenant unit cannot install its own prerequisite. The execution role's schema `CREATE` is
     installed by the **provisioner as schema owner**, driven from manifest data so M01 names no module
@@ -344,21 +350,18 @@ the review dispositions and the pre-push verification.
   makes both files prohibited and uses the CI commands verbatim.
 
 - **Rule-3 sign-off given by Rachel 2026-09-03 on design package v7** (Requirements, Architecture, Unit
-  Test Cases). D14–D23 all settled; ChatGPT approved the architecture and requirements. PR-3 is cleared
-  to enter implementation, subject to the release gates below.
+  Test Cases); the design of record is now **v8**, whose corrections changed no approved requirement or
+  test-case identity. D14–D23 are settled and PR-3 is in implementation.
 
 - **Repository prepared 2026-09-03.** The stale `.git/index.lock` was identified — its holder was macOS
   `Virtualization.framework`, the Cowork VM's folder share, holding a **read-only** descriptor rather
   than a writer — and removed; `main` fast-forwarded; branch
   `feat/m01-pr3-execution-role-typed-verification` created with the tracker change carried onto it.
 
-- **Release Gate 2 (R-P4.4) — PARTIAL, not yet closed.** `shared.schema_migrations` returned **0 rows**
-  on `haloflow_test_m01` (the local test database) on 2026-09-03. The gate requires **every** environment
-  where migration `001` has been applied. Still to check: **`haloflow_dev`**, which
-  `HALOFLOW_MIGRATION_DATABASE_URL` targets and which `make migrate` upgrades; and any cloud PostgreSQL
-  17 instance created from `Work Session 2026-08-30/claude_setup-cloud-pg17.sh`. The 2026-08-31 note
-  describing "the only environment where `001` has been applied" predates this check and should be
-  treated as unverified until those are covered.
+- **Release Gate 2 (R-P4.4) CLOSED 2026-09-04.** All environments in scope were checked before checksum
+  v2 could land; no applied tenant migration row required compatibility handling. **R-P1B.17 also closed
+  2026-09-05** after the PostgreSQL 17.11 ACL probe passed every verdict. No PR-3 shipping gate remains
+  open; the remaining gates are checkpoint review/CI and the CP-9 PR-readiness decision.
 
 - **CP-0 baseline captured 2026-09-03, green.** On branch
   `feat/m01-pr3-execution-role-typed-verification`, with the tracker as the only modified file:
@@ -632,6 +635,175 @@ the review dispositions and the pre-push verification.
     design and a verification claim for an implementation replaced before it ever ran anywhere; nothing
     had been pushed, so the history now states what actually landed.
 
+- **CP-5a COMMITTED as `6ab4d57`; CP-5b COMMITTED as `701eed7`; CP-5c COMMITTED as `b121ae6`;
+  CP-6 COMMITTED as `7e281bc` (2026-09-05) — tenant-schema ACL control and transaction-local
+  execution-role switching are live and CI green.**
+  - CP-5a added the immutable four-dimensional ACL entry, the PostgreSQL catalogue reader that preserves
+    `PUBLIC`, and the manifest-only expected-set builder.
+  - CP-5b added the caller-transaction-owned manifest grant installer. It remained unreachable from the
+    live path until the atomic CP-5c switch.
+  - CP-5c froze 19 test definitions / 28 PostgreSQL cases before production work. Two
+    implementation-independent test defects were narrowly thawed and independently re-frozen. A required
+    mutation from equality to `observed <= expected` was killed by exactly the three predicted deficit
+    cases, then restored byte-identically.
+  - The provisioner now performs: role-safety preflight → registry row → create-only schema → manifest
+    grants plus exact ACL comparison in one transaction → migration runner → object verification →
+    activation. ACL mismatch raises `SCHEMA_ACL_MISMATCH`, rolls back only the current attempt's grants,
+    performs no `REVOKE` or repair, and never reaches the runner ledger.
+  - The runner owns the validated manifest; the provisioner adopts that same object. Both R-P1B.15
+    stage-1 call sites and stages 2/3 therefore cannot silently observe different declarations.
+  - Authoritative local result: **304 passed, 0 skipped**; ruff and strict mypy clean. GitHub Actions
+    **M01 tenant isolation run #31** passed in **1m 13s**. Claude note-43 approved CP-5c for commit.
+  - CP-6 makes the runner issue identifier-composed, transaction-local `SET LOCAL ROLE` for a unit's
+    declared execution role, execute its DDL, and then unconditionally return with
+    `SET LOCAL ROLE haloflow_migrator` before writing `applied`. It never uses `RESET ROLE`; rollback
+    discards a failed assumption before the failed-ledger write, and the original DDL/ledger atomic
+    boundary remains intact. Claude notes 46 and 48 approved the implementation and the C2 hardening.
+    Rachel independently confirmed **311 passed, 0 skipped**, ruff clean, strict mypy clean and
+    `git diff --check` clean. GitHub Actions **M01 tenant isolation run #32** passed in **59s**.
+
+- **CP-7a COMMITTED as `2a517d2` (2026-09-05) — typed verification contract and checksum
+  integration; pushed and CI green.**
+  - Added the closed, immutable `FunctionMetadataVerification`, `FunctionExpectation` and `AclEntry`
+    contract. Units accept typed expected state only; SQL, callbacks/function calls, catalogue queries
+    and unknown verifier kinds are refused at construction with distinct reason codes.
+  - The checksum includes the complete typed specification, explicitly ordered by the concrete
+    structure. Body whitespace is preserved under pinned newline/NFC normalization; body and config
+    rendering replace only literal `{schema}` after schema validation. Argument types remain ordered
+    data. The production unit's existing checksum is unchanged when verification is absent.
+  - Exactly six approved files changed. The runner and database evaluator were untouched; CP-7b owns
+    evaluation between the return to `haloflow_migrator` and `_mark_applied`.
+  - Pre-change evidence: **38 failed**, healthy collection, comprising nine independent behavioral
+    failures and 29 function-local missing-deliverable failures. Post-change: **38 targeted passed**,
+    **233 non-PostgreSQL passed**. Rachel's independent full gate: **349 passed in 9.43s, 0 skipped**;
+    ruff clean, strict mypy clean (21 source files), and whitespace check clean.
+  - Claude note 53: **APPROVED WITH CONDITIONS**, including **22 independently authored checks passed**.
+    C1 (Rachel's full gate) is satisfied in Codex note 55. Optional C2 (typed/mapping digest parity
+    assertion and config-key comment) is deferred. C3 is recorded as mandatory CP-7b obligations in
+    Codex note 54: preserve actual PUBLIC/OID 0 entries, explicitly reject NULL `proacl`, compare ACLs
+    exactly, keep argument types bound or compared as returned data, and pin type spellings/alias and
+    search-path behavior before implementing identity matching.
+  - GitHub Actions **M01 tenant isolation run #33 passed in 57s**, evidenced by Rachel's screenshot.
+    Review and evidence: `Shared Workspace/ClinicFlow/Work Session 2026-09-05/`, Codex notes 52, 54,
+    55; Claude note 53; `evidence/cp7a/`. No CP-7b implementation is included in this checkpoint.
+  - **Records gap, still open (G1):** run #33 is evidenced only by a screenshot shown in chat and was
+    never captured into `evidence/cp7a/`. Not a defect in the change; the workflow's rule is that CI
+    results are preserved rather than asserted.
+
+- **CP-7b COMMITTED as `1ac6b0e` (2026-09-05) — function metadata verification inside the migration
+  transaction; pushed and CI green.**
+  - The evaluator runs **inside the DDL transaction, after the unconditional return to
+    `haloflow_migrator` and before `_mark_applied`** (R-P2.8, A4 step 4d). A mismatch rolls the whole
+    transaction back and records `VERIFICATION_FAILED`; the unit is not applied and the tenant does not
+    activate. The resolver refuses the inactive tenant (TC-P29).
+  - **Architecture: `verification.py` holds a module-level literal catalogue query and a pure
+    comparator and executes nothing; `runner.py` pins the path, executes the query with a bound schema
+    and calls the comparator.** This split was adopted specifically so that **TC-P54's whole-module
+    "no execution primitive in `verification.py`" assertion survives byte-unchanged** — Codex opened
+    CP-7b by requesting a variance to revise that test, then withdrew the request when the split was
+    identified. No variance was granted or needed, and `test_provisioning.py` is byte-identical to its
+    CP-7a state.
+  - **`search_path` control (F7).** `SET LOCAL ROLE` restores the role but **not** the path, so a
+    unit's own DDL can move it and change how its own argument types render. The runner therefore sets
+    `SET LOCAL search_path = pg_catalog, pg_temp` immediately before the read, with `pg_temp` named
+    explicitly so it cannot take implicit precedence. Proved on a live rollback-only probe and then by
+    a mutation test.
+  - **ACL comparison.** `proacl IS NULL` is selected as its own column and fails explicitly rather than
+    being inferred from an empty explosion; PUBLIC survives a `LEFT JOIN` and is rejected by OID 0 and
+    by null `rolname`; comparison is exact set equality over `(grantee, privilege)`; a grantable
+    EXECUTE fails. **The owner's entry is declared if and only if it is actually present** — Claude's
+    F9 claimed the owner entry was mandatory, and Codex **disproved it with a live counterexample**
+    (revoking the owner yields a non-NULL, empty ACL). Claude conceded; no derivation was added.
+  - **Documented limitations (N1–N3, F10, Q1), none a defect:** verification covers **declared**
+    identities only, so an undeclared function — including a `SECURITY DEFINER` one — passes
+    unnoticed; `prokind = 'f'` excludes procedures, aggregates and window functions, which fail as
+    *missing*; a tenant-schema-qualified argument type describes one tenant and is not reusable across
+    tenant schema names (no `{schema}` substitution in `argument_types`); `grantor` is not an expected
+    dimension of the function ACL, unlike D21's schema ACL.
+  - Exactly three approved files changed — `verification.py`, `runner.py`,
+    `tests/m01/test_provisioning_postgres.py` — **373 insertions, 6 deletions**, matching the reviewed
+    diff exactly.
+  - Pre-change evidence: **26 behavioral failures, no errors or skips** (a first capture with a
+    fixture teardown-order error was retained and excluded, not deleted). 29 cases at the final
+    baseline after three were added on review. Post-change **378 passed**.
+  - **Both guards were proved by mutation, not asserted:** an unsafe variant appending module-supplied
+    text to the query makes the F8 test fail, and an ambient-path variant makes the F7 test fail, with
+    the mutated line visible in each traceback.
+  - Claude note 70: **APPROVED WITH CONDITIONS**; note 72: **C1 closed on Rachel's own gate —
+    378 passed in 10.47s, 0 skipped, ruff clean over the exact CI scope including `composition.py`,
+    strict mypy clean (21 source files), `diff --check` silent** — then **APPROVED FOR COMMIT**.
+  - GitHub Actions **M01 tenant isolation run #34 passed in 1m 14s**. **Both human-observed results are
+    captured durably**, unlike CP-7a's: `evidence/cp7b/rachel-full-gate-cp7b.png` and
+    `evidence/cp7b/ci-run-34-cp7b.png`.
+  - Review and evidence: `Shared Workspace/ClinicFlow/Work Session 2026-09-05/`, Codex notes 66, 68,
+    69, 70; Claude notes 67, 69, 70, 71, 72, 73; `evidence/cp7b/`.
+
+- **CP-8 COMMITTED as `f890b27` (2026-09-06) — the tenant-table grant control; pushed and CI green.**
+  - **Conditional authority is not a standing SQL grant (R-P3.5).** `approved_support_read`,
+    `approved_emergency_read` and `separately_approved_emergency_write` now classify to **no standing
+    table privileges**. The capability stays recognized; access requires its separate approval path.
+  - **An override may only ever reduce, and now cannot be re-widened (R-P3.1, R-P3.3, A5).** The loader
+    refuses another applicable token that restores a privilege the override removed, and a table-scoped
+    `narrows` aimed at a different table. The prior per-token strict-subset check did **not compose**
+    across tokens: it was unambiguous only because no role happened to hold two overlapping tenant
+    tokens. That was an accident of `permissions.json`, not a property of the control.
+  - **The control checks every declared role × every table present in the schema × all seven table
+    privileges**, with role membership (CP-4) and the schema ACL (CP-5c) left as separate controls
+    (R-P3.7). Deny lists are broader policy vocabulary, **not a table-ACL subtraction language**: the
+    standing-expectation language is allow tokens plus structured overrides.
+  - **Architecture: a catalogue regression control, not a new runtime activation stage.** The expectation
+    derivation is a pure function in `manifest.py`; the comparison lives in the PostgreSQL test surface
+    beside the existing shared-table control. No live-path wiring was added, and none is required —
+    R-P3 says the grants are *verified*, not verified at provisioning time, and plan v6 §3 gives CP-8 no
+    production consumer.
+  - Exactly two approved files changed — `manifest.py`, `tests/m01/test_provisioning_postgres.py` —
+    **420 insertions, 4 deletions**, matching the reviewed diff exactly. Every pre-existing test is
+    byte-preserved; the test diff contains **zero deletion lines**.
+  - Pre-change evidence: **8 genuine behavioural failures out of 48 added cases** — three classifier,
+    one complete matrix, four loader refusals. The other **40 are characterization and tamper controls
+    and are not claimed as expected failures**. Four earlier captures are retained and explicitly
+    excluded with their real causes named (psycopg `%I` escaping, variadic `format` casts, a socket-only
+    URL defaulting an absent `postgres` user, and a superseded line-wrap capture).
+  - **Both loader guards were proved by mutation, in isolation:** the re-widening mutation fails **3 of
+    4** cases and the wrong-table mutation fails **1 of 4** — **disjoint sets over the same four
+    parametrizations**, which is what proves each guard does its own work. A conditional-classifier
+    mutation fails the support case and the full matrix and nothing else.
+  - **An author-caught evidence error, reported before review saw it.** Codex's note 79 described the
+    wrong-table capture as 1 failed / 3 passed when it was 3 / 1 — reused Python bytecode from a
+    same-second, same-size source edit — and the fixture had a second reachable refusal through
+    `business_dml`. Codex found it on cross-check, sent an immediate correction asking that disposition
+    be deferred, fixed both causes, gave every v3 process a fresh bytecode cache, and **retained the
+    flawed capture marked and excluded rather than replacing it**.
+  - **A reviewer claim withdrawn on live evidence.** Claude's condition C3 held that the migrator's
+    matrix cells could not fail, because ownership confers every table privilege implicitly. **False:**
+    an ordinary privilege is revocable from a non-superuser owner while `relowner` is unchanged, and
+    seven live cases demonstrate exactly that, one privilege at a time, inside a rolled-back transaction.
+  - Claude note 77: **APPROVED WITH CONDITIONS** (six). Note 81: **APPROVED** at the complete diff, all
+    six closed — C1 and C1b enforced, C2 and C4 documented as boundaries, C5 pinned, C3 withdrawn.
+    Three residuals recorded, none a defect and none requiring a pre-commit change.
+  - Rachel's own gate: **426 passed, 0 skipped** in 11.66s, ruff clean over the exact CI scope including
+    `composition.py`, strict mypy clean (21 source files), `diff --check` silent. **Verified to have run
+    against the reviewed bytes** — both file hashes identical to `evidence/cp8/cp8-review-hashes-v3.txt`,
+    and the committed content hashes to the same values.
+  - GitHub Actions **M01 tenant isolation run #35 passed in 1m 10s**. **Three human-observed results are
+    captured durably**: `evidence/cp8/rachel-full-gate-cp8.png`, `evidence/cp8/rachel-cp8-commit-f890b27.png`
+    and `evidence/cp8/ci-run-35-cp8.png`.
+  - **The boundary that must not be lost: a green CP-8 means the control *detects* the divergence, not
+    that tenant table grants conform.** `t001`'s default privileges grant `haloflow_runtime`
+    `UPDATE`/`DELETE` on a future `operation_registry`; the tests reach conformance only through
+    rollback-only fixture revocations. **PR-3 does not repair that divergence.**
+  - Review and evidence: `Shared Workspace/ClinicFlow/Work Session 2026-09-06/`, Codex notes 75, 76, 78,
+    79, 80, 84; Claude notes 75, 77, 81, 82, 83, 85, 86; `evidence/cp8/`.
+
+- **CP-9 is readiness and evidence consolidation, not a code checkpoint.** Its plan v6 row carries no
+  requirements, no architecture and no files, and that is **correct rather than an omission**: it appears
+  in 19 test rows, 18 of them re-runs of tests other checkpoints authored, and its named risk is
+  *"evidence assembled rather than captured"*. **A correction of record: D17 says only that PR-3 ships as
+  one PR** — splitting the security contract is what creates an unverifiable intermediate state. D17 is
+  **not** a justification for PR #8 staying draft until CP-9; that follows from CP-9 being the readiness
+  gate. The contrary framing entered at CP-7b's handoff and was repeated across four later notes before
+  being checked against D17's own text.
+
 - **A test-quality rule, from four checkpoints of the same mistake.** Approved by Codex for plan §14:
   *a test that asserts a shared outcome — a reason code, an exception type, a boolean — must be
   constructed so that the specific rule under test is the only reachable producer of that outcome, or
@@ -660,9 +832,10 @@ the review dispositions and the pre-push verification.
   Correspondence, superseded design revisions and past commit messages are deliberately left as written:
   **every "17.10" in this project means this same server, and means 17.11.**
 
-- **PR-3 status: 4 of 13 checkpoints. Remaining: CP-5a, CP-5b, CP-5c, CP-6, CP-7a, CP-7b, CP-8, CP-9.**
+- **PR-3 status: 11 of 13 checkpoints committed and CI green. Remaining: CP-9,
+  then the final PR readiness/merge gate.**
   Authoritative runs, all on PostgreSQL 17.11, **0 skipped every time**:
-  192 → 201 → 205 → 206 → 215 → 228 → 233 → 234 → 253 → 260.
+  192 → 201 → 205 → 206 → 215 → 228 → 233 → 234 → 253 → 260 → 269 → 276 → 304 → 311 → 349 → 378 → **426**.
   **No shipping gate remains open.** R-P4.4 and R-P1B.17 are both closed.
   **Deferred, deliberately** (note-22, not a gate): whether one-endpoint membership edges should be
   governed. That needs a policy decision about legitimate deployment login identities and a manifest
