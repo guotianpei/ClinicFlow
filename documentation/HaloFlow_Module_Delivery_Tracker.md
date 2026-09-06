@@ -751,9 +751,10 @@ the review dispositions and the pre-push verification.
     privileges**, with role membership (CP-4) and the schema ACL (CP-5c) left as separate controls
     (R-P3.7). Deny lists are broader policy vocabulary, **not a table-ACL subtraction language**: the
     standing-expectation language is allow tokens plus structured overrides.
-  - **Architecture: a catalogue regression control, not a new runtime activation stage.** The expectation
-    derivation is a pure function in `manifest.py`; the comparison lives in the PostgreSQL test surface
-    beside the existing shared-table control. No live-path wiring was added, and none is required —
+  - **Architecture: a catalogue regression control, not a new runtime activation stage.** `manifest.py`
+    owns token classification and override validation; the per-table expectation helper and the
+    catalogue comparison both live in the PostgreSQL test surface, beside the existing shared-table
+    control. No live-path wiring was added, and none is required —
     R-P3 says the grants are *verified*, not verified at provisioning time, and plan v6 §3 gives CP-8 no
     production consumer.
   - Exactly two approved files changed — `manifest.py`, `tests/m01/test_provisioning_postgres.py` —
