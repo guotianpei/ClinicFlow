@@ -2482,3 +2482,74 @@ def test_acl_reader_refuses_an_unresolved_role_oid(row: tuple[object, ...]) -> N
 
     with pytest.raises(RuntimeError, match="unresolved role"):
         entry_from_row(row)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("attribute_row", [(True,), None])
+async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attribute_row):
+    """R-P1B.2: unsafe or missing migrator fails even for the shipped registry."""
+    from haloflow.m01.errors import ExecutionRoleUnavailable
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    class Cursor:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def execute(self, statement, params):
+            assert statement.lstrip().startswith("SELECT")
+            if "rolcreaterole" in statement:
+                assert params == ("haloflow_migrator",)
+
+        async def fetchall(self):
+            return []  # Healthy empty declared membership graph.
+
+        async def fetchone(self):
+            return attribute_row
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    with pytest.raises(ExecutionRoleUnavailable) as refused:
+        await assert_execution_roles_safe(Connection(), [])
+    expected = (
+        PreconditionCode.MIGRATOR_ROLE_MISSING.value
+        if attribute_row is None else PreconditionCode.MIGRATOR_ROLE_UNSAFE.value
+    )
+    assert refused.value.reason_code == expected
+
+
+@pytest.mark.asyncio
+async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
+    """Positive control: an empty registry must not bypass the migrator read."""
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    seen = []
+
+    class Cursor:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def execute(self, statement, params):
+            assert statement.lstrip().startswith("SELECT")
+            if "rolcreaterole" in statement:
+                seen.append(params)
+
+        async def fetchall(self):
+            return []
+
+        async def fetchone(self):
+            return (False,)
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    await assert_execution_roles_safe(Connection(), [])
+    assert seen == [("haloflow_migrator",)]

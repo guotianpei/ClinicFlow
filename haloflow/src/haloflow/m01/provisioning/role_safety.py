@@ -359,6 +359,24 @@ async def assert_execution_roles_safe(
         if refusal is not None:
             raise ExecutionRoleUnavailable(reason_code=refusal)
 
+    # R-P1B.2 applies to the infrastructure migrator even when no execution
+    # role is declared. Read live state on every entry; never normalize a role
+    # that may have been created by a different deployment authority.
+    async with connection.cursor() as cursor:  # type: ignore[attr-defined]
+        await cursor.execute(
+            "SELECT rolcreaterole FROM pg_catalog.pg_roles WHERE rolname = %s",
+            (MIGRATOR_ROLE,),
+        )
+        migrator = await cursor.fetchone()
+    if migrator is None:
+        raise ExecutionRoleUnavailable(
+            reason_code=PreconditionCode.MIGRATOR_ROLE_MISSING.value
+        )
+    if migrator[0]:
+        raise ExecutionRoleUnavailable(
+            reason_code=PreconditionCode.MIGRATOR_ROLE_UNSAFE.value
+        )
+
 
 __all__ = [
     "MISSING_ROLE",

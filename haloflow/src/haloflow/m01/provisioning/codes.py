@@ -48,6 +48,9 @@ class PreconditionCode(StrEnum):
     ``TENANT_ID_INVALID``, never as the id that was rejected.
     """
 
+    MIGRATOR_ROLE_MISSING = "MIGRATOR_ROLE_MISSING"
+    MIGRATOR_ROLE_UNSAFE = "MIGRATOR_ROLE_UNSAFE"
+
     # Connection mode (the runner and provisioner both refuse the same thing).
     CONNECTION_NOT_IDLE = "CONNECTION_NOT_IDLE"
 
