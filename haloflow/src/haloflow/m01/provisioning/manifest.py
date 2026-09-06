@@ -84,9 +84,12 @@ _TENANT_SCHEMA_CAPABILITIES: Final[Mapping[str, tuple[str, ...]]] = {
     "ownership": (),
     "provision": (),
     "write": ("INSERT", "UPDATE", "DELETE"),
-    "approved_support_read": ("SELECT",),
-    "approved_emergency_read": ("SELECT",),
-    "separately_approved_emergency_write": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    # Conditional authorization is not a standing SQL grant (R-P3.5).
+    # The capability remains recognized; granting access requires its separate
+    # approval path. The deny lists are not a SQL privilege-installation DSL.
+    "approved_support_read": (),
+    "approved_emergency_read": (),
+    "separately_approved_emergency_write": (),
 }
 _TENANT_TABLE_CAPABILITIES: Final[Mapping[str, tuple[str, ...]]] = {
     "select": ("SELECT",),
@@ -234,7 +237,7 @@ class ProvisioningManifest:
 
 
 def classify_tenant_schema_token(token: str) -> tuple[str, ...]:
-    """The table privileges a ``tenant_schema`` token confers.
+    """The standing table privileges a ``tenant_schema`` token confers.
 
     Raises rather than returning ``None`` for an unrecognized token (R-P3.2): a
     caller that forgot to check a sentinel is exactly the silence this control
@@ -539,6 +542,26 @@ def _load_table_overrides(
             # Strict subset: equal is not a narrowing, and wider is a widening
             # wearing the word "override".
             raise _reject(PreconditionCode.MANIFEST_OVERRIDE_INVALID)
+
+        if narrows.startswith("tenant_schema."):
+            narrowed_table = narrows.split(":", 1)[0].split(".", 1)[1]
+            if narrowed_table != table:
+                raise _reject(PreconditionCode.MANIFEST_OVERRIDE_INVALID)
+
+        # A per-token subset is insufficient if another applicable token puts
+        # a removed privilege back. Permit overlap in retained privileges and
+        # grants scoped to other tables; refuse exactly the re-widening hazard.
+        removed = conferred - set(privileges)
+        for token in _tokens_held_by(permissions, role):
+            if token == narrows or not token.startswith(("tenant_schema:", "tenant_schema.")):
+                continue
+            other = set(classify_tenant_schema_token(token))
+            if token.startswith("tenant_schema."):
+                other_table = token.split(":", 1)[0].split(".", 1)[1]
+                if other_table != table:
+                    continue
+            if removed & other:
+                raise _reject(PreconditionCode.MANIFEST_OVERRIDE_INVALID)
 
         overrides.append(
             TableOverride(role=role, table=table, narrows=narrows, privileges=privileges)

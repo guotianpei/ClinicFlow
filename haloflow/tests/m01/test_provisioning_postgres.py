@@ -3489,3 +3489,396 @@ async def test_cp7b_body_whitespace_and_migration_whitespace_do_not_cross(
     spaced = cp7b_registry(ddl, cp7b_function(body="SELECT  1"))
     assert tuple(first)[-1].checksum != tuple(spaced)[-1].checksum
     await cp7b_assert_failed(provisioning_harness, new_tenant, spaced, cp7b_observe)
+
+
+# --- CP-8: tenant table grants, kept separate from schema ACLs and edges ---
+
+
+def _cp8_expected_table_grants(
+    permissions: dict[str, dict[str, list[str]]],
+    manifest: object,
+    tables: Sequence[str],
+) -> dict[tuple[str, str, str], bool]:
+    """Expand per-token grants, replacing only the token an override narrows.
+
+    Ownership is asserted independently by the caller. The baseline's creator
+    is the migrator: its owner privileges are not checksummed_ddl token grants.
+    No role is removed from the matrix, including that owner. Ordinary owner
+    privileges are revocable: ownership alone does not make these cells true.
+    The seven owner-revocation cases separately prove that distinction (C3).
+
+    Standing table expectations come from recognized allow tokens and structured
+    overrides. Deny lists are outside this SQL-grant control: they also describe
+    login, ownership and approval restrictions, not a table-ACL subtraction DSL.
+    In particular, no deny token is needed to make conditional support authority
+    confer zero standing grants. This does not claim general deny-policy coverage.
+    """
+    from haloflow.m01.provisioning.manifest import classify_tenant_schema_token
+
+    overrides = {
+        (item.role, item.table, item.narrows): item.privileges
+        for item in manifest.tenant_table_overrides
+    }
+    result = {}
+    for role, policy in permissions.items():
+        for table in tables:
+            grants: set[str] = set()
+            for token in policy["allow"]:
+                if not token.startswith(("tenant_schema:", "tenant_schema.")):
+                    continue
+                privileges = classify_tenant_schema_token(token)
+                if token.startswith("tenant_schema."):
+                    named_table = token.split(":", 1)[0].split(".", 1)[1]
+                    if named_table != table:
+                        continue
+                grants.update(overrides.get((role, table, token), privileges))
+            if role == MIGRATOR_ROLE:
+                grants.update(TABLE_PRIVILEGES)
+            for privilege in TABLE_PRIVILEGES:
+                result[(role, table, privilege)] = privilege in grants
+    return result
+
+
+async def _cp8_table_matrix(
+    connection: AsyncConnection, schema_key: str, roles: Sequence[str]
+) -> tuple[list[str], dict[tuple[str, str, str], bool]]:
+    """R-P3 checks effective privileges, including PUBLIC/inherited access.
+
+    Unlike the D21 schema-ACL control, this seven-privilege matrix makes no
+    grantor or grant-option assertion. R-P3 specifies effective table access;
+    schema delegation provenance is a separate contract, not silently extended
+    to tables here. The separate controlled membership graph remains enforced.
+    """
+    rows = await (
+        await connection.execute(
+            """SELECT c.relname, pg_get_userbyid(c.relowner)
+               FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE n.nspname = %s AND c.relkind IN ('r', 'p') ORDER BY c.relname""",
+            (schema_key,),
+        )
+    ).fetchall()
+    assert rows, "a zero-table matrix is not evidence"
+    assert {owner for _, owner in rows} == {MIGRATOR_ROLE}
+    tables = [name for name, _ in rows]
+    actual = {}
+    for role in roles:
+        for table in tables:
+            for privilege in TABLE_PRIVILEGES:
+                row = await (
+                    await connection.execute(
+                        "SELECT has_table_privilege(%s, format('%%I.%%I', %s::text, %s::text), %s)",
+                        (role, schema_key, table, privilege),
+                    )
+                ).fetchone()
+                assert row is not None
+                actual[(role, table, privilege)] = row[0]
+    assert len(actual) == len(roles) * len(tables) * 7
+    return tables, actual
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["approved_support_read", "approved_emergency_read", "separately_approved_emergency_write"],
+)
+def test_cp8_approval_capabilities_confer_no_standing_table_grant(token: str) -> None:
+    """R-P3.5 / TC-P35: conditional authority is not a standing SQL grant."""
+    from haloflow.m01.provisioning.manifest import classify_tenant_schema_token
+
+    assert classify_tenant_schema_token(f"tenant_schema:{token}") == ()
+
+
+async def test_cp8_every_role_table_and_privilege_matches_manifest(
+    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str]
+) -> None:
+    """TC-P30: real provisioned schema, every declared role, seven privileges."""
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    await make_provisioner(
+        provisioning_harness,
+        make_registry(
+            {"t002_test_cp8_business": "CREATE TABLE {schema}.business_probe (id integer)"}
+        ),
+        supported_schema_versions=range(1, 3),
+    ).provision(request_for(new_tenant))
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    manifest = load_provisioning_manifest()
+    assert set(permissions) == manifest.controlled_roles
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn:
+        tables, actual = await _cp8_table_matrix(conn, new_tenant[1], sorted(permissions))
+    assert tables == ["access_audit_outbox", "business_probe"]
+    assert actual == _cp8_expected_table_grants(permissions, manifest, tables)
+
+
+@pytest.mark.parametrize(
+    "privilege", ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]
+)
+async def test_cp8_override_detects_each_deficit_or_excess_on_second_table(
+    provisioning_harness: ProvisioningHarness, new_tenant: tuple[str, str], privilege: str
+) -> None:
+    """TC-P32/P33/P38: second-table drift cannot hide behind a correct first table.
+
+    This control isolates runtime so the independent support-token defect cannot
+    be the producer of its mismatch. Every tamper has its own catalogue witness.
+    """
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    await make_provisioner(provisioning_harness).provision(request_for(new_tenant))
+    schema_key = new_tenant[1]
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    runtime = {RUNTIME_ROLE: permissions[RUNTIME_ROLE]}
+    manifest = load_provisioning_manifest()
+    table_id = sql.Identifier(schema_key, "operation_registry")
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as conn, conn.transaction():
+        # Everything this probe changes is rolled back, including the new table.
+        await conn.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
+        await conn.execute(sql.SQL("CREATE TABLE {} (id integer)").format(table_id))
+        tables, inherited = await _cp8_table_matrix(conn, schema_key, [RUNTIME_ROLE])
+        assert tables == ["access_audit_outbox", "operation_registry"]
+        assert {
+            p for p in TABLE_PRIVILEGES if inherited[(RUNTIME_ROLE, "operation_registry", p)]
+        } == {"SELECT", "INSERT", "UPDATE", "DELETE"}
+        expected = _cp8_expected_table_grants(runtime, manifest, tables)
+        assert expected[(RUNTIME_ROLE, "operation_registry", "SELECT")]
+        assert expected[(RUNTIME_ROLE, "operation_registry", "INSERT")]
+        assert not expected[(RUNTIME_ROLE, "operation_registry", "UPDATE")]
+        assert not expected[(RUNTIME_ROLE, "operation_registry", "DELETE")]
+        assert inherited != expected
+        await conn.execute(
+            sql.SQL("REVOKE UPDATE, DELETE ON {} FROM {}").format(
+                table_id, sql.Identifier(RUNTIME_ROLE)
+            )
+        )
+        _, correct = await _cp8_table_matrix(conn, schema_key, [RUNTIME_ROLE])
+        assert correct == expected
+        verb = "REVOKE" if privilege in {"SELECT", "INSERT"} else "GRANT"
+        direction = "FROM" if verb == "REVOKE" else "TO"
+        await conn.execute(
+            sql.SQL("{} {} ON {} {} {}").format(
+                sql.SQL(verb),
+                sql.SQL(privilege),
+                table_id,
+                sql.SQL(direction),
+                sql.Identifier(RUNTIME_ROLE),
+            )
+        )
+        _, drifted = await _cp8_table_matrix(conn, schema_key, [RUNTIME_ROLE])
+        differences = {key for key in expected if drifted[key] != expected[key]}
+        assert differences == {(RUNTIME_ROLE, "operation_registry", privilege)}
+        await conn.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        # Explicit rollback prevents the probe becoming fixture state.
+        from psycopg import Rollback
+
+        raise Rollback()
+
+
+@pytest.mark.parametrize(
+    "role", ["haloflow_support_ro", "haloflow_breakglass_ro", "haloflow_breakglass_rw"]
+)
+@pytest.mark.parametrize("privilege", TABLE_PRIVILEGES)
+async def test_cp8_support_and_breakglass_have_no_schema_or_table_privileges(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+    role: str,
+    privilege: str,
+) -> None:
+    """TC-P35: direct catalogue evidence, independent of token translation."""
+    from psycopg import Rollback
+
+    await make_provisioner(provisioning_harness).provision(request_for(new_tenant))
+    schema_key = new_tenant[1]
+    async with (
+        await AsyncConnection.connect(provisioning_harness.admin_conninfo, autocommit=True) as conn,
+        conn.transaction(),
+    ):
+        _, clean = await _cp8_table_matrix(conn, schema_key, [role])
+        assert not any(clean.values())
+        schema = await (
+            await conn.execute(
+                "SELECT has_schema_privilege(%s, %s, 'USAGE'), "
+                "has_schema_privilege(%s, %s, 'CREATE')",
+                (role, schema_key, role, schema_key),
+            )
+        ).fetchone()
+        assert schema == (False, False)
+        await conn.execute(
+            sql.SQL("GRANT {} ON {} TO {}").format(
+                sql.SQL(privilege),
+                sql.Identifier(schema_key, "access_audit_outbox"),
+                sql.Identifier(role),
+            )
+        )
+        _, drifted = await _cp8_table_matrix(conn, schema_key, [role])
+        assert {key for key, held in drifted.items() if held} == {
+            (role, "access_audit_outbox", privilege)
+        }
+        assert drifted != clean
+        raise Rollback()
+
+
+@pytest.mark.parametrize(
+    "extra_token,table,narrows,privileges",
+    [
+        (
+            "tenant_schema:business_runtime",
+            "operation_registry",
+            "tenant_schema:business_dml",
+            ["SELECT", "INSERT"],
+        ),
+        (
+            "tenant_schema:write",
+            "operation_registry",
+            "tenant_schema:business_dml",
+            ["SELECT", "INSERT"],
+        ),
+        (
+            "tenant_schema.operation_registry:insert",
+            "operation_registry",
+            "tenant_schema:business_dml",
+            ["SELECT"],
+        ),
+        (None, "operation_registry", "tenant_schema.access_audit_outbox:insert", []),
+    ],
+)
+def test_cp8_loader_refuses_rewidening_or_wrong_table_narrowing(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_token: str | None,
+    table: str,
+    narrows: str,
+    privileges: list[str],
+) -> None:
+    """C1 / A5: a locally valid subset cannot become a decorative override."""
+    from haloflow.m01.errors import MigrationManifestRejected
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    document = json.loads((M01_ROOT / "manifests/provisioning.json").read_text())
+    # Establish a healthy loader before introducing only the hazard under test.
+    assert manifest_module.load_provisioning_manifest(document)
+    if extra_token:
+        permissions[RUNTIME_ROLE]["allow"].append(extra_token)
+    else:
+        # Isolate table targeting: no second token may trigger re-widening.
+        permissions[RUNTIME_ROLE]["allow"] = [narrows]
+    document["tenant_table_overrides"] = [
+        {
+            "role": RUNTIME_ROLE,
+            "table": table,
+            "narrows": narrows,
+            "privileges": privileges,
+        }
+    ]
+    assert narrows in permissions[RUNTIME_ROLE]["allow"]
+    assert set(privileges) < set(manifest_module.classify_tenant_schema_token(narrows))
+    monkeypatch.setattr(manifest_module, "_permissions_document", lambda: permissions)
+    if extra_token is None:
+        valid_target = json.loads(json.dumps(document))
+        valid_target["tenant_table_overrides"][0]["table"] = "access_audit_outbox"
+        assert manifest_module.load_provisioning_manifest(valid_target)
+    with pytest.raises(MigrationManifestRejected) as error:
+        manifest_module.load_provisioning_manifest(document)
+    assert error.value.reason_code == "MANIFEST_OVERRIDE_INVALID"
+
+
+@pytest.mark.parametrize(
+    "extra_token",
+    [
+        "tenant_schema.operation_registry:insert",
+        "tenant_schema.access_audit_outbox:insert",
+        "tenant_schema:checksummed_ddl",
+    ],
+)
+def test_cp8_loader_allows_tokens_that_do_not_restore_removed_privileges(
+    monkeypatch: pytest.MonkeyPatch,
+    extra_token: str,
+) -> None:
+    """C1 positive controls: shared retained privileges and other tables are safe."""
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    permissions[RUNTIME_ROLE]["allow"].append(extra_token)
+    monkeypatch.setattr(manifest_module, "_permissions_document", lambda: permissions)
+    manifest = manifest_module.load_provisioning_manifest()
+    expected = _cp8_expected_table_grants(
+        {RUNTIME_ROLE: permissions[RUNTIME_ROLE]}, manifest, ["operation_registry"]
+    )
+    assert {privilege for (_, _, privilege), held in expected.items() if held} == {
+        "SELECT",
+        "INSERT",
+    }
+
+
+def test_cp8_table_scoped_tokens_are_additive_and_stay_on_their_table() -> None:
+    """Q3: prove the contribution even when a broader token does not mask it."""
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    policy = {
+        AUDIT_PROJECTOR_ROLE: {
+            "allow": ["tenant_schema.access_audit_outbox:select"],
+            "deny": [],
+        }
+    }
+    expected = _cp8_expected_table_grants(
+        policy,
+        load_provisioning_manifest(),
+        ["access_audit_outbox", "operation_registry"],
+    )
+    assert {key for key, held in expected.items() if held} == {
+        (AUDIT_PROJECTOR_ROLE, "access_audit_outbox", "SELECT")
+    }
+
+
+def test_cp8_table_privilege_vocabulary_matches_loader() -> None:
+    """C5: test matrix and override validation must cover the same seven names."""
+    from haloflow.m01.provisioning.manifest import TABLE_PRIVILEGES as declared
+
+    assert frozenset(TABLE_PRIVILEGES) == declared
+    assert len(TABLE_PRIVILEGES) == 7
+
+
+@pytest.mark.parametrize("privilege", TABLE_PRIVILEGES)
+async def test_cp8_owner_privilege_cells_detect_revocation_without_ownership_change(
+    provisioning_harness: ProvisioningHarness,
+    new_tenant: tuple[str, str],
+    privilege: str,
+) -> None:
+    """C3 counterexample: owner retains ownership yet can lose an ordinary privilege."""
+    from psycopg import Rollback
+
+    from haloflow.m01.provisioning.manifest import load_provisioning_manifest
+
+    await make_provisioner(provisioning_harness).provision(request_for(new_tenant))
+    schema_key = new_tenant[1]
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    async with (
+        await AsyncConnection.connect(
+            provisioning_harness.admin_conninfo, autocommit=True
+        ) as conn,
+        conn.transaction(),
+    ):
+        tables, before = await _cp8_table_matrix(conn, schema_key, [MIGRATOR_ROLE])
+        expected = _cp8_expected_table_grants(
+            {MIGRATOR_ROLE: permissions[MIGRATOR_ROLE]},
+            load_provisioning_manifest(),
+            tables,
+        )
+        assert before == expected
+        assert all(before.values())
+        await conn.execute(
+            sql.SQL("REVOKE {} ON {} FROM {}").format(
+                sql.SQL(privilege),
+                sql.Identifier(schema_key, "access_audit_outbox"),
+                sql.Identifier(MIGRATOR_ROLE),
+            )
+        )
+        # The reader reasserts actual relowner. Ownership and ordinary grants
+        # are distinct: a non-superuser owner can revoke its own table grants.
+        _, after = await _cp8_table_matrix(conn, schema_key, [MIGRATOR_ROLE])
+        assert {key for key in expected if after[key] != expected[key]} == {
+            (MIGRATOR_ROLE, "access_audit_outbox", privilege)
+        }
+        assert not after[(MIGRATOR_ROLE, "access_audit_outbox", privilege)]
+        raise Rollback()
