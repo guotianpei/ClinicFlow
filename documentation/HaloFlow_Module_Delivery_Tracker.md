@@ -1,11 +1,13 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-07 (M01 PR-3 **CP-9 CLOSED** — readiness audit complete, design of record v10 issued, reviewer readiness note 168; PR #8 still draft)
+Last updated: 2026-09-07 (**M01 PR-3 MERGED as PR #8**, `main` at `19c6aae`; CP-9 closed; merged tree byte-identical to the gated commit; merge-commit CI green)
 
 ## Current position — read this first
 
-**M01 PR-3: 12 of 13 checkpoints committed, pushed and CI green — CP-8 (`f890b27`, run #35) and,
-within CP-9, the REQ-CP9-01 migrator repair (`af1bfd8`, M01 tenant isolation run #38, id 34049634725).**
+**M01 PR-3 IS MERGED — PR #8, 2026-09-07, merge commit `19c6aae`. All 13 checkpoints complete.**
+Twelve were committed with CI green — through CP-8 (`f890b27`, run #35) and the REQ-CP9-01 migrator
+repair (`af1bfd8`, run #38, id 34049634725); the thirteenth, CP-9, is a **readiness** checkpoint closed
+on audit rather than on code.
 Rachel's full gate at `af1bfd8` passed **429 tests, 0 skipped** in 11.42s and again in 11.66s; ruff clean
 and strict mypy clean over 21 source files; `diff --check` silent. CI reports the same 429.
 **CP-9 is CLOSED (2026-09-07)**: the readiness and evidence-consolidation checkpoint. Its plan row
@@ -16,7 +18,16 @@ licence for production change at CP-9. **All 56 requirement IDs are disposed and
 register is consolidated at v35.** The **design of record is review package v10**, issued 2026-09-07.
 **Reviewer readiness is `claude_note-168`: ready for owner authorization at `af1bfd8`, with ten named
 limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain
-three separate owner acts**, and **PR #8 is still a draft**.
+three separate owner acts**, and they were taken in that order on 2026-09-07.
+
+**The merge was verified, not assumed.** The head that merged was gated by **its own** run —
+`verify-m01` SUCCESS, run 34142838049 at `e0cc284` — rather than inheriting the earlier green at
+`825d395`. **`git diff e0cc284 19c6aae` is empty: the merged tree is byte-identical to the commit the
+gate covered.** CI on the merge commit is green (run 34143105962). Full record:
+`Work Session 2026-09-06/claude_note-171-m01-pr3-merged.md`.
+
+**Merging discharged none of the ten limitations** carried in `claude_note-168`. Two named M02
+preconditions and R-P4.4 as a release gate travel forward — see the M01 delivery notes.
 
 **The M01 debt PR is complete. PR-2 merged 2026-09-01** (pull request #6, merge commit `a3210e3`),
 following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-identical** to `95c507f`,
@@ -34,10 +45,10 @@ subset reviewable on the Mac without a server running. `.github/workflows/m01.ym
 the new package sits under `src/haloflow/m01`, which the ruff and mypy lines already cover, and
 `test_ci_workflow_covers_every_checked_production_path` still passes.
 
-**CI on `a3210e3` is NOT yet confirmed.** Workflow run "M01 tenant isolation #21" was triggered on the
-merge commit, but its conclusion could not be read from outside the repository, so it is recorded here
-as unverified rather than assumed. **Check the Actions tab and update this line.** CI was green on
-`main` as of PR-1, so the gate itself is known healthy; what is unconfirmed is this specific run.
+**CI on `a3210e3` is CONFIRMED GREEN (checked 2026-09-07).** `gh run view 33547105261 --json headSha`
+returns `a3210e372858043bb3d6f0c54e92bdf447013026`, and that run is a **success** on `main`. This line
+stood unverified for five days; it was closed **by commit identity, not by a matching run title** —
+`gh run list` shows titles, and a title is a commit message rather than a commit identity.
 
 **PR-2 was independently reviewed twice.** ChatGPT raised four findings at `29d6599` (two high) and two
 more at `53d6425` (both low); all six were addressed. Two of the high findings were real
@@ -265,9 +276,9 @@ the review dispositions and the pre-push verification.
   migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
   a different owner.
 
-- **M01 PR-3 — R-E7's answer — is in implementation: 12 of 13 checkpoints are committed, pushed and
-  CI green — through CP-8 (`f890b27`, GitHub Actions run #35) and the CP-9 migrator repair
-  (`af1bfd8`, run #38).** PR-3 *is* the mechanism the R-E7
+- **M01 PR-3 — R-E7's answer — is MERGED (PR #8, `19c6aae`, 2026-09-07). All 13 checkpoints
+  complete**: twelve committed with CI green through CP-8 (`f890b27`, run #35) and the CP-9 migrator
+  repair (`af1bfd8`, run #38), plus CP-9 itself, the readiness checkpoint, closed on audit. PR-3 *is* the mechanism the R-E7
   precondition above asks for: the allow-listed execution role and its bootstrap contract, the typed
   verifier replacing v1's postcondition, the tenant-schema grant control, and checksum v2. It is
   deliberately **one PR** (D17) — the role mechanism, typed verification, checksum change and grant
@@ -938,8 +949,13 @@ the review dispositions and the pre-push verification.
   Correspondence, superseded design revisions and past commit messages are deliberately left as written:
   **every "17.10" in this project means this same server, and means 17.11.**
 
-- **PR-3 status: 12 of 13 checkpoints committed and CI green; the 13th, CP-9, is a readiness
-  checkpoint and is CLOSED (2026-09-07). Remaining: the owner acts — un-draft, merge, deploy.**
+- **PR-3 status: MERGED 2026-09-07 as PR #8, merge commit `19c6aae`. All 13 checkpoints complete.**
+  Twelve committed with CI green; the thirteenth, CP-9, a readiness checkpoint closed on audit.
+  **Post-merge verification passed on all four counts**: the merged head was gated by its own run
+  (34142838049 at `e0cc284`); the merge landed as a fast-forward `d12c788..19c6aae`, 18 files, 7921
+  insertions; **`git diff e0cc284 19c6aae` is empty**, so the merged tree is byte-identical to the
+  gated commit; and CI on the merge commit is green (run 34143105962). **Remaining owner act:
+  deployment.**
   CP-9's audit is complete, not estimated: **all 79 evidence rows audited** (register consolidated at
   v35, TC-P42 approved) and **all 56 requirement IDs disposed** — 54 resolved, 2 owner-ruled, none
   pending, untouched or referred. Test union recomputed independently: **139 PR-added definitions /
