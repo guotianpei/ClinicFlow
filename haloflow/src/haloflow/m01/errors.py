@@ -69,6 +69,19 @@ class MigrationUnitRejected(M01Error):
     code = "MIGRATION_UNIT_REJECTED"
 
 
+class MigrationManifestRejected(M01Error):
+    """The provisioning manifest failed validation at load.
+
+    Separate from `MigrationUnitRejected` because the two are different
+    surfaces: a unit is rejected during trusted construction of the registry, a
+    manifest is rejected when the declarations the provisioning controls are
+    checked against are themselves wrong. Merging them would report a malformed
+    grant declaration as a malformed migration.
+    """
+
+    code = "MIGRATION_MANIFEST_REJECTED"
+
+
 class TenantMigrationFailed(M01Error):
     """A per-tenant migration did not reach `applied`.
 
@@ -83,6 +96,20 @@ class ProvisioningFailed(M01Error):
     """Tenant provisioning stopped before activation. The tenant stays unusable."""
 
     code = "PROVISIONING_FAILED"
+
+
+class ExecutionRoleUnavailable(M01Error):
+    """Stage 1 refused a declared execution role (R-P1B.4).
+
+    Neutral by design, and never seen by a caller of either entry point: the
+    preflight serves both the provisioner and the runner (R-P1B.15), and each
+    catches this and re-raises in its own taxonomy. This is the same shape as
+    `ConnectionModeRejected`, for the same reason -- a shared helper raising one
+    caller's exception type is how a provisioning call came to fail as a
+    migration error.
+    """
+
+    code = "EXECUTION_ROLE_UNAVAILABLE"
 
 
 class ConnectionModeRejected(M01Error):

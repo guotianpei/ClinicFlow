@@ -21,13 +21,13 @@ between them still fails in both directions.
 nothing else there. The table is append-only by trigger and the provisioner owns
 lifecycle transitions, so INSERT is the whole requirement. No sequence privilege
 is granted: `event_id` is `GENERATED ALWAYS AS IDENTITY`, and an identity column
-inserts without one -- re-confirmed on PostgreSQL 17.10, 2026-08-31.
+inserts without one -- re-confirmed on PostgreSQL 17.11, 2026-08-31.
 
 **F-4.** `001` grants `USAGE, SELECT ON SEQUENCE
 shared.access_audit_log_audit_id_seq` to both audit-writing roles. Neither needs
 it, for the same identity-column reason, and the `SELECT` half lets a role that
 is denied `SELECT` on `shared.access_audit_log` read `last_value` -- the global
-audit row count across every tenant. Reproduced on 17.10 and revoked here.
+audit row count across every tenant. Reproduced on 17.11 and revoked here.
 
 **D13** (2026-08-31): tenant schemas are owned by `haloflow_provisioner`. The
 provisioner therefore needs `CREATE` on the database and no membership anywhere.

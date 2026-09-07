@@ -32,6 +32,15 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
 # production through this function (R-E12).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (TENANT_MIGRATIONS,)
 
+# Execution roles this deployment approves for per-tenant migrations (R-P1.2).
+# Empty today: no module declares one, and `t001` runs as `haloflow_migrator` by
+# absence. A module role is added here and nowhere else -- M01 embeds no module
+# role name, so this tuple and the manifest are the whole reviewable surface.
+#
+# An infrastructure role cannot be approved by adding it here: the unit refuses
+# every member of `PROVISIONING_ROLES` on its own (R-P1B.22(a), D23).
+APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset()
+
 
 def build_production_catalog() -> CompiledCatalog:
     """Compose the production statement catalogue. Startup-only."""
@@ -42,4 +51,7 @@ def build_production_catalog() -> CompiledCatalog:
 def build_production_tenant_migrations() -> TenantMigrationRegistry:
     """Compose the production per-tenant migration registry. Startup-only."""
 
-    return build_tenant_migration_registry(*APPROVED_TENANT_MIGRATIONS)
+    return build_tenant_migration_registry(
+        *APPROVED_TENANT_MIGRATIONS,
+        approved_execution_roles=APPROVED_EXECUTION_ROLES,
+    )
