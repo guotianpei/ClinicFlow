@@ -1,6 +1,6 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-06 (M01 PR-3 CP-8 closed; REQ-CP9-01 migrator repair committed, pushed and CI green)
+Last updated: 2026-09-07 (M01 PR-3 **CP-9 CLOSED** — readiness audit complete, design of record v10 issued, reviewer readiness note 168; PR #8 still draft)
 
 ## Current position — read this first
 
@@ -8,12 +8,15 @@ Last updated: 2026-09-06 (M01 PR-3 CP-8 closed; REQ-CP9-01 migrator repair commi
 within CP-9, the REQ-CP9-01 migrator repair (`af1bfd8`, M01 tenant isolation run #38, id 34049634725).**
 Rachel's full gate at `af1bfd8` passed **429 tests, 0 skipped** in 11.42s and again in 11.66s; ruff clean
 and strict mypy clean over 21 source files; `diff --check` silent. CI reports the same 429.
-**CP-9 is in progress**: the readiness and evidence-consolidation checkpoint. Its plan row carries no
-requirements, architecture or files and that remains correct — the migrator repair is a **narrowly scoped
-amendment Rachel authorized explicitly** (*"Please repair before PR-3 readiness, close it up now rather
-than defer later"*), recorded in `codex_cp9-readiness-contract-v3.md`, not a general licence for
-production change at CP-9. The bulk of CP-9 — the 79-row evidence register and the 56-row requirement
-register — is still open. PR #8 remains draft through that readiness gate.
+**CP-9 is CLOSED (2026-09-07)**: the readiness and evidence-consolidation checkpoint. Its plan row
+carries no requirements, architecture or files and that remains correct — the migrator repair is a
+**narrowly scoped amendment Rachel authorized explicitly** (*"Please repair before PR-3 readiness, close
+it up now rather than defer later"*), recorded in `codex_cp9-readiness-contract-v3.md`, not a general
+licence for production change at CP-9. **All 56 requirement IDs are disposed and the 79-row evidence
+register is consolidated at v35.** The **design of record is review package v10**, issued 2026-09-07.
+**Reviewer readiness is `claude_note-168`: ready for owner authorization at `af1bfd8`, with ten named
+limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain
+three separate owner acts**, and **PR #8 is still a draft**.
 
 **The M01 debt PR is complete. PR-2 merged 2026-09-01** (pull request #6, merge commit `a3210e3`),
 following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-identical** to `95c507f`,
@@ -867,6 +870,37 @@ the review dispositions and the pre-push verification.
   diff (base…head), not over the pushing commit, so a docs-only commit on PR #8 does trigger `verify-m01`.
   Proved twice, by runs #36 and #37. **Configuration predicts; evidence decides.**
 
+- **CP-9 CLOSED 2026-09-07 — the readiness and evidence audit of M01 PR-3.** No new production scope;
+  the final documentary audit made no runtime change. (The session *did* include the reviewed,
+  owner-gated migrator repair `af1bfd8`, which is the current code HEAD — a blanket "no live-path work"
+  would erase it.)
+  - **Established.** 56 requirement IDs, every one disposed — 54 resolved, 2 owner-ruled; nothing
+    pending, untouched, referred or gated. 79-row evidence register consolidated at v35. Test union of
+    **139 PR-added definitions / 237 declared parameter cases** (primary subset 76 / 143), recomputed
+    independently from `origin/main` and `HEAD`. CI #38 green at `af1bfd8` plus two owner runs (429
+    tests, 11.42s and 11.66s); `verify-m01` green at PR head `825d395` (run 34052473429).
+  - **Design of record: review package v10**, issued 2026-09-07, reconciling the **four** sites where
+    the design text and the shipped code disagreed. **In all four the code was right and the words were
+    stale.** Two of those four were residual sites of corrections already believed complete — each of
+    CP9-QCOUNT-01 and CP9-DOC-RECON-01 was raised as one site and turned out to be two, and both are
+    now closed against a **document-wide search** rather than against the place each was first noticed.
+  - **Reviewer readiness: `claude_note-168`** — ready for owner authorization at `af1bfd8`, **ten named
+    limitations carried, none blocking**. Closure authorizes nothing: **un-draft, merge and deploy are
+    three separate owner acts.**
+  - **Carried into M02 — two named preconditions.** (1) *A unit declaring an execution role must not
+    create tables* — **owner-documented, not SQL-enforced**, and latent only because the shipped
+    registry declares no execution role, **not** because a guard exists. (2) R-P1B.2's
+    deployment-responsibility half.
+  - **Carried as a release gate.** R-P4.4 is bounded by **known deployment-environment scope**. A
+    **non-test v1 checksum row** would force a compatibility plan; **discovering another environment
+    would not.**
+  - Cross-verified by Codex. Full record: `Work Session 2026-09-06/claude_note-169-cp9-closure.md`.
+
+- **R-P1B.2 RECONCILED 2026-09-07.** Split into two halves at CP-9. The **runtime half** — the migrator
+  must exist and must not hold `CREATEROLE` — is **closed**: implemented in `af1bfd8`, enforced at both
+  entry points, covered by the owner's 429-test runs and CI #38. The **deployment half** — which
+  authority creates and maintains the role — is **ruled a named M02 precondition, not a PR-3 exit gap**.
+
 - **CP-9 is readiness and evidence consolidation, not a code checkpoint.** Its plan v6 row carries no
   requirements, no architecture and no files, and that is **correct rather than an omission**: it appears
   in 19 test rows, 18 of them re-runs of tests other checkpoints authored, and its named risk is
@@ -904,12 +938,16 @@ the review dispositions and the pre-push verification.
   Correspondence, superseded design revisions and past commit messages are deliberately left as written:
   **every "17.10" in this project means this same server, and means 17.11.**
 
-- **PR-3 status: 12 of 13 checkpoints committed and CI green. Remaining: CP-9's readiness audit,
-  then the final PR readiness/merge gate.** CP-9's remaining work is measured, not estimated:
-  **68 of 79** rows in `codex_cp9-test-evidence-register-v4.md` are still `NOT AUDITED`, **52 of 56**
-  requirement rows in `codex_cp9-requirement-register-v2.md` are still `NOT AUDITED`, and TC-P42's final
-  coverage assessment is open. That work is Codex's; Claude reviews it and must not perform it, or the
-  independent review becomes self-review.
+- **PR-3 status: 12 of 13 checkpoints committed and CI green; the 13th, CP-9, is a readiness
+  checkpoint and is CLOSED (2026-09-07). Remaining: the owner acts — un-draft, merge, deploy.**
+  CP-9's audit is complete, not estimated: **all 79 evidence rows audited** (register consolidated at
+  v35, TC-P42 approved) and **all 56 requirement IDs disposed** — 54 resolved, 2 owner-ruled, none
+  pending, untouched or referred. Test union recomputed independently: **139 PR-added definitions /
+  237 declared parameter cases** (primary subset 76 / 143). That work was Codex's; Claude reviewed it
+  and did not perform it, so the independent review stayed independent.
+  **Six distinct units, none of them a count of independent controls:** 79 catalogue IDs · 56
+  requirements · 76 primary definitions · 139 PR-added definitions · 143 primary / 237 union declared
+  cases · 429 collected cases in the gate.
   Authoritative repository runs, all on PostgreSQL 17.11, **0 skipped every time**:
   192 → 201 → 205 → 206 → 215 → 228 → 233 → 234 → 253 → 260 → 269 → 276 → 304 → 311 → 349 → 378 → 426 → **429**.
   A `431` figure appears in two retained-and-excluded live-probe captures; it is **429 repository cases
