@@ -17,8 +17,7 @@ it up now rather than defer later"*), recorded in `codex_cp9-readiness-contract-
 licence for production change at CP-9. **All 56 requirement IDs are disposed and the 79-row evidence
 register is consolidated at v35.** The **design of record is review package v10**, issued 2026-09-07.
 **Reviewer readiness is `claude_note-168`: ready for owner authorization at `af1bfd8`, with ten named
-limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain
-three separate owner acts**, and they were taken in that order on 2026-09-07.
+limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain three separate owner acts**. Un-draft and merge were taken on 2026-09-07. M01 was delivered; Rachel confirmed on 2026-09-08 that nothing had been deployed to the cloud.
 
 **The merge was verified, not assumed.** The head that merged was gated by **its own** run —
 `verify-m01` SUCCESS, run 34142838049 at `e0cc284` — rather than inheriting the earlier green at
@@ -34,9 +33,7 @@ following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-ident
 the commit the full gate was run against — `git diff 95c507f a3210e3` is empty. `main` has been
 fast-forwarded locally and the merged branch deleted, locally and on the remote.
 
-**M02 implementation is no longer gated on the M01 debt PR.** One precondition remains before M02
-implementation begins, and it is not a merge: **R-E7 is deliberately unsatisfied** — see the M01
-delivery notes. M02 must settle its own per-tenant object-installation mechanism first.
+**M02 implementation is no longer gated on the M01 debt PR.** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
 
 **PR-2 gate result**, on PostgreSQL 17.11 against a database created fresh from `001` → `003` and
 again as an upgrade over an existing `001`/`002` database: ruff clean, strict mypy clean, **192 tests
@@ -101,7 +98,7 @@ the review dispositions and the pre-push verification.
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
 | M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and the whole debt PR merged (PR-1 and PR-2). Implementation stays 🟡: the legacy SQLAlchemy/asyncpg modules are not yet behind M01 and the production identity adapter is open. Security/privacy stays 🟡 pending PHI-safe telemetry; reliability stays 🟡 pending Cloud SQL evidence |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; the M01 debt PR is merged, so implementation is unblocked except for one precondition: R-E7, the per-tenant object-installation mechanism, is M02's to settle |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011 and OI-007 accepted; M01 PR-3 merged. Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required. |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -269,12 +266,7 @@ the review dispositions and the pre-push verification.
   the database rather than by convention; reserves `m02_test_` as the non-production self-test family
   covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
   **not** granted here — each module registers its own prefix at its own design/content freeze.
-- **The M01 debt PR is merged** — PR-1 on 2026-08-31, PR-2 on 2026-09-01 — so no M01 work blocks M02
-  any longer. **One precondition remains, added by the PR-2 review: R-E7 is not satisfied. M02 must
-  settle its own per-tenant object-installation mechanism — with the function owner, ACL and pinned
-  `search_path` its SECURITY DEFINER functions require — before implementation begins.** M01 ships the
-  migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
-  a different owner.
+- **Historical PR-2 position (2026-09-01):** R-E7 remained unsatisfied for SECURITY DEFINER ownership, ACL and pinned `search_path`; the then-shipped extension covered ordinary tenant objects. **Current position after PR-3:** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
 
 - **M01 PR-3 — R-E7's answer — is MERGED (PR #8, `19c6aae`, 2026-09-07). All 13 checkpoints
   complete**: twelve committed with CI green through CP-8 (`f890b27`, run #35) and the CP-9 migrator
@@ -898,10 +890,7 @@ the review dispositions and the pre-push verification.
   - **Reviewer readiness: `claude_note-168`** — ready for owner authorization at `af1bfd8`, **ten named
     limitations carried, none blocking**. Closure authorizes nothing: **un-draft, merge and deploy are
     three separate owner acts.**
-  - **Carried into M02 — two named preconditions.** (1) *A unit declaring an execution role must not
-    create tables* — **owner-documented, not SQL-enforced**, and latent only because the shipped
-    registry declares no execution role, **not** because a guard exists. (2) R-P1B.2's
-    deployment-responsibility half.
+    - **Historical PR-3 carry-forward: two named preconditions.** The closure recorded table/function-unit separation (owner-documented, not then SQL-enforced; latent because the shipped registry declares no execution role) and R-P1B.2 deployment responsibility. **Current consolidated M02 entry:** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
   - **Carried as a release gate.** R-P4.4 is bounded by **known deployment-environment scope**. A
     **non-test v1 checksum row** would force a compatibility plan; **discovering another environment
     would not.**

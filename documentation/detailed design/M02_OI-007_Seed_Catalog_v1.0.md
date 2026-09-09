@@ -237,7 +237,7 @@ projectable forever; retirement only blocks new appends.
 
 ## 10. Shared reference inventory — standing rule, not case-by-case
 
-Every new physical reference domain introduced by this catalogue or by ADR-011 — `ref_event_levels`,
+Every new physical reference domain introduced by this catalogue or by ADR-011 — `ref_event_types`, `ref_event_levels`,
 `ref_event_statuses`, `event_contracts`, `ref_projection_explanations`, `ref_correction_reasons`,
 `ref_resolution_paths`, `ref_failure_reasons`, `ref_action_families`, and D-11.16's
 `reference_catalog_generations` ledger — gets, before migration: an ownership decision (who writes it,

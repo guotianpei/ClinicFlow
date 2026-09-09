@@ -1151,7 +1151,7 @@ The following shared-schema tables are control-plane infrastructure — not tena
 | `shared.unresolved_callback_queue` | Webhook processor only | No | Callbacks arriving before registry committed |
 | `shared.reconciliation_cases` | Reconciler only | No | Mutable retry lifecycle for indeterminate operations |
 | `shared.ref_event_statuses` + all other ref tables | Control-plane / migrations only | No | Read by all; written only by provisioning |
-| `shared.ref_event_types` | Control-plane / migrations only | No | ADR-011 D-11.14; event type catalogue |
+| `shared.ref_event_types` | `haloflow_migrator` controlled reference publication only | No | ADR-011 D-11.14/D-11.16; versioned control-plane event-type catalogue; tenant transactions consume the acquired snapshot, with no tenant writes |
 | `shared.ref_event_levels` | Control-plane / migrations only | No | ADR-011 D-11.2; six event levels (subject to OI-007 decision S1) |
 | `shared.event_contracts` | Control-plane / migrations only | No | ADR-011 D-11.14; versioned event contracts, old versions retained |
 | `shared.provider_capabilities` | Controlled integration migration | No | ADR-011 D-11.4; declares external-ID namespace and uniqueness scope |
