@@ -981,6 +981,7 @@ Controls, all mandatory:
 - Ownership assigned to the dedicated NOLOGIN `haloflow_m02_lock_owner`.
 - `PUBLIC` EXECUTE revoked; EXECUTE granted only where required.
 - Fixed safe `search_path`, schema-qualified statements, exact-row targeting, minimum structural return.
+  - **Supersession note:** ADR-012 supersedes only this bullet's function-body qualification requirement. The original wording is retained as history; use ADR-012 for the current qualification rule. Fixed safe path, exact-row targeting and minimum structural return remain mandatory. All other ADR-011 provisions are unchanged by this supersession.
 - The integrity suite detects **definition and security-metadata drift** across tenants, comparing per tenant:
   `prosrc` digest, `proowner`, `proacl`, `prosecdef`, and `proconfig`. A function with the correct body but
   the wrong owner or a `PUBLIC` grant is still a security defect, so a body checksum alone is insufficient.
@@ -1135,6 +1136,54 @@ Applying the D4 acceptance stamps to ADR-003, ADR-005 and ADR-007 remains a Modu
 key remains controlling and is reinforced by D-11.1 and FR-004. ADR-003's three-level model for external side
 effects, its `external_id` population rule, and its exclusion of inbound observations from the intent pattern
 all remain correct and are extended rather than replaced.
+
+---
+
+## ADR-012: Invariant Function Bodies for Per-Tenant M02 Gateways
+
+**Status:** Accepted
+**Date:** 2026-09-09
+**Decision owner:** HaloVox Engineering Lead
+**Supersedes on acceptance:** Only the function-body qualification requirement in ADR-011 D-11.17's bullet beginning “Fixed safe `search_path`, schema-qualified statements”. All other ADR-011 decisions and D-11.17 controls remain effective.
+**Review trigger:** Any change to gateway body qualification, configured path, installation schema binding, canonical body verification or permitted runtime object resolution.
+**Related requirements:** M02-FR-024, M02-NFR-005; Technical Design v0.3 §4.6 and the approved invariant-body amendments.
+
+### Context
+
+ADR-011 D-11.17 requires canonical gateway copies across tenant schemas while its qualification bullet requires schema-qualified statements. Embedding each tenant's schema identifier in the function body produces different body text for otherwise equivalent deployments. The owner-approved invariant-body direction distinguishes tenant-qualified installation identities from tenant-object-unqualified runtime body references, preserving one canonical body and the existing per-tenant deployment boundary.
+
+This entry records that narrow change through supersession, preserving the accepted historical ADR. It does not commission a shared executable schema or a new database tenant-authentication mechanism.
+
+### Decision
+
+Upon acceptance, the following replaces the normative qualification requirement of the identified D-11.17 bullet:
+
+- Invariant tenant-object-unqualified function-body references; exact fixed `search_path` of `pg_catalog`, the validated tenant schema and `pg_temp` last; exact-row targeting and minimum structural return. Installation SQL qualifies tenant object identities using the validated schema. Verify each tenant against the trusted expected body and metadata, as well as equality of corresponding bodies across tenants.
+
+Per-tenant installation, canonical source definition, NOLOGIN ownership, explicit EXECUTE grants, revoked PUBLIC EXECUTE and D-11.17's independent body/owner/ACL/security/configuration checks remain mandatory. Equality across tenants alone is insufficient: two identical incorrect bodies must fail comparison with the reviewed expected definition.
+
+This decision supplies no universal rule that every non-tenant reference must be qualified, and no assertion that pg_catalog-first alone proves every possible function/operator overload safe. Canonical bodies, permitted references and effective permissions retain their independent review and behavioral-test obligations.
+
+### Supersession record
+
+| Prior provision | Disposition |
+|---|---|
+| ADR-011 D-11.17: “Fixed safe `search_path`, schema-qualified statements, exact-row targeting, minimum structural return.” | Function-body qualification is superseded by this entry's Decision on acceptance. Fixed safe path, exact-row targeting and minimum structural return are retained with the explicit path and installation/body distinction above. Original text remains visible as history. |
+| All other ADR-011 provisions, including the remainder of D-11.17 | Unchanged by this entry. |
+
+### Alternatives considered
+
+Embedding each tenant schema in the function body preserves explicit qualification but defeats literal canonical-body equality. A shared executable schema changes the tenant execution boundary and remains rejected under D-11.17. Invariant tenant-object-unqualified bodies with a pinned tenant path implement the approved direction without either change.
+
+### Consequences and verification
+
+Installation rendering must bind the correct validated tenant schema while preserving the canonical function-body text. Verification separately checks body and complete configured path/owner/ACL/definer metadata against trusted expectations for each tenant. Negative cases alter one dimension at a time, including two identically incorrect deployments, and must fail for the intended reason. Runtime target and shadow-object cases remain separate behavioral evidence; metadata equality alone does not prove functional safety.
+
+No code, database feasibility, test result, schema freeze, deployment permission or whole-CP0 alignment follows from accepting this ADR. Those retain their separately authorized checkpoints.
+
+### Acceptance record
+
+Accepted 2026-09-09 by HaloVox Engineering Lead after independent review (Claude notes 224 and 226). Issued together with the ADR-011 D-11.17 supersession pointer in one coordinated update.
 
 ---
 
