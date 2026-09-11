@@ -1,0 +1,1217 @@
+{
+  "document_status": "PROPOSED NON-PRODUCTION DESCRIPTORS; not a generated seed migration",
+  "source": "Frozen OI-007 section 6, including other constraints; proposals in policy annex v2 and targeted delta 232; Claude233 label-overlay fold-in removes both conflict types from metadata-label targets only",
+  "versioning_warning": "profile_contract_version 1 is a draft identifier; use a new version if any existing descriptor would be reinterpreted",
+  "contracts": [
+    {
+      "event_type": "m02_test_requested",
+      "profile_contract_version": 1,
+      "level": "intent",
+      "status": "requested",
+      "terminal_capable": false,
+      "compatible_outcome_class": null,
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_source_v1",
+          "m02_test_subject_v1"
+        ]
+      ],
+      "optional_link_resolvers": [],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "external_id": {
+          "must_be_null": true
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_accepted",
+      "profile_contract_version": 1,
+      "level": "submission",
+      "status": "accepted",
+      "terminal_capable": false,
+      "compatible_outcome_class": "submission_positive",
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "external_id": {
+          "non_null_requires": "verified_provider_identity",
+          "verification_boundary": "trusted adapter/service; validated provider/account/capability snapshot; not caller assertion"
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_rejected",
+      "profile_contract_version": 1,
+      "level": "submission",
+      "status": "rejected",
+      "terminal_capable": true,
+      "compatible_outcome_class": "submission_negative",
+      "precedence_rank": 200,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "external_id": {
+          "must_be_null": true
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_submission_indeterminate",
+      "profile_contract_version": 1,
+      "level": "submission",
+      "status": "indeterminate",
+      "terminal_capable": false,
+      "compatible_outcome_class": "submission_unknown",
+      "precedence_rank": 150,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "external_id": {
+          "must_be_null": true
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_delivered",
+      "profile_contract_version": 1,
+      "level": "delivery",
+      "status": "delivered",
+      "terminal_capable": true,
+      "compatible_outcome_class": "outcome_positive",
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_provider_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {}
+    },
+    {
+      "event_type": "m02_test_delivery_failed",
+      "profile_contract_version": 1,
+      "level": "delivery",
+      "status": "delivery_failed",
+      "terminal_capable": true,
+      "compatible_outcome_class": "outcome_negative",
+      "precedence_rank": 200,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_provider_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {}
+    },
+    {
+      "event_type": "m02_test_business_succeeded",
+      "profile_contract_version": 1,
+      "level": "business_outcome",
+      "status": "business_succeeded",
+      "terminal_capable": true,
+      "compatible_outcome_class": "outcome_positive",
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_business_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {}
+    },
+    {
+      "event_type": "m02_test_business_failed",
+      "profile_contract_version": 1,
+      "level": "business_outcome",
+      "status": "business_failed",
+      "terminal_capable": true,
+      "compatible_outcome_class": "outcome_negative",
+      "precedence_rank": 200,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_business_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {}
+    },
+    {
+      "event_type": "m02_test_acceptance_conflict",
+      "profile_contract_version": 1,
+      "level": "submission",
+      "status": "conflict",
+      "terminal_capable": false,
+      "compatible_outcome_class": "conflict_evidence",
+      "precedence_rank": 900,
+      "required_fields": [
+        "correlation_id",
+        "operation_id",
+        "provider",
+        "provider_account",
+        "external_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_provider_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_acceptance_conflict_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "competing_identities": {
+          "canonical": "operation_acceptance_bindings fields provider/provider_account/identity_namespace/external_id/uniqueness_scope/source_event_id",
+          "candidate": "patient_events provider/provider_account/external_id plus metadata candidate_identity_namespace/candidate_uniqueness_scope",
+          "require_distinct": true,
+          "require_verified_candidate": true,
+          "canonical_binding_mutation": false
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_delivery_conflict",
+      "profile_contract_version": 1,
+      "level": "delivery",
+      "status": "conflict",
+      "terminal_capable": false,
+      "compatible_outcome_class": "conflict_evidence",
+      "precedence_rank": 900,
+      "required_fields": [
+        "correlation_id",
+        "operation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_provider_v1"
+        ]
+      ],
+      "optional_link_resolvers": [
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_delivery_conflict_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "competing_event_ids": {
+          "path": "metadata.competing_event_ids",
+          "same_operation": true,
+          "canonical_uuid_byte_order": true,
+          "self_reference_forbidden": true,
+          "required_semantics": "at least two retained verified terminal facts incompatible under historical contracts; full fold still reads all operation evidence"
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_observation_received",
+      "profile_contract_version": 1,
+      "level": "observation",
+      "status": "completed",
+      "terminal_capable": true,
+      "compatible_outcome_class": "observation",
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id"
+      ],
+      "required_link_groups": [
+        [
+          "m02_test_source_v1",
+          "m02_test_subject_v1"
+        ]
+      ],
+      "optional_link_resolvers": [],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_label_base_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "value_constraints": {
+        "operation_id": {
+          "must_be_null": true
+        },
+        "synthetic_intent": {
+          "forbidden": true
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_correction",
+      "profile_contract_version": 1,
+      "level": "correction",
+      "status": "correction_recorded",
+      "terminal_capable": false,
+      "compatible_outcome_class": "correction",
+      "precedence_rank": 100,
+      "required_fields": [
+        "correlation_id",
+        "corrected_event_id"
+      ],
+      "required_link_groups": [],
+      "optional_link_resolvers": [
+        "m02_test_business_v1",
+        "m02_test_provider_v1",
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_correction_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "conditional_operation_scope": "equals target scope",
+      "inherited_link_restriction": "allowed only if valid under both target and this descriptor; never arbitrary copy",
+      "value_constraints": {
+        "business_level": {
+          "forbidden": true
+        },
+        "operation_id": {
+          "must_equal_target_scope": true
+        }
+      }
+    },
+    {
+      "event_type": "m02_test_resolution",
+      "profile_contract_version": 1,
+      "level": "correction",
+      "status": "resolution_recorded",
+      "terminal_capable": false,
+      "compatible_outcome_class": "correction",
+      "precedence_rank": 200,
+      "required_fields": [
+        "correlation_id",
+        "operation_id",
+        "corrected_event_id"
+      ],
+      "required_link_groups": [],
+      "optional_link_resolvers": [
+        "m02_test_business_v1",
+        "m02_test_provider_v1",
+        "m02_test_source_v1",
+        "m02_test_subject_v1"
+      ],
+      "table_subject_invariant": "patient_id or approved link; required groups still independently enforced",
+      "metadata_schema_ref": "synthetic_resolution_v1",
+      "signal_rule": {
+        "handoff_kind": "event_signal",
+        "signal_type": "m02.event.appended"
+      },
+      "active_in_production": false,
+      "conditional_operation_scope": "required same operation",
+      "inherited_link_restriction": "allowed only if valid under both target and this descriptor; never arbitrary copy",
+      "value_constraints": {
+        "manual_resolution": {
+          "rule": "versioned FR-035 rules; no automatic provider call or invented success/failure"
+        }
+      }
+    }
+  ],
+  "metadata_schema_definitions": {
+    "synthetic_label_base_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label_code": {
+          "enum": [
+            "reviewed",
+            "unreviewed"
+          ]
+        }
+      }
+    },
+    "synthetic_correction_v1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_metadata_label_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_observation_received"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label_code",
+                "evidence_refs"
+              ],
+              "properties": {
+                "label_code": {
+                  "enum": [
+                    "reviewed",
+                    "unreviewed"
+                  ]
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_exclude_assertion_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "effect",
+                "evidence_refs"
+              ],
+              "properties": {
+                "effect": {
+                  "const": "exclude"
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "synthetic_resolution_v1": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_resolve_provider_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "case_ref",
+                "evidence_refs",
+                "affected_event_ids",
+                "selected_event_id"
+              ],
+              "properties": {
+                "case_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resolver_id",
+                    "ref_id"
+                  ],
+                  "properties": {
+                    "resolver_id": {
+                      "const": "m02_test_case_v1"
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    }
+                  }
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                },
+                "affected_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "selected_event_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_resolve_domain_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "case_ref",
+                "evidence_refs",
+                "affected_event_ids",
+                "selected_event_id"
+              ],
+              "properties": {
+                "case_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resolver_id",
+                    "ref_id"
+                  ],
+                  "properties": {
+                    "resolver_id": {
+                      "const": "m02_test_case_v1"
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    }
+                  }
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                },
+                "affected_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "selected_event_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_resolve_none_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "case_ref",
+                "evidence_refs",
+                "affected_event_ids",
+                "selected_event_id"
+              ],
+              "properties": {
+                "case_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resolver_id",
+                    "ref_id"
+                  ],
+                  "properties": {
+                    "resolver_id": {
+                      "const": "m02_test_case_v1"
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    }
+                  }
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                },
+                "affected_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "selected_event_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_resolve_unknown_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "case_ref",
+                "evidence_refs",
+                "affected_event_ids",
+                "disposition_code"
+              ],
+              "properties": {
+                "case_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resolver_id",
+                    "ref_id"
+                  ],
+                  "properties": {
+                    "resolver_id": {
+                      "const": "m02_test_case_v1"
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    }
+                  }
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                },
+                "affected_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "disposition_code": {
+                  "const": "unresolved"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "policy",
+            "data"
+          ],
+          "properties": {
+            "policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule_id",
+                "rule_version",
+                "target_event_type",
+                "target_contract_version"
+              ],
+              "properties": {
+                "rule_id": {
+                  "const": "m02_test_resolve_resend_v1"
+                },
+                "rule_version": {
+                  "const": 1
+                },
+                "target_event_type": {
+                  "enum": [
+                    "m02_test_requested",
+                    "m02_test_accepted",
+                    "m02_test_rejected",
+                    "m02_test_submission_indeterminate",
+                    "m02_test_delivered",
+                    "m02_test_delivery_failed",
+                    "m02_test_business_succeeded",
+                    "m02_test_business_failed",
+                    "m02_test_acceptance_conflict",
+                    "m02_test_delivery_conflict"
+                  ]
+                },
+                "target_contract_version": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "data": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "case_ref",
+                "evidence_refs",
+                "affected_event_ids",
+                "new_operation_id"
+              ],
+              "properties": {
+                "case_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "resolver_id",
+                    "ref_id"
+                  ],
+                  "properties": {
+                    "resolver_id": {
+                      "const": "m02_test_case_v1"
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                    }
+                  }
+                },
+                "evidence_refs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "resolver_id",
+                      "ref_id"
+                    ],
+                    "properties": {
+                      "resolver_id": {
+                        "const": "m02_test_evidence_v1"
+                      },
+                      "ref_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                      }
+                    }
+                  }
+                },
+                "affected_event_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 16,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                  }
+                },
+                "new_operation_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "synthetic_acceptance_conflict_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate_identity_namespace",
+        "candidate_uniqueness_scope"
+      ],
+      "properties": {
+        "candidate_identity_namespace": {
+          "const": "m02_test_provider"
+        },
+        "candidate_uniqueness_scope": {
+          "const": "account_namespace"
+        }
+      }
+    },
+    "synthetic_delivery_conflict_v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "competing_event_ids"
+      ],
+      "properties": {
+        "competing_event_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        }
+      }
+    }
+  },
+  "semantic_constraints": "Shapes are not authorization. Enforce value_constraints and policy annex v2 for provider verification, historical capability/namespace, canonical binding, same-operation references, actual incompatibility, selected-event membership and affected scope. Validate sorted UUID arrays and duplicate raw JSON keys. No observation target is permitted for resolution."
+}

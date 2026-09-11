@@ -816,6 +816,8 @@ exercised by a unit test. A canonicalisation change that does not also change th
 
 #### D-11.9 — Pilot replay is bounded, full-range, and restart-from-the-top
 
+**Supersession note:** ADR-013 supersedes only the consistent database snapshot sentence; Decision 1 replaces it with per-operation READ COMMITTED evidence observations while retaining full-range restart and no-provider/no-duplication controls. Original text below is retained as history. This pointer takes effect with coordinated issuance of accepted ADR-013.
+
 A replay or projection rebuild declares one `tenant_id`, one projection version, and one bounded
 operation/range selector. It takes a consistent database snapshot, recomputes every operation in the range,
 and validates counts and source fingerprints. **An interrupted run restarts the entire declared range**;
@@ -863,6 +865,8 @@ M06 owns detector scheduling and execution.
 
 #### D-11.12 — Tenant-local transactional outbox for control handoffs (design D-05)
 
+**Supersession note:** ADR-013 supersedes only the M11 dedupe key; Decision 2 adds handoff kind while retaining the M05/M06 keys and other outbox controls. Original text below is retained as history. This pointer takes effect with coordinated issuance of accepted ADR-013.
+
 `event_handoff_outbox` is tenant-local and commits atomically with its source event. In-process state alone
 never satisfies at-least-once delivery. Deterministic dedupe keys: M05 `tenant + operation + kind`;
 M06 `tenant + operation`; M11 `tenant + source event + signal type`. Dispatchers enumerate tenants in a paged,
@@ -899,6 +903,8 @@ continuity or tombstone evidence — that interaction is unresolved and is why t
 speculatively.
 
 #### D-11.16 — Reference data is read on the control plane and carried as an immutable snapshot
+
+**Supersession note:** ADR-013 supersedes only the blanket tenant-connection shared-SQL sentence, narrowed by Decision 3 to the two named owners, schema USAGE and four-column shared.tenants routing read; reference-catalogue control-plane snapshots and all other controls remain. Original text below is retained as history. This pointer takes effect with coordinated issuance of accepted ADR-013.
 
 M01's tenant SQL boundary is preserved: **no `shared.*` SQL executes on a tenant connection.** The
 ContractRegistry loads reference and contract data over the M01 control-plane connection **before** the
@@ -1184,6 +1190,49 @@ No code, database feasibility, test result, schema freeze, deployment permission
 ### Acceptance record
 
 Accepted 2026-09-09 by HaloVox Engineering Lead after independent review (Claude notes 224 and 226). Issued together with the ADR-011 D-11.17 supersession pointer in one coordinated update.
+
+---
+
+## ADR-013: M02 CP0 Rebuild Observations, M11 Dedupe and Tenant-Binding Exception
+
+**Status:** Accepted
+**Date:** 2026-09-10
+**Decision owner:** HaloVox Engineering Lead
+**Supersedes on acceptance:** Only ADR-011 D-11.9's range-wide consistent-snapshot requirement; D-11.12's M11 dedupe preimage; and D-11.16's blanket prohibition of shared SQL on tenant connections to the limited extent below. All other provisions remain effective.
+**Review-trigger disposition:** ADR-012 installation binding/canonical verification trigger is addressed below for the two new binding-check owner paths. Its existing lock and key-scope gateway decision remains unchanged.
+**Review trigger:** Broader shared reads or grants; additional per-tenant body differences; changed registry binding/verification; rebuild publication/isolation changes; M11 key/map or consumer incompatibility; OI-009 bound breach.
+**Related decisions:** Owner sheet v2 O1, O3, O8 and O11; M02 CP0 contract baseline.
+
+### Context
+
+The CP0 contracts replace a range-wide evidence snapshot with independent operation observations, add handoff kind to M11 dedupe, and allow two M02 SECURITY DEFINER owners to read routing metadata inside a tenant transaction. These conflict with literal accepted ADR-011 language. M01 already performs its own registry revalidation on the tenant connection; its catalogued module-statement check rejects shared references. That existing distinction does not itself authorize a new M02 path. This record makes the narrow exception explicit, including that it crosses the accepted D-11.16 boundary.
+
+### Decision
+
+1. **D-11.9 supersession.** Retain the exact ordered bounded membership, tenant, projection version and pinned contract snapshot. Each operation independently performs READ COMMITTED isolation check, lock-before-load, complete evidence load, pure fold and validated projection-only apply in one transaction. Apply/private finalization reject other isolation levels. Publication is per operation; there is no range-wide atomic swap or consistent evidence snapshot. Interruption repeats the entire retained membership idempotently with new observations, never resumes by append_sequence. Replay cannot call providers or enqueue. Signed manifests report the retained membership, pinned versions, each operation's observed counts/fingerprints and disposition, aggregate counts, elapsed time and truthful complete/partial/failed status. Manifest signing or persistence failure after any commit is partial/manifest-incomplete. Existing OI-009 review gates remain.
+2. **D-11.12 supersession.** Only the M11 deterministic preimage changes to tenant + source event + handoff kind + signal type, using the baseline's versioned compact canonical UTF-8 encoding. The closed M02 emitted pairs are event_signal/m02.event.appended and integrity_alert/m02.integrity.incomplete, subject to consumer compatibility. M05/M06 keys, transactional outbox and acknowledgement/convergence guarantees remain unchanged.
+3. **D-11.16 narrow exception.** Contract/reference catalogues still load on the control plane before the tenant transaction and travel as immutable versioned snapshots. Module statement SQL still cannot read shared data. Only haloflow_m02_projection_owner and haloflow_m02_outbox_owner receive USAGE on schema shared and the approved column-level SELECT on shared.tenants: tenant_id, schema_key, lifecycle_state, schema_version. Their reviewed SECURITY DEFINER binding checks explicitly read that registry inside the tenant transaction, resolve the provisioning-fixed schema to an active row, and require equality with app.tenant_id. This is routing consistency, not principal authentication. Column grants expose routing metadata across registry rows; they do not grant unrelated tenant event, clinical or outbox data. No shared schema is added to search_path and no wider shared read or write is authorized. M01 retains authentication, registry revalidation and schema-version compatibility checks. Shared grants are issued through the owner-run Alembic role revision; M02 verifies exact column privileges for both owners because M01 TC-E22 table-level coverage is insufficient.
+4. **ADR-012 triggered review disposition.** The provisioning-rendered schema binding constant is the only permitted per-tenant body difference for these two new binding-check paths. Compare each body against its trusted per-tenant rendered expected body and independently verify path, owner, ACL, SECURITY DEFINER configuration and allowed references. Cross-tenant byte equality is not their body oracle; arbitrary differences and identically wrong rendered definitions must fail. Existing lock/key-scope gateway canonical-body equality under ADR-012 remains unchanged. Installation remains per tenant, with validated identifiers, fixed safe path, NOLOGIN ownership, minimum explicit grants and revoked PUBLIC EXECUTE. No shared executable schema is introduced.
+
+### Supersession and preservation record
+
+| Prior provision | Disposition on acceptance |
+|---|---|
+| ADR-011 D-11.9 consistent database snapshot | Replaced only by decision 1; retained full-range restart and no-provider/no-duplication controls |
+| ADR-011 D-11.12 M11 dedupe preimage | Replaced only by decision 2 |
+| ADR-011 D-11.16 blanket no shared SQL on a tenant connection | Narrowed only by decision 3; reference-catalogue snapshots and generation controls retained |
+| ADR-012 | Trigger reviewed through decision 4; no supersession of existing lock/key-scope gateway rule |
+| Other ADR provisions | Unchanged |
+
+### Alternatives and consequences
+
+A range-wide snapshot or atomic swap is not supplied by per-operation locking; claiming either would misstate visibility and partial completion. Retaining the old M11 key omits an approved handoff dimension. A universal shared-data grant or shared search_path would exceed the approved routing need. Literal body equality for the two new binding checks cannot validate their per-tenant schema constants; trusted rendering plus independent metadata and behavioral checks is required.
+
+The routing exception broadens the literal accepted boundary and exposes cross-row registry metadata to two owners. It does not improve principal authentication or eliminate privileged-writer and audit-DML residual risks. Per-operation rebuild may observe different committed evidence times, publish partial progress and fail to persist a final manifest. Production signer, consumer compatibility, OI-009 measurement and the no-side-effect owning-module release rule remain gates. This ADR specifies contracts; it supplies no runtime test evidence or implementation/database/Git authority.
+
+### Acceptance and coordinated issuance
+
+Accepted 2026-09-10 (approximately 19:55 ET; 23:55:20 UTC) by Rachel as decision owner, selecting “Accept ADR-013” after independent review of the draft (Claude notes 236 and 237); the final acceptance delta was reviewed in Claude note 238. Scope: draft v2 (SHA256 8c42836ffcf6090842edcfb5e555edcdf71b1f90ac576508d5c5482ebdb53bc7) plus USAGE on schema shared. The question put to the owner disclosed the D-11.16 exception, the two owners, the four columns, cross-row routing metadata reach and schema USAGE. Recorded from Claude relay 20260910T235520Z-claude-to-codex-2805d75f; Codex has no direct access to the source conversation. Issued together with the three ADR-011 supersession notes in one coordinated update. Acceptance and issuance authorize no implementation, tests, database, commit, push or merge action.
 
 ---
 

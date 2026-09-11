@@ -1,0 +1,367 @@
+{
+  "status": "PROPOSED DOCUMENT MANIFEST; not installed grants",
+  "version": 2,
+  "views": {
+    "engine_events": {
+      "consumer": "authorized internal fold only",
+      "outputs": [
+        "event_id",
+        "append_sequence",
+        "operation_id",
+        "event_type",
+        "contract_version",
+        "event_level",
+        "status",
+        "occurred_at",
+        "source_time_quality",
+        "corrected_event_id",
+        "correction_scope",
+        "correction_reason",
+        "resolution_path_code",
+        "content_fingerprint",
+        "provider",
+        "provider_account",
+        "external_id",
+        "failure_reason_code",
+        "metadata_projection"
+      ],
+      "deps": {
+        "patient_events": [
+          "append_sequence",
+          "content_fingerprint",
+          "contract_version",
+          "corrected_event_id",
+          "correction_reason",
+          "correction_scope",
+          "event_id",
+          "event_level",
+          "event_type",
+          "external_id",
+          "failure_reason_code",
+          "metadata",
+          "occurred_at",
+          "operation_id",
+          "provider",
+          "provider_account",
+          "resolution_path_code",
+          "source_time_quality",
+          "status"
+        ]
+      },
+      "paths": [
+        "policy.rule_id",
+        "policy.rule_version",
+        "policy.target_event_type",
+        "policy.target_contract_version",
+        "data.effect",
+        "data.evidence_refs",
+        "data.case_ref",
+        "data.affected_event_ids",
+        "data.selected_event_id",
+        "data.disposition_code",
+        "data.new_operation_id",
+        "candidate_identity_namespace",
+        "candidate_uniqueness_scope",
+        "competing_event_ids"
+      ]
+    },
+    "engine_links": {
+      "consumer": "authorized internal fold only",
+      "outputs": [
+        "event_id",
+        "link_type",
+        "link_id",
+        "relationship"
+      ],
+      "deps": {
+        "patient_event_links": [
+          "event_id",
+          "link_id",
+          "link_type",
+          "relationship"
+        ],
+        "patient_events": [
+          "event_id",
+          "operation_id"
+        ]
+      },
+      "paths": []
+    },
+    "engine_binding": {
+      "consumer": "authorized acceptance comparison only",
+      "outputs": [
+        "operation_id",
+        "provider",
+        "provider_account",
+        "identity_namespace",
+        "external_id",
+        "uniqueness_scope",
+        "source_event_id"
+      ],
+      "deps": {
+        "operation_acceptance_bindings": [
+          "external_id",
+          "identity_namespace",
+          "operation_id",
+          "provider",
+          "provider_account",
+          "source_event_id",
+          "uniqueness_scope"
+        ]
+      },
+      "paths": []
+    },
+    "projection_default": {
+      "consumer": "authorized default public projection",
+      "outputs": [
+        "operation_id",
+        "status",
+        "terminal",
+        "conflict",
+        "indeterminate",
+        "controlling_event_ids",
+        "explanation_code",
+        "projection_engine_version",
+        "refreshed_at"
+      ],
+      "deps": {
+        "operation_projections": [
+          "conflict",
+          "controlling_event_ids",
+          "explanation_code",
+          "indeterminate",
+          "operation_id",
+          "projection_engine_version",
+          "refreshed_at",
+          "status",
+          "terminal"
+        ],
+        "operation_registry": [
+          "operation_id",
+          "subject_id",
+          "subject_type"
+        ]
+      },
+      "paths": []
+    },
+    "projection_freshness_internal": {
+      "consumer": "service freshness comparison; no direct public serialization",
+      "outputs": [
+        "operation_id",
+        "source_event_count",
+        "source_max_append_sequence",
+        "source_set_fingerprint"
+      ],
+      "deps": {
+        "operation_projections": [
+          "operation_id",
+          "source_event_count",
+          "source_max_append_sequence",
+          "source_set_fingerprint"
+        ],
+        "patient_events": [
+          "append_sequence",
+          "content_fingerprint",
+          "event_id",
+          "operation_id"
+        ]
+      },
+      "paths": []
+    },
+    "timeline_default": {
+      "consumer": "authorized default timeline",
+      "outputs": [
+        "event_id",
+        "operation_id",
+        "event_type",
+        "event_level",
+        "status",
+        "occurred_at",
+        "created_at",
+        "source_time_quality",
+        "corrected_event_id",
+        "correction_scope",
+        "correction_reason",
+        "principal_kind"
+      ],
+      "deps": {
+        "patient_events": [
+          "actor_id",
+          "append_sequence",
+          "corrected_event_id",
+          "correction_reason",
+          "correction_scope",
+          "created_at",
+          "event_id",
+          "event_level",
+          "event_type",
+          "occurred_at",
+          "operation_id",
+          "patient_id",
+          "source_time_quality",
+          "status",
+          "workload_id"
+        ],
+        "patient_event_links": [
+          "event_id",
+          "link_id",
+          "link_type",
+          "relationship"
+        ]
+      },
+      "paths": []
+    },
+    "stale_intent": {
+      "consumer": "authorized M06 detector service only",
+      "outputs": [
+        "requested_event_id",
+        "operation_id",
+        "owner_service",
+        "action_code",
+        "created_at",
+        "provider",
+        "provider_account",
+        "external_id"
+      ],
+      "deps": {
+        "patient_events": [
+          "append_sequence",
+          "contract_version",
+          "corrected_event_id",
+          "correction_scope",
+          "created_at",
+          "event_id",
+          "event_level",
+          "event_type",
+          "metadata",
+          "operation_id",
+          "resolution_path_code",
+          "status"
+        ],
+        "operation_registry": [
+          "action_code",
+          "operation_id",
+          "owner_service",
+          "subject_id",
+          "subject_type"
+        ],
+        "operation_acceptance_bindings": [
+          "external_id",
+          "operation_id",
+          "provider",
+          "provider_account"
+        ],
+        "patient_event_links": [
+          "event_id",
+          "link_id",
+          "link_type",
+          "relationship"
+        ]
+      },
+      "paths": [
+        "policy.rule_id",
+        "policy.rule_version",
+        "data.effect",
+        "data.affected_event_ids",
+        "data.selected_event_id",
+        "data.disposition_code",
+        "data.new_operation_id"
+      ]
+    },
+    "synthetic_label_view": {
+      "consumer": "non-production explicitly authorized metadata test view only",
+      "outputs": [
+        "event_id",
+        "label_code"
+      ],
+      "deps": {
+        "patient_events": [
+          "append_sequence",
+          "contract_version",
+          "corrected_event_id",
+          "correction_scope",
+          "event_id",
+          "event_type",
+          "metadata",
+          "operation_id"
+        ]
+      },
+      "paths": [
+        "label_code",
+        "policy.rule_id",
+        "policy.rule_version",
+        "data.label_code"
+      ]
+    }
+  },
+  "read_owner_column_union": {
+    "operation_acceptance_bindings": [
+      "external_id",
+      "identity_namespace",
+      "operation_id",
+      "provider",
+      "provider_account",
+      "source_event_id",
+      "uniqueness_scope"
+    ],
+    "operation_projections": [
+      "conflict",
+      "controlling_event_ids",
+      "explanation_code",
+      "indeterminate",
+      "operation_id",
+      "projection_engine_version",
+      "refreshed_at",
+      "source_event_count",
+      "source_max_append_sequence",
+      "source_set_fingerprint",
+      "status",
+      "terminal"
+    ],
+    "operation_registry": [
+      "action_code",
+      "operation_id",
+      "owner_service",
+      "subject_id",
+      "subject_type"
+    ],
+    "patient_event_links": [
+      "event_id",
+      "link_id",
+      "link_type",
+      "relationship"
+    ],
+    "patient_events": [
+      "actor_id",
+      "append_sequence",
+      "content_fingerprint",
+      "contract_version",
+      "corrected_event_id",
+      "correction_reason",
+      "correction_scope",
+      "created_at",
+      "event_id",
+      "event_level",
+      "event_type",
+      "external_id",
+      "failure_reason_code",
+      "metadata",
+      "occurred_at",
+      "operation_id",
+      "patient_id",
+      "provider",
+      "provider_account",
+      "resolution_path_code",
+      "source_time_quality",
+      "status",
+      "workload_id"
+    ]
+  },
+  "excluded_tables": [
+    "operation_key_versions",
+    "access_audit_outbox",
+    "event_handoff_outbox"
+  ],
+  "runtime_direct_base_table_select": "none for this proposed complete replacement profile; issuance/implementation required",
+  "clinical_support_profile": "unavailable until separately registered exact profile; never falls back to unrestricted metadata"
+}

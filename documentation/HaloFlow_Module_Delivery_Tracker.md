@@ -247,6 +247,8 @@ the review dispositions and the pre-push verification.
 
 ### M02 — Event and Operation Foundation
 
+- **CP0 contract alignment recorded and independently verified 2026-09-10:** owner sheet O1–O12 and the issued CP0 contract baseline define the physical/test contracts, synthetic profile, exact read manifest, SignerProvider interface and provisional limits. Reviewer conditions are closed; this entry records document issuance only, not implementation, executed tests or completion of CP1–CP9. The no-side-effect production rule remains required before the affected FR-035 release; signer deployment and representative OI-009 validation remain later gates. Git, database, implementation and release actions require separate owner authorization.
+
 - Detailed Requirements v1.0 approved 2026-08-28. Technical Design v0.3 approved as the implementation
   baseline 2026-08-30, closing review findings T1–T8 and V1–V5.
 - **ADR-011 accepted 2026-08-30**, superseding portions of ADR-003 and ADR-005: `idempotency_key` removed;
