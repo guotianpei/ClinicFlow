@@ -1,0 +1,154 @@
+[
+  {
+    "id": "main/acl-reordered",
+    "input": "vectors/main/acl-reordered.input.json",
+    "expected": "vectors/main/acl-reordered.canonical.json",
+    "input_sha256": "933b2f40f72f332b9b5fc4c9795500fdd8cd8e836f8c8c4a68f522034257adf3",
+    "expected_sha256": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/dictionary-reordered",
+    "input": "vectors/main/dictionary-reordered.input.json",
+    "expected": "vectors/main/dictionary-reordered.canonical.json",
+    "input_sha256": "c893825282b7cc548023f3d03dfea0cca4224454da79c8e012940bd5c8b2e802",
+    "expected_sha256": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/function-v3-candidate",
+    "input": "vectors/main/function-v3-candidate.input.json",
+    "expected": "vectors/main/function-v3-candidate.canonical.json",
+    "input_sha256": "674e9db796896ae96b8b2cdbc61808e8805a52334b2611760c73a1f56fffa23a",
+    "expected_sha256": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/legacy-role-set",
+    "input": "vectors/main/legacy-role-set.input.json",
+    "expected": "vectors/main/legacy-role-set.canonical.json",
+    "input_sha256": "e1bc9ac7564c95b48c5c39240d25759b702ef5ced48c9fe976fc3a6091fbda82",
+    "expected_sha256": "e1bc9ac7564c95b48c5c39240d25759b702ef5ced48c9fe976fc3a6091fbda82",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/legacy-t001",
+    "input": "vectors/main/legacy-t001.input.json",
+    "expected": "vectors/main/legacy-t001.canonical.json",
+    "input_sha256": "5e232d1563edb413560a939b4564194b268ebda631266900f1ddfa5aa75d0ebd",
+    "expected_sha256": "5e232d1563edb413560a939b4564194b268ebda631266900f1ddfa5aa75d0ebd",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/newline-crlf",
+    "input": "vectors/main/newline-crlf.input.json",
+    "expected": "vectors/main/newline-crlf.canonical.json",
+    "input_sha256": "4b9f489fb02a723719adf720b4049384de5f92c14e34af502d5bd3b01e287849",
+    "expected_sha256": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/ordered-arguments-swapped",
+    "input": "vectors/main/ordered-arguments-swapped.input.json",
+    "expected": "vectors/main/ordered-arguments-swapped.canonical.json",
+    "input_sha256": "08f51362c14d2b80d3919488401aa8933fe5b55675d398e3b8bf60246712f989",
+    "expected_sha256": "a2f7ab7fad21d10bd20a8a81e310e098de35c64c78a32109a53c0b21e18e014d",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/ordered-unregistered",
+    "input": "vectors/main/ordered-unregistered.input.json",
+    "expected": "vectors/main/ordered-unregistered.canonical.json",
+    "input_sha256": "096f398cf24bd7303feadde6770be188affaf5c9d3c5de7404a231bbc0d82d5a",
+    "expected_sha256": "096f398cf24bd7303feadde6770be188affaf5c9d3c5de7404a231bbc0d82d5a",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/policy-only",
+    "input": "vectors/main/policy-only.input.json",
+    "expected": "vectors/main/policy-only.canonical.json",
+    "input_sha256": "7d9bc4ab64728d26705902f70338d29bbc74becc60815670dc6c5acb13f22058",
+    "expected_sha256": "4cb4e1cc96f4e95da890d523a048c5de2ac8d7f7b8b47deb99f3e9e9ad001c4b",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/template-whitespace",
+    "input": "vectors/main/template-whitespace.input.json",
+    "expected": "vectors/main/template-whitespace.canonical.json",
+    "input_sha256": "5c99aad1faa9465c4e41e5ab83b5f80a560dfc0884c56384854b519c115cdbba",
+    "expected_sha256": "2cadd641342bf93c3d294171e1c5cae4fca785ec3e94da50a51d72751a19acea",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/unicode-nfd",
+    "input": "vectors/main/unicode-nfd.input.json",
+    "expected": "vectors/main/unicode-nfd.canonical.json",
+    "input_sha256": "0e165f7a7a2cf0be0966525506420497df6028a21151787687e5c86a58c2b105",
+    "expected_sha256": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/verification-body-whitespace",
+    "input": "vectors/main/verification-body-whitespace.input.json",
+    "expected": "vectors/main/verification-body-whitespace.canonical.json",
+    "input_sha256": "03b1923d8618aedd21a9a9a70fe716e585d8b6901326c2ae947fe8116e672e1e",
+    "expected_sha256": "7189d1777ccc7ed3e0769a10e29ab3de99a0ca38c92cb778dab48e94ebebe18b",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "main/verification-only",
+    "input": "vectors/main/verification-only.input.json",
+    "expected": "vectors/main/verification-only.canonical.json",
+    "input_sha256": "c4203a696ccab02825511b9c40df8d75e5bf1d2e8f3320a917100a503107b82a",
+    "expected_sha256": "1a7869a159e749c5a0f2c7e4e56d814bfc5a136c24fc7c062f94758f56d36b94",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "comment/comment-nfc",
+    "input": "vectors/comment/comment-nfc.input.json",
+    "expected": "vectors/comment/comment-nfc.canonical.json",
+    "input_sha256": "cdc2d9f1842f3e56bcce16e4a9717d73ddc13f0bd0e757aacd63652a057b4b43",
+    "expected_sha256": "8369110c3a11530bc50607f05d87ce3c42d5cde905dfb15833021ebb4f2c6fd4",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "comment/comment-nfd",
+    "input": "vectors/comment/comment-nfd.input.json",
+    "expected": "vectors/comment/comment-nfd.canonical.json",
+    "input_sha256": "8d58dde6582e858662b937fa5f9343909ac5e4243f7968ca42cee1e2cf0ca7a3",
+    "expected_sha256": "8369110c3a11530bc50607f05d87ce3c42d5cde905dfb15833021ebb4f2c6fd4",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "gateway/array-keyword-shape",
+    "input": "vectors/gateway/array-keyword-shape.input.json",
+    "expected": "vectors/gateway/array-keyword-shape.canonical.json",
+    "input_sha256": "424fb46e23d9075b322990f2bc70a24fdb4217811e233b5038f6407a007657d9",
+    "expected_sha256": "424fb46e23d9075b322990f2bc70a24fdb4217811e233b5038f6407a007657d9",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "gateway/begin-key-scope-shape",
+    "input": "vectors/gateway/begin-key-scope-shape.input.json",
+    "expected": "vectors/gateway/begin-key-scope-shape.canonical.json",
+    "input_sha256": "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f",
+    "expected_sha256": "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "gateway/lock-operation-shape",
+    "input": "vectors/gateway/lock-operation-shape.input.json",
+    "expected": "vectors/gateway/lock-operation-shape.canonical.json",
+    "input_sha256": "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577",
+    "expected_sha256": "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  },
+  {
+    "id": "gateway/output-order-swap",
+    "input": "vectors/gateway/output-order-swap.input.json",
+    "expected": "vectors/gateway/output-order-swap.canonical.json",
+    "input_sha256": "372f326aea388c63f008a9b6b00d4556bd23b7f99f378849cf5b17b4122ac223",
+    "expected_sha256": "372f326aea388c63f008a9b6b00d4556bd23b7f99f378849cf5b17b4122ac223",
+    "status": "published document baseline; runtime reproduction NOT RUN"
+  }
+]
