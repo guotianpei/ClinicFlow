@@ -1,8 +1,10 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-07 (**M01 PR-3 MERGED as PR #8**, `main` at `19c6aae`; CP-9 closed; merged tree byte-identical to the gated commit; merge-commit CI green)
+Last updated: 2026-09-11 (M02 CP0 issuance committed and pushed as `3ac7711` on `docs/m02-cp0-source-amendments`; not merged to main; CP0 closed by this tracker record)
 
 ## Current position — read this first
+
+**M02 CP0 issuance is committed and pushed:** `3ac77114d3e3d953045951e5208b30be9aa29608` on `docs/m02-cp0-source-amendments`, including the CP0 contract baseline, ADR-013 and the versioned design PDF. The branch is not merged to `main`. Claude244 clears the review gate after Rachel accepted the changed list/heading formatting; Claude246 verifies all 19 committed blobs and the remote branch. This tracker record closes CP0 (workflow §9). M02 CP1 is a proposed installation-policy/checksum-compatibility checkpoint, in planning only. No new code, database or CI pass is claimed. No PR, merge or deployment is authorized.
 
 **M01 PR-3 IS MERGED — PR #8, 2026-09-07, merge commit `19c6aae`. All 13 checkpoints complete.**
 Twelve were committed with CI green — through CP-8 (`f890b27`, run #35) and the REQ-CP9-01 migrator
@@ -98,7 +100,7 @@ the review dispositions and the pre-push verification.
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
 | M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and the whole debt PR merged (PR-1 and PR-2). Implementation stays 🟡: the legacy SQLAlchemy/asyncpg modules are not yet behind M01 and the production identity adapter is open. Security/privacy stays 🟡 pending PHI-safe telemetry; reliability stays 🟡 pending Cloud SQL evidence |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011 and OI-007 accepted; M01 PR-3 merged. Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required. |
+| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 CP0 contract baseline, design v0.3, ADR-013 and PDF issued at `3ac7711` on the pushed, unmerged documentation branch; CP0 closed by this tracker record. M02 CP1 planning only; M01 PR-3 remains merged. Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required. |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -247,7 +249,10 @@ the review dispositions and the pre-push verification.
 
 ### M02 — Event and Operation Foundation
 
-- **CP0 contract alignment recorded and independently verified 2026-09-10:** owner sheet O1–O12 and the issued CP0 contract baseline define the physical/test contracts, synthetic profile, exact read manifest, SignerProvider interface and provisional limits. Reviewer conditions are closed; this entry records document issuance only, not implementation, executed tests or completion of CP1–CP9. The no-side-effect production rule remains required before the affected FR-035 release; signer deployment and representative OI-009 validation remain later gates. Git, database, implementation and release actions require separate owner authorization.
+- **CP0 contract alignment recorded and independently verified 2026-09-10:** owner sheet O1–O12 and the issued CP0 contract baseline define the physical/test contracts, synthetic profile, exact read manifest, SignerProvider interface and provisional limits. Reviewer conditions are closed; this entry records document issuance only, not implementation, executed tests or completion of any M02 implementation checkpoint. The no-side-effect production rule remains required before the affected FR-035 release; signer deployment and representative OI-009 validation remain later gates. Git, database, implementation and release actions require separate owner authorization.
+- **CP0 issuance committed and pushed 2026-09-11:** owner-aligned O1–O12, ADR-013 and package v4 are recorded at `3ac77114d3e3d953045951e5208b30be9aa29608` on `docs/m02-cp0-source-amendments`, not merged to `main`. The 19 paths include the final DOCX/PDF, tracker, architecture decisions, OI-007, baseline index and 13 immutable attachments. Claude246 verifies their exact bytes and remote publication. Rachel accepted the conversion of 71 bullet paragraphs to numbered lists and nine literal-number headings to generated numbering (Claude244); this is owner acceptance, not restoration. The accepted structure baseline governs future Word saves. This tracker record closes CP0 (workflow §9). M02 CP1 is planning only; M01 PR-3 CP-1 through CP-9 remain closed and are not an M02 checkpoint sequence.
+- **Carried implementation/release gates:** R-E7, SEQ-01(b), deployment identity R-P1B.2, O7 no-side-effect rule before affected FR-035 release, production signer algorithm/custody/rotation/storage, M11 consumer compatibility, OI-009 measurement and PostgreSQL 17 permission/body/behavior tests (including the M02 column-privilege assertions that close the M01 TC-E22 coverage gap (O11)). Finalization-A omission and runtime audit DML residuals, and Claude168's ten limitations, remain. Document issuance supplies no execution or production-readiness evidence.
+- **Editorial follow-ups:** R1 (OI-007 §6 pointer) and R4 (ADR-012/ADR-013 summary rows) remain open. This record addresses R2's M02 matrix/Current position pointers and the ambiguous CP1–CP9 wording. No PR, merge or deployment is authorized.
 
 - Detailed Requirements v1.0 approved 2026-08-28. Technical Design v0.3 approved as the implementation
   baseline 2026-08-30, closing review findings T1–T8 and V1–V5.
