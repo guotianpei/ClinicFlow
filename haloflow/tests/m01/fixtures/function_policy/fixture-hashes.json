@@ -1,0 +1,11 @@
+{
+  "cases.json": "273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3",
+  "controls/C01.json": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+  "controls/C02.json": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+  "controls/C03.json": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+  "controls/C04.json": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+  "controls/C05.json": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+  "controls/C06.json": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+  "expected-refusals.json": "7c0fe15ca54ad356f2483b17ca194223ac3cbec485051973f74eafca833a8899",
+  "sql-fixtures.json": "3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805"
+}

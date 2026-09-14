@@ -1,0 +1,290 @@
+{
+  "A-table": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-temp": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-unlogged": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-ctas": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-partition": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-select-into": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-materialized": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-table-grant": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-schema-grant": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-role-grant": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-default-privilege": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-unknown-select": {
+    "code": "INSTALL_TOPLEVEL_FORM_UNKNOWN",
+    "phase": null
+  },
+  "A-session-set": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-session-reset": {
+    "code": "INSTALL_TOPLEVEL_FORM_FORBIDDEN",
+    "phase": null
+  },
+  "A-language": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-invoker": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-replace": {
+    "code": "INSTALL_TOPLEVEL_FIELD_MISMATCH",
+    "phase": null
+  },
+  "A-volatility": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-parallel": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-strict": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-path-order": {
+    "code": "INSTALL_CONFIG_MISMATCH",
+    "phase": null
+  },
+  "A-path-public": {
+    "code": "INSTALL_CONFIG_MISMATCH",
+    "phase": null
+  },
+  "A-path-from-current": {
+    "code": "INSTALL_CONFIG_MISMATCH",
+    "phase": null
+  },
+  "A-missing-language": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-missing-volatility": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-missing-parallel": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-missing-strict": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-missing-security": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-duplicate-language": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-extra-cost": {
+    "code": "INSTALL_OPTION_MISMATCH",
+    "phase": null
+  },
+  "A-extra-config": {
+    "code": "INSTALL_CONFIG_MISMATCH",
+    "phase": null
+  },
+  "A-body-drift": {
+    "code": "INSTALL_BODY_MISMATCH",
+    "phase": null
+  },
+  "A-grant-option": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O11"
+  },
+  "A-duplicate-grantee": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O11"
+  },
+  "A-missing-grantee": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O12"
+  },
+  "A-extra-grantee": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O12"
+  },
+  "A-grant-all": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O11"
+  },
+  "A-revoke-execute": {
+    "code": "INSTALL_ACL_MISMATCH",
+    "phase": "O11"
+  },
+  "A-wrong-grant-signature": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": "O11"
+  },
+  "A-wrong-create-schema": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-unqualified-create": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-wrong-create-name": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-split-grant": {
+    "code": "INSTALL_STATEMENT_COUNT_INVALID",
+    "phase": "O12"
+  },
+  "A-bare-setof": {
+    "code": "INSTALL_TYPE_SHAPE_FORBIDDEN",
+    "phase": null
+  },
+  "A-explicit-bound": {
+    "code": "INSTALL_TYPE_SHAPE_FORBIDDEN",
+    "phase": null
+  },
+  "A-multiple-bounds": {
+    "code": "INSTALL_TYPE_SHAPE_FORBIDDEN",
+    "phase": null
+  },
+  "A-output-name": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-output-order": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "P-column-default": {
+    "code": "INSTALL_PARSE_ERROR",
+    "phase": null
+  },
+  "P-out-table": {
+    "code": "INSTALL_PARSE_ERROR",
+    "phase": null
+  },
+  "P-inout-table": {
+    "code": "INSTALL_PARSE_ERROR",
+    "phase": null
+  },
+  "P-unnamed-table": {
+    "code": "INSTALL_PARSE_ERROR",
+    "phase": null
+  },
+  "A-out-no-table": {
+    "code": "INSTALL_PARAMETER_MODE_FORBIDDEN",
+    "phase": null
+  },
+  "A-inout-no-table": {
+    "code": "INSTALL_PARAMETER_MODE_FORBIDDEN",
+    "phase": null
+  },
+  "A-input-array": {
+    "code": "INSTALL_TYPE_SHAPE_FORBIDDEN",
+    "phase": null
+  },
+  "A-variadic-table": {
+    "code": "INSTALL_PARAMETER_MODE_FORBIDDEN",
+    "phase": null
+  },
+  "A-comment-null": {
+    "code": "INSTALL_COMMENT_MISMATCH",
+    "phase": "O11"
+  },
+  "A-comment-wrong": {
+    "code": "INSTALL_COMMENT_MISMATCH",
+    "phase": "O11"
+  },
+  "A-comment-missing": {
+    "code": "INSTALL_COMMENT_MISMATCH",
+    "phase": "O12"
+  },
+  "A-comment-undeclared": {
+    "code": "INSTALL_COMMENT_MISMATCH",
+    "phase": null
+  },
+  "A-revoke-missing": {
+    "code": "INSTALL_STATEMENT_COUNT_INVALID",
+    "phase": null
+  },
+  "A-create-duplicate": {
+    "code": "INSTALL_STATEMENT_COUNT_INVALID",
+    "phase": null
+  },
+  "A-grant-before-revoke": {
+    "code": "INSTALL_STATEMENT_ORDER_INVALID",
+    "phase": null
+  },
+  "POS-quoted-words": {
+    "code": null,
+    "phase": null
+  },
+  "POS-acl-order": {
+    "code": null,
+    "phase": null
+  },
+  "POS-array-keyword": {
+    "code": null,
+    "phase": null
+  },
+  "A-empty-acl-grant": {
+    "code": "INSTALL_STATEMENT_COUNT_INVALID",
+    "phase": "O12"
+  },
+  "A-input-name": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-input-order": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-input-type": {
+    "code": "INSTALL_SIGNATURE_MISMATCH",
+    "phase": null
+  },
+  "A-input-default": {
+    "code": "INSTALL_PARAMETER_DEFAULT_FORBIDDEN",
+    "phase": null
+  },
+  "P-parse-error": {
+    "code": "INSTALL_PARSE_ERROR",
+    "phase": null
+  }
+}

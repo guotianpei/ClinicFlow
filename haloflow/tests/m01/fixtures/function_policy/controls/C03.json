@@ -1,0 +1,102 @@
+{
+  "checksum_version": 3,
+  "execution_role": "haloflow_m02_owner",
+  "migration_id": "t002_m02_begin_key_scope",
+  "policy": {
+    "functions": [
+      {
+        "acl": [
+          {
+            "grantee": "haloflow_audit_projector",
+            "privileges": [
+              "EXECUTE"
+            ]
+          },
+          {
+            "grantee": "haloflow_runtime",
+            "privileges": [
+              "EXECUTE"
+            ]
+          }
+        ],
+        "body_sha256": "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd",
+        "comment": null,
+        "config": [
+          "search_path=pg_catalog, {schema}, pg_temp"
+        ],
+        "inputs": [
+          {
+            "name": "p1",
+            "type": "text"
+          },
+          {
+            "name": "p2",
+            "type": "text"
+          }
+        ],
+        "is_procedure": false,
+        "language": "plpgsql",
+        "name": "m02_begin_key_scope",
+        "outputs": [
+          {
+            "name": "active_write_version",
+            "type": "int2"
+          },
+          {
+            "name": "retained_lookup_versions",
+            "type": "int2[]"
+          },
+          {
+            "name": "generation",
+            "type": "int8"
+          }
+        ],
+        "parallel": "unsafe",
+        "replace": false,
+        "return_type": "record",
+        "schema": "{schema}",
+        "security_definer": true,
+        "strict": false,
+        "volatility": "volatile"
+      }
+    ],
+    "grammar_major": 17,
+    "parser_package": "pglast",
+    "parser_version": "7.17",
+    "policy_format": 1,
+    "semantic_version": 1
+  },
+  "template": "CREATE FUNCTION {schema}.m02_begin_key_scope(p1 text, p2 text) RETURNS TABLE(active_write_version smallint, retained_lookup_versions smallint[], generation bigint) LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN;\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_begin_key_scope(text, text) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_begin_key_scope(text, text) TO haloflow_audit_projector, haloflow_runtime;",
+  "verification": {
+    "functions": [
+      {
+        "acl": [
+          {
+            "grantee": "haloflow_audit_projector",
+            "privileges": [
+              "EXECUTE"
+            ]
+          },
+          {
+            "grantee": "haloflow_runtime",
+            "privileges": [
+              "EXECUTE"
+            ]
+          }
+        ],
+        "argument_types": [
+          "text",
+          "text"
+        ],
+        "body": "BEGIN\n  RETURN;\nEND;",
+        "config": [
+          "search_path=pg_catalog, {schema}, pg_temp"
+        ],
+        "name": "m02_begin_key_scope",
+        "owner": "haloflow_m02_owner",
+        "security_definer": true
+      }
+    ],
+    "kind": "function_metadata"
+  }
+}

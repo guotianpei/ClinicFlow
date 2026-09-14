@@ -1,0 +1,2786 @@
+{
+  "status": "v3 rule-level intent for owner alignment; zero executable assertions frozen",
+  "schema_key": "tenant_aaaaaaaa",
+  "controls": [
+    {
+      "id": "C01",
+      "payload": {
+        "checksum_version": 3,
+        "migration_id": "t002_annex_probe",
+        "execution_role": "haloflow_m02_owner",
+        "template": "CREATE FUNCTION {schema}.m02_annex_probe(privileges text, config uuid) RETURNS void LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN; -- café\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_annex_probe(text, uuid) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_audit_projector, haloflow_runtime;",
+        "verification": {
+          "kind": "function_metadata",
+          "functions": [
+            {
+              "name": "m02_annex_probe",
+              "argument_types": [
+                "text",
+                "uuid"
+              ],
+              "owner": "haloflow_m02_owner",
+              "security_definer": true,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "body": "BEGIN\n  RETURN; -- café\nEND;"
+            }
+          ]
+        },
+        "policy": {
+          "policy_format": 1,
+          "semantic_version": 1,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "grammar_major": 17,
+          "functions": [
+            {
+              "schema": "{schema}",
+              "name": "m02_annex_probe",
+              "inputs": [
+                {
+                  "name": "privileges",
+                  "type": "text"
+                },
+                {
+                  "name": "config",
+                  "type": "uuid"
+                }
+              ],
+              "outputs": [],
+              "return_type": "void",
+              "language": "plpgsql",
+              "is_procedure": false,
+              "replace": false,
+              "security_definer": true,
+              "volatility": "volatile",
+              "parallel": "unsafe",
+              "strict": false,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "body_sha256": "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a",
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "comment": null
+            }
+          ]
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "provenance": {
+        "source_ref": "c83c8c7703aec93fe2a432f964afa32961a53ff8",
+        "path": "haloflow/tests/m01/fixtures/function_checksum/vectors/main/function-v3-candidate.input.json",
+        "git_blob": "ee12ce7574a79eca2eaf6f1be0f08231b250a773",
+        "sha256": "674e9db796896ae96b8b2cdbc61808e8805a52334b2611760c73a1f56fffa23a"
+      },
+      "payload_file": "controls/C01.json",
+      "payload_sha256": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
+    },
+    {
+      "id": "C02",
+      "payload": {
+        "checksum_version": 3,
+        "execution_role": "haloflow_m02_owner",
+        "migration_id": "t002_m02_lock_operation",
+        "policy": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "body_sha256": "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd",
+              "comment": null,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "inputs": [
+                {
+                  "name": "p1",
+                  "type": "uuid"
+                }
+              ],
+              "is_procedure": false,
+              "language": "plpgsql",
+              "name": "m02_lock_operation",
+              "outputs": [
+                {
+                  "name": "operation_id",
+                  "type": "uuid"
+                }
+              ],
+              "parallel": "unsafe",
+              "replace": false,
+              "return_type": "uuid",
+              "schema": "{schema}",
+              "security_definer": true,
+              "strict": false,
+              "volatility": "volatile"
+            }
+          ],
+          "grammar_major": 17,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "policy_format": 1,
+          "semantic_version": 1
+        },
+        "template": "CREATE FUNCTION {schema}.m02_lock_operation(p1 uuid) RETURNS TABLE(operation_id uuid) LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN;\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_lock_operation(uuid) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_lock_operation(uuid) TO haloflow_audit_projector, haloflow_runtime;",
+        "verification": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "argument_types": [
+                "uuid"
+              ],
+              "body": "BEGIN\n  RETURN;\nEND;",
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "name": "m02_lock_operation",
+              "owner": "haloflow_m02_owner",
+              "security_definer": true
+            }
+          ],
+          "kind": "function_metadata"
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "provenance": {
+        "source_ref": "c83c8c7703aec93fe2a432f964afa32961a53ff8",
+        "path": "haloflow/tests/m01/fixtures/function_checksum/vectors/gateway/lock-operation-shape.input.json",
+        "git_blob": "fd0cf495750932689f1dad231f5da4e0da330e9b",
+        "sha256": "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577"
+      },
+      "payload_file": "controls/C02.json",
+      "payload_sha256": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
+    },
+    {
+      "id": "C03",
+      "payload": {
+        "checksum_version": 3,
+        "execution_role": "haloflow_m02_owner",
+        "migration_id": "t002_m02_begin_key_scope",
+        "policy": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "body_sha256": "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd",
+              "comment": null,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "inputs": [
+                {
+                  "name": "p1",
+                  "type": "text"
+                },
+                {
+                  "name": "p2",
+                  "type": "text"
+                }
+              ],
+              "is_procedure": false,
+              "language": "plpgsql",
+              "name": "m02_begin_key_scope",
+              "outputs": [
+                {
+                  "name": "active_write_version",
+                  "type": "int2"
+                },
+                {
+                  "name": "retained_lookup_versions",
+                  "type": "int2[]"
+                },
+                {
+                  "name": "generation",
+                  "type": "int8"
+                }
+              ],
+              "parallel": "unsafe",
+              "replace": false,
+              "return_type": "record",
+              "schema": "{schema}",
+              "security_definer": true,
+              "strict": false,
+              "volatility": "volatile"
+            }
+          ],
+          "grammar_major": 17,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "policy_format": 1,
+          "semantic_version": 1
+        },
+        "template": "CREATE FUNCTION {schema}.m02_begin_key_scope(p1 text, p2 text) RETURNS TABLE(active_write_version smallint, retained_lookup_versions smallint[], generation bigint) LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN;\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_begin_key_scope(text, text) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_begin_key_scope(text, text) TO haloflow_audit_projector, haloflow_runtime;",
+        "verification": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "argument_types": [
+                "text",
+                "text"
+              ],
+              "body": "BEGIN\n  RETURN;\nEND;",
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "name": "m02_begin_key_scope",
+              "owner": "haloflow_m02_owner",
+              "security_definer": true
+            }
+          ],
+          "kind": "function_metadata"
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "provenance": {
+        "source_ref": "c83c8c7703aec93fe2a432f964afa32961a53ff8",
+        "path": "haloflow/tests/m01/fixtures/function_checksum/vectors/gateway/begin-key-scope-shape.input.json",
+        "git_blob": "7424eeee56134afaf19fbcf6c8ef9405bce6aeec",
+        "sha256": "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f"
+      },
+      "payload_file": "controls/C03.json",
+      "payload_sha256": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives. Positive proves complete multi-column TABLE/record shape, negative A-output-order isolates ordering; dimension controls use C04 deliberately."
+    },
+    {
+      "id": "C04",
+      "payload": {
+        "checksum_version": 3,
+        "execution_role": "haloflow_m02_owner",
+        "migration_id": "t002_m02_lock_operation",
+        "policy": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "body_sha256": "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd",
+              "comment": null,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "inputs": [
+                {
+                  "name": "p1",
+                  "type": "uuid"
+                }
+              ],
+              "is_procedure": false,
+              "language": "plpgsql",
+              "name": "m02_lock_operation",
+              "outputs": [
+                {
+                  "name": "items",
+                  "type": "int2[]"
+                }
+              ],
+              "parallel": "unsafe",
+              "replace": false,
+              "return_type": "int2[]",
+              "schema": "{schema}",
+              "security_definer": true,
+              "strict": false,
+              "volatility": "volatile"
+            }
+          ],
+          "grammar_major": 17,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "policy_format": 1,
+          "semantic_version": 1
+        },
+        "template": "CREATE FUNCTION {schema}.m02_lock_operation(p1 uuid) RETURNS TABLE(items smallint[]) LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN;\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_lock_operation(uuid) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_lock_operation(uuid) TO haloflow_audit_projector, haloflow_runtime;",
+        "verification": {
+          "functions": [
+            {
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "argument_types": [
+                "uuid"
+              ],
+              "body": "BEGIN\n  RETURN;\nEND;",
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "name": "m02_lock_operation",
+              "owner": "haloflow_m02_owner",
+              "security_definer": true
+            }
+          ],
+          "kind": "function_metadata"
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "derivation": {
+        "parent_control": "C02",
+        "operations": [
+          {
+            "op": "replace_string_once",
+            "path": [
+              "template"
+            ],
+            "old": "operation_id uuid",
+            "new": "items smallint[]"
+          },
+          {
+            "op": "replace",
+            "path": [
+              "policy",
+              "functions",
+              0,
+              "outputs"
+            ],
+            "value": [
+              {
+                "name": "items",
+                "type": "int2[]"
+              }
+            ]
+          },
+          {
+            "op": "replace",
+            "path": [
+              "policy",
+              "functions",
+              0,
+              "return_type"
+            ],
+            "value": "int2[]"
+          }
+        ]
+      },
+      "payload_file": "controls/C04.json",
+      "payload_sha256": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
+    },
+    {
+      "id": "C05",
+      "payload": {
+        "checksum_version": 3,
+        "migration_id": "t002_annex_probe",
+        "execution_role": "haloflow_m02_owner",
+        "template": "CREATE FUNCTION {schema}.m02_annex_probe(privileges text, config uuid) RETURNS void LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN; -- café\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_annex_probe(text, uuid) FROM PUBLIC;",
+        "verification": {
+          "kind": "function_metadata",
+          "functions": [
+            {
+              "name": "m02_annex_probe",
+              "argument_types": [
+                "text",
+                "uuid"
+              ],
+              "owner": "haloflow_m02_owner",
+              "security_definer": true,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "acl": [],
+              "body": "BEGIN\n  RETURN; -- café\nEND;"
+            }
+          ]
+        },
+        "policy": {
+          "policy_format": 1,
+          "semantic_version": 1,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "grammar_major": 17,
+          "functions": [
+            {
+              "schema": "{schema}",
+              "name": "m02_annex_probe",
+              "inputs": [
+                {
+                  "name": "privileges",
+                  "type": "text"
+                },
+                {
+                  "name": "config",
+                  "type": "uuid"
+                }
+              ],
+              "outputs": [],
+              "return_type": "void",
+              "language": "plpgsql",
+              "is_procedure": false,
+              "replace": false,
+              "security_definer": true,
+              "volatility": "volatile",
+              "parallel": "unsafe",
+              "strict": false,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "body_sha256": "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a",
+              "acl": [],
+              "comment": null
+            }
+          ]
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "derivation": {
+        "parent_control": "C01",
+        "operations": [
+          {
+            "op": "replace_string_once",
+            "path": [
+              "template"
+            ],
+            "old": "\nGRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_audit_projector, haloflow_runtime;",
+            "new": ""
+          },
+          {
+            "op": "replace",
+            "path": [
+              "policy",
+              "functions",
+              0,
+              "acl"
+            ],
+            "value": []
+          },
+          {
+            "op": "replace",
+            "path": [
+              "verification",
+              "functions",
+              0,
+              "acl"
+            ],
+            "value": []
+          }
+        ]
+      },
+      "payload_file": "controls/C05.json",
+      "payload_sha256": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
+    },
+    {
+      "id": "C06",
+      "payload": {
+        "checksum_version": 3,
+        "migration_id": "t002_annex_probe",
+        "execution_role": "haloflow_m02_owner",
+        "template": "CREATE FUNCTION {schema}.m02_annex_probe(privileges text, config uuid) RETURNS void LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER SET search_path = pg_catalog, {schema}, pg_temp AS $body$BEGIN\n  RETURN; -- café\nEND;$body$;\nREVOKE ALL ON FUNCTION {schema}.m02_annex_probe(text, uuid) FROM PUBLIC;\nGRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_audit_projector, haloflow_runtime;\nCOMMENT ON FUNCTION {schema}.m02_annex_probe(text, uuid) IS '';",
+        "verification": {
+          "kind": "function_metadata",
+          "functions": [
+            {
+              "name": "m02_annex_probe",
+              "argument_types": [
+                "text",
+                "uuid"
+              ],
+              "owner": "haloflow_m02_owner",
+              "security_definer": true,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "body": "BEGIN\n  RETURN; -- café\nEND;"
+            }
+          ]
+        },
+        "policy": {
+          "policy_format": 1,
+          "semantic_version": 1,
+          "parser_package": "pglast",
+          "parser_version": "7.17",
+          "grammar_major": 17,
+          "functions": [
+            {
+              "schema": "{schema}",
+              "name": "m02_annex_probe",
+              "inputs": [
+                {
+                  "name": "privileges",
+                  "type": "text"
+                },
+                {
+                  "name": "config",
+                  "type": "uuid"
+                }
+              ],
+              "outputs": [],
+              "return_type": "void",
+              "language": "plpgsql",
+              "is_procedure": false,
+              "replace": false,
+              "security_definer": true,
+              "volatility": "volatile",
+              "parallel": "unsafe",
+              "strict": false,
+              "config": [
+                "search_path=pg_catalog, {schema}, pg_temp"
+              ],
+              "body_sha256": "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a",
+              "acl": [
+                {
+                  "grantee": "haloflow_audit_projector",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                },
+                {
+                  "grantee": "haloflow_runtime",
+                  "privileges": [
+                    "EXECUTE"
+                  ]
+                }
+              ],
+              "comment": ""
+            }
+          ]
+        }
+      },
+      "expected": "policy acceptance pending executable evidence",
+      "derivation": {
+        "parent_control": "C01",
+        "operations": [
+          {
+            "op": "append_string",
+            "path": [
+              "template"
+            ],
+            "value": "\nCOMMENT ON FUNCTION {schema}.m02_annex_probe(text, uuid) IS '';"
+          },
+          {
+            "op": "replace",
+            "path": [
+              "policy",
+              "functions",
+              0,
+              "comment"
+            ],
+            "value": ""
+          }
+        ]
+      },
+      "payload_file": "controls/C06.json",
+      "payload_sha256": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+      "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
+      "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
+      "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
+    }
+  ],
+  "cases": [
+    {
+      "id": "A-table",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE TABLE x(a int);"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-temp",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE TEMP TABLE x(a int);"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-temp",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-unlogged",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE UNLOGGED TABLE x(a int);"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-unlogged",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-ctas",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE TABLE x AS SELECT 1 AS a;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-ctas",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-partition",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE TABLE x PARTITION OF y FOR VALUES IN (1);"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-partition",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-select-into",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "SELECT 1 INTO x;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-select-into",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-materialized",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "CREATE MATERIALIZED VIEW x AS SELECT 1 AS a;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-materialized",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-table-grant",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "GRANT SELECT ON TABLE x TO probe;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-table-grant",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-schema-grant",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "GRANT USAGE ON SCHEMA x TO probe;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-schema-grant",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-role-grant",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "GRANT probe TO other_probe;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-role-grant",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-default-privilege",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO probe;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-default-privilege",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-unknown-select",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "SELECT 1;"
+      },
+      "expected": "unknown outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-unknown-select",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-session-set",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "SET search_path TO public;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-session-set",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-session-reset",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05/09",
+      "edit": {
+        "append_sql": "RESET search_path;"
+      },
+      "expected": "forbidden outer form",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-session-reset",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-language",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP08",
+      "edit": {
+        "replace_sql_once": [
+          "LANGUAGE plpgsql",
+          "LANGUAGE sql"
+        ]
+      },
+      "expected": "language mismatch / PLpgSQL restriction",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-language",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-invoker",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP08",
+      "edit": {
+        "replace_sql_once": [
+          "SECURITY DEFINER",
+          "SECURITY INVOKER"
+        ]
+      },
+      "expected": "security mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-invoker",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-replace",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP06",
+      "edit": {
+        "replace_sql_once": [
+          "CREATE FUNCTION",
+          "CREATE OR REPLACE FUNCTION"
+        ]
+      },
+      "expected": "replace forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-replace",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-volatility",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP08",
+      "edit": {
+        "replace_sql_once": [
+          "VOLATILE",
+          "STABLE"
+        ]
+      },
+      "expected": "declared volatility mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-volatility",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-parallel",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP08",
+      "edit": {
+        "replace_sql_once": [
+          "PARALLEL UNSAFE",
+          "PARALLEL SAFE"
+        ]
+      },
+      "expected": "declared parallel mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-parallel",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-strict",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP08",
+      "edit": {
+        "replace_sql_once": [
+          "CALLED ON NULL INPUT",
+          "STRICT"
+        ]
+      },
+      "expected": "declared strict mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-strict",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-path-order",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP09",
+      "edit": {
+        "replace_sql_once": [
+          "pg_catalog, {schema}, pg_temp",
+          "pg_catalog, pg_temp, {schema}"
+        ]
+      },
+      "expected": "search_path mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-path-order",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-path-public",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP09",
+      "edit": {
+        "replace_sql_once": [
+          "pg_catalog, {schema}, pg_temp",
+          "pg_catalog, public, pg_temp"
+        ]
+      },
+      "expected": "search_path mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-path-public",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-path-from-current",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP09",
+      "edit": {
+        "replace_sql_once": [
+          "SET search_path = pg_catalog, {schema}, pg_temp",
+          "SET search_path FROM CURRENT"
+        ]
+      },
+      "expected": "SET FROM CURRENT forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-path-from-current",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-language",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "LANGUAGE plpgsql ",
+          ""
+        ]
+      },
+      "expected": "required language absent",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-language",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-volatility",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "VOLATILE ",
+          ""
+        ]
+      },
+      "expected": "required volatility absent",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-volatility",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-parallel",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "PARALLEL UNSAFE ",
+          ""
+        ]
+      },
+      "expected": "required parallel absent",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-parallel",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-strict",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "CALLED ON NULL INPUT ",
+          ""
+        ]
+      },
+      "expected": "required strict absent",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-strict",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-security",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "SECURITY DEFINER ",
+          ""
+        ]
+      },
+      "expected": "required security absent",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-security",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-duplicate-language",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "LANGUAGE plpgsql",
+          "LANGUAGE plpgsql LANGUAGE plpgsql"
+        ]
+      },
+      "expected": "duplicate option",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-duplicate-language",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-extra-cost",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP07",
+      "edit": {
+        "replace_sql_once": [
+          "LANGUAGE plpgsql",
+          "LANGUAGE plpgsql COST 100"
+        ]
+      },
+      "expected": "unsupported option",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-extra-cost",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-extra-config",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP09",
+      "edit": {
+        "replace_sql_once": [
+          "LANGUAGE plpgsql",
+          "LANGUAGE plpgsql SET work_mem = '4MB'"
+        ]
+      },
+      "expected": "unsupported config",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-extra-config",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-body-drift",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP16",
+      "edit": {
+        "replace_sql_once": [
+          "RETURN; -- café",
+          "RETURN; -- changed"
+        ]
+      },
+      "expected": "body digest mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-body-drift",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-grant-option",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "TO haloflow_audit_projector, haloflow_runtime;",
+          "TO haloflow_audit_projector, haloflow_runtime WITH GRANT OPTION;"
+        ]
+      },
+      "expected": "grant option forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-grant-option",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-duplicate-grantee",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "TO haloflow_audit_projector, haloflow_runtime;",
+          "TO haloflow_audit_projector, haloflow_runtime, haloflow_runtime;"
+        ]
+      },
+      "expected": "duplicate role",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-duplicate-grantee",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-missing-grantee",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "TO haloflow_audit_projector, haloflow_runtime;",
+          "TO haloflow_runtime;"
+        ]
+      },
+      "expected": "incomplete caller set",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-missing-grantee",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-extra-grantee",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "TO haloflow_audit_projector, haloflow_runtime;",
+          "TO haloflow_audit_projector, haloflow_runtime, probe;"
+        ]
+      },
+      "expected": "undeclared caller",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-extra-grantee",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-grant-all",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "GRANT EXECUTE ON FUNCTION",
+          "GRANT ALL ON FUNCTION"
+        ]
+      },
+      "expected": "ALL grant forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-grant-all",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-revoke-execute",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "REVOKE ALL ON FUNCTION",
+          "REVOKE EXECUTE ON FUNCTION"
+        ]
+      },
+      "expected": "mandatory ALL revoke form mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-revoke-execute",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-wrong-grant-signature",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP13",
+      "edit": {
+        "replace_sql_once": [
+          "GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid)",
+          "GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(uuid, text)"
+        ]
+      },
+      "expected": "input identity mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-wrong-grant-signature",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-wrong-create-schema",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP06",
+      "edit": {
+        "replace_sql_once": [
+          "CREATE FUNCTION {schema}.",
+          "CREATE FUNCTION public."
+        ]
+      },
+      "expected": "tenant schema mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-wrong-create-schema",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-unqualified-create",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP06",
+      "edit": {
+        "replace_sql_once": [
+          "CREATE FUNCTION {schema}.",
+          "CREATE FUNCTION "
+        ]
+      },
+      "expected": "qualification missing",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-unqualified-create",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-wrong-create-name",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP06",
+      "edit": {
+        "replace_sql_once": [
+          "CREATE FUNCTION {schema}.m02_annex_probe",
+          "CREATE FUNCTION {schema}.other_probe"
+        ]
+      },
+      "expected": "undeclared function identity",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-wrong-create-name",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-split-grant",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "replace_sql_once": [
+          "GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_audit_projector, haloflow_runtime;",
+          "GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_audit_projector; GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_runtime;"
+        ]
+      },
+      "expected": "two caller grant statements forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-split-grant",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-bare-setof",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "Replace RETURNS TABLE(operation_id uuid) with RETURNS SETOF uuid; keep declared output and all other fields",
+      "expected": "missing TABLE parameter group, not returnType-only acceptance",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-bare-setof",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-explicit-bound",
+      "control": "C04",
+      "stage": "A",
+      "rule": "FP12",
+      "edit": "Replace items smallint[] with items smallint[2] in SQL only",
+      "expected": "bound value is not -1",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-explicit-bound",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-multiple-bounds",
+      "control": "C04",
+      "stage": "A",
+      "rule": "FP12",
+      "edit": "Replace items smallint[] with items smallint[][] in SQL only",
+      "expected": "bound count is not one",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-multiple-bounds",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-output-name",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "Change only SQL output name operation_id to other_id",
+      "expected": "ordered output name mismatch",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-output-name",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-output-order",
+      "control": "C03",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "Swap first two TABLE column declarations in SQL only; input identity remains unchanged",
+      "expected": "output order mismatch",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-output-order",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "P-column-default",
+      "control": "C04",
+      "stage": "P",
+      "rule": "FP11",
+      "edit": "Replace items smallint[] with items smallint[] DEFAULT NULL",
+      "expected": "parse refusal",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": false,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Exact complete fixture must produce ParseError rather than policy or environment failure.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#P-column-default",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "P-out-table",
+      "control": "C02",
+      "stage": "P",
+      "rule": "FP11",
+      "edit": "Change sole input mode to OUT retaining RETURNS TABLE",
+      "expected": "parse refusal",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": false,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Exact complete fixture must produce ParseError rather than policy or environment failure.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#P-out-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "P-inout-table",
+      "control": "C02",
+      "stage": "P",
+      "rule": "FP11",
+      "edit": "Change sole input mode to INOUT retaining RETURNS TABLE",
+      "expected": "parse refusal",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": false,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Exact complete fixture must produce ParseError rather than policy or environment failure.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#P-inout-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "P-unnamed-table",
+      "control": "C02",
+      "stage": "P",
+      "rule": "FP11",
+      "edit": "Replace RETURNS TABLE(operation_id uuid) with RETURNS TABLE(uuid)",
+      "expected": "parse refusal prerequisite to measure",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": false,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Exact complete fixture must produce ParseError rather than policy or environment failure.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#P-unnamed-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-out-no-table",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "Use OUT input and scalar RETURNS uuid, coherent input-only ACL identity; no TABLE group",
+      "expected": "OUT mode forbidden; establish exact fixture before assertion freeze",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-out-no-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-inout-no-table",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "Use INOUT input and scalar RETURNS uuid, coherent ACL identity; no TABLE group",
+      "expected": "INOUT mode forbidden; establish exact fixture before assertion freeze",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-inout-no-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-input-array",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP10",
+      "edit": "SQL input and ACL identity uuid[]; retain admitted scalar policy/verification input. Assert unsupported input-array AST refusal before later mismatches; intake rejection does not pass this case.",
+      "expected": "input arrays forbidden",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-input-array",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-variadic-table",
+      "control": "C02",
+      "stage": "A",
+      "rule": "FP11",
+      "edit": "SQL VARIADIC input uuid[] and matching SQL ACL identity; retain admitted scalar policy/verification input. Assert VARIADIC mode refusal before array/type/signature checks; intake rejection does not pass this case.",
+      "expected": "VARIADIC forbidden; array is grammatical prerequisite, not independent proof",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-variadic-table",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-comment-null",
+      "control": "C06",
+      "stage": "A",
+      "rule": "FP15",
+      "edit": "Replace COMMENT IS empty string with IS NULL",
+      "expected": "NULL removal forbidden",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-comment-null",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-comment-wrong",
+      "control": "C06",
+      "stage": "A",
+      "rule": "FP15",
+      "edit": "Replace empty comment with changed",
+      "expected": "comment mismatch",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-comment-wrong",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-comment-missing",
+      "control": "C06",
+      "stage": "A",
+      "rule": "FP15",
+      "edit": "Remove COMMENT statement only",
+      "expected": "declared comment missing",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-comment-missing",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-comment-undeclared",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP15",
+      "edit": "Append COMMENT ON FUNCTION {schema}.m02_annex_probe(text, uuid) IS empty string without policy declaration",
+      "expected": "undeclared comment",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-comment-undeclared",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-revoke-missing",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": "Remove PUBLIC revoke statement",
+      "expected": "mandatory revoke missing",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-revoke-missing",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-create-duplicate",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05",
+      "edit": "Repeat CREATE statement for same identity",
+      "expected": "duplicate creation",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-create-duplicate",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-grant-before-revoke",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP05",
+      "edit": "Move complete GRANT before PUBLIC REVOKE",
+      "expected": "ordering violation",
+      "fixture_status": "exact edit recipe; expansion and parse evidence required before executable-test freeze",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-grant-before-revoke",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "C-return-bounds",
+      "control": "C04",
+      "stage": "C",
+      "rule": "FP12",
+      "edit": "Keep admitted single-array column bounds [-1], change returnType bounds to [2]",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-column-bounds",
+      "control": "C04",
+      "stage": "C",
+      "rule": "FP12",
+      "edit": "Keep admitted returnType bounds [-1], change column bounds to [2]",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-return-record",
+      "control": "C02",
+      "stage": "C",
+      "rule": "FP12",
+      "edit": "Keep single uuid TABLE column, substitute return descriptor pg_catalog.record",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-identity-dual",
+      "control": "C02",
+      "stage": "C",
+      "rule": "FP13",
+      "edit": "Change only objfuncargs type while objargs remains admitted",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-unknown-slot",
+      "control": "C02",
+      "stage": "C",
+      "rule": "FP04",
+      "edit": "Add unrecognized semantic slot to otherwise admitted node through explicit test seam",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-unknown-enum",
+      "control": "C02",
+      "stage": "C",
+      "rule": "FP04",
+      "edit": "Substitute unrecognized enum member at an otherwise admitted option/mode",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "C-column-setof",
+      "control": "C02",
+      "stage": "C",
+      "rule": "FP12",
+      "edit": "Set TABLE column TypeName.setof=true, leave derived return intact",
+      "expected": "constructed AST refused; no claim parser can emit this state",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "I-ordinary-role",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP01",
+      "edit": "Ordinary definition receives execution_role",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "I-missing-role",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP01",
+      "edit": "Function definition execution_role absent",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "I-policy-version",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP02",
+      "edit": "policy_format from 1 to 2",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-semantic-version",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP02",
+      "edit": "semantic_version from 1 to 2",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-parser-pin",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP02",
+      "edit": "parser_version from 7.17 to 7.16",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-nul-template",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Insert U+0000 in template",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-nul-body",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Insert U+0000 in verification body",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-invalid-schema",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Render schema key contains semicolon",
+      "expected": "refuse before parser/checksum where specified; no connection or ledger writes",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-unavailable",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP04",
+      "edit": "pglast dependency unavailable",
+      "expected": "distinct dependency/version/parse refusal; no fallback",
+      "category_detail": "dependency refusal",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-wrong-version",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP04",
+      "edit": "loaded pglast version differs from 7.17",
+      "expected": "distinct dependency/version/parse refusal; no fallback",
+      "category_detail": "dependency refusal",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "P-parse-error",
+      "control": "C01",
+      "stage": "P",
+      "rule": "FP04",
+      "edit": {
+        "replace_value_path": [
+          "template"
+        ],
+        "value": "CREATE FUNCTION {schema}.m02_annex_probe("
+      },
+      "expected": "ParseError at O06 on unexpected end of input after opening parameter list; not dependency/AST-policy refusal",
+      "category_detail": "syntax refusal",
+      "parse_prerequisite": {
+        "expected_parse": false,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Exact complete fixture must produce ParseError rather than policy or environment failure.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#P-parse-error",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "B-schema",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "substitute schema in plan",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-role",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "substitute execution role",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-checksum",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "substitute unit checksum",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-unit",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "reuse record for different migration id",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-registry",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "reuse record for different registry",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-rerender",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "make post-preflight render return changed SQL",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-late-invalid",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "second unit invalid after first unit preflights",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "B-legacy-bypass",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP17/FP01",
+      "edit": "same legacy role-bearing definition accepted by generic test builder passed to production builder",
+      "expected": "no installation writes; no rejected-unit ledger record; appropriate plan/production refusal",
+      "scope": "later executable composition/runner slice; pure policy tests do not discharge",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration"
+    },
+    {
+      "id": "EX-01",
+      "control": null,
+      "stage": "X",
+      "rule": "V3a legacy NUL gap",
+      "edit": "legacy unit template contains NUL",
+      "expected": "out of scope by owner decision; no new rejection assertion or DB execution",
+      "freeze_partition": "recorded_exclusions"
+    },
+    {
+      "id": "POS-quoted-words",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP12/14/16",
+      "edit": "Add harmless quoted/comment words CREATE TABLE with matching declared body digest/comment",
+      "expected": "accept dollar-quoted body opacity; single-quoted literal and outer-comment contexts untested",
+      "fixture_status": "derive matching body digest independently where required",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#POS-quoted-words",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "POS-acl-order",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP12/14/16",
+      "edit": "Reverse two grantees in SQL only",
+      "expected": "accept same ACL set; template checksum may differ",
+      "fixture_status": "derive matching body digest independently where required",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#POS-acl-order",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "POS-array-keyword",
+      "control": "C04",
+      "stage": "A",
+      "rule": "FP12/14/16",
+      "edit": "Replace smallint[] with smallint ARRAY",
+      "expected": "accept equivalent array shape; template checksum may differ",
+      "fixture_status": "derive matching body digest independently where required",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#POS-array-keyword",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "I-nul-comment",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Insert U+0000 in declared comment, preserving unrelated valid fields",
+      "expected": "NUL refusal at specified boundary, no truncation or execution",
+      "scope": "function policy",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-nul-config",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Insert U+0000 in declared config, preserving unrelated valid fields",
+      "expected": "NUL refusal at specified boundary, no truncation or execution",
+      "scope": "function policy",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "I-nul-suffix",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP03",
+      "edit": "Append U+0000 then CREATE TABLE forbidden_suffix(a int); to an otherwise valid template",
+      "expected": "NUL refusal at specified boundary, no truncation or execution",
+      "scope": "function policy",
+      "freeze_partition": "pending_intake_harness_review"
+    },
+    {
+      "id": "C-nul-rendered",
+      "control": "C01",
+      "stage": "C",
+      "rule": "FP03",
+      "edit": "Inject U+0000 into rendered bytes via a test seam after clean intake",
+      "expected": "NUL refusal at specified boundary, no truncation or execution",
+      "scope": "function policy",
+      "interface_condition": "Test-only controlled AST/byte injection seam must be reviewed; no production constructor accepts an injected AST or unchecked bytes. No interface/representation/assertion frozen now.",
+      "freeze_partition": "conditional_on_interface_review"
+    },
+    {
+      "id": "B-nul-bound",
+      "control": "C01",
+      "stage": "B",
+      "rule": "FP03",
+      "edit": "Inject U+0000 into execution-bound bytes via a test seam after preflight",
+      "expected": "NUL refusal at specified boundary, no truncation or execution",
+      "scope": "later runner slice",
+      "integration_dependency": "Production definition/builder or immutable plan/runner boundary. Pure policy tests cannot prove database/ledger assertions.",
+      "freeze_partition": "deferred_to_integration",
+      "stage_rationale": "FP03 second bytes check occurs at executor boundary, hence B deliberately rather than I or C."
+    },
+    {
+      "id": "A-empty-acl-grant",
+      "control": "C05",
+      "stage": "A",
+      "rule": "FP14",
+      "edit": {
+        "append_sql": "GRANT EXECUTE ON FUNCTION {schema}.m02_annex_probe(text, uuid) TO haloflow_runtime;"
+      },
+      "expected": "caller grant forbidden when declared ACL is empty",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-empty-acl-grant",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-input-name",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP10",
+      "edit": {
+        "replace_sql_once": [
+          "privileges text",
+          "other_name text"
+        ]
+      },
+      "expected": "input name mismatch",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-input-name",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-input-order",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP10",
+      "edit": {
+        "replace_sql_once": [
+          "privileges text, config uuid",
+          "config uuid, privileges text"
+        ]
+      },
+      "expected": "ordered input signature mismatch; rejection phase not observed by this draft",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-input-order",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-input-type",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP10",
+      "edit": {
+        "replace_sql_once": [
+          "privileges text",
+          "privileges jsonb"
+        ]
+      },
+      "expected": "admitted but mismatched input type; rejection phase not observed by this draft",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-input-type",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "A-input-default",
+      "control": "C01",
+      "stage": "A",
+      "rule": "FP10",
+      "edit": {
+        "replace_sql_once": [
+          "config uuid)",
+          "config uuid DEFAULT NULL)"
+        ]
+      },
+      "expected": "input default forbidden",
+      "parse_prerequisite": {
+        "expected_parse": true,
+        "observed_status": "NOT_RUN_FOR_THIS_COMPLETE_FIXTURE",
+        "evidence_ref": null,
+        "required_evidence": "Pinned pglast 7.17 successful parse of exact rendered fixture bytes, source/fixture/schema hash, invocation/operator/exit/full output. Independently passing control must precede policy assertion.",
+        "status_label": "SUPPLIED_BUT_UNMEASURED"
+      },
+      "freeze_partition": "pending_exact_parser_measurement",
+      "expanded_fixture_ref": "codex_cp1-function-policy-expanded-fixtures-v3.json#A-input-default",
+      "validation_order_ref": "codex_cp1-function-policy-validation-order-v1.md"
+    },
+    {
+      "id": "I-owner-not-string",
+      "control": "C01",
+      "stage": "I",
+      "rule": "O03 declaration type (not FP18)",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": null
+      },
+      "expected": "INSTALL_POLICY_INVALID at O03; typed constructor, parser and checksum must not be reached",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Declaration scalar type only; not FP18 syntax coverage",
+      "status": "Draft O03 assertion, unrun; note303 disposition applied for review"
+    },
+    {
+      "id": "I-owner-empty",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": ""
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    },
+    {
+      "id": "I-owner-uppercase",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": "HALOFLOW_OWNER"
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    },
+    {
+      "id": "I-owner-punctuation",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": "haloflow-owner"
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    },
+    {
+      "id": "I-owner-too-long",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    },
+    {
+      "id": "I-owner-public",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": "public"
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    },
+    {
+      "id": "I-owner-whitespace",
+      "control": "C01",
+      "stage": "I",
+      "rule": "FP18",
+      "edit": {
+        "replace_value_path": [
+          "verification",
+          "functions",
+          0,
+          "owner"
+        ],
+        "value": "haloflow_owner "
+      },
+      "expected": "Existing typed verification owner contract rejects at O04 before SQL parser/binding; use established sanitized VERIFICATION_IDENTIFIER_INVALID reason",
+      "freeze_partition": "pending_intake_harness_review",
+      "coverage_limit": "Owner syntax only; not production ownership/role safety or equality with execution_role",
+      "status": "SUPPLIED_BUT_UNMEASURED; no executable assertion frozen"
+    }
+  ],
+  "counting_note": "Rows are cases/recipes; not independent security controls or executed tests. Recipe expansion and parser evidence remain necessary.",
+  "freeze_partitions": {
+    "executable_assertions_freezable_now": [],
+    "pending_exact_parser_measurement": [
+      "A-table",
+      "A-temp",
+      "A-unlogged",
+      "A-ctas",
+      "A-partition",
+      "A-select-into",
+      "A-materialized",
+      "A-table-grant",
+      "A-schema-grant",
+      "A-role-grant",
+      "A-default-privilege",
+      "A-unknown-select",
+      "A-session-set",
+      "A-session-reset",
+      "A-language",
+      "A-invoker",
+      "A-replace",
+      "A-volatility",
+      "A-parallel",
+      "A-strict",
+      "A-path-order",
+      "A-path-public",
+      "A-path-from-current",
+      "A-missing-language",
+      "A-missing-volatility",
+      "A-missing-parallel",
+      "A-missing-strict",
+      "A-missing-security",
+      "A-duplicate-language",
+      "A-extra-cost",
+      "A-extra-config",
+      "A-body-drift",
+      "A-grant-option",
+      "A-duplicate-grantee",
+      "A-missing-grantee",
+      "A-extra-grantee",
+      "A-grant-all",
+      "A-revoke-execute",
+      "A-wrong-grant-signature",
+      "A-wrong-create-schema",
+      "A-unqualified-create",
+      "A-wrong-create-name",
+      "A-split-grant",
+      "A-bare-setof",
+      "A-explicit-bound",
+      "A-multiple-bounds",
+      "A-output-name",
+      "A-output-order",
+      "P-column-default",
+      "P-out-table",
+      "P-inout-table",
+      "P-unnamed-table",
+      "A-out-no-table",
+      "A-inout-no-table",
+      "A-input-array",
+      "A-variadic-table",
+      "A-comment-null",
+      "A-comment-wrong",
+      "A-comment-missing",
+      "A-comment-undeclared",
+      "A-revoke-missing",
+      "A-create-duplicate",
+      "A-grant-before-revoke",
+      "P-parse-error",
+      "POS-quoted-words",
+      "POS-acl-order",
+      "POS-array-keyword",
+      "A-empty-acl-grant",
+      "A-input-name",
+      "A-input-order",
+      "A-input-type",
+      "A-input-default"
+    ],
+    "conditional_on_interface_review": [
+      "C-return-bounds",
+      "C-column-bounds",
+      "C-return-record",
+      "C-identity-dual",
+      "C-unknown-slot",
+      "C-unknown-enum",
+      "C-column-setof",
+      "C-nul-rendered"
+    ],
+    "deferred_to_integration": [
+      "I-ordinary-role",
+      "I-missing-role",
+      "B-schema",
+      "B-role",
+      "B-checksum",
+      "B-unit",
+      "B-registry",
+      "B-rerender",
+      "B-late-invalid",
+      "B-legacy-bypass",
+      "B-nul-bound"
+    ],
+    "pending_intake_harness_review": [
+      "I-policy-version",
+      "I-semantic-version",
+      "I-parser-pin",
+      "I-nul-template",
+      "I-nul-body",
+      "I-invalid-schema",
+      "I-unavailable",
+      "I-wrong-version",
+      "I-nul-comment",
+      "I-nul-config",
+      "I-nul-suffix",
+      "I-owner-not-string",
+      "I-owner-empty",
+      "I-owner-uppercase",
+      "I-owner-punctuation",
+      "I-owner-too-long",
+      "I-owner-public",
+      "I-owner-whitespace"
+    ],
+    "recorded_exclusions": [
+      "EX-01"
+    ]
+  },
+  "predecessor": "codex_cp1-function-policy-cases-v2.json"
+}
