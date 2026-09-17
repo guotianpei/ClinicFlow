@@ -11,7 +11,7 @@ import importlib.metadata
 import json
 import re
 from dataclasses import dataclass, replace
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
@@ -26,10 +26,49 @@ _MIGRATION = re.compile(r't\d{3}(_test)?_[a-z0-9_]{1,64}')
 _ROLE = re.compile(r'^haloflow_[a-z0-9_]{1,48}$')
 _TYPES = frozenset({'text', 'uuid', 'jsonb', 'bool', 'int2', 'int4', 'int8', 'timestamptz'})
 _CONFIG = ['search_path=pg_catalog, {schema}, pg_temp']
-_ROOT = set('checksum_version migration_id execution_role template verification policy'.split())
-_POLICY = set('policy_format semantic_version parser_package parser_version grammar_major functions'.split())
-_FUNCTION = set('schema name inputs outputs return_type language is_procedure replace security_definer volatility parallel strict config body_sha256 acl comment'.split())
-_VERIFICATION = set('name argument_types owner security_definer config acl body'.split())
+_ROOT = {
+    'checksum_version',
+    'migration_id',
+    'execution_role',
+    'template',
+    'verification',
+    'policy',
+}
+_POLICY = {
+    'policy_format',
+    'semantic_version',
+    'parser_package',
+    'parser_version',
+    'grammar_major',
+    'functions',
+}
+_FUNCTION = {
+    'schema',
+    'name',
+    'inputs',
+    'outputs',
+    'return_type',
+    'language',
+    'is_procedure',
+    'replace',
+    'security_definer',
+    'volatility',
+    'parallel',
+    'strict',
+    'config',
+    'body_sha256',
+    'acl',
+    'comment',
+}
+_VERIFICATION = {
+    'name',
+    'argument_types',
+    'owner',
+    'security_definer',
+    'config',
+    'acl',
+    'body',
+}
 _SLOTS = {
     'RawStmt': 'stmt stmt_location stmt_len',
     'CreateFunctionStmt': 'is_procedure replace funcname parameters returnType options sql_body',
@@ -38,7 +77,8 @@ _SLOTS = {
     'DefElem': 'defnamespace defname arg defaction location',
     'VariableSetStmt': 'kind name args is_local',
     'A_Const': 'isnull val', 'String': 'sval', 'Boolean': 'boolval', 'Integer': 'ival',
-    'GrantStmt': 'is_grant targtype objtype objects privileges grantees grant_option grantor behavior',
+    'GrantStmt': ('is_grant targtype objtype objects privileges grantees '
+                  'grant_option grantor behavior'),
     'AccessPriv': 'priv_name cols', 'RoleSpec': 'roletype rolename location',
     'ObjectWithArgs': 'objname objargs objfuncargs args_unspecified',
     'CommentStmt': 'objtype object comment',
@@ -138,7 +178,8 @@ def _closed_shape(payload: Any) -> None:
     _require(type(policy['functions']) is list and bool(policy['functions']))
     for f in policy['functions']:
         _record(f, _FUNCTION)
-        for key in ('schema', 'name', 'return_type', 'language', 'volatility', 'parallel', 'body_sha256'):
+        for key in ('schema', 'name', 'return_type', 'language', 'volatility',
+                    'parallel', 'body_sha256'):
             _require(type(f[key]) is str)
         for key in ('is_procedure', 'replace', 'security_definer', 'strict'):
             _require(type(f[key]) is bool)
@@ -275,7 +316,7 @@ def _parse_exact_sql(parser: Any, sql_bytes: bytes) -> tuple[Any, ...]:
     except Exception:
         _fail(Code.INSTALL_PARSE_ERROR)
     _require(type(nodes) is tuple, Code.INSTALL_AST_INVALID)
-    return nodes
+    return cast(tuple[Any, ...], nodes)
 
 
 def _node(value: Any, name: str, d: _Declaration,
@@ -290,7 +331,7 @@ def _seq(value: Any, code: Code = Code.INSTALL_AST_INVALID) -> tuple[Any, ...]:
     if value is None:
         return ()
     _require(type(value) is tuple, code)
-    return value
+    return cast(tuple[Any, ...], value)
 
 
 def _string(value: Any, d: _Declaration, code: Code = Code.INSTALL_AST_INVALID) -> str:
@@ -324,9 +365,12 @@ def _typename(value: Any, d: _Declaration, *, array: bool = False,
     return kind
 
 
-def _parameters(node: Any, d: _Declaration) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+def _parameters(
+    node: Any, d: _Declaration,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
     modes = d.parser.enums.FunctionParameterMode
-    inputs, outputs = [], []
+    inputs: list[dict[str, Any]] = []
+    outputs: list[dict[str, Any]] = []
     parameters = _seq(node.parameters)
     # O09a completes before any defaults or type/signature comparison.
     seen_table = False
@@ -364,7 +408,8 @@ def _options(node: Any, f: dict[str, Any], d: _Declaration, schema_key: str) -> 
         if opt.defname == 'set':
             sets.append(opt.arg)
         else:
-            _require(opt.defname in {'as', 'language', 'security', 'volatility', 'parallel', 'strict'}
+            _require(opt.defname in {
+                'as', 'language', 'security', 'volatility', 'parallel', 'strict'}
                      and opt.defname not in opts, Code.INSTALL_OPTION_MISMATCH)
             opts[opt.defname] = opt.arg
     _require(set(opts) == {'as', 'language', 'security', 'volatility', 'parallel', 'strict'},
@@ -470,8 +515,10 @@ def _validate_statement_inventory(nodes: tuple[Any, ...], declaration: _Declarat
     """O12: count and order parsed statements; never inspect SQL text."""
     d = declaration
     ast = d.parser.ast
-    inventory = {key: {'create': [], 'revoke': [], 'grant': [], 'comment': []}
-                 for key in d.functions}
+    inventory: dict[tuple[str, tuple[str, ...]], dict[str, list[tuple[int, Any]]]] = {
+        key: {'create': [], 'revoke': [], 'grant': [], 'comment': []}
+        for key in d.functions
+    }
     for position, raw in enumerate(nodes):
         node = raw.stmt
         if type(node) is ast.CreateFunctionStmt:
@@ -511,7 +558,8 @@ def _validate_ast(nodes: tuple[Any, ...], declaration: _Declaration, *, schema_k
     for raw in nodes:
         _node(raw, 'RawStmt', d)
         node = raw.stmt
-        if type(node) in forbidden or (type(node) is ast.SelectStmt and node.intoClause is not None):
+        if (type(node) in forbidden
+                or (type(node) is ast.SelectStmt and node.intoClause is not None)):
             _fail(Code.INSTALL_TOPLEVEL_FORM_FORBIDDEN)
         if type(node) not in (ast.CreateFunctionStmt, ast.GrantStmt, ast.CommentStmt):
             _fail(Code.INSTALL_TOPLEVEL_FORM_UNKNOWN)
