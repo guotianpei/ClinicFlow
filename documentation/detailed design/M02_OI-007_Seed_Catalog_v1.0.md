@@ -237,7 +237,7 @@ projectable forever; retirement only blocks new appends.
 
 ## 10. Shared reference inventory — standing rule, not case-by-case
 
-Every new physical reference domain introduced by this catalogue or by ADR-011 — `ref_event_levels`,
+Every new physical reference domain introduced by this catalogue or by ADR-011 — `ref_event_types`, `ref_event_levels`,
 `ref_event_statuses`, `event_contracts`, `ref_projection_explanations`, `ref_correction_reasons`,
 `ref_resolution_paths`, `ref_failure_reasons`, `ref_action_families`, and D-11.16's
 `reference_catalog_generations` ledger — gets, before migration: an ownership decision (who writes it,
@@ -290,3 +290,5 @@ with PR-2. A change to any seed code, contract shape, or namespace-registration 
 freeze follows the compatibility process in §9 of this same document, and — where it touches an ADR-011
 decision rather than catalogue content — requires a superseding ADR, consistent with that file's immutability
 rule.
+
+**CP0 synthetic profile refinement aligned 2026-09-10.** The issued [CP0 contract baseline](M02_CP0_Contract_Baseline_v1.0.md) pins the reviewed non-production descriptors and closed correction/resolution schemas. The acceptance-conflict profile additionally requires provider, provider_account and external_id, retains the canonical binding plus candidate identity, and delivery-conflict metadata identifies a closed set of competing event IDs. These refine the synthetic profile; they do not change the thirteen type names, frozen status/level/class/rank meanings or production-inactive rule. Metadata-label correction excludes both conflict types. Existing installed historical schemas are never rewritten; use the compatibility process above. The indeterminate-only no-side-effect branch remains a production release requirement for an owning-module versioned rule and is not certified by this synthetic profile.

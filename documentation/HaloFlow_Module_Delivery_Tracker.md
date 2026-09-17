@@ -1,8 +1,10 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-17 (**M02 CP1 CLOSED AS DELIVERED**, `main` at `036ccda`, CI run 47 green with lint, type and full test gates all executed; M02 CP0 shipped 2026-09-12)
+Last updated: 2026-09-17 (**M02 CP1 CLOSED AS DELIVERED**, CI run 47 green with lint, type and full test gates all executed; M02 CP0 closed by tracker record 2026-09-11; the CP0 source-amendment branch `docs/m02-cp0-source-amendments` merged to `main` on 2026-09-17)
 
 ## Current position — read this first
+
+**M02 CP0 issuance is committed and pushed:** `3ac77114d3e3d953045951e5208b30be9aa29608` on `docs/m02-cp0-source-amendments`, including the CP0 contract baseline, ADR-013 and the versioned design PDF. **That branch was merged to `main` on 2026-09-17**, bringing the CP0 contract baseline, ADR-012/ADR-013, the versioned design DOCX/PDF and 13 immutable attachments onto `main`. Claude244 clears the review gate after Rachel accepted the changed list/heading formatting; Claude246 verifies all 19 committed blobs and the remote branch. This tracker record closes CP0 (workflow §9). **M02 CP1 has since been delivered and closed** — see the next paragraph and the M02 delivery notes. That supersedes this entry's "CP1 is planning only" status as of 2026-09-11; it does not alter what this entry records about CP0.
 
 **M01 PR-3 IS MERGED — PR #8, 2026-09-07, merge commit `19c6aae`. All 13 checkpoints complete.**
 Twelve were committed with CI green — through CP-8 (`f890b27`, run #35) and the REQ-CP9-01 migrator
@@ -17,8 +19,7 @@ it up now rather than defer later"*), recorded in `codex_cp9-readiness-contract-
 licence for production change at CP-9. **All 56 requirement IDs are disposed and the 79-row evidence
 register is consolidated at v35.** The **design of record is review package v10**, issued 2026-09-07.
 **Reviewer readiness is `claude_note-168`: ready for owner authorization at `af1bfd8`, with ten named
-limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain
-three separate owner acts**, and they were taken in that order on 2026-09-07.
+limitations carried, none blocking.** Closure authorizes nothing — **un-draft, merge and deploy remain three separate owner acts**. Un-draft and merge were taken on 2026-09-07. M01 was delivered; Rachel confirmed on 2026-09-08 that nothing had been deployed to the cloud.
 
 **The merge was verified, not assumed.** The head that merged was gated by **its own** run —
 `verify-m01` SUCCESS, run 34142838049 at `e0cc284` — rather than inheriting the earlier green at
@@ -34,19 +35,19 @@ following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-ident
 the commit the full gate was run against — `git diff 95c507f a3210e3` is empty. `main` has been
 fast-forwarded locally and the merged branch deleted, locally and on the remote.
 
-**M02 CP0 and CP1 are delivered. `main` is at `036ccda` and CI is GREEN (run 47).**
-CP0 shipped the function checksum serializer v3 (`3e9e4a4`, PR #9, `c83c8c7`). CP1 shipped the
-function-policy checker against a frozen executable-assertion baseline (`d70310c`), and was **closed as
-delivered on 2026-09-17** with its five named gaps and eight conditional constructed cases carried
-explicitly into CP2. Between the two, **CI run 45 was red at `ruff`** — lint and type gates had never been
+**M02 CP0 is closed and CP1 is delivered. `main` is at `036ccda` and CI is GREEN (run 47).**
+**CP0 is the contract and design issuance checkpoint** — owner sheet O1–O12, the CP0 contract baseline,
+ADR-012/ADR-013 and the versioned design — closed by tracker record 2026-09-11 at `3ac7711`; it claims no
+code. **CP1 is the implementation checkpoint and shipped in two slices:** the function checksum serializer
+v3 (`3e9e4a4`, PR #9, `c83c8c7`, CI run 43 green, CP1-12 closed) and the function-policy checker against a
+frozen executable-assertion baseline (`d70310c`). CP1 was **closed as delivered on 2026-09-17** with its
+five named gaps and eight conditional constructed cases carried explicitly into CP2. Between the two, **CI run 45 was red at `ruff`** — lint and type gates had never been
 covered by any gate in this workstream — repaired in `db789bc` and merged as PR #10. Run 47 is the first
 run in this workstream where `ruff`, `mypy` and the full `pytest` all actually executed rather than being
 skipped. Closure record: `Work Session 2026-09-17/claude_note-337-cp1-closure-record.md`.
 **Closing CP1 discharged none of its carried gaps** — see the M02 delivery notes.
 
-**M02 implementation is no longer gated on the M01 debt PR.** One precondition remains before M02
-implementation begins, and it is not a merge: **R-E7 is deliberately unsatisfied** — see the M01
-delivery notes. M02 must settle its own per-tenant object-installation mechanism first.
+**M02 implementation is no longer gated on the M01 debt PR.** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
 
 **PR-2 gate result**, on PostgreSQL 17.11 against a database created fresh from `001` → `003` and
 again as an upgrade over an existing `001`/`002` database: ruff clean, strict mypy clean, **192 tests
@@ -111,7 +112,7 @@ the review dispositions and the pre-push verification.
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
 | M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and the whole debt PR merged (PR-1 and PR-2). Implementation stays 🟡: the legacy SQLAlchemy/asyncpg modules are not yet behind M01 and the production identity adapter is open. Security/privacy stays 🟡 pending PHI-safe telemetry; reliability stays 🟡 pending Cloud SQL evidence |
-| M02 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟡 Design v0.3, ADR-011 and OI-007 accepted. CP0 (serializer v3) and CP1 (function-policy checker) delivered and green in CI; CP1 closed as delivered 2026-09-17 with named gaps carried to CP2. Implementation and unit tests are 🟡, not 🟢: two checkpoints of many, no database test of the policy path, and eight constructed cases still conditional |
+| M02 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟡 Design v0.3, ADR-011, ADR-012/ADR-013, OI-007 and the CP0 contract baseline accepted and now on `main`. CP0 (contract and design issuance) closed by tracker record 2026-09-11. CP1 delivered in two slices — serializer v3 and the function-policy checker — both green in CI; CP1 closed as delivered 2026-09-17 with named gaps carried to CP2. Implementation and unit tests are 🟡, not 🟢: one implementation checkpoint of many, no database test of the policy path, and eight constructed cases still conditional. **Three M02 entry conditions remain:** correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -260,6 +261,11 @@ the review dispositions and the pre-push verification.
 
 ### M02 — Event and Operation Foundation
 
+- **CP0 contract alignment recorded and independently verified 2026-09-10:** owner sheet O1–O12 and the issued CP0 contract baseline define the physical/test contracts, synthetic profile, exact read manifest, SignerProvider interface and provisional limits. Reviewer conditions are closed; this entry records document issuance only, not implementation, executed tests or completion of any M02 implementation checkpoint. The no-side-effect production rule remains required before the affected FR-035 release; signer deployment and representative OI-009 validation remain later gates. Git, database, implementation and release actions require separate owner authorization.
+- **CP0 issuance committed and pushed 2026-09-11:** owner-aligned O1–O12, ADR-013 and package v4 are recorded at `3ac77114d3e3d953045951e5208b30be9aa29608` on `docs/m02-cp0-source-amendments`, not merged to `main`. The 19 paths include the final DOCX/PDF, tracker, architecture decisions, OI-007, baseline index and 13 immutable attachments. Claude246 verifies their exact bytes and remote publication. Rachel accepted the conversion of 71 bullet paragraphs to numbered lists and nine literal-number headings to generated numbering (Claude244); this is owner acceptance, not restoration. The accepted structure baseline governs future Word saves. This tracker record closes CP0 (workflow §9). M02 CP1 is planning only; M01 PR-3 CP-1 through CP-9 remain closed and are not an M02 checkpoint sequence.
+- **Carried implementation/release gates:** R-E7, SEQ-01(b), deployment identity R-P1B.2, O7 no-side-effect rule before affected FR-035 release, production signer algorithm/custody/rotation/storage, M11 consumer compatibility, OI-009 measurement and PostgreSQL 17 permission/body/behavior tests (including the M02 column-privilege assertions that close the M01 TC-E22 coverage gap (O11)). Finalization-A omission and runtime audit DML residuals, and Claude168's ten limitations, remain. Document issuance supplies no execution or production-readiness evidence.
+- **Editorial follow-ups:** R1 (OI-007 §6 pointer) and R4 (ADR-012/ADR-013 summary rows) remain open. This record addresses R2's M02 matrix/Current position pointers and the ambiguous CP1–CP9 wording. No PR, merge or deployment is authorized.
+
 - Detailed Requirements v1.0 approved 2026-08-28. Technical Design v0.3 approved as the implementation
   baseline 2026-08-30, closing review findings T1–T8 and V1–V5.
 - **ADR-011 accepted 2026-08-30**, superseding portions of ADR-003 and ADR-005: `idempotency_key` removed;
@@ -279,12 +285,7 @@ the review dispositions and the pre-push verification.
   the database rather than by convention; reserves `m02_test_` as the non-production self-test family
   covering all six event levels. Specific module `action_family` prefixes for M07, M08, M09 and M12 are
   **not** granted here — each module registers its own prefix at its own design/content freeze.
-- **The M01 debt PR is merged** — PR-1 on 2026-08-31, PR-2 on 2026-09-01 — so no M01 work blocks M02
-  any longer. **One precondition remains, added by the PR-2 review: R-E7 is not satisfied. M02 must
-  settle its own per-tenant object-installation mechanism — with the function owner, ACL and pinned
-  `search_path` its SECURITY DEFINER functions require — before implementation begins.** M01 ships the
-  migration-registry extension point, which covers ordinary per-tenant objects but not objects needing
-  a different owner.
+- **Historical PR-2 position (2026-09-01):** R-E7 remained unsatisfied for SECURITY DEFINER ownership, ACL and pinned `search_path`; the then-shipped extension covered ordinary tenant objects. **Current position after PR-3:** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
 
 - **M01 PR-3 — R-E7's answer — is MERGED (PR #8, `19c6aae`, 2026-09-07). All 13 checkpoints
   complete**: twelve committed with CI green through CP-8 (`f890b27`, run #35) and the CP-9 migrator
@@ -908,10 +909,7 @@ the review dispositions and the pre-push verification.
   - **Reviewer readiness: `claude_note-168`** — ready for owner authorization at `af1bfd8`, **ten named
     limitations carried, none blocking**. Closure authorizes nothing: **un-draft, merge and deploy are
     three separate owner acts.**
-  - **Carried into M02 — two named preconditions.** (1) *A unit declaring an execution role must not
-    create tables* — **owner-documented, not SQL-enforced**, and latent only because the shipped
-    registry declares no execution role, **not** because a guard exists. (2) R-P1B.2's
-    deployment-responsibility half.
+    - **Historical PR-3 carry-forward: two named preconditions.** The closure recorded table/function-unit separation (owner-documented, not then SQL-enforced; latent because the shipped registry declares no execution role) and R-P1B.2 deployment responsibility. **Current consolidated M02 entry:** Three M02 entry conditions remain: correct-owner tenant-object installation with reviewed ACL/search_path; separation of migrator table units from execution-role function units; and deploy-identity responsibility for role creation/membership before provisioning. PR-3 supplies the mechanism; M02-specific completion and evidence remain required.
   - **Carried as a release gate.** R-P4.4 is bounded by **known deployment-environment scope**. A
     **non-test v1 checksum row** would force a compatibility plan; **discovering another environment
     would not.**
@@ -985,12 +983,15 @@ the review dispositions and the pre-push verification.
   governed. That needs a policy decision about legitimate deployment login identities and a manifest
   design to express them.
 
-- **M02 CP0 — function checksum serializer v3 — SHIPPED 2026-09-12 as `3e9e4a4`, merged as PR #9
-  (`c83c8c7`), CI run 43 green.** Published vectors and frozen tests accompany it. The CP0 tracker
-  closeout was committed separately as `9b9bb86` on `docs/m02-cp0-source-amendments` and **has not been
-  merged to `main`**; that branch remains diverged and its merge is unauthorized.
+- **M02 CP1 slice 1 — function checksum serializer v3 — SHIPPED 2026-09-12 as `3e9e4a4`, merged as
+  PR #9 (`c83c8c7`), CI run 43 green (499 passed, 0 deselected).** Published vectors and frozen tests
+  accompany it; 38/38 vector blobs on `main` are byte-identical to the 2026-09-11 published originals and
+  `checksum.py` is byte-unchanged at version 2. **CP1-12 is closed** — all nineteen published vectors
+  reproduce byte-exact through the real serializer and adapter. The module is dormant on `main`: not wired
+  into production and **not validated against a database**. This slice belongs to **CP1, not CP0** — CP0
+  is the documentation checkpoint above, and an earlier version of this entry mislabelled it.
 
-- **M02 CP1 — function-policy checker — CLOSED AS DELIVERED 2026-09-17.** A pure pre-execution policy
+- **M02 CP1 slice 2 — function-policy checker — and CP1 CLOSED AS DELIVERED 2026-09-17.** A pure pre-execution policy
   checker for tenant function installation (`m01/provisioning/function_policy.py`, plus 20 `INSTALL_`
   codes in `codes.py`), validated against an externally frozen executable-assertion baseline — packet v5,
   manifest `ba4def2d859cbaf325f4f842129d46cbb0aba0693a121f775533f0b777eecb8e`. Three owner gates, each
