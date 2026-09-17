@@ -1,6 +1,6 @@
 # HaloFlow Module Delivery Tracker
 
-Last updated: 2026-09-07 (**M01 PR-3 MERGED as PR #8**, `main` at `19c6aae`; CP-9 closed; merged tree byte-identical to the gated commit; merge-commit CI green)
+Last updated: 2026-09-17 (**M02 CP1 CLOSED AS DELIVERED**, `main` at `036ccda`, CI run 47 green with lint, type and full test gates all executed; M02 CP0 shipped 2026-09-12)
 
 ## Current position — read this first
 
@@ -33,6 +33,16 @@ preconditions and R-P4.4 as a release gate travel forward — see the M01 delive
 following PR-1 on 2026-08-31 (PR #5, `5eccdb7`). The merged tree is **byte-identical** to `95c507f`,
 the commit the full gate was run against — `git diff 95c507f a3210e3` is empty. `main` has been
 fast-forwarded locally and the merged branch deleted, locally and on the remote.
+
+**M02 CP0 and CP1 are delivered. `main` is at `036ccda` and CI is GREEN (run 47).**
+CP0 shipped the function checksum serializer v3 (`3e9e4a4`, PR #9, `c83c8c7`). CP1 shipped the
+function-policy checker against a frozen executable-assertion baseline (`d70310c`), and was **closed as
+delivered on 2026-09-17** with its five named gaps and eight conditional constructed cases carried
+explicitly into CP2. Between the two, **CI run 45 was red at `ruff`** — lint and type gates had never been
+covered by any gate in this workstream — repaired in `db789bc` and merged as PR #10. Run 47 is the first
+run in this workstream where `ruff`, `mypy` and the full `pytest` all actually executed rather than being
+skipped. Closure record: `Work Session 2026-09-17/claude_note-337-cp1-closure-record.md`.
+**Closing CP1 discharged none of its carried gaps** — see the M02 delivery notes.
 
 **M02 implementation is no longer gated on the M01 debt PR.** One precondition remains before M02
 implementation begins, and it is not a merge: **R-E7 is deliberately unsatisfied** — see the M01
@@ -101,7 +111,7 @@ the review dispositions and the pre-push verification.
 | ID | Detailed design | ADR / decisions | Implementation | Unit tests | Integration tests | Security / privacy tests | Reliability / performance tests | E2E / acceptance | Runbook / operations | Overall |
 |---|---|---|---|---|---|---|---|---|---|---|
 | M01 | 🟢 | 🟢 | 🟡 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | 🟡 Foundation and the whole debt PR merged (PR-1 and PR-2). Implementation stays 🟡: the legacy SQLAlchemy/asyncpg modules are not yet behind M01 and the production identity adapter is open. Security/privacy stays 🟡 pending PHI-safe telemetry; reliability stays 🟡 pending Cloud SQL evidence |
-| M02 | 🟢 | 🟢 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟠 Design v0.3, ADR-011, and OI-007 all accepted; the M01 debt PR is merged, so implementation is unblocked except for one precondition: R-E7, the per-tenant object-installation mechanism, is M02's to settle |
+| M02 | 🟢 | 🟢 | 🟡 | 🟡 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | 🟡 Design v0.3, ADR-011 and OI-007 accepted. CP0 (serializer v3) and CP1 (function-policy checker) delivered and green in CI; CP1 closed as delivered 2026-09-17 with named gaps carried to CP2. Implementation and unit tests are 🟡, not 🟢: two checkpoints of many, no database test of the policy path, and eight constructed cases still conditional |
 | M03 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M04 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | M05 | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
@@ -974,6 +984,45 @@ the review dispositions and the pre-push verification.
   **Deferred, deliberately** (note-22, not a gate): whether one-endpoint membership edges should be
   governed. That needs a policy decision about legitimate deployment login identities and a manifest
   design to express them.
+
+- **M02 CP0 — function checksum serializer v3 — SHIPPED 2026-09-12 as `3e9e4a4`, merged as PR #9
+  (`c83c8c7`), CI run 43 green.** Published vectors and frozen tests accompany it. The CP0 tracker
+  closeout was committed separately as `9b9bb86` on `docs/m02-cp0-source-amendments` and **has not been
+  merged to `main`**; that branch remains diverged and its merge is unauthorized.
+
+- **M02 CP1 — function-policy checker — CLOSED AS DELIVERED 2026-09-17.** A pure pre-execution policy
+  checker for tenant function installation (`m01/provisioning/function_policy.py`, plus 20 `INSTALL_`
+  codes in `codes.py`), validated against an externally frozen executable-assertion baseline — packet v5,
+  manifest `ba4def2d859cbaf325f4f842129d46cbb0aba0693a121f775533f0b777eecb8e`. Three owner gates, each
+  taken separately: contract intent aligned 2026-09-13 (FP01-FP18, validation order O01-O14, exclusions
+  EX-01/02/03); the executable-assertion freeze 2026-09-13; implementation plus setup/execution
+  2026-09-14. **403 passed, 0 failed, 0 skipped** across the seven approved non-database targets.
+  Committed as `d70310c` and merged to `main`.
+  **CI run 45 was RED at `ruff`** — no gate in this workstream had ever covered lint or type checks, so
+  the merge landed on a repository check nobody had checked. Repaired in `db789bc`: implementation-only
+  lint and type fixes, `pglast==7.17` pinned in the dev extra so CI runs the policy tests with a parser,
+  and a `per-file-ignores` entry for I001/F401/E501 scoped to `tests/m01/test_function_policy.py` alone
+  so the frozen oracle stayed byte-identical. Merged as PR #10 (`036ccda`); **run 47 green with `ruff`,
+  `mypy` and `pytest` all executed**. The full suite was also run on PostgreSQL 17 before the pull
+  request: **596 passed**, the first execution of M01's 193 database tests in this workstream.
+  - **Carried into CP2, not discharged:** the five named gaps `PHASE-SIGNATURE-01`, `PHASE-COMMENT-01`,
+    `PHASE-INTAKE-01`, `PHASE-NUL-01`, `LEX-ACCEPT-01`; eight constructed cases still conditional;
+    **FP18 coverage is six, not seven** (a `null` owner is a type violation refused at O03, not FP18
+    syntax at O04); and **parser acceptance is not policy acceptance**.
+  - **No database test of the function-policy path has been run anywhere.** The 193 PostgreSQL tests are
+    M01's suites, not CP1's. R1's recorded limitation stands: result shape, language, volatility,
+    strictness and parallel safety are enforced pre-execution by the AST policy plus `replace=false`, and
+    the post-install catalog verifier does not observe them.
+  - **Lint and type gates are version-unpinned** (`ruff>=0.4.0`, `mypy>=1.10.0`), so a future release can
+    redden `main` with no code change — the run 45 failure mode, still live.
+  - **PORTABILITY-01:** `tests/m01/conftest.py::_database_url_from` defaults to `user="postgres"` /
+    `host="127.0.0.1"`, which makes the suite pass on the CI Docker image and mislead on other correct
+    PostgreSQL 17 installations. It cost one misattributed failure on 2026-09-17.
+  - The dependency install is **not byte-reproducible** — unbounded `>=` ranges and hatchling under build
+    isolation. Disclosed, not closed.
+  - Implementation by Codex; independent review, byte-level re-derivation and gate operation by Claude;
+    every Git command run by the owner. **Commit `d70310c`'s trailer credits only Claude, which is wrong
+    — corrected in the record rather than by rewriting published history.**
 
 ## Recommended implementation order
 
