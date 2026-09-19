@@ -41,9 +41,29 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: haloflow/pyproject.toml
-      - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e '.[dev]'
-      - run: ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
-      - run: mypy src/haloflow/m01 src/haloflow/composition.py
-      - run: pytest tests/m01 -q
+          cache-dependency-path: haloflow/locks/linux-x86_64-cp312*.txt
+      # One verified install stage, shared with local verification. It creates a
+      # fresh virtualenv, installs from the hash-pinned locks it snapshots into the
+      # evidence, and checks every premise: approved target, lock parse, coverage in
+      # both directions, installed artifact hashes against the lock, pip check,
+      # declared requirements and the dev extra against the lock, editable-install
+      # source path. It runs no gates; the gates below are CI's.
+      - run: >-
+          scripts/verified-install.sh
+          --python python3.12
+          --target linux-x86_64-cp312
+          --project .
+          --locks locks
+          --evidence "$RUNNER_TEMP/verify-evidence"
+          --envdir "$RUNNER_TEMP/verify-env"
+          --source-revision "$GITHUB_SHA"
+      - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
+      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/composition.py
+      # The FULL set. No -m "not postgres" here: the service above exists for these.
+      - run: $VENV/bin/pytest tests/m01 -q
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/verify-evidence
