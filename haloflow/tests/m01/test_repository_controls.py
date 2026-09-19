@@ -637,21 +637,82 @@ def test_the_module_callback_control_fails_when_it_should() -> None:
 # --- CP-2: M01 embeds no module execution role name (R-P1.2, R-P1B.1) ------
 
 
-def _module_role_literals_in(source: str) -> set[str]:
+APPROVED_DECLARATION = "APPROVED_EXECUTION_ROLES"
+
+
+def _approved_declaration_constants(tree: ast.Module) -> set[int]:
+    """ids of the str Constants inside *the* module-level APPROVED_EXECUTION_ROLES value.
+
+    Fails closed, three ways, because the exemption is worth exactly one
+    declaration and no more:
+
+    * module level only -- `tree.body`, not `ast.walk`, so a declaration shadowed
+      inside a function or class is not the composition root's reviewable surface;
+    * a **single direct target** -- `OTHER = APPROVED_EXECUTION_ROLES = ...` binds
+      the literal to a second name as well, so it is not the designated
+      declaration and is not exempt;
+    * **exactly one** such declaration in the module -- if there are two, neither
+      is exempt, so a decoy cannot sit beside a real one and a reviewer reading
+      one statement cannot miss roles approved in another.
+    """
+
+    declarations = [
+        node
+        for node in tree.body
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == APPROVED_DECLARATION
+        )
+        or (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == APPROVED_DECLARATION
+        )
+    ]
+    if len(declarations) != 1:
+        return set()
+
+    value = declarations[0].value
+    if value is None:
+        return set()
+    return {
+        id(inner)
+        for inner in ast.walk(value)
+        if isinstance(inner, ast.Constant) and isinstance(inner.value, str)
+    }
+
+
+def _module_role_literals_in(
+    source: str, *, allow_approved_declaration: bool = False
+) -> set[str]:
     """Every `haloflow_*` string literal that is not part of the fixed vocabulary.
 
     Read as literals rather than by grep so a name inside a comment or a
     docstring does not trip the control -- the rule is about what the code
     *embeds*, not what it discusses.
+
+    `allow_approved_declaration` exempts the composition root's own
+    `APPROVED_EXECUTION_ROLES` declaration, and nothing else. The rule is that M01
+    embeds no module role name and that approval is a reviewable change in one
+    place; the declaration *is* that place, so forbidding it there forbade the
+    architecture it exists to protect. The exemption is keyed on the identity of
+    each Constant node inside that one declaration, so the same role named
+    anywhere else -- including elsewhere in the same file -- is still a violation.
     """
 
     from haloflow.m01.provisioning.roles import PROVISIONING_ROLES
 
+    tree = ast.parse(source)
+    exempt = _approved_declaration_constants(tree) if allow_approved_declaration else set()
     found: set[str] = set()
-    for node in ast.walk(ast.parse(source)):
+    for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             value = node.value
             if value.startswith("haloflow_") and value not in PROVISIONING_ROLES:
+                if id(node) in exempt:
+                    continue
                 found.add(value)
     return found
 
@@ -668,10 +729,11 @@ def test_m01_embeds_no_module_execution_role_name() -> None:
     """
 
     embedded: dict[str, set[str]] = {}
-    for path in list(Path("src/haloflow/m01/provisioning").rglob("*.py")) + [
-        Path("src/haloflow/composition.py")
-    ]:
-        names = _module_role_literals_in(path.read_text())
+    composition = Path("src/haloflow/composition.py")
+    for path in list(Path("src/haloflow/m01/provisioning").rglob("*.py")) + [composition]:
+        names = _module_role_literals_in(
+            path.read_text(), allow_approved_declaration=(path == composition)
+        )
         if names:
             embedded[str(path)] = names
 
@@ -686,6 +748,85 @@ def test_the_embedded_role_control_fails_when_it_should() -> None:
     }
     # The fixed vocabulary is not a violation, and neither is an unrelated string.
     assert _module_role_literals_in('R = "haloflow_migrator"\nS = "tenant_abcdefgh"') == set()
+
+
+def test_the_approved_declaration_exemption_is_exactly_one_declaration() -> None:
+    """The M-1 correction must not become a laundering channel.
+
+    Forbidden location A: the same role elsewhere in `composition.py`. Forbidden
+    location B: any M01 provisioning module, where the exemption is never passed.
+    Allowed: the one module-level declaration. Everything here runs on fixed
+    synthetic sources, so no case depends on what `composition.py` happens to
+    declare today.
+    """
+
+    role = "haloflow_m02_lock_owner"
+    declaration = f'APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset({{"{role}"}})'
+
+    # Allowed: the declaration, and only because the exemption was asked for.
+    assert _module_role_literals_in(declaration, allow_approved_declaration=True) == set()
+    assert _module_role_literals_in(declaration) == {role}
+
+    # The plain assignment form is the same declaration.
+    plain = f'APPROVED_EXECUTION_ROLES = frozenset({{"{role}"}})'
+    assert _module_role_literals_in(plain, allow_approved_declaration=True) == set()
+
+    # Forbidden A -- elsewhere in the same file, even alongside a valid declaration.
+    assert _module_role_literals_in(
+        f'{declaration}\nOTHER = "{role}"\n', allow_approved_declaration=True
+    ) == {role}
+
+    # Forbidden B -- an M01 provisioning module never gets the exemption.
+    assert _module_role_literals_in(f'ROLE = "{role}"') == {role}
+
+    # A shadowed declaration is not the composition root's reviewable surface.
+    shadowed = f'def f():\n    APPROVED_EXECUTION_ROLES = frozenset({{"{role}"}})\n'
+    assert _module_role_literals_in(shadowed, allow_approved_declaration=True) == {role}
+
+
+def test_the_exemption_rejects_chained_and_duplicated_declarations() -> None:
+    """Exactly one designated declaration means exactly one, and a direct target.
+
+    A chained assignment binds the literal to a second name as well, and two
+    declarations let a real approval hide beside a decoy. Neither is the single
+    reviewable statement the exemption is granted for, so both fail closed.
+    """
+
+    role = "haloflow_m02_lock_owner"
+
+    chained = f'OTHER = APPROVED_EXECUTION_ROLES = frozenset({{"{role}"}})'
+    assert _module_role_literals_in(chained, allow_approved_declaration=True) == {role}
+
+    tuple_target = (
+        f'APPROVED_EXECUTION_ROLES, OTHER = frozenset({{"{role}"}}), None'
+    )
+    assert _module_role_literals_in(tuple_target, allow_approved_declaration=True) == {role}
+
+    duplicated = (
+        'APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset()\n'
+        f'APPROVED_EXECUTION_ROLES = frozenset({{"{role}"}})\n'
+    )
+    assert _module_role_literals_in(duplicated, allow_approved_declaration=True) == {role}
+
+
+def test_the_live_composition_root_is_clean_under_the_permitted_semantics() -> None:
+    """Live-file control, stated so it survives a role actually being approved.
+
+    Asserting the shipped `composition.py` clean under the *strict* helper would go
+    red the moment a module role is legitimately approved -- recreating the blocker
+    this patch removes. A control that fails when the architecture is used as
+    designed is the wrong control. So this asserts the property that holds
+    whatever is approved: under the permitted semantics the file is clean, and a
+    role literal placed outside the declaration is still caught.
+    """
+
+    source = Path("src/haloflow/composition.py").read_text()
+    assert _module_role_literals_in(source, allow_approved_declaration=True) == set()
+
+    smuggled = f'{source}\n\nOTHER_ROLE = "haloflow_m02_lock_owner"\n'
+    assert _module_role_literals_in(smuggled, allow_approved_declaration=True) == {
+        "haloflow_m02_lock_owner"
+    }
 
 
 # --- CP-3: one authoritative source for the provisioning blocks ------------
