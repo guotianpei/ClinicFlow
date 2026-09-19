@@ -10,8 +10,8 @@ PY    := python3.12
 LOAD_ENV = set -a; [ -f .env ] && . ./.env; set +a;
 
 # Lint/type scope currently mirrors .github/workflows/m01.yml.
-LINT_PATHS = src/haloflow/m01 tests/m01 alembic
-TYPE_PATHS = src/haloflow/m01
+LINT_PATHS = src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
+TYPE_PATHS = src/haloflow/m01 src/haloflow/composition.py
 
 .PHONY: help venv install run migrate revision test test-unit test-pg lint type check clean
 
