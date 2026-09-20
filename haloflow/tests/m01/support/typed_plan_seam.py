@@ -219,7 +219,9 @@ def ordinary_definition(template: str, **typed_only: Any) -> Any:
 def is_typed(unit: Any) -> bool:
     """Whether a COMPOSED unit is classified typed (TP-R2)."""
 
-    return bool(unit.is_typed)
+    # Codex, v15: coercion sits outside the thin attribute-read rule and would
+    # hide a non-boolean from the frozen `is True` / `is False` assertions.
+    return unit.is_typed
 
 
 # ---------------------------------------------------------------------------

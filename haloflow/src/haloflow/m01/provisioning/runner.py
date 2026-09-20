@@ -183,7 +183,11 @@ class TenantMigrationRunner:
 
             # Pass 1: read the ledger for every unit and classify it. Nothing is
             # written and nothing is validated against the live schema yet.
-            outcomes: list[MigrationOutcome] = []
+            # Collected BY MIGRATION ID and emitted in REGISTRY order below.
+            # A plain append list made outcome order an accident of which pass
+            # produced each entry: skips land in pass 1 and installs in pass 3,
+            # so `[A pending, B applied-equal]` came back as `(B, A)`.
+            outcomes: dict[str, MigrationOutcome] = {}
             pending: list[tuple[TenantMigrationUnit, bool]] = []
             for unit in self._registry:
                 recorded = await self._read_ledger(connection, tenant_id, unit.migration_id)
@@ -192,7 +196,9 @@ class TenantMigrationRunner:
                     if state == "applied" and checksum == unit.checksum:
                         # 3.6: skipped, so no actual-schema check runs. Composition
                         # checks and this ledger read still did.
-                        outcomes.append(MigrationOutcome(unit.migration_id, applied=False))
+                        outcomes[unit.migration_id] = MigrationOutcome(
+                            unit.migration_id, applied=False
+                        )
                         continue
                     if state == "applied":
                         # Drift. Nothing is changed: re-running would silently install a
@@ -235,20 +241,27 @@ class TenantMigrationRunner:
 
             # Pass 3: install.
             for unit, exists in pending:
-                outcomes.append(
-                    await self._apply_unit(
-                        connection,
-                        unit=unit,
-                        tenant_id=tenant_id,
-                        schema_key=schema_key,
-                        exists=exists,
-                        plan=plans.get(unit.migration_id),
-                        store=store,
-                    )
+                outcomes[unit.migration_id] = await self._apply_unit(
+                    connection,
+                    unit=unit,
+                    tenant_id=tenant_id,
+                    schema_key=schema_key,
+                    exists=exists,
+                    plan=plans.get(unit.migration_id),
+                    store=store,
                 )
         finally:
             await connection.close()
-        return tuple(outcomes)
+        # Registry order, structurally rather than incidentally.
+        #
+        # Indexed directly, with no membership filter. Codex, v19 review: a
+        # rejection propagates before this return, so by the time it runs every
+        # registry unit HAS an outcome. A filter would therefore never skip
+        # anything today, and would silently drop an entry if some future path
+        # lost one. Direct indexing raises instead, which is the failure mode to
+        # want. The public builder rejects duplicate migration ids, so the key is
+        # unique.
+        return tuple(outcomes[unit.migration_id] for unit in self._registry)
 
     async def _apply_unit(
         self,
