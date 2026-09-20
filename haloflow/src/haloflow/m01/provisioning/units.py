@@ -14,11 +14,12 @@ text, so one migration has one checksum across every tenant and drift means the
 same thing everywhere.
 """
 
+import copy
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import InitVar, dataclass, field
 from types import MappingProxyType
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.checksum import unit_checksum
@@ -32,7 +33,11 @@ from haloflow.m01.provisioning.roles import (
     PROVISIONING_ROLES,
     RUNTIME_ROLE,
 )
-from haloflow.m01.provisioning.verification import Verification, validate_verification
+from haloflow.m01.provisioning.verification import (
+    FunctionMetadataVerification,
+    Verification,
+    validate_verification,
+)
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
 MIGRATION_ID_PATTERN: Final = re.compile(r"^t\d{3}(_test)?_[a-z0-9_]{1,64}$")
@@ -64,6 +69,96 @@ _POLICY_VERIFICATION_FIELDS: Final = frozenset({"kind", "functions"})
 
 def _reject(code: PreconditionCode) -> MigrationUnitRejected:
     return MigrationUnitRejected(reason_code=code.value)
+
+
+# B2, the ONE documented adapter boundary onto frozen CP1. `_closed_shape` is a
+# pure, recursive, closed-key/exact-type check that already raises
+# `INSTALL_POLICY_INVALID`; it touches no parser, catalogue, schema key or
+# database. It is reused rather than mirrored here, because a second copy of a
+# schema free to drift from the first is the exact defect CP2-1 exists to close.
+#
+# Deliberately NOT reused: `validate_function_installation` and `_declaration`.
+# Those carry body-hash and policy-consistency checks that belong at
+# pending-install, and hoisting them would move the checker's job into
+# composition (TP-R13).
+from haloflow.m01.provisioning.function_policy import (  # noqa: E402
+    _closed_shape as _frozen_closed_shape,
+)
+
+# The authoritative verification vocabulary, READ from the frozen declaration
+# rather than restated as a literal. It is NOT `TYPED_FUNCTION_KIND`: that is the
+# UNIT's kind (`typed_function_v3`), while this is the verification BLOCK's kind
+# (`function_metadata`). Conflating the two would reject every valid typed unit.
+VERIFICATION_KIND: Final[str] = cast(
+    str, FunctionMetadataVerification.__dataclass_fields__["kind"].default
+)
+
+
+def _frozen(value: Any) -> Any:
+    """Recursively immutable: mappings become read-only views, lists become tuples."""
+
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _frozen(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_frozen(item) for item in value)
+    return value
+
+
+def _thawed(value: Any) -> Any:
+    """A fresh, ordinary, MUTABLE structure, rebuilt on every call.
+
+    The frozen serializer cannot encode a `MappingProxyType` at all, and a caller
+    holding what it was handed must not be able to reach the snapshot. So the
+    boundary thaws rather than exposing the frozen containers.
+    """
+
+    if isinstance(value, Mapping):
+        return {key: _thawed(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thawed(item) for item in value]
+    return value
+
+
+def _adopt_declaration(unit: "TenantMigrationUnit") -> None:
+    """Own the typed declaration: validate the ORIGINAL, then store it frozen.
+
+    ORDER IS THE CONTRACT, and Codex ruled on it:
+
+    1. Deep-copy the caller's structures, preserving their ORIGINAL types. A
+       caller's tuple stays a tuple here, so step 2 rejects it. Freezing or
+       thawing first would normalize that tuple into an accepted list and the
+       malformed input would pass unnoticed.
+    2. Validate STRUCTURE through the frozen shape helper. Every structural
+       fault, INCLUDING a non-string `kind`, is `INSTALL_POLICY_INVALID`.
+    3. Only then the narrow VOCABULARY check: a well-shaped block whose `kind`
+       is an unsupported string is `VERIFICATION_KIND_UNKNOWN`. Running this
+       before step 2 would report a vocabulary failure for an integer kind.
+    4. Freeze recursively and store, so nothing reachable through `unit.policy`
+       can alter the snapshot afterwards.
+    """
+
+    # Typed as `Any` on purpose: until `_closed_shape` has run these are
+    # UNVALIDATED caller data of unknown shape, and annotating them as mappings
+    # would assert a structure that is exactly what is still being checked.
+    policy: Any = copy.deepcopy(unit.policy)
+    verification: Any = copy.deepcopy(unit.policy_verification)
+
+    _frozen_closed_shape(
+        {
+            "checksum_version": FUNCTION_CHECKSUM_VERSION,
+            "migration_id": unit.migration_id,
+            "execution_role": unit.execution_role,
+            "template": unit.template,
+            "verification": verification,
+            "policy": policy,
+        }
+    )
+
+    if verification["kind"] != VERIFICATION_KIND:
+        raise _reject(PreconditionCode.VERIFICATION_KIND_UNKNOWN)
+
+    object.__setattr__(unit, "policy", _frozen(policy))
+    object.__setattr__(unit, "policy_verification", _frozen(verification))
 
 
 def _declaration_checks(
@@ -199,6 +294,14 @@ class TenantMigrationUnit:
                     reason_code=PreconditionCode.EXECUTION_ROLE_IS_INFRASTRUCTURE.value
                 )
 
+        # LAST, deliberately. `_closed_shape` validates the whole root payload,
+        # including the migration id and template, so running it earlier would
+        # report a shape failure for a bad migration id in place of
+        # `MIGRATION_ID_INVALID` and change refusal precedence the frozen v14
+        # assertions already pin.
+        if self.is_typed:
+            _adopt_declaration(self)
+
     @property
     def is_test_unit(self) -> bool:
         return bool(_TEST_UNIT_PATTERN.match(self.migration_id))
@@ -225,8 +328,8 @@ class TenantMigrationUnit:
             "migration_id": self.migration_id,
             "execution_role": self.execution_role,
             "template": self.template,
-            "verification": dict(self.policy_verification or {}),
-            "policy": dict(self.policy or {}),
+            "verification": _thawed(self.policy_verification or {}),
+            "policy": _thawed(self.policy or {}),
         }
 
     @property
