@@ -33,6 +33,12 @@ dependencies = [
     # Scheduling
     "apscheduler>=3.10.4",
 
+    # Function installation policy (M02 CP2-1, owner decision O-1). The runner
+    # validates typed declarations on the provisioning path, so the parser is a
+    # runtime dependency, not a development one. The version is the frozen CP1
+    # contract and is asserted by the checker itself.
+    "pglast==7.17",
+
     # Utilities
     "python-dateutil>=2.9.0",
     "openpyxl>=3.1.0",              # payer care-gap list XLSX ingestion
@@ -41,7 +47,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pglast==7.17",  # Frozen function-policy parser contract (PostgreSQL 17)
     "pytest>=8.2.0",
     "pytest-asyncio>=0.23.0",
     "pytest-httpx>=0.30.0",

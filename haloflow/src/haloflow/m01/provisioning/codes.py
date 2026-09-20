@@ -111,6 +111,11 @@ class PreconditionCode(StrEnum):
     EXECUTION_ROLE_INVALID = "EXECUTION_ROLE_INVALID"
     EXECUTION_ROLE_NOT_APPROVED = "EXECUTION_ROLE_NOT_APPROVED"
     EXECUTION_ROLE_IS_INFRASTRUCTURE = "EXECUTION_ROLE_IS_INFRASTRUCTURE"
+    # CP2-1 (owner decision O-2). A typed unit installs a SECURITY DEFINER
+    # function owned by its execution role, so a typed declaration without one
+    # names no owner at all. Distinct from the three above: the role is absent,
+    # not invalid, unapproved or infrastructure.
+    MIGRATION_UNIT_ROLE_REQUIRED = "MIGRATION_UNIT_ROLE_REQUIRED"
 
     # The provisioning manifest, refused at load (R-P1B.12, R-P3.2, R-P3.4, A5,
     # A7). Distinct causes rather than one code, on the same principle as the
@@ -160,6 +165,12 @@ class PreconditionCode(StrEnum):
     INSTALL_PARSER_UNAVAILABLE = "INSTALL_PARSER_UNAVAILABLE"
     INSTALL_PARSER_VERSION_MISMATCH = "INSTALL_PARSER_VERSION_MISMATCH"
     INSTALL_PARSE_ERROR = "INSTALL_PARSE_ERROR"
+    # CP2-1. An authorized plan whose provenance or binding did not hold: a
+    # fabricated or replayed envelope, or one whose bound identity, declaration
+    # checksum or byte digest does not match the operation-local trusted store.
+    # Deliberately one public code for two phases -- which phase refused is an
+    # internal oracle, not a tenant-facing distinction (contract v5.1, 3.7).
+    INSTALL_PLAN_INVALID = "INSTALL_PLAN_INVALID"
     INSTALL_POLICY_INVALID = "INSTALL_POLICY_INVALID"
     INSTALL_SIGNATURE_MISMATCH = "INSTALL_SIGNATURE_MISMATCH"
     INSTALL_STATEMENT_COUNT_INVALID = "INSTALL_STATEMENT_COUNT_INVALID"

@@ -18,11 +18,15 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import InitVar, dataclass, field
 from types import MappingProxyType
-from typing import Final
+from typing import Any, Final
 
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.checksum import unit_checksum
 from haloflow.m01.provisioning.codes import PreconditionCode
+from haloflow.m01.provisioning.function_checksum import (
+    FUNCTION_CHECKSUM_VERSION,
+    function_checksum,
+)
 from haloflow.m01.provisioning.roles import (
     AUDIT_PROJECTOR_ROLE,
     PROVISIONING_ROLES,
@@ -40,6 +44,69 @@ _TEST_UNIT_PATTERN: Final = re.compile(r"^t\d{3}_test_")
 _SCHEMA_PLACEHOLDER: Final = "{schema}"
 _UNIT_ISSUER: Final = object()
 
+# CP2-1. A unit is typed **because it says so**, never because its template
+# happens to contain function DDL (TP-R2). One declared kind exists; anything
+# else, including a kind of the wrong type, is refused rather than defaulted
+# (TP-R2b), because defaulting either way is inference.
+TYPED_FUNCTION_KIND: Final = "typed_function_v3"
+_POLICY_FIELDS: Final = frozenset(
+    {
+        "policy_format",
+        "semantic_version",
+        "parser_package",
+        "parser_version",
+        "grammar_major",
+        "functions",
+    }
+)
+_POLICY_VERIFICATION_FIELDS: Final = frozenset({"kind", "functions"})
+
+
+def _reject(code: PreconditionCode) -> MigrationUnitRejected:
+    return MigrationUnitRejected(reason_code=code.value)
+
+
+def _declaration_checks(
+    *,
+    kind: str | None,
+    execution_role: str | None,
+    policy: Mapping[str, Any] | None,
+    policy_verification: Mapping[str, Any] | None,
+    verification: Verification | None,
+) -> None:
+    """Pure declaration checks for the typed/ordinary boundary (TP-R13).
+
+    Pure: no parser, no catalogue, no schema key, no database. The actual-schema
+    checker runs later, per pending install, and composition never calls it.
+    """
+
+    typed_fields = policy is not None or policy_verification is not None
+    if kind is None:
+        # TP-R2c. An ordinary definition carrying typed-only fields is refused,
+        # never accepted with the policy silently unenforced.
+        if typed_fields:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        return
+    if kind != TYPED_FUNCTION_KIND:
+        raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+
+    # TP-R3 / O-2. Checked before the policy's shape: the role is what the
+    # installed function is owned by, and its absence is its own refusal.
+    if execution_role is None:
+        raise _reject(PreconditionCode.MIGRATION_UNIT_ROLE_REQUIRED)
+    # TP-R2a. Missing, null or malformed `policy` is refused, never downgraded.
+    for block, required in (
+        (policy, _POLICY_FIELDS),
+        (policy_verification, _POLICY_VERIFICATION_FIELDS),
+    ):
+        if not isinstance(block, Mapping) or not required <= set(block):
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+    if verification is not None:
+        # The typed declaration carries its own verification block; the legacy
+        # field would be a second, unreconciled expectation for one unit.
+        raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+
+
 @dataclass(frozen=True, slots=True)
 class UnitDefinition:
     """A unit's definition when it needs to say more than its template.
@@ -54,9 +121,20 @@ class UnitDefinition:
     template: str
     execution_role: str | None = None
     verification: Verification | None = None
+    kind: str | None = None
+    """CP2-1: `TYPED_FUNCTION_KIND`, or `None` for an ordinary unit (TP-R2)."""
+    policy: Mapping[str, Any] | None = None
+    policy_verification: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         validate_verification(self.verification)
+        _declaration_checks(
+            kind=self.kind,
+            execution_role=self.execution_role,
+            policy=self.policy,
+            policy_verification=self.policy_verification,
+            verification=self.verification,
+        )
 
 
 UnitDefinitions = Mapping[str, "str | UnitDefinition"]
@@ -71,11 +149,23 @@ class TenantMigrationUnit:
     execution_role: str | None = None
     _issuer: InitVar[object | None] = None
     verification: Verification | None = field(default=None, kw_only=True)
+    kind: str | None = field(default=None, kw_only=True)
+    policy: Mapping[str, Any] | None = field(default=None, kw_only=True, repr=False)
+    policy_verification: Mapping[str, Any] | None = field(
+        default=None, kw_only=True, repr=False
+    )
 
     def __post_init__(self, _issuer: object | None) -> None:
         if _issuer is not _UNIT_ISSUER:
             raise MigrationUnitRejected(reason_code=PreconditionCode.UNTRUSTED_MIGRATION_UNIT.value)
         validate_verification(self.verification)
+        _declaration_checks(
+            kind=self.kind,
+            execution_role=self.execution_role,
+            policy=self.policy,
+            policy_verification=self.policy_verification,
+            verification=self.verification,
+        )
         if not MIGRATION_ID_PATTERN.fullmatch(self.migration_id):
             raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_ID_INVALID.value)
         if not self.template.strip():
@@ -114,6 +204,32 @@ class TenantMigrationUnit:
         return bool(_TEST_UNIT_PATTERN.match(self.migration_id))
 
     @property
+    def is_typed(self) -> bool:
+        """Declared typed at composition. Never inferred from the template."""
+
+        return self.kind == TYPED_FUNCTION_KIND
+
+    @property
+    def declaration_payload(self) -> dict[str, Any]:
+        """The frozen CP1 function-v3 payload this typed unit declares.
+
+        Assembled from the unit's own fields, so the bytes handed to the checker
+        and the bytes the checksum covers describe one declaration rather than
+        two copies that could drift apart.
+        """
+
+        if not self.is_typed:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        return {
+            "checksum_version": FUNCTION_CHECKSUM_VERSION,
+            "migration_id": self.migration_id,
+            "execution_role": self.execution_role,
+            "template": self.template,
+            "verification": dict(self.policy_verification or {}),
+            "policy": dict(self.policy or {}),
+        }
+
+    @property
     def checksum(self) -> str:
         """SHA-256 over the versioned canonical payload (R-P4.1, A6).
 
@@ -129,6 +245,21 @@ class TenantMigrationUnit:
         result -- known, intended, and gated by R-P4.4.
         """
 
+        if self.is_typed:
+            # TP-R7. A typed unit's ledger identity is the function-v3 digest,
+            # which covers the policy block; the v2 digest cannot see it, so a
+            # policy change would not read as drift. TP-R7a leaves v2 untouched
+            # for every ordinary unit, and TP-R7b falls out of the two digests
+            # differing: an id applied under v2 that becomes typed is drift, not
+            # a silent skip.
+            payload = self.declaration_payload
+            return function_checksum(
+                migration_id=payload["migration_id"],
+                template=payload["template"],
+                execution_role=payload["execution_role"],
+                verification=payload["verification"],
+                policy=payload["policy"],
+            )
         return unit_checksum(
             migration_id=self.migration_id,
             template=self.template,
@@ -237,6 +368,13 @@ def build_tenant_migration_registry(
             merged[migration_id].execution_role,
             _issuer=_UNIT_ISSUER,
             verification=merged[migration_id].verification,
+            # `getattr`, not attribute access: CP1's frozen composition tests
+            # supply duck-typed definitions "independently of the new
+            # constructor signature" (test_provisioning.py). A definition that
+            # predates the typed fields is ordinary, which is what absent means.
+            kind=getattr(merged[migration_id], "kind", None),
+            policy=getattr(merged[migration_id], "policy", None),
+            policy_verification=getattr(merged[migration_id], "policy_verification", None),
         )
         for migration_id in sorted(merged)
     )

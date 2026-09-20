@@ -108,10 +108,11 @@ Nothing in this file is imported by production code.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from typing import Any, Final, NoReturn
 
-from haloflow.m01.provisioning import function_policy, units
+from haloflow.m01.provisioning import function_policy, typed_plan, units
 
 __all__ = [
     "ABSENT",
@@ -187,7 +188,19 @@ def typed_definition(payload: dict[str, Any], **overrides: Any) -> Any:
     carried unchanged, so each case is a single mutation.
     """
 
-    _absent("a typed unit definition carrying its `policy` block (TP-R1, TP-R2)")
+    fields: dict[str, Any] = {
+        "template": payload["template"],
+        "execution_role": payload["execution_role"],
+        "policy_verification": payload["verification"],
+        "policy": payload["policy"],
+        "kind": units.TYPED_FUNCTION_KIND,
+    }
+    for name, value in overrides.items():
+        if value is ABSENT:
+            fields.pop(name, None)
+        else:
+            fields[name] = value
+    return units.UnitDefinition(**fields)
 
 
 def ordinary_definition(template: str, **typed_only: Any) -> Any:
@@ -200,13 +213,13 @@ def ordinary_definition(template: str, **typed_only: Any) -> Any:
 
     if not typed_only:
         return units.UnitDefinition(template)
-    _absent("typed-only fields on an ordinary definition (TP-R2c)")
+    return units.UnitDefinition(template, **typed_only)
 
 
 def is_typed(unit: Any) -> bool:
     """Whether a COMPOSED unit is classified typed (TP-R2)."""
 
-    _absent("typed classification on a composed unit (TP-R2)")
+    return bool(unit.is_typed)
 
 
 # ---------------------------------------------------------------------------
@@ -224,31 +237,31 @@ def checker_seam() -> tuple[Any, str]:
     bound here.
     """
 
-    _absent("the runner's checker call site (S-1)")
+    return (typed_plan, "validate_function_installation")
 
 
 def issuer_seam() -> tuple[Any, str]:
     """The callable that issues an operation-local envelope (S-2, TP-R9)."""
 
-    _absent("envelope issuance as a separable callable (S-2)")
+    return (typed_plan, "issue_plan")
 
 
 def consumer_seam() -> tuple[Any, str]:
     """The callable that verifies an envelope and yields bytes to execute (S-2)."""
 
-    _absent("envelope consumption as a separable callable (S-2)")
+    return (typed_plan, "consume_plan")
 
 
 def provenance_seam() -> tuple[Any, str]:
     """The provenance check, phase 1 of v5.1 section 3.7 (S-3)."""
 
-    _absent("a distinct provenance check (S-3)")
+    return (typed_plan, "verify_provenance")
 
 
 def binding_seam() -> tuple[Any, str]:
     """The binding / digest check, phase 3 of v5.1 section 3.7 (S-3)."""
 
-    _absent("a distinct binding check (S-3)")
+    return (typed_plan, "verify_binding")
 
 
 def renderer_seams() -> tuple[tuple[Any, str], ...]:
@@ -272,7 +285,7 @@ def renderer_seams() -> tuple[tuple[Any, str], ...]:
 def read(envelope: Any, field: str) -> Any:
     """One logical field of an issued envelope."""
 
-    _absent(f"reading envelope field {field!r} (S-4)")
+    return getattr(envelope, field)
 
 
 def alter(envelope: Any, **fields: Any) -> Any:
@@ -283,13 +296,16 @@ def alter(envelope: Any, **fields: Any) -> Any:
     leaves earlier provenance and NUL checks valid".
     """
 
-    _absent("replacing envelope fields while preserving provenance (S-4)")
+    # (B) `dataclasses.replace` carries `token` across unchanged, so the copy
+    # keeps the issuance identity and the case reaches the binding phase.
+    return dataclasses.replace(envelope, **fields)
 
 
 def fabricate(envelope: Any) -> Any:
     """A caller-constructed envelope with identical visible fields (S-4, TP-R12a)."""
 
-    _absent("constructing an envelope outside the issuer (S-4)")
+    # (B) Same visible fields, a caller-made token the issuer never recorded.
+    return dataclasses.replace(envelope, token=object())
 
 
 def force_set(envelope: Any, field: str, value: Any) -> None:
@@ -299,7 +315,9 @@ def force_set(envelope: Any, field: str, value: Any) -> None:
     test action, not something production code could do by accident.
     """
 
-    _absent("in-place envelope mutation for the snapshot case (S-4)")
+    # (B) Frozen is not immutable against a test that means it. No production
+    # code path can do this, and none is added to allow it.
+    object.__setattr__(envelope, field, value)
 
 
 def digest_of(sql_bytes: bytes) -> str:
@@ -311,4 +329,4 @@ def digest_of(sql_bytes: bytes) -> str:
 def registry_identity(registry: Any) -> Any:
     """The registry identity an envelope binds (TP-R10, `B-registry`)."""
 
-    _absent("registry identity as bound in an envelope (TP-R10)")
+    return registry
