@@ -35,9 +35,11 @@ from psycopg import Error as PsycopgError
 from haloflow.m01.errors import (
     ConnectionModeRejected,
     ExecutionRoleUnavailable,
+    MigrationUnitRejected,
     TenantMigrationFailed,
 )
 from haloflow.m01.provisioning import manifest as manifest_module
+from haloflow.m01.provisioning import typed_plan
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
 from haloflow.m01.provisioning.manifest import ProvisioningManifest
 from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
@@ -165,7 +167,6 @@ class TenantMigrationRunner:
     async def _apply_locked(
         self, *, tenant_id: str, schema_key: str
     ) -> tuple[MigrationOutcome, ...]:
-        outcomes: list[MigrationOutcome] = []
         connection = await self._connect()
         try:
             await _assume_migrator(connection)
@@ -179,15 +180,88 @@ class TenantMigrationRunner:
                 )
             except ExecutionRoleUnavailable as error:
                 raise TenantMigrationFailed(reason_code=error.reason_code) from error
+
+            # Pass 1: read the ledger for every unit and classify it. Nothing is
+            # written and nothing is validated against the live schema yet.
+            # Collected BY MIGRATION ID and emitted in REGISTRY order below.
+            # A plain append list made outcome order an accident of which pass
+            # produced each entry: skips land in pass 1 and installs in pass 3,
+            # so `[A pending, B applied-equal]` came back as `(B, A)`.
+            outcomes: dict[str, MigrationOutcome] = {}
+            pending: list[tuple[TenantMigrationUnit, bool]] = []
             for unit in self._registry:
-                outcomes.append(
-                    await self._apply_unit(
-                        connection, unit=unit, tenant_id=tenant_id, schema_key=schema_key
+                recorded = await self._read_ledger(connection, tenant_id, unit.migration_id)
+                if recorded is not None:
+                    state, checksum = recorded
+                    if state == "applied" and checksum == unit.checksum:
+                        # 3.6: skipped, so no actual-schema check runs. Composition
+                        # checks and this ledger read still did.
+                        outcomes[unit.migration_id] = MigrationOutcome(
+                            unit.migration_id, applied=False
+                        )
+                        continue
+                    if state == "applied":
+                        # Drift. Nothing is changed: re-running would silently install a
+                        # definition different from the one this tenant already has, and
+                        # rewriting the ledger would erase the evidence of that. A unit
+                        # that became typed lands here too -- its identity moved.
+                        raise TenantMigrationFailed(
+                            reason_code=SanitizedErrorCode.MIGRATION_CHECKSUM_DRIFT.value
+                        )
+                pending.append((unit, recorded is not None))
+
+            # Pass 2: whole-plan preflight. Every pending typed unit is validated
+            # and bound BEFORE any unit installs anything, so an invalid unit late
+            # in the registry cannot leave earlier units half-applied, and no
+            # `running` row exists for any of them.
+            store = typed_plan.OperationExpectations()
+            plans: dict[str, typed_plan.AuthorizedPlan] = {}
+            for unit, _ in pending:
+                if not unit.is_typed:
+                    continue
+                try:
+                    # Policy first, issuance second, and never the other way
+                    # round: a declaration the checker refuses must not reach the
+                    # issuer at all, so a policy refusal can never be reported as
+                    # a plan refusal.
+                    result = typed_plan.validate_declaration(
+                        unit=unit, schema_key=schema_key
                     )
+                    plans[unit.migration_id] = typed_plan.issue_plan(
+                        unit=unit,
+                        schema_key=schema_key,
+                        registry=self._registry,
+                        store=store,
+                        result=result,
+                    )
+                except MigrationUnitRejected as error:
+                    # TP-R17. The policy's own code is carried into the runner's
+                    # sanitized type, not flattened into a generic failure.
+                    raise TenantMigrationFailed(reason_code=error.reason_code) from None
+
+            # Pass 3: install.
+            for unit, exists in pending:
+                outcomes[unit.migration_id] = await self._apply_unit(
+                    connection,
+                    unit=unit,
+                    tenant_id=tenant_id,
+                    schema_key=schema_key,
+                    exists=exists,
+                    plan=plans.get(unit.migration_id),
+                    store=store,
                 )
         finally:
             await connection.close()
-        return tuple(outcomes)
+        # Registry order, structurally rather than incidentally.
+        #
+        # Indexed directly, with no membership filter. Codex, v19 review: a
+        # rejection propagates before this return, so by the time it runs every
+        # registry unit HAS an outcome. A filter would therefore never skip
+        # anything today, and would silently drop an entry if some future path
+        # lost one. Direct indexing raises instead, which is the failure mode to
+        # want. The public builder rejects duplicate migration ids, so the key is
+        # unique.
+        return tuple(outcomes[unit.migration_id] for unit in self._registry)
 
     async def _apply_unit(
         self,
@@ -196,22 +270,25 @@ class TenantMigrationRunner:
         unit: TenantMigrationUnit,
         tenant_id: str,
         schema_key: str,
+        exists: bool,
+        plan: typed_plan.AuthorizedPlan | None,
+        store: typed_plan.OperationExpectations,
     ) -> MigrationOutcome:
-        recorded = await self._read_ledger(connection, tenant_id, unit.migration_id)
-        if recorded is not None:
-            state, checksum = recorded
-            if state == "applied" and checksum == unit.checksum:
-                return MigrationOutcome(unit.migration_id, applied=False)
-            if state == "applied":
-                # Drift. Nothing is changed: re-running would silently install a
-                # definition different from the one this tenant already has, and
-                # rewriting the ledger would erase the evidence of that.
+        if unit.is_typed:
+            # TP-R5/R6. Consumption happens here, before the `running` write, and
+            # returns the ONLY bytes this unit may execute. No re-render: the
+            # template is not touched again on this path.
+            if plan is None:
                 raise TenantMigrationFailed(
-                    reason_code=SanitizedErrorCode.MIGRATION_CHECKSUM_DRIFT.value
+                    reason_code=PreconditionCode.INSTALL_PLAN_INVALID.value
                 )
-
-        rendered = unit.render(schema_key)
-        await self._record_running(connection, tenant_id, unit, exists=recorded is not None)
+            try:
+                rendered: str | bytes = typed_plan.consume_plan(plan, store)
+            except MigrationUnitRejected as error:
+                raise TenantMigrationFailed(reason_code=error.reason_code) from None
+        else:
+            rendered = unit.render(schema_key)
+        await self._record_running(connection, tenant_id, unit, exists=exists)
 
         # The DDL and its `applied` ledger transition commit **together**.
         #
