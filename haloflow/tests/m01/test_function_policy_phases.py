@@ -541,7 +541,9 @@ def test_phase_nul_01f_rendered_guard_is_retained_fault_injection(monkeypatch):
     say nothing gets there; this says the guard is still standing if something did.
 
     It is synthetic checker O05 coverage. It is NOT the runner-side NUL obligation
-    in `typed_plan.consume_plan`, which is reachable, separate and still open.
+    in `typed_plan.consume_plan`, which is reachable and separate, and is covered
+    by `TP-30b-bound-nul` in `test_typed_plan_runner.py` (Codex correction,
+    2026-09-21: the earlier 'still open' status was recorded in error).
 
     THE CODE ALONE WOULD NOT BE ENOUGH. `INSTALL_NUL_FORBIDDEN` could in principle
     come from a later refusal, so this asserts WHERE: after the injected renderer
