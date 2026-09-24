@@ -188,14 +188,51 @@ async def expired_context() -> TenantContext:
 
 
 def _database_url_from(params: dict[str, object], dbname: str) -> str:
-    """Build a postgresql:// URL, which is what alembic/env.py can rewrite."""
+    """Build a postgresql:// URL, which is what alembic/env.py can rewrite.
 
-    user = params.get("user") or "postgres"
-    password = params.get("password")
-    credentials = f"{user}:{password}" if password else f"{user}"
-    host = params.get("host") or "127.0.0.1"
-    port = params.get("port") or 5432
-    return f"postgresql://{credentials}@{host}:{port}/{dbname}"
+    D-02 (PORTABILITY-01). The authority is empty and every option goes in the
+    query string, percent-encoded, so psycopg and the SQLAlchemy dialect read
+    the same mapping. Nothing is invented and the environment is never read: an
+    option that was not supplied is left for libpq to resolve. A ``dbname`` in
+    ``params`` is replaced by the requested name, and options whose value is
+    exactly "" are omitted. Unrecognised keys are refused.
+
+    Refusals are ValueErrors with fixed messages, raised outside any ``except``
+    block, so no library message (which can echo key text) is chained as
+    ``__cause__`` or ``__context__``.
+    """
+    from urllib.parse import quote
+
+    if not isinstance(dbname, str) or dbname == "":
+        raise ValueError("requested database name must be a non-empty str")
+    supplied: dict[str, str] = {}
+    for key, value in params.items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            raise ValueError("connection option values must be str")
+        supplied[key] = value
+
+    # libpq validates the keys; values are not validated until it connects.
+    rejected = False
+    try:
+        make_conninfo("", **supplied)
+    except (psycopg.Error, ValueError, TypeError):
+        rejected = True
+    if rejected:
+        raise ValueError("invalid connection options")
+
+    carried = {k: v for k, v in supplied.items() if k != "dbname" and v != ""}
+    intended = {"dbname": dbname, **carried}
+    pairs = [("dbname", dbname), *sorted(carried.items())]
+    url = "postgresql:///?" + "&".join(f"{quote(k, safe='')}={quote(v, safe='')}" for k, v in pairs)
+
+    parsed: dict[str, Any] | None
+    try:
+        parsed = conninfo_to_dict(url)
+    except (psycopg.Error, ValueError, TypeError):
+        parsed = None
+    if parsed != intended:
+        raise ValueError("invalid connection options")
+    return url
 
 
 def _apply_migrations_to(conninfo: str, revision: str = "head") -> None:
