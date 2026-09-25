@@ -180,6 +180,16 @@ class PreconditionCode(StrEnum):
     INSTALL_TOPLEVEL_FORM_UNKNOWN = "INSTALL_TOPLEVEL_FORM_UNKNOWN"
     INSTALL_TYPE_SHAPE_FORBIDDEN = "INSTALL_TYPE_SHAPE_FORBIDDEN"
 
+    # CG-4 (requirements v5, CG4-R5). A role-bearing ORDINARY unit's rendered
+    # template, refused in runner pass 2 before any unit installs. Two causes, two
+    # codes, and deliberately not INSTALL_PLAN_INVALID: the template parsed but is
+    # not admissible (a prohibited or non-allowed statement kind, or no statement
+    # at all), versus the template could not be parsed (including a NUL). Owner
+    # ruling CL-2: PROHIBITED is also the fail-closed code for two internal-fault
+    # guards that establish no content verdict -- documented in ordinary_content.
+    ORDINARY_ROLE_CONTENT_PROHIBITED = "ORDINARY_ROLE_CONTENT_PROHIBITED"
+    ORDINARY_ROLE_CONTENT_UNPARSEABLE = "ORDINARY_ROLE_CONTENT_UNPARSEABLE"
+
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than
 # by a module-level `assert`, which `python -O` would strip.

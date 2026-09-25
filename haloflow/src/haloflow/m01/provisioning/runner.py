@@ -24,7 +24,7 @@ therefore why the lock has to outlive those commits.
 """
 
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Final
@@ -39,7 +39,7 @@ from haloflow.m01.errors import (
     TenantMigrationFailed,
 )
 from haloflow.m01.provisioning import manifest as manifest_module
-from haloflow.m01.provisioning import typed_plan
+from haloflow.m01.provisioning import ordinary_content, typed_plan
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
 from haloflow.m01.provisioning.manifest import ProvisioningManifest
 from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
@@ -216,8 +216,31 @@ class TenantMigrationRunner:
             # `running` row exists for any of them.
             store = typed_plan.OperationExpectations()
             plans: dict[str, typed_plan.AuthorizedPlan] = {}
+            # CG-4 (architecture v2 section 5). A role-bearing ordinary unit is
+            # rendered ONCE, here, and its rendered text is content-checked; that
+            # checked text is the only text pass 3 may execute for it.
+            checked: dict[str, str] = {}
+            # AQ-3 option E: a render failure (an invalid schema key) is DEFERRED
+            # and re-raised unwrapped after the loop, so a pending typed unit still
+            # reports first and the exception type is exactly what it was before
+            # CG-4 -- when the first pass-3 ordinary render raised it, before any
+            # unit installed.
+            deferred_render: MigrationUnitRejected | None = None
             for unit, _ in pending:
                 if not unit.is_typed:
+                    if ordinary_content.requires_content_check(unit):
+                        try:
+                            rendered_ordinary = unit.render(schema_key)
+                        except MigrationUnitRejected as error:
+                            if deferred_render is None:
+                                deferred_render = error
+                            continue
+                        try:
+                            checked[unit.migration_id] = ordinary_content.check_rendered(
+                                unit=unit, rendered=rendered_ordinary
+                            )
+                        except MigrationUnitRejected as error:
+                            raise TenantMigrationFailed(reason_code=error.reason_code) from None
                     continue
                 try:
                     # Policy first, issuance second, and never the other way
@@ -238,6 +261,10 @@ class TenantMigrationRunner:
                     # TP-R17. The policy's own code is carried into the runner's
                     # sanitized type, not flattened into a generic failure.
                     raise TenantMigrationFailed(reason_code=error.reason_code) from None
+            if deferred_render is not None:
+                raise deferred_render
+            # CG-4 section 5.2: completeness by VALUE, before any unit installs.
+            _require_checked_complete(pending, checked)
 
             # Pass 3: install.
             for unit, exists in pending:
@@ -249,6 +276,7 @@ class TenantMigrationRunner:
                     exists=exists,
                     plan=plans.get(unit.migration_id),
                     store=store,
+                    checked_text=checked.get(unit.migration_id),
                 )
         finally:
             await connection.close()
@@ -273,6 +301,7 @@ class TenantMigrationRunner:
         exists: bool,
         plan: typed_plan.AuthorizedPlan | None,
         store: typed_plan.OperationExpectations,
+        checked_text: str | None = None,
     ) -> MigrationOutcome:
         if unit.is_typed:
             # TP-R5/R6. Consumption happens here, before the `running` write, and
@@ -286,6 +315,16 @@ class TenantMigrationRunner:
                 rendered: str | bytes = typed_plan.consume_plan(plan, store)
             except MigrationUnitRejected as error:
                 raise TenantMigrationFailed(reason_code=error.reason_code) from None
+        elif ordinary_content.requires_content_check(unit):
+            # CG-4. Execute exactly the text pass 2 checked; never render again.
+            if checked_text is None:
+                # CL-2 fallback, defence in depth only: section 5.2 already
+                # proved completeness. An injected fault here may follow earlier
+                # installs, so no whole-plan guarantee is claimed for it.
+                raise TenantMigrationFailed(
+                    reason_code=PreconditionCode.ORDINARY_ROLE_CONTENT_PROHIBITED.value
+                )
+            rendered = checked_text
         else:
             rendered = unit.render(schema_key)
         await self._record_running(connection, tenant_id, unit, exists=exists)
@@ -480,6 +519,26 @@ async def _assume_migrator(connection: AsyncConnection) -> None:
         raise TenantMigrationFailed(reason_code=error.reason_code) from None
     await connection.execute("SET search_path = pg_catalog")
     await connection.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(MIGRATOR_ROLE)))
+
+
+def _require_checked_complete(
+    pending: Sequence[tuple[TenantMigrationUnit, bool]],
+    checked: Mapping[str, object],
+) -> None:
+    """CG-4 architecture v2 section 5.2: every in-scope pending unit has checked TEXT.
+
+    Completeness is by VALUE: the entry must be exactly a `str`. A missing key or a
+    key holding anything else is an internal fault (owner ruling CL-2), refused
+    here -- after pass 2 and BEFORE any unit installs.
+    """
+
+    for unit, _ in pending:
+        if ordinary_content.requires_content_check(unit) and type(
+            checked.get(unit.migration_id)
+        ) is not str:
+            raise TenantMigrationFailed(
+                reason_code=PreconditionCode.ORDINARY_ROLE_CONTENT_PROHIBITED.value
+            )
 
 
 def _validate_tenant_id(tenant_id: str) -> None:
