@@ -483,7 +483,11 @@ async def test_declared_role_switch_sequence(
     )
     role_is_settable = harness.Answer(markers=("pg_has_role",), rows=((True,),))
 
-    units = role_registry(FUNCTION_SQL)
+    # CG-4 (requirements v5 CG4-R8a, test cases I-02): the positive role-switch
+    # sequence now runs on allowed table DDL. The former `FUNCTION_SQL` success is
+    # refused under CG-4 and is covered as RF-5 / I-01 in
+    # `test_ordinary_content_runner.py`. Every assertion below is unchanged.
+    units = role_registry(ORDINARY_SQL)
     runner, (connection,) = migration_driver(  # type: ignore[operator]
         units,
         (role_attributes, role_is_settable, harness.ledger_absent()),

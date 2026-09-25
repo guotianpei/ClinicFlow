@@ -1544,6 +1544,34 @@ def make_registry_with_execution_role() -> TenantMigrationRegistry:
     )
 
 
+# CG-4 (requirements v5 CG4-R8a, owner ruling Q-2 = F-1). CP-5c's success and
+# retry scenarios now reach runner pass 2, where CG-4 refuses any role-bearing
+# template that is not exactly `CREATE TABLE`. So CP-5c gets its OWN plain-table
+# template and helper. No privilege, profile or manifest changes: a plain
+# `CREATE TABLE` needs CREATE on the schema, which CP4_PROFILE already declares;
+# a PRIMARY KEY would need USAGE and is deliberately absent. VALID_CP4_TEMPLATE,
+# make_registry_with_execution_role() and CP4_PROFILE stay unchanged for CP-4's
+# stage-1 and stage-3 callers.
+CP5C_ROLE_TEMPLATE = "CREATE TABLE {schema}.cp5c_probe (id int);"
+
+
+def make_cp5c_registry_with_execution_role() -> TenantMigrationRegistry:
+    """CP-5c only: the baseline plus one role-bearing plain-table unit (F-1)."""
+
+    from haloflow.m01.provisioning.units import UnitDefinition, build_tenant_migration_registry
+
+    return build_tenant_migration_registry(
+        dict(TENANT_MIGRATIONS),
+        {
+            "t002_test_m02": UnitDefinition(
+                CP5C_ROLE_TEMPLATE, execution_role=CP4_EXECUTION_ROLE
+            )
+        },
+        approved_execution_roles=frozenset({CP4_EXECUTION_ROLE}),
+        allow_test_units=True,
+    )
+
+
 @pytest.fixture
 def cp4_declared_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     """Declare the test execution role in the manifest stage 1 loads for itself.
@@ -2197,7 +2225,7 @@ async def test_cp5c_installs_and_verifies_acl_before_any_runner_ledger_write(
 
     await shape_execution_role(provisioning_harness)
     tenant_id, schema_key = new_tenant
-    registry = make_registry_with_execution_role()
+    registry = make_cp5c_registry_with_execution_role()
     runner = TenantMigrationRunner(
         connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]), registry
     )
@@ -2223,6 +2251,16 @@ async def test_cp5c_installs_and_verifies_acl_before_any_runner_ledger_write(
     outcome = await provisioner.provision(request_for(new_tenant))
     assert reached_runner is True
     assert outcome.schema_version == 2
+    # CG-4 D-A1: the role-bearing unit really executed under the execution role.
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT owner.rolname
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+            WHERE namespace.nspname = %s AND relation.relname = 'cp5c_probe'""",
+        (new_tenant[1],),
+    ) == (CP4_EXECUTION_ROLE,)
 
 
 @pytest.mark.asyncio
@@ -2242,7 +2280,7 @@ async def test_cp5c_unsafe_declared_role_never_receives_create_and_retry_converg
     )
     provisioner = make_provisioner(
         provisioning_harness,
-        make_registry_with_execution_role(),
+        make_cp5c_registry_with_execution_role(),
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     )
 
@@ -2433,7 +2471,7 @@ async def test_cp5c_complete_five_class_acl_activates(
     await shape_execution_role(provisioning_harness)
     outcome = await make_provisioner(
         provisioning_harness,
-        make_registry_with_execution_role(),
+        make_cp5c_registry_with_execution_role(),
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     ).provision(request_for(new_tenant))
     assert outcome.schema_version == 2
@@ -2648,7 +2686,7 @@ async def test_cp5c_resume_from_committed_schema_without_grants_activates(
     assert await schema_acl(provisioning_harness, new_tenant[1]) == frozenset()
     outcome = await make_provisioner(
         provisioning_harness,
-        make_registry_with_execution_role(),
+        make_cp5c_registry_with_execution_role(),
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     ).provision(request_for(new_tenant))
     assert outcome.resumed is True
@@ -2688,7 +2726,7 @@ async def test_cp5c_resume_regrants_exact_acl_byte_identically(
     )
     outcome = await make_provisioner(
         provisioning_harness,
-        make_registry_with_execution_role(),
+        make_cp5c_registry_with_execution_role(),
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     ).provision(request_for(new_tenant))
     after = await admin_row(provisioning_harness, query, (new_tenant[1],))
@@ -2803,7 +2841,7 @@ async def test_cp5c_each_repairable_state_converges_on_retry(
         )
         provisioner = make_provisioner(
             provisioning_harness,
-            make_registry_with_execution_role(),
+            make_cp5c_registry_with_execution_role(),
             supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
         )
         with pytest.raises(ProvisioningFailed):
@@ -2831,7 +2869,7 @@ async def test_cp5c_each_repairable_state_converges_on_retry(
         await shape_execution_role(provisioning_harness)
     outcome = await make_provisioner(
         provisioning_harness,
-        make_registry_with_execution_role(),
+        make_cp5c_registry_with_execution_role(),
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     ).provision(request_for(new_tenant))
     assert outcome.schema_version == 2
@@ -2846,17 +2884,36 @@ async def test_cp5c_schema_owner_and_all_grant_options_match_the_declaration(
     cp4_role: None,
     cp4_declared_manifest: None,
     new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TC-P79: ownership and non-delegation are catalogue facts, not assumptions."""
 
     from haloflow.m01.provisioning.acl import build_expected_schema_acl
 
     await shape_execution_role(provisioning_harness)
-    await make_provisioner(
-        provisioning_harness,
-        make_registry_with_execution_role(),
+    # CG-4 D-A10 (test cases v2 s5.2): capture the catalogue's own nspacl text at
+    # the runner boundary (after stage 3), with the same boundary technique as
+    # TC-P45, and compare it with the same catalogue value afterwards. Catalogue
+    # value against catalogue value, never against the logical expected ACL, and
+    # no ordering assumption.
+    runner = TenantMigrationRunner(
+        connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
+        make_cp5c_registry_with_execution_role(),
+    )
+    boundary_nspacl: list[object] = []
+    original_apply = runner.apply_within_lock
+
+    async def _capture_boundary(*, tenant_id: str, schema_key: str) -> object:
+        boundary_nspacl.append(await nspacl_text(provisioning_harness, schema_key))
+        return await original_apply(tenant_id=tenant_id, schema_key=schema_key)
+
+    monkeypatch.setattr(runner, "apply_within_lock", _capture_boundary)
+    await TenantProvisioner(
+        connection_factory(provisioning_harness.role_logins[PROVISIONER_ROLE]),
+        runner,
         supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
     ).provision(request_for(new_tenant))
+    assert boundary_nspacl == [await nspacl_text(provisioning_harness, new_tenant[1])]
     assert await admin_row(
         provisioning_harness,
         """SELECT owner.rolname
@@ -2873,6 +2930,18 @@ async def test_cp5c_schema_owner_and_all_grant_options_match_the_declaration(
         or entry.grantor == PROVISIONER_ROLE  # type: ignore[attr-defined]
         for entry in observed
     )
+
+
+async def nspacl_text(harness: ProvisioningHarness, schema_key: str) -> object:
+    """The tenant schema's `nspacl`, as the catalogue renders it (CG-4 D-A10)."""
+
+    return (
+        await admin_row(
+            harness,
+            "SELECT nspacl::text FROM pg_namespace WHERE nspname = %s",
+            (schema_key,),
+        )
+    )[0]
 
 
 def test_cp5c_live_provisioning_path_cannot_bypass_stage3() -> None:
@@ -3101,9 +3170,10 @@ async def test_cp6_role_switched_ddl_and_applied_row_share_one_transaction(
     registry = make_cp6_registry(
         (
             migration_id,
-            """CREATE TABLE {schema}.cp6_atomic (ddl_xid bigint NOT NULL);
-               INSERT INTO {schema}.cp6_atomic
-               VALUES (pg_current_xact_id()::text::bigint);""",
+            # CG-4 D-A11 (CG4-R8a): allowed table DDL only. The transaction
+            # evidence moves from an INSERTed xid to the relation's own
+            # catalogue row, which the same transaction created.
+            "CREATE TABLE {schema}.cp6_atomic (id int);",
             CP4_EXECUTION_ROLE,
         )
     )
@@ -3113,21 +3183,60 @@ async def test_cp6_role_switched_ddl_and_applied_row_share_one_transaction(
         supported_schema_versions=range(1, 3),
     ).provision(request_for(new_tenant))
 
-    owner, ddl_xid, ledger_xmin = await admin_row(
+    owner, relation_xmin, ledger_xmin, ledger_state = await admin_row(
         provisioning_harness,
-        f"""SELECT (SELECT owner.rolname
-                       FROM pg_class relation
-                       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
-                       JOIN pg_roles owner ON owner.oid = relation.relowner
-                      WHERE namespace.nspname = %s
-                        AND relation.relname = 'cp6_atomic'),
-                   (SELECT ddl_xid FROM {new_tenant[1]}.cp6_atomic),
-                   (SELECT xmin::text::bigint FROM shared.schema_migrations
-                     WHERE tenant_id = %s AND migration_id = %s)""",
+        """SELECT owner.rolname, relation.xmin::text, ledger.xmin::text, ledger.state
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+             CROSS JOIN shared.schema_migrations ledger
+            WHERE namespace.nspname = %s
+              AND relation.relname = 'cp6_atomic'
+              AND ledger.tenant_id = %s
+              AND ledger.migration_id = %s""",
         (new_tenant[1], new_tenant[0], migration_id),
     )
     assert owner == CP4_EXECUTION_ROLE
-    assert ledger_xmin == ddl_xid % 2**32
+    assert ledger_state == "applied"
+    assert relation_xmin == ledger_xmin
+
+
+CP6_PARENT_TEMPLATE = "CREATE TABLE {schema}.cp6_parent (id integer PRIMARY KEY);"
+# Two allowed `CREATE TABLE` statements whose SECOND fails only under a role
+# lacking REFERENCES on the migrator-owned parent (CG-4 D-A12, test cases v2 s5.1).
+CP6_ROLE_SENSITIVE_TEMPLATE = (
+    "CREATE TABLE {schema}.cp6_rolled_back (id integer PRIMARY KEY);\n"
+    "CREATE TABLE {schema}.cp6_child (pid integer REFERENCES {schema}.cp6_parent(id));"
+)
+
+
+def observe_role_before(
+    monkeypatch: pytest.MonkeyPatch, rendered: str, seen: list[object]
+) -> None:
+    """Record `current_role` on the SAME connection immediately before `rendered` executes."""
+
+    original = AsyncConnection.execute
+
+    async def execute(connection, query, params=None, **kwargs):  # type: ignore[no-untyped-def]
+        if isinstance(query, str) and query == rendered:
+            row = await (await original(connection, "SELECT current_role")).fetchone()
+            seen.append(row[0] if row else None)
+        return await original(connection, query, params, **kwargs)
+
+    monkeypatch.setattr(AsyncConnection, "execute", execute)
+
+
+async def relation_owner(harness: ProvisioningHarness, schema_key: str, name: str) -> object:
+    row = await admin_rows(
+        harness,
+        """SELECT owner.rolname
+             FROM pg_class relation
+             JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+             JOIN pg_roles owner ON owner.oid = relation.relowner
+            WHERE namespace.nspname = %s AND relation.relname = %s""",
+        (schema_key, name),
+    )
+    return row[0][0] if row else None
 
 
 @pytest.mark.asyncio
@@ -3136,39 +3245,71 @@ async def test_cp6_failed_assumed_role_does_not_leak_into_the_next_run(
     cp4_role: None,
     cp6_declared_manifest: None,
     new_tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """TC-P9: rollback discards the local role; retry executes as migrator."""
+    """TC-P9: the DDL fails under the role, rolls back, and the retry runs as migrator.
+
+    CG-4 D-A12 (CG4-R8a). Three sequential runs, one tenant:
+      1. setup: a migrator-owned parent table, provisioned to completion;
+      2. a role-bearing unit of two allowed `CREATE TABLE`s whose second fails only
+         because the role lacks REFERENCES on that parent;
+      3. the original retry, migrator-owned.
+    The same-connection observation proves the role was ASSUMED before the DDL. It
+    does not prove cleanup after rollback; the new-connection retry proves only
+    which identity ran the retry (Codex test-case v2 review, precision point 1).
+    """
 
     await shape_execution_role(provisioning_harness)
-    await make_provisioner(provisioning_harness).provision(request_for(new_tenant))
-    migration_id = "t002_test_cp6_failed_role"
-    failing = make_cp6_registry(
-        (
-            migration_id,
-            """CREATE TABLE {schema}.cp6_rolled_back (id integer PRIMARY KEY);
-               SELECT 1 / CASE
-                   WHEN current_role = 'haloflow_test_m02_migrator' THEN 0
-                   ELSE 1
-               END;""",
-            CP4_EXECUTION_ROLE,
-        )
+    tenant_id, schema_key = new_tenant
+    parent = ("t002_test_cp6_parent", CP6_PARENT_TEMPLATE, None)
+
+    # Run 1: setup, completed, under cp6_declared_manifest (USAGE + CREATE).
+    await make_provisioner(
+        provisioning_harness, make_cp6_registry(parent), supported_schema_versions=range(1, 3)
+    ).provision(request_for(new_tenant))
+
+    # Catalogue precondition, after run 1 and before run 2. A `true` here is a
+    # fixture finding for review; no grant is altered to make it pass.
+    assert await relation_owner(provisioning_harness, schema_key, "cp6_parent") == MIGRATOR_ROLE
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT has_table_privilege(%s, %s, 'REFERENCES')",
+        (CP4_EXECUTION_ROLE, f"{schema_key}.cp6_parent"),
+    ) == (False,)
+
+    # Run 2: the role-bearing failure.
+    migration_id = "t003_test_cp6_failed_role"
+    seen: list[object] = []
+    observe_role_before(
+        monkeypatch, CP6_ROLE_SENSITIVE_TEMPLATE.replace("{schema}", schema_key), seen
     )
     runner = TenantMigrationRunner(
         connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
-        failing,
+        make_cp6_registry(
+            parent, (migration_id, CP6_ROLE_SENSITIVE_TEMPLATE, CP4_EXECUTION_ROLE)
+        ),
     )
     with pytest.raises(TenantMigrationFailed) as failed:
-        await runner.apply(tenant_id=new_tenant[0], schema_key=new_tenant[1])
+        await runner.apply(tenant_id=tenant_id, schema_key=schema_key)
     assert failed.value.reason_code == SanitizedErrorCode.MIGRATION_DDL_FAILED.value
+    assert seen == [CP4_EXECUTION_ROLE]
     assert await admin_row(
         provisioning_harness,
         """SELECT state, sanitized_error_code
              FROM shared.schema_migrations
             WHERE tenant_id = %s AND migration_id = %s""",
-        (new_tenant[0], migration_id),
+        (tenant_id, migration_id),
     ) == ("failed", SanitizedErrorCode.MIGRATION_DDL_FAILED.value)
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT to_regclass(%s), to_regclass(%s)",
+        (f"{schema_key}.cp6_rolled_back", f"{schema_key}.cp6_child"),
+    ) == (None, None)
+    # The observation stays installed: it fires only on the exact run-2 text.
 
+    # Run 3: the original retry, migrator-owned, same migration id.
     retry = make_cp6_registry(
+        parent,
         (
             migration_id,
             """CREATE TABLE {schema}.cp6_after_failure (
@@ -3177,27 +3318,55 @@ async def test_cp6_failed_assumed_role_does_not_leak_into_the_next_run(
                );
                INSERT INTO {schema}.cp6_after_failure (id) VALUES (1);""",
             None,
-        )
+        ),
     )
     await TenantMigrationRunner(
         connection_factory(provisioning_harness.role_logins[MIGRATOR_ROLE]),
         retry,
-    ).apply(tenant_id=new_tenant[0], schema_key=new_tenant[1])
+    ).apply(tenant_id=tenant_id, schema_key=schema_key)
 
     owner, observed_role = await admin_row(
         provisioning_harness,
         f"""SELECT owner.rolname, probe.observed_role
-              FROM {new_tenant[1]}.cp6_after_failure probe
+              FROM {schema_key}.cp6_after_failure probe
               JOIN pg_class relation ON relation.relname = 'cp6_after_failure'
               JOIN pg_namespace namespace
                 ON namespace.oid = relation.relnamespace
                AND namespace.nspname = %s
               JOIN pg_roles owner ON owner.oid = relation.relowner
              WHERE probe.id = 1""",
-        (new_tenant[1],),
+        (schema_key,),
     )
     assert owner == MIGRATOR_ROLE
     assert observed_role == MIGRATOR_ROLE
+
+
+@pytest.mark.asyncio
+async def test_cp6_role_sensitive_template_succeeds_without_a_role(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """CG-4 D-A12c: CONTROL, on its own fresh tenant. The same two statements succeed
+    when migrator-owned -- so D-A12's failure depends on the role, not the SQL."""
+
+    await shape_execution_role(provisioning_harness)
+    schema_key = new_tenant[1]
+    await make_provisioner(
+        provisioning_harness,
+        make_cp6_registry(
+            ("t002_test_cp6_parent", CP6_PARENT_TEMPLATE, None),
+            ("t003_test_cp6_fk_control", CP6_ROLE_SENSITIVE_TEMPLATE, None),
+        ),
+        supported_schema_versions=range(1, 4),
+    ).provision(request_for(new_tenant))
+
+    assert (await ledger_row(provisioning_harness, new_tenant[0], "t003_test_cp6_fk_control"))[
+        0
+    ] == "applied"
+    for name in ("cp6_rolled_back", "cp6_child"):
+        assert await relation_owner(provisioning_harness, schema_key, name) == MIGRATOR_ROLE
 
 
 def test_cp6_runner_never_emits_reset_role() -> None:
@@ -3433,19 +3602,97 @@ async def test_cp7b_ddl_search_path_cannot_change_argument_identity(
     assert cp7b_observe["ddl"][0][7] == ["cp7b_type", "cp7b_type[]"]
 
 
+CP7B_SETUP_TEMPLATE = (
+    "CREATE FUNCTION {schema}.cp7b_probe(integer, text[]) RETURNS integer "
+    "LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS $body$SELECT 1$body$;"
+    "REVOKE ALL ON FUNCTION {schema}.cp7b_probe(integer, text[]) FROM PUBLIC;"
+)
+CP7B_ROLE_TEMPLATE = "CREATE TABLE {schema}.cp7b_marker (id int);"
+
+
 @pytest.mark.asyncio
 async def test_cp7b_verification_runs_after_execution_role_return(
-    provisioning_harness, cp4_role, cp6_declared_manifest, new_tenant, cp7b_observe
+    provisioning_harness, cp4_role, cp6_declared_manifest, new_tenant, monkeypatch
 ):
-    """R-P2.8/F8: observe migrator at verification after execution-role DDL."""
+    """R-P2.8/F8: observe migrator at verification after execution-role DDL.
+
+    CG-4 D-A13 (CG4-R8a). The function is created by an EARLIER, migrator-owned
+    setup unit that carries no verification. The role-bearing unit is allowed table
+    DDL only and carries the function verification. A test-local, unit-bound
+    observation records, in order, for THIS unit: its DDL under the role, the
+    return to the migrator, verification as the migrator, and `applied` with this
+    unit's migration id. `cp7b_ddl()` and `cp7b_observe` are untouched.
+    """
+
+    from haloflow.m01.provisioning.units import UnitDefinition
+    from haloflow.m01.provisioning.verification import (
+        FUNCTION_METADATA_QUERY,
+        FunctionMetadataVerification,
+    )
+
     await shape_execution_role(provisioning_harness)
-    from haloflow.m01.provisioning.verification import AclEntry
-    function = cp7b_function(owner=CP4_EXECUTION_ROLE,
-                             acl=(AclEntry(CP4_EXECUTION_ROLE, ("EXECUTE",)),))
-    await make_provisioner(provisioning_harness,
-        cp7b_registry(cp7b_ddl(), function, execution_role=CP4_EXECUTION_ROLE),
-        supported_schema_versions=range(1, 3)).provision(request_for(new_tenant))
-    assert cp7b_observe["verification"]
+    schema_key = new_tenant[1]
+    role_unit = "t003_test_cp7b_role"
+    registry = build_tenant_migration_registry(
+        dict(TENANT_MIGRATIONS),
+        {
+            "t002_test_cp7b_setup": UnitDefinition(CP7B_SETUP_TEMPLATE),
+            role_unit: UnitDefinition(
+                CP7B_ROLE_TEMPLATE,
+                execution_role=CP4_EXECUTION_ROLE,
+                verification=FunctionMetadataVerification((cp7b_function(),)),
+            ),
+        },
+        approved_execution_roles=frozenset({CP4_EXECUTION_ROLE}),
+        allow_test_units=True,
+    )
+
+    role_ddl = CP7B_ROLE_TEMPLATE.replace("{schema}", schema_key)
+    restore = sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE))
+    events: list[tuple[str, object]] = []
+    original = AsyncConnection.execute
+
+    async def execute(connection, query, params=None, **kwargs):  # type: ignore[no-untyped-def]
+        async def role() -> object:
+            row = await (await original(connection, "SELECT current_role")).fetchone()
+            return row[0] if row else None
+
+        if isinstance(query, str) and query == role_ddl:
+            events.append(("ddl", await role()))
+        elif query == restore:
+            events.append(("restore", None))
+        elif isinstance(query, str) and query == FUNCTION_METADATA_QUERY:
+            events.append(("verify", await role()))
+        elif (
+            isinstance(query, str)
+            and "SET state = 'applied'" in query
+            and params is not None
+            and tuple(params)[-1] == role_unit
+        ):
+            events.append(("applied", role_unit))
+        return await original(connection, query, params, **kwargs)
+
+    monkeypatch.setattr(AsyncConnection, "execute", execute)
+    await make_provisioner(
+        provisioning_harness, registry, supported_schema_versions=range(1, 4)
+    ).provision(request_for(new_tenant))
+
+    kinds = [kind for kind, _ in events]
+    ddl = kinds.index("ddl")
+    restore_after = kinds.index("restore", ddl)
+    verify_after = kinds.index("verify", restore_after)
+    applied_after = kinds.index("applied", verify_after)
+    assert kinds.count("ddl") == 1
+    assert kinds.count("applied") == 1
+    assert ddl < restore_after < verify_after < applied_after
+    assert events[ddl][1] == CP4_EXECUTION_ROLE
+    assert events[verify_after][1] == MIGRATOR_ROLE
+    assert kinds.count("verify") == 1, "only the role-bearing unit carries verification"
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT to_regprocedure(%s) IS NOT NULL",
+        (f"{schema_key}.cp7b_probe(integer, text[])",),
+    ) == (True,)
 
 
 @pytest.mark.asyncio
@@ -3882,3 +4129,128 @@ async def test_cp8_owner_privilege_cells_detect_revocation_without_ownership_cha
         }
         assert not after[(MIGRATOR_ROLE, "access_audit_outbox", privilege)]
         raise Rollback()
+
+
+# --- CG-4: D-layer refusal cases RF-1 to RF-4 (CG4-R8a(iv)) ----------------
+#
+# Each refused through the provisioner. The provisioner does not wrap runner
+# errors, so the exception is TenantMigrationFailed with the approved literal
+# code. Oracles are real catalogue and ledger reads, scoped to the runner's
+# effects: stages 2/3 (schema, ACL) have run, exactly as today.
+
+CG4_PROHIBITED = "ORDINARY_ROLE_CONTENT_PROHIBITED"
+
+
+async def assert_runner_left_nothing(
+    harness: ProvisioningHarness, tenant: tuple[str, str], relations: Sequence[str]
+) -> None:
+    tenant_id, schema_key = tenant
+    assert await tenant_ledger_snapshot(harness, tenant_id) == []
+    assert await admin_row(
+        harness, "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s", (tenant_id,)
+    ) != ("active",)
+    for relation in relations:
+        assert await admin_row(
+            harness, "SELECT to_regclass(%s)", (f"{schema_key}.{relation}",)
+        ) == (None,)
+
+
+@pytest.mark.asyncio
+async def test_cg4_rf1_select_under_the_execution_role_is_refused(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp4_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """RF-1 (covers A1-A10): VALID_CP4_TEMPLATE, a SelectStmt, under the CP-4 profile."""
+
+    await shape_execution_role(provisioning_harness)
+    with pytest.raises(TenantMigrationFailed) as refused:
+        await make_provisioner(
+            provisioning_harness,
+            make_registry_with_execution_role(),
+            supported_schema_versions=CP4_SUPPORTED_SCHEMA_VERSIONS,
+        ).provision(request_for(new_tenant))
+    assert refused.value.reason_code == CG4_PROHIBITED
+    await assert_runner_left_nothing(provisioning_harness, new_tenant, ())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("template", "relations"),
+    [
+        (
+            """CREATE TABLE {schema}.cp6_atomic (ddl_xid bigint NOT NULL);
+               INSERT INTO {schema}.cp6_atomic
+               VALUES (pg_current_xact_id()::text::bigint);""",
+            ("cp6_atomic",),
+        ),
+        (
+            """CREATE TABLE {schema}.cp6_rolled_back (id integer PRIMARY KEY);
+               SELECT 1 / CASE
+                   WHEN current_role = 'haloflow_test_m02_migrator' THEN 0
+                   ELSE 1
+               END;""",
+            ("cp6_rolled_back",),
+        ),
+    ],
+    ids=["rf2-create-insert", "rf3-create-select"],
+)
+async def test_cg4_rf2_rf3_mixed_templates_under_the_role_are_refused(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+    template: str,
+    relations: tuple[str, ...],
+) -> None:
+    """RF-2 (covers A11) and RF-3 (covers A12): the ORIGINAL templates, CP-6 profile."""
+
+    await shape_execution_role(provisioning_harness)
+    with pytest.raises(TenantMigrationFailed) as refused:
+        await make_provisioner(
+            provisioning_harness,
+            make_cp6_registry(("t002_test_cg4_mixed", template, CP4_EXECUTION_ROLE)),
+            supported_schema_versions=range(1, 3),
+        ).provision(request_for(new_tenant))
+    assert refused.value.reason_code == CG4_PROHIBITED
+    await assert_runner_left_nothing(provisioning_harness, new_tenant, relations)
+
+
+@pytest.mark.asyncio
+async def test_cg4_rf4_the_original_cp7b_template_under_the_role_is_refused_whole_plan(
+    provisioning_harness: ProvisioningHarness,
+    cp4_role: None,
+    cp6_declared_manifest: None,
+    new_tenant: tuple[str, str],
+) -> None:
+    """RF-4 (covers A13): an earlier migrator unit, then cp7b_ddl() under the role."""
+
+    await shape_execution_role(provisioning_harness)
+    with pytest.raises(TenantMigrationFailed) as refused:
+        await make_provisioner(
+            provisioning_harness,
+            make_cp6_registry(
+                ("t002_test_cp7b_pre", "CREATE TABLE {schema}.cp7b_pre (id int);", None),
+                ("t003_test_cg4_rf4", cp7b_ddl(), CP4_EXECUTION_ROLE),
+            ),
+            supported_schema_versions=range(1, 4),
+        ).provision(request_for(new_tenant))
+    assert refused.value.reason_code == CG4_PROHIBITED
+    await assert_runner_left_nothing(
+        provisioning_harness, new_tenant, ("cp7b_pre", "cp7b_marker")
+    )
+    schema_key = new_tenant[1]
+    assert await admin_row(
+        provisioning_harness,
+        "SELECT to_regprocedure(%s)",
+        (f"{schema_key}.cp7b_probe(integer, text[])",),
+    ) == (None,)
+    assert await admin_row(
+        provisioning_harness,
+        """SELECT count(*)
+             FROM pg_proc proc JOIN pg_namespace namespace
+               ON namespace.oid = proc.pronamespace
+            WHERE namespace.nspname = %s AND proc.proname = 'cp7b_probe'""",
+        (schema_key,),
+    ) == (0,)
