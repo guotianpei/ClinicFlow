@@ -58,10 +58,31 @@ jobs:
           --envdir "$RUNNER_TEMP/verify-env"
           --source-revision "$GITHUB_SHA"
       - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
-      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
-      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/composition.py
+      # The three gate steps. Each `run:` stays on one line and is preceded by
+      # exactly one marker comment: scripts/gate-reachability.sh resolves the
+      # commands from these markers and fails closed if one is missing,
+      # duplicated or does not start with the expected tool (CP2-2a I-9, 2A-C10).
+      # gate-reachability: lint
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+      # gate-reachability: type
+      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
-      - run: $VENV/bin/pytest tests/m01 -q
+      # gate-reachability: test
+      - run: $VENV/bin/pytest tests/m01 tests/m02 -q
+      # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
+      # in this job, executing the resolved gate commands against run-time
+      # specimens. Nothing is committed; its log is uploaded with the evidence.
+      # The self-test runs the C10/C11 negative controls first.
+      - run: >-
+          scripts/gate-reachability.sh --selftest
+          --venv "$VENV"
+          --workflow ../.github/workflows/m01.yml
+          --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability-selftest"
+      - run: >-
+          scripts/gate-reachability.sh
+          --venv "$VENV"
+          --workflow ../.github/workflows/m01.yml
+          --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

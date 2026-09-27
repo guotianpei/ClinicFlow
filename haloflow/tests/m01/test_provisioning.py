@@ -361,17 +361,25 @@ def test_a_test_only_unit_is_accepted_only_when_explicitly_allowed() -> None:
 def test_the_production_registry_contains_no_test_units() -> None:
     """TC-E21, over the real composition root rather than a constructed example."""
 
+    from haloflow.m02.units import M02_TENANT_MIGRATIONS
+
     registry = build_production_tenant_migrations()
 
-    assert registry.migration_ids == ("t001_m01_baseline",)
+    assert registry.migration_ids == ("t001_m01_baseline", "t002_m02_operation_registry")
     assert not any(unit.is_test_unit for unit in registry)
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS,)
+    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
 
 
 def test_the_production_baseline_targets_the_supported_schema_version() -> None:
-    """R-E10/R-E11: `t001` means the M01 infrastructure baseline, version 1."""
+    """R-E10/R-E11, extended by CP2-2a (E-2): the production target is version 2.
 
-    assert build_production_tenant_migrations().target_version == 1
+    R-E11's meaning now runs through `t002_m02_operation_registry`: version 2 is
+    "the M01 infrastructure baseline plus the M02 operation registry". This pins
+    the number only. It claims nothing about any runtime accepting version-2
+    tenants (architecture v4 L-1, a carried release prerequisite).
+    """
+
+    assert build_production_tenant_migrations().target_version == 2
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1175,10 +1183,12 @@ def test_the_production_registry_declares_no_execution_role() -> None:
     the change visible rather than silent.
     """
 
+    from haloflow.m02.units import M02_TENANT_MIGRATIONS
+
     registry = build_production_tenant_migrations()
 
-    assert [unit.execution_role for unit in registry.units] == [None]
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS,)
+    assert [unit.execution_role for unit in registry.units] == [None, None]
+    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
 
 
 def test_changing_the_execution_role_changes_the_checksum() -> None:
@@ -1238,7 +1248,7 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
 
     registry = build_production_tenant_migrations()
 
-    assert registry.migration_ids == ("t001_m01_baseline",)
+    assert registry.migration_ids == ("t001_m01_baseline", "t002_m02_operation_registry")
     assert len(registry.units[0].checksum) == 64
 
 
@@ -2336,11 +2346,14 @@ async def test_a_declared_role_the_manifest_does_not_describe_is_refused() -> No
         async def fetchone(self) -> object:
             return None
 
-    # The shipped manifest, loaded for real. It declares no execution roles, so
-    # this is not a contrived document -- it is the file in the package, and its
-    # empty declaration matches the empty graph the stub serves.
-    manifest = load_provisioning_manifest()
-    assert manifest.execution_role_profiles == {}
+    # The shipped manifest, loaded for real, with its execution-role
+    # declarations removed (CP2-2a E-5): since CP2-2a it declares the M02 lock
+    # owner, and this test is about a role NO declaration covers. Clearing the
+    # profiles and edges keeps the empty graph the stub serves consistent with
+    # the declaration, so the refusal is still decided before any role query.
+    manifest = replace(
+        load_provisioning_manifest(), execution_role_profiles={}, role_memberships=()
+    )
 
     with pytest.raises(ExecutionRoleUnavailable) as refused:
         await assert_execution_roles_safe(_ServesTheGraphQueryOnly(), registry, manifest=manifest)
@@ -2504,7 +2517,8 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
                 assert params == ("haloflow_migrator",)
 
         async def fetchall(self):
-            return []  # Healthy empty declared membership graph.
+            # Healthy shipped membership graph: the one declared edge (E-10b).
+            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
 
         async def fetchone(self):
             return attribute_row
@@ -2542,7 +2556,8 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
                 seen.append(params)
 
         async def fetchall(self):
-            return []
+            # Healthy shipped membership graph: the one declared edge (E-10b).
+            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
 
         async def fetchone(self):
             return (False,)

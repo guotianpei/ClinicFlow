@@ -66,7 +66,7 @@ from psycopg.sql import Composable
 __all__ = [
     "MIGRATOR_SAFE",
     "SharedClock",
-    "NO_CONTROLLED_EDGES",
+    "SHIPPED_CONTROLLED_EDGES",
     "Answer",
     "RecordingConnection",
     "TraceEntry",
@@ -259,9 +259,16 @@ class Answer:
         return all(marker.casefold() in fingerprint for marker in self.markers)
 
 
-# The shipped manifest declares no role memberships, so the controlled-edge read
-# must come back empty for `assess_membership_graph`'s set equality to hold.
-NO_CONTROLLED_EDGES = Answer(markers=("from pg_auth_members",), rows=())
+# The shipped manifest declares exactly one role membership -- the CP2-2a lock
+# owner's fixed edge (N1: SET true, INHERIT false, ADMIN false) -- so the
+# controlled-edge read must return exactly that row for
+# `assess_membership_graph`'s set equality to hold. Written as a literal, not
+# derived from the manifest: a future manifest edge change must fail here loudly
+# rather than be re-matched silently (CP2-2a E-10a, owner-approved 2026-09-26).
+SHIPPED_CONTROLLED_EDGES = Answer(
+    markers=("from pg_auth_members",),
+    rows=(("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False),),
+)
 
 # `assert_execution_roles_safe` ends by requiring the migrator to exist and to
 # lack CREATEROLE. One row, `rolcreaterole` false.

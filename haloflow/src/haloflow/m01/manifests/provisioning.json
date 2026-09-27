@@ -1,6 +1,24 @@
 {
-  "execution_role_profiles": {},
-  "role_memberships": [],
+  "execution_role_profiles": {
+    "haloflow_m02_lock_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": ["USAGE"]
+    }
+  },
+  "role_memberships": [
+    {
+      "role": "haloflow_m02_lock_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    }
+  ],
   "tenant_schema_role_privileges": {
     "haloflow_provisioner": {
       "privileges": ["USAGE", "CREATE"],
@@ -32,7 +50,7 @@
       "role": "haloflow_runtime",
       "table": "operation_registry",
       "narrows": "tenant_schema:business_dml",
-      "privileges": ["SELECT", "INSERT"]
+      "privileges": ["SELECT"]
     }
   ]
 }

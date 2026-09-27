@@ -20,6 +20,7 @@ from haloflow.m01.statements import (
     StatementDefinitions,
     build_statement_catalog,
 )
+from haloflow.m02.units import M02_TENANT_MIGRATIONS
 
 # Approved module definition sets, in composition order. A new module is added
 # here and nowhere else, and doing so forces a manifest update in the same
@@ -30,7 +31,16 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
 # composition path, so what a tenant schema receives is reviewable in one place.
 # `allow_test_units` is never passed here -- a test-only unit cannot reach
 # production through this function (R-E12).
-APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (TENANT_MIGRATIONS,)
+#
+# CP2-2a approves the M02 unit *set* (`t002_m02_operation_registry`, an ordinary
+# migrator-owned unit), which makes the production target version 2. It approves
+# no role: `APPROVED_EXECUTION_ROLES` below stays empty until CP2-2b (R-B0).
+# Version 2 says nothing about runtime acceptance -- no runtime serves a
+# version-2 tenant until its supported set includes 2 (architecture v4 L-1).
+APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
+    TENANT_MIGRATIONS,
+    M02_TENANT_MIGRATIONS,
+)
 
 # Execution roles this deployment approves for per-tenant migrations (R-P1.2).
 # Empty today: no module declares one, and `t001` runs as `haloflow_migrator` by
