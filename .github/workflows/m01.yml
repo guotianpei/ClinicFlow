@@ -61,7 +61,7 @@ jobs:
       - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
       - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/composition.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
-      - run: $VENV/bin/pytest tests/m01 -q
+      - run: $VENV/bin/pytest tests/m01 tests/m02 -q
       - uses: actions/upload-artifact@v4
         if: always()
         with:
