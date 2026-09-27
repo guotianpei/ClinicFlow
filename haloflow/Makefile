@@ -9,9 +9,11 @@ PY    := python3.12
 # export .env — so source it explicitly before those commands.
 LOAD_ENV = set -a; [ -f .env ] && . ./.env; set +a;
 
-# Lint/type scope currently mirrors .github/workflows/m01.yml.
-LINT_PATHS = src/haloflow/m01 src/haloflow/composition.py tests/m01 alembic
-TYPE_PATHS = src/haloflow/m01 src/haloflow/composition.py
+# Lint/type/test scope currently mirrors .github/workflows/m01.yml (CP2-2a adds
+# M02 and the shared tests/conftest.py; architecture v4 §6.1).
+LINT_PATHS = src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+TYPE_PATHS = src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
+TEST_PATHS = tests/m01 tests/m02
 
 .PHONY: help venv install run migrate revision test test-unit test-pg lint type check clean
 
@@ -20,8 +22,8 @@ help:
 	@echo "make run        start the FastAPI app on http://localhost:8000"
 	@echo "make migrate    alembic upgrade head against HALOFLOW_MIGRATION_DATABASE_URL"
 	@echo "make test       full pytest suite (Postgres tests skip if unconfigured)"
-	@echo "make test-unit  pytest without the Postgres-backed M01 tests"
-	@echo "make test-pg    only the Postgres-backed M01 isolation tests"
+	@echo "make test-unit  pytest without the Postgres-backed tests"
+	@echo "make test-pg    only the Postgres-backed tests"
 	@echo "make lint       ruff check"
 	@echo "make type       mypy (strict)"
 	@echo "make check      lint + type + test, i.e. what CI runs"
@@ -47,13 +49,13 @@ revision:
 	$(LOAD_ENV) $(VENV)/bin/alembic revision -m "$(m)"
 
 test:
-	$(LOAD_ENV) $(VENV)/bin/pytest -q
+	$(LOAD_ENV) $(VENV)/bin/pytest -q $(TEST_PATHS)
 
 test-unit:
-	$(LOAD_ENV) $(VENV)/bin/pytest -q -m "not postgres"
+	$(LOAD_ENV) $(VENV)/bin/pytest -q -m "not postgres" $(TEST_PATHS)
 
 test-pg:
-	$(LOAD_ENV) $(VENV)/bin/pytest -q -m postgres
+	$(LOAD_ENV) $(VENV)/bin/pytest -q -m postgres $(TEST_PATHS)
 
 lint:
 	$(VENV)/bin/ruff check $(LINT_PATHS)

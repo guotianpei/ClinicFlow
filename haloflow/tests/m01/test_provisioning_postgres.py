@@ -3849,7 +3849,9 @@ async def test_cp8_every_role_table_and_privilege_matches_manifest(
     ).provision(request_for(new_tenant))
     permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
     manifest = load_provisioning_manifest()
-    assert set(permissions) == manifest.controlled_roles
+    # E-10c (owner-approved 2026-09-26): a declared execution-role profile (the
+    # CP2-2a lock owner) is controlled without being a permissions.json role.
+    assert set(permissions) | set(manifest.execution_role_profiles) == manifest.controlled_roles
     async with await AsyncConnection.connect(
         provisioning_harness.admin_conninfo, autocommit=True
     ) as conn:
@@ -3868,6 +3870,10 @@ async def test_cp8_override_detects_each_deficit_or_excess_on_second_table(
 
     This control isolates runtime so the independent support-token defect cannot
     be the producer of its mismatch. Every tamper has its own catalogue witness.
+
+    CP2-2a E-6 (owner-approved 2026-09-26, RQ-2): the shipped override for
+    runtime on `operation_registry` is now `{SELECT}`. The M01-only registry and
+    the hand-made table are kept, so this stays isolated from `t002`.
     """
     from haloflow.m01.provisioning.manifest import load_provisioning_manifest
 
@@ -3890,18 +3896,18 @@ async def test_cp8_override_detects_each_deficit_or_excess_on_second_table(
         } == {"SELECT", "INSERT", "UPDATE", "DELETE"}
         expected = _cp8_expected_table_grants(runtime, manifest, tables)
         assert expected[(RUNTIME_ROLE, "operation_registry", "SELECT")]
-        assert expected[(RUNTIME_ROLE, "operation_registry", "INSERT")]
+        assert not expected[(RUNTIME_ROLE, "operation_registry", "INSERT")]
         assert not expected[(RUNTIME_ROLE, "operation_registry", "UPDATE")]
         assert not expected[(RUNTIME_ROLE, "operation_registry", "DELETE")]
         assert inherited != expected
         await conn.execute(
-            sql.SQL("REVOKE UPDATE, DELETE ON {} FROM {}").format(
+            sql.SQL("REVOKE INSERT, UPDATE, DELETE ON {} FROM {}").format(
                 table_id, sql.Identifier(RUNTIME_ROLE)
             )
         )
         _, correct = await _cp8_table_matrix(conn, schema_key, [RUNTIME_ROLE])
         assert correct == expected
-        verb = "REVOKE" if privilege in {"SELECT", "INSERT"} else "GRANT"
+        verb = "REVOKE" if privilege == "SELECT" else "GRANT"
         direction = "FROM" if verb == "REVOKE" else "TO"
         await conn.execute(
             sql.SQL("{} {} ON {} {} {}").format(
@@ -4033,7 +4039,6 @@ def test_cp8_loader_refuses_rewidening_or_wrong_table_narrowing(
 @pytest.mark.parametrize(
     "extra_token",
     [
-        "tenant_schema.operation_registry:insert",
         "tenant_schema.access_audit_outbox:insert",
         "tenant_schema:checksummed_ddl",
     ],
@@ -4052,10 +4057,31 @@ def test_cp8_loader_allows_tokens_that_do_not_restore_removed_privileges(
     expected = _cp8_expected_table_grants(
         {RUNTIME_ROLE: permissions[RUNTIME_ROLE]}, manifest, ["operation_registry"]
     )
-    assert {privilege for (_, _, privilege), held in expected.items() if held} == {
-        "SELECT",
-        "INSERT",
-    }
+    # CP2-2a E-7 (owner-approved 2026-09-26, RQ-2): the override now keeps only
+    # SELECT. `tenant_schema.operation_registry:insert` would restore a removed
+    # privilege, so it moved to the refusal case below.
+    assert {privilege for (_, _, privilege), held in expected.items() if held} == {"SELECT"}
+
+
+def test_cp8_loader_refuses_the_insert_token_against_the_shipped_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CP2-2a E-7: against the SHIPPED override (`["SELECT"]`), the table-scoped
+    `insert` token restores a privilege the override removes, so the loader
+    refuses it. The synthetic override case above covers the same rule with a
+    hand-built document; this one uses the file in the package.
+    """
+    from haloflow.m01.errors import MigrationManifestRejected
+    from haloflow.m01.provisioning import manifest as manifest_module
+
+    permissions = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    # Healthy first: the shipped pair loads before the hazard is introduced.
+    monkeypatch.setattr(manifest_module, "_permissions_document", lambda: permissions)
+    assert manifest_module.load_provisioning_manifest()
+    permissions[RUNTIME_ROLE]["allow"].append("tenant_schema.operation_registry:insert")
+    with pytest.raises(MigrationManifestRejected) as error:
+        manifest_module.load_provisioning_manifest()
+    assert error.value.reason_code == "MANIFEST_OVERRIDE_INVALID"
 
 
 def test_cp8_table_scoped_tokens_are_additive_and_stay_on_their_table() -> None:

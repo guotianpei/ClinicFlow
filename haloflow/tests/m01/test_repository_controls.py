@@ -370,7 +370,7 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
     ruff_line = next(line for line in workflow.splitlines() if "ruff check" in line)
     mypy_line = next(line for line in workflow.splitlines() if "mypy " in line)
 
-    checked = {"src/haloflow/m01", "src/haloflow/composition.py"}
+    checked = {"src/haloflow/m01", "src/haloflow/m02", "src/haloflow/composition.py"}
     for required in checked:
         assert required in ruff_line, f"{required} not linted by CI"
         assert required in mypy_line, f"{required} not type-checked by CI"
