@@ -228,18 +228,30 @@ def reset_tenants() -> Callable[[str, Sequence[str], Sequence[str]], None]:
 
 # ---- CP2-2a 2A-F01: shared-fixture initialization counter ----
 #
-# Added below the moved block (which stays text-identical). A root-level hook
-# sees every fixture execution in the session, whichever package requested it.
-# Only real executions are counted; a cached session value is not re-executed.
+# Added below the moved block (which stays text-identical). Only real executions
+# are counted; a cached session value is not re-executed.
+#
+# Packet v3 (pre-change CI run 36286191924): a `pytest_fixture_setup` hook
+# defined directly in this conftest is NOT dispatched for session-scoped
+# fixtures, because this file sits below the rootdir and pytest routes that hook
+# through the Session's hook proxy, which consults rootdir-level conftests only.
+# The counter therefore read 0. Registering it as a plugin object makes it
+# global, so it sees every fixture execution, whichever package requested it.
 
 SHARED_FIXTURE_SETUPS: dict[str, int] = {"migrated_database": 0, "role_logins": 0}
 
 
-@pytest.hookimpl(hookwrapper=True)
-def pytest_fixture_setup(fixturedef: Any, request: Any) -> Any:
-    if fixturedef.argname in SHARED_FIXTURE_SETUPS:
-        SHARED_FIXTURE_SETUPS[fixturedef.argname] += 1
-    yield
+class _SharedFixtureSetupCounter:
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(self, fixturedef: Any, request: Any) -> Any:
+        if fixturedef.argname in SHARED_FIXTURE_SETUPS:
+            SHARED_FIXTURE_SETUPS[fixturedef.argname] += 1
+        yield
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    if not config.pluginmanager.has_plugin("cp2-2a-f01-counter"):
+        config.pluginmanager.register(_SharedFixtureSetupCounter(), "cp2-2a-f01-counter")
 
 
 @pytest.fixture(scope="session")
