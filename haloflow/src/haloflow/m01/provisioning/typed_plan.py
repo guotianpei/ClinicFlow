@@ -56,11 +56,17 @@ from typing import Any
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.codes import PreconditionCode
 from haloflow.m01.provisioning.function_policy import validate_function_installation
+from haloflow.m01.provisioning.installed_state import (
+    InstalledStateProfile,
+    VerifiedInstalledState,
+    profile_digest,
+)
 from haloflow.m01.provisioning.units import TenantMigrationRegistry, TenantMigrationUnit
 
 __all__ = [
     "AuthorizedPlan",
     "OperationExpectations",
+    "consume_installed_state",
     "consume_plan",
     "issue_plan",
     "plan_digest",
@@ -100,6 +106,12 @@ class AuthorizedPlan:
     byte_digest: str
     sql_bytes: bytes = field(repr=False)
     token: object = field(default=None, repr=False)
+    # CP2-2b (architecture v3 section 5.1(3)): recorded from the REGISTRY at
+    # issuance. The defaults describe an unprofiled unit, so envelopes built
+    # before 2b keep their meaning.
+    profile_required: bool = False
+    profile: InstalledStateProfile | None = field(default=None, repr=False)
+    profile_digest: str | None = None
 
     def __post_init__(self) -> None:
         if self.token is None:
@@ -118,6 +130,10 @@ class _Expectation:
     declaration_checksum: str
     byte_digest: str
     token: object
+    # CP2-2b: the registry's installed-state requirement, as recorded at issuance.
+    profile_required: bool = False
+    profile: InstalledStateProfile | None = None
+    profile_digest: str | None = None
 
 
 @dataclass(slots=True)
@@ -187,6 +203,9 @@ def issue_plan(
 
     token = object()
     digest = plan_digest(result.sql_bytes)
+    # CP2-2b: the installed-state requirement comes from the REGISTRY's immutable
+    # descriptor (architecture v3 5.1(3)), never from the envelope.
+    requirement = registry.installed_state_requirement(unit.migration_id)
     # Recorded from the unit, the registry and the checker's own result -- never
     # from the envelope, which is what the envelope is checked against.
     store.record(
@@ -199,6 +218,9 @@ def issue_plan(
             declaration_checksum=unit.checksum,
             byte_digest=digest,
             token=token,
+            profile_required=requirement.required,
+            profile=requirement.profile,
+            profile_digest=requirement.profile_digest,
         )
     )
     return AuthorizedPlan(
@@ -211,6 +233,9 @@ def issue_plan(
         byte_digest=digest,
         sql_bytes=result.sql_bytes,
         token=token,
+        profile_required=requirement.required,
+        profile=requirement.profile,
+        profile_digest=requirement.profile_digest,
     )
 
 
@@ -275,3 +300,75 @@ def consume_plan(plan: AuthorizedPlan, store: OperationExpectations) -> bytes:
         raise _reject(PreconditionCode.INSTALL_NUL_FORBIDDEN)
     verify_binding(plan, store)
     return sql_bytes
+
+
+def consume_installed_state(
+    plan: AuthorizedPlan,
+    store: OperationExpectations,
+    *,
+    registry: TenantMigrationRegistry,
+) -> VerifiedInstalledState:
+    """Bind the installed-state requirement to the TRUSTED registry (architecture v3 5.1(4)).
+
+    Called by the runner immediately after `consume_plan`, before `running` is
+    written, before any await and before any DDL. Pure and synchronous: no I/O.
+    `registry` is the runner's own registry, never read from the plan or store.
+
+    1. Capture the envelope's three fields first; every later check uses the copies.
+    2. Provenance: the store's expectation for this exact token.
+    3. Registry identity: the store and the envelope were issued against `registry`.
+    4. The trusted requirement is the registry's immutable descriptor.
+    5. The store is bound to it by VALUE, including the not-required invariant, so a
+       joint omission (store and envelope both False/None) is refused here.
+    6. The envelope is bound to the verified store: profile by identity, digest by
+       value and by recomputation.
+    7. The result is built from the registry's values.
+
+    Every refusal is `INSTALL_PLAN_INVALID`.
+    """
+
+    required = plan.profile_required
+    profile = plan.profile
+    digest = plan.profile_digest
+
+    expectation = store.issued(plan.token)
+    if expectation is None:
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+    if expectation.registry is not registry or plan.registry is not registry:
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+    try:
+        requirement = registry.installed_state_requirement(expectation.migration_id)
+    except KeyError:
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID) from None
+
+    if requirement.required:
+        trusted_profile = requirement.profile
+        if (
+            trusted_profile is None
+            or expectation.profile_required is not True
+            or expectation.profile is not trusted_profile
+            or expectation.profile_digest != requirement.profile_digest
+            or requirement.profile_digest != profile_digest(trusted_profile)
+        ):
+            raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+    elif (
+        expectation.profile_required is not False
+        or expectation.profile is not None
+        or expectation.profile_digest is not None
+    ):
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+
+    if required is not expectation.profile_required or profile is not expectation.profile:
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+    if digest != expectation.profile_digest:
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+    if profile is not None and (
+        type(profile) is not InstalledStateProfile or digest != profile_digest(profile)
+    ):
+        raise _reject(PreconditionCode.INSTALL_PLAN_INVALID)
+
+    return VerifiedInstalledState(
+        migration_id=expectation.migration_id,
+        required=requirement.required,
+        profile=requirement.profile,
+    )

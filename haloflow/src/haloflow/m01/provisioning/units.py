@@ -28,6 +28,13 @@ from haloflow.m01.provisioning.function_checksum import (
     FUNCTION_CHECKSUM_VERSION,
     function_checksum,
 )
+from haloflow.m01.provisioning.installed_state import (
+    NOT_REQUIRED,
+    InstalledStateProfile,
+    InstalledStateRequirement,
+    check_profile_agreement,
+    requirement_for,
+)
 from haloflow.m01.provisioning.roles import (
     AUDIT_PROJECTOR_ROLE,
     PROVISIONING_ROLES,
@@ -379,21 +386,31 @@ class TenantMigrationUnit:
 
 
 class TenantMigrationRegistry:
-    """An immutable, ordered registry of units. Construction is restricted."""
+    """An immutable, ordered registry of units. Construction is restricted.
 
-    __slots__ = ("__units",)
+    CP2-2b (architecture v3 section 5.1(2)): the registry also owns one immutable
+    `InstalledStateRequirement` per unit. It is not part of the unit, the
+    declaration, the checksum or the ledger identity (R-B9.6).
+    """
+
+    __slots__ = ("__units", "__requirements")
 
     def __init__(
         self,
         units: tuple[TenantMigrationUnit, ...],
         *,
         _issuer: object | None = None,
+        _requirements: Mapping[str, InstalledStateRequirement] | None = None,
     ) -> None:
         if _issuer is not _UNIT_ISSUER:
             raise MigrationUnitRejected(
                 reason_code=PreconditionCode.UNTRUSTED_MIGRATION_REGISTRY.value
             )
         self.__units = units
+        supplied = dict(_requirements or {})
+        self.__requirements: Mapping[str, InstalledStateRequirement] = MappingProxyType(
+            {unit.migration_id: supplied.get(unit.migration_id, NOT_REQUIRED) for unit in units}
+        )
 
     def __iter__(self) -> Iterator[TenantMigrationUnit]:
         return iter(self.__units)
@@ -421,11 +438,17 @@ class TenantMigrationRegistry:
             raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_REGISTRY_EMPTY.value)
         return int(self.__units[-1].migration_id[1:4])
 
+    def installed_state_requirement(self, migration_id: str) -> InstalledStateRequirement:
+        """The immutable descriptor recorded at composition. `KeyError` for an unknown id."""
+
+        return self.__requirements[migration_id]
+
 
 def build_tenant_migration_registry(
     *definition_sets: UnitDefinitions,
     approved_execution_roles: frozenset[str] = frozenset(),
     allow_test_units: bool = False,
+    installed_state_profiles: Mapping[str, InstalledStateProfile] = MappingProxyType({}),
 ) -> TenantMigrationRegistry:
     """Compose approved per-tenant migration definition sets. Startup-only.
 
@@ -444,6 +467,14 @@ def build_tenant_migration_registry(
     This function performs **no database access** (R-P1B.5). Every control here
     is static, which is what lets the single-composition-path control call it
     with nothing configured.
+
+    ``installed_state_profiles`` (CP2-2b, architecture v3 section 5.1(1)) maps an
+    approved migration id to the fixed profile its installed function is verified
+    against. It defaults to empty, so no existing route changes. A profile is
+    refused with ``INSTALLED_STATE_PROFILE_INVALID`` when its key names no unit,
+    the unit is not typed, its execution role or declared identity differs from
+    the profile's, or any agreement cell of section 5.3 fails. The check runs over
+    each unit's OWN frozen declaration, after the unit adopted it.
     """
 
     merged: dict[str, UnitDefinition] = {}
@@ -487,7 +518,46 @@ def build_tenant_migration_registry(
                 raise MigrationUnitRejected(
                     reason_code=PreconditionCode.TEST_MIGRATION_UNIT_REJECTED.value
                 )
-    return TenantMigrationRegistry(units, _issuer=_UNIT_ISSUER)
+    return TenantMigrationRegistry(
+        units,
+        _issuer=_UNIT_ISSUER,
+        _requirements=_installed_state_requirements(units, installed_state_profiles),
+    )
+
+
+def _installed_state_requirements(
+    units: tuple[TenantMigrationUnit, ...],
+    profiles: Mapping[str, InstalledStateProfile],
+) -> dict[str, InstalledStateRequirement]:
+    """Bind each supplied profile to its unit, or refuse (architecture v3 5.1(1)).
+
+    Keyed by approved migration id, never by function name. The caller's mapping
+    is read once, here; the registry keeps only the resulting descriptors.
+    """
+
+    refused = MigrationUnitRejected(
+        reason_code=PreconditionCode.INSTALLED_STATE_PROFILE_INVALID.value
+    )
+    if not isinstance(profiles, Mapping):
+        raise refused
+    by_id = {unit.migration_id: unit for unit in units}
+    requirements: dict[str, InstalledStateRequirement] = {}
+    for migration_id, profile in dict(profiles).items():
+        unit = by_id.get(migration_id)
+        if unit is None or not unit.is_typed:
+            raise refused
+        if type(profile) is not InstalledStateProfile:
+            raise refused
+        if unit.execution_role != profile.execution_role:
+            raise refused
+        check_profile_agreement(
+            profile,
+            execution_role=unit.execution_role,
+            policy=unit.policy,
+            policy_verification=unit.policy_verification,
+        )
+        requirements[migration_id] = requirement_for(profile)
+    return requirements
 
 
 # ---------------------------------------------------------------------------

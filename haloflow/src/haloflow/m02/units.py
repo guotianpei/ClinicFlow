@@ -1,4 +1,5 @@
-"""The M02 per-tenant migration unit set: `t002_m02_operation_registry`.
+"""The M02 per-tenant migration unit set: `t002_m02_operation_registry` and,
+from CP2-2b, the typed gateway unit `t003_m02_lock_operation` (at the end).
 
 CP2-2a, architecture v4 §5 (C-3), read with its erratum 1 and the test-case
 bindings in test cases v4 erratum 1 r3 (ET-2, I-2 to I-8).
@@ -40,7 +41,7 @@ from types import MappingProxyType
 from typing import Final
 
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE, RUNTIME_ROLE
-from haloflow.m01.provisioning.units import UnitDefinitions
+from haloflow.m01.provisioning.units import TYPED_FUNCTION_KIND, UnitDefinition, UnitDefinitions
 from haloflow.m02.roles import LOCK_OWNER_ROLE
 
 T002_MIGRATION_ID: Final = "t002_m02_operation_registry"
@@ -330,4 +331,121 @@ $post_grant$;
 """
 
 
-M02_TENANT_MIGRATIONS: Final[UnitDefinitions] = MappingProxyType({T002_MIGRATION_ID: T002_SQL})
+# ---------------------------------------------------------------------------
+# CP2-2b: `t003_m02_lock_operation`, the typed lock gateway (architecture v3 §2).
+#
+# A `SECURITY DEFINER` function owned by the lock owner, installed through the
+# typed path (the frozen CP1 checker binds these exact bytes) and verified after
+# install against `gateway_profile.LOCK_OPERATION_PROFILE` (§5).
+#
+# Refusal precedence, fixed (R-B2): the NULL argument first (`22004`), then the
+# tenant context (`22023`: unset, empty or malformed), and both BEFORE the only
+# table access; then `P0002` when no row exists. The context pattern is the same
+# literal as `resolver.TENANT_ID_PATTERN` and the `shared.tenants` CHECK (U41). A
+# well-formed value is NOT compared with the schema: this is not authentication.
+#
+# What the syntax does, as distinct from the intended hardening: the function
+# call and the regex operator are schema-qualified; the equality operators are
+# not, and resolve through the pinned `search_path` (pg_catalog first, pg_temp
+# last). The pinned `proconfig` IS the hardening; no stronger claim is made.
+# ---------------------------------------------------------------------------
+
+T003_MIGRATION_ID: Final = "t003_m02_lock_operation"
+_GATEWAY: Final = "m02_lock_operation"
+_GATEWAY_CONFIG: Final = "search_path=pg_catalog, {schema}, pg_temp"
+
+# The exact text between the two `$body$` tags. The verification block declares
+# it with the `{schema}` placeholder; the checker renders both sides.
+_T003_BODY: Final = """
+DECLARE
+    v_tenant text;
+    v_id uuid;
+BEGIN
+    IF p_operation_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = '22004', MESSAGE = 'operation id required';
+    END IF;
+    v_tenant := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_tenant IS NULL OR v_tenant = ''
+       OR v_tenant OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+    SELECT r.operation_id INTO v_id
+      FROM {schema}.operation_registry AS r
+     WHERE r.operation_id = p_operation_id
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = 'operation not found';
+    END IF;
+    RETURN v_id;
+END;
+"""
+
+# sha256 of the NFC-normalized body above. A reviewed literal, like 2a's
+# `_REJECTOR_BODY_SHA256`: the frozen checker recomputes it at pending install
+# and composition's agreement check compares it with the verification body, so a
+# changed body fails until a reviewer updates this value.
+_T003_BODY_SHA256: Final = "7ce15aea8124bbecd62a91a6310e6c40c4108876958178ee925dea7d06795168"
+
+T003_SQL: Final = (
+    f"CREATE FUNCTION {_S}.{_GATEWAY}(p_operation_id uuid) RETURNS uuid\n"
+    "    LANGUAGE plpgsql VOLATILE PARALLEL UNSAFE CALLED ON NULL INPUT SECURITY DEFINER\n"
+    f"    SET search_path = pg_catalog, {_S}, pg_temp\n"
+    f"    AS $body${_T003_BODY}$body$;\n"
+    f"REVOKE ALL ON FUNCTION {_S}.{_GATEWAY}(uuid) FROM PUBLIC;\n"
+    f"GRANT EXECUTE ON FUNCTION {_S}.{_GATEWAY}(uuid) TO {RUNTIME_ROLE};\n"
+)
+
+# Declared Form A: the owner's own entry is not declared (E6); the installed-state
+# profile carries it. Plain dicts and lists, because the frozen shape check
+# requires exactly those types; composition deep-copies and freezes them.
+T003_DEFINITION: Final = UnitDefinition(
+    template=T003_SQL,
+    execution_role=LOCK_OWNER_ROLE,
+    kind=TYPED_FUNCTION_KIND,
+    policy={
+        "policy_format": 1,
+        "semantic_version": 1,
+        "parser_package": "pglast",
+        "parser_version": "7.17",
+        "grammar_major": 17,
+        "functions": [
+            {
+                "schema": _S,
+                "name": _GATEWAY,
+                "inputs": [{"name": "p_operation_id", "type": "uuid"}],
+                "outputs": [],
+                "return_type": "uuid",
+                "language": "plpgsql",
+                "is_procedure": False,
+                "replace": False,
+                "security_definer": True,
+                "volatility": "volatile",
+                "parallel": "unsafe",
+                "strict": False,
+                "config": [_GATEWAY_CONFIG],
+                "body_sha256": _T003_BODY_SHA256,
+                "acl": [{"grantee": RUNTIME_ROLE, "privileges": ["EXECUTE"]}],
+                "comment": None,
+            }
+        ],
+    },
+    policy_verification={
+        "kind": "function_metadata",
+        "functions": [
+            {
+                "name": _GATEWAY,
+                "argument_types": ["uuid"],
+                "owner": LOCK_OWNER_ROLE,
+                "security_definer": True,
+                "config": [_GATEWAY_CONFIG],
+                "acl": [{"grantee": RUNTIME_ROLE, "privileges": ["EXECUTE"]}],
+                "body": _T003_BODY,
+            }
+        ],
+    },
+)
+
+
+M02_TENANT_MIGRATIONS: Final[UnitDefinitions] = MappingProxyType(
+    {T002_MIGRATION_ID: T002_SQL, T003_MIGRATION_ID: T003_DEFINITION}
+)
