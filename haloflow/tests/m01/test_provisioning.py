@@ -365,21 +365,26 @@ def test_the_production_registry_contains_no_test_units() -> None:
 
     registry = build_production_tenant_migrations()
 
-    assert registry.migration_ids == ("t001_m01_baseline", "t002_m02_operation_registry")
+    assert registry.migration_ids == (
+        "t001_m01_baseline",
+        "t002_m02_operation_registry",
+        "t003_m02_lock_operation",
+    )
     assert not any(unit.is_test_unit for unit in registry)
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
 
 
 def test_the_production_baseline_targets_the_supported_schema_version() -> None:
-    """R-E10/R-E11, extended by CP2-2a (E-2): the production target is version 2.
+    """R-E10/R-E11, extended by CP2-2a (E-2) and CP2-2b (X-8): the production target is version 3.
 
-    R-E11's meaning now runs through `t002_m02_operation_registry`: version 2 is
-    "the M01 infrastructure baseline plus the M02 operation registry". This pins
-    the number only. It claims nothing about any runtime accepting version-2
-    tenants (architecture v4 L-1, a carried release prerequisite).
+    R-E11's meaning now runs through `t003_m02_lock_operation`: version 3 is
+    "the M01 infrastructure baseline plus the M02 operation registry plus the M02
+    lock gateway". This pins the number only. It claims nothing about any runtime
+    accepting version-3 tenants (L-1, a carried release prerequisite), nor about
+    upgrading active version-2 tenants (L-6).
     """
 
-    assert build_production_tenant_migrations().target_version == 2
+    assert build_production_tenant_migrations().target_version == 3
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1175,19 +1180,23 @@ def test_the_infrastructure_refusal_reads_the_role_vocabulary_rather_than_a_copy
         )
 
 
-def test_the_production_registry_declares_no_execution_role() -> None:
-    """TC-P5 (C). Characterizes today's production baseline.
+def test_the_production_registry_declares_exactly_the_gateway_execution_role() -> None:
+    """TC-P5 (C), updated by CP2-2b (X-9). Characterizes the production baseline.
 
-    `t001` runs as `haloflow_migrator` by absence, not by declaration, and no
-    module role exists yet. When M02 adds one this test is the thing that makes
-    the change visible rather than silent.
+    `t001` and `t002` run as `haloflow_migrator` by absence, not by declaration.
+    M02 has added exactly one module role, on `t003`; this test is the thing that
+    makes that change -- and any further one -- visible rather than silent.
     """
 
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
 
     registry = build_production_tenant_migrations()
 
-    assert [unit.execution_role for unit in registry.units] == [None, None]
+    assert [unit.execution_role for unit in registry.units] == [
+        None,
+        None,
+        "haloflow_m02_lock_owner",
+    ]
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
 
 
@@ -1248,7 +1257,11 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
 
     registry = build_production_tenant_migrations()
 
-    assert registry.migration_ids == ("t001_m01_baseline", "t002_m02_operation_registry")
+    assert registry.migration_ids == (
+        "t001_m01_baseline",
+        "t002_m02_operation_registry",
+        "t003_m02_lock_operation",
+    )
     assert len(registry.units[0].checksum) == 64
 
 

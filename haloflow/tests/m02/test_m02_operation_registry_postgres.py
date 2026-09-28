@@ -197,14 +197,14 @@ def test_2a_t05_table_owner_is_the_migrator(
     ) == (m02.MIGRATOR,)
 
 
-def test_2a_t06_schema_version_is_two(
+def test_2a_t06_schema_version_is_the_production_target(
     m02: ModuleType, m02_ids: Any, production_tenant: tuple[str, str]
 ) -> None:
     assert m02.admin_one(
         m02_ids,
         "SELECT schema_version FROM shared.tenants WHERE tenant_id = %s",
         (production_tenant[0],),
-    ) == (2,)
+    ) == (3,)
 
 
 # --- 2A-P01 .. P04 ---------------------------------------------------------

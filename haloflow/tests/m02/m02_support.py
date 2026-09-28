@@ -731,7 +731,7 @@ async def provision(
     registry: Any,
     tenant: tuple[str, str],
     *,
-    supported: range = range(1, 3),
+    supported: range = range(1, 4),
     manifest: Any = None,
 ) -> Any:
     from haloflow.m01.provisioning import (
