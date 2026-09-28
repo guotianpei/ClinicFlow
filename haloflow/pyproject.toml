@@ -68,6 +68,11 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 # Preserve the externally frozen v5 oracle byte-for-byte.
 "tests/m01/test_function_policy.py" = ["I001", "F401", "E501"]
 
+# CP2-2b (owner decision 2026-09-28): classify `haloflow` as first-party explicitly,
+# so import grouping does not depend on whether a module exists yet.
+[tool.ruff.lint.isort]
+known-first-party = ["haloflow"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

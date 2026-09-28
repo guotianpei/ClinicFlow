@@ -7,7 +7,7 @@
       "createrole": false,
       "replication": false,
       "bypassrls": false,
-      "tenant_schema_privileges": ["USAGE"]
+      "tenant_schema_privileges": ["USAGE", "CREATE"]
     }
   },
   "role_memberships": [

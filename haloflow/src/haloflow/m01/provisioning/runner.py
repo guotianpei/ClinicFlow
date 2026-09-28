@@ -38,8 +38,8 @@ from haloflow.m01.errors import (
     MigrationUnitRejected,
     TenantMigrationFailed,
 )
+from haloflow.m01.provisioning import installed_state, ordinary_content, typed_plan
 from haloflow.m01.provisioning import manifest as manifest_module
-from haloflow.m01.provisioning import ordinary_content, typed_plan
 from haloflow.m01.provisioning.codes import PreconditionCode, SanitizedErrorCode
 from haloflow.m01.provisioning.manifest import ProvisioningManifest
 from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
@@ -303,6 +303,10 @@ class TenantMigrationRunner:
         store: typed_plan.OperationExpectations,
         checked_text: str | None = None,
     ) -> MigrationOutcome:
+        # CP2-2b: set only on the typed path, from the registry's own descriptor.
+        profile: installed_state.InstalledStateProfile | None = None
+        expected_config: tuple[str, ...] = ()
+        expected_body = ""
         if unit.is_typed:
             # TP-R5/R6. Consumption happens here, before the `running` write, and
             # returns the ONLY bytes this unit may execute. No re-render: the
@@ -313,8 +317,30 @@ class TenantMigrationRunner:
                 )
             try:
                 rendered: str | bytes = typed_plan.consume_plan(plan, store)
+                # CP2-2b (architecture v3 5.1(4)). Bound to THIS runner's registry,
+                # immediately after consumption and still before `running`: no
+                # await, no ledger write and no DDL has happened yet.
+                verified = typed_plan.consume_installed_state(
+                    plan, store, registry=self._registry
+                )
             except MigrationUnitRejected as error:
                 raise TenantMigrationFailed(reason_code=error.reason_code) from None
+            # 5.1(5), defence in depth: the verified state must equal the
+            # registry's own descriptor, re-read here, before `running`.
+            requirement = self._registry.installed_state_requirement(unit.migration_id)
+            if (
+                verified.migration_id != unit.migration_id
+                or verified.required is not requirement.required
+                or verified.profile is not requirement.profile
+            ):
+                raise TenantMigrationFailed(
+                    reason_code=PreconditionCode.INSTALL_PLAN_INVALID.value
+                )
+            profile = requirement.profile
+            if profile is not None:
+                expected_config, expected_body = _installed_expectations(
+                    unit, profile, schema_key
+                )
         elif ordinary_content.requires_content_check(unit):
             # CG-4. Execute exactly the text pass 2 checked; never render again.
             if checked_text is None:
@@ -367,6 +393,26 @@ class TenantMigrationRunner:
                         await connection.execute(FUNCTION_METADATA_QUERY, (schema_key,))
                     ).fetchall()
                     compare_function_metadata(unit.verification, schema_key, rows)
+                if profile is not None:
+                    # CP2-2b (architecture v3 5.2). The same position as the
+                    # legacy branch above, which a typed unit never takes: its
+                    # `verification` is always None. Reached through the module
+                    # attribute, so one spy sees every call (I-B11).
+                    stage = SanitizedErrorCode.VERIFICATION_FAILED
+                    await connection.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+                    rows = await (
+                        await connection.execute(
+                            installed_state.INSTALLED_FUNCTION_QUERY,
+                            (schema_key, profile.function_name),
+                        )
+                    ).fetchall()
+                    installed_state.compare_installed_function(
+                        profile,
+                        schema_key=schema_key,
+                        expected_config=expected_config,
+                        expected_body=expected_body,
+                        rows=rows,
+                    )
                 stage = SanitizedErrorCode.LEDGER_WRITE_FAILED
                 await self._mark_applied(connection, tenant_id, unit)
                 stage = SanitizedErrorCode.MIGRATION_COMMIT_FAILED
@@ -539,6 +585,31 @@ def _require_checked_complete(
             raise TenantMigrationFailed(
                 reason_code=PreconditionCode.ORDINARY_ROLE_CONTENT_PROHIBITED.value
             )
+
+
+def _installed_expectations(
+    unit: TenantMigrationUnit,
+    profile: installed_state.InstalledStateProfile,
+    schema_key: str,
+) -> tuple[tuple[str, ...], str]:
+    """The snapshot's config and body for the profiled function, rendered for the schema.
+
+    Read from the unit's OWN frozen declaration, never from observed state
+    (R-B9.3). Composition already proved the profile names the declaration's one
+    function (architecture v3 5.3); a declaration without it is refused here too.
+    """
+
+    functions = (unit.policy_verification or {}).get("functions", ())
+    matches = [
+        function for function in functions
+        if function["name"] == profile.function_name
+        and tuple(function["argument_types"]) == profile.argument_types
+    ]
+    if len(matches) != 1:
+        raise TenantMigrationFailed(reason_code=PreconditionCode.INSTALL_PLAN_INVALID.value)
+    function = matches[0]
+    config = tuple(entry.replace("{schema}", schema_key) for entry in function["config"])
+    return config, function["body"].replace("{schema}", schema_key)
 
 
 def _validate_tenant_id(tenant_id: str) -> None:

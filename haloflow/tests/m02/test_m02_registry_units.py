@@ -29,46 +29,68 @@ def _load_revision_004() -> ModuleType:
 
 
 def test_2a_u01_production_registry_ids_and_target_version() -> None:
-    """R-A3, L-1. The number only; nothing about runtime acceptance."""
+    """R-A3, R-B3, L-1, L-6 (X-1, X-2). The number only; nothing about runtime acceptance."""
 
     from haloflow.composition import build_production_tenant_migrations
 
     registry = build_production_tenant_migrations()
-    assert registry.migration_ids == ("t001_m01_baseline", "t002_m02_operation_registry")
-    assert registry.target_version == 2
+    assert registry.migration_ids == (
+        "t001_m01_baseline",
+        "t002_m02_operation_registry",
+        "t003_m02_lock_operation",
+    )
+    assert registry.target_version == 3
 
 
-def test_2a_u02_the_unit_set_is_approved_and_no_role_is() -> None:
-    """R-B0 boundary: the M02 unit set is approved; the role approval stays for 2b."""
+def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
+    """R-B0 (X-3, X-4): the M02 unit set and exactly one execution role are approved."""
 
     from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_TENANT_MIGRATIONS
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS
-    from haloflow.m02.units import M02_TENANT_MIGRATIONS, T002_MIGRATION_ID, T002_SQL
+    from haloflow.m02.units import (
+        M02_TENANT_MIGRATIONS,
+        T002_MIGRATION_ID,
+        T002_SQL,
+        T003_DEFINITION,
+        T003_MIGRATION_ID,
+    )
 
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
-    assert frozenset() == APPROVED_EXECUTION_ROLES
-    assert dict(M02_TENANT_MIGRATIONS) == {T002_MIGRATION_ID: T002_SQL}
+    assert frozenset({"haloflow_m02_lock_owner"}) == APPROVED_EXECUTION_ROLES
+    assert dict(M02_TENANT_MIGRATIONS) == {
+        T002_MIGRATION_ID: T002_SQL,
+        T003_MIGRATION_ID: T003_DEFINITION,
+    }
     assert T002_MIGRATION_ID == "t002_m02_operation_registry"
+    assert T003_MIGRATION_ID == "t003_m02_lock_operation"
     with pytest.raises(TypeError):
         cast(Any, M02_TENANT_MIGRATIONS)["t003_x"] = "x"
 
 
-def test_2a_u03_no_production_unit_is_role_bearing_or_content_checked() -> None:
-    """R-A8, re-verified through the CG-4 route classification."""
+def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
+    """R-A8 (B-beta), re-verified through the CG-4 route classification (X-5).
+
+    No production unit is a role-bearing ORDINARY unit; exactly one unit bears a
+    role, and it is the typed gateway unit.
+    """
 
     from haloflow.composition import build_production_tenant_migrations
     from haloflow.m01.provisioning.ordinary_content import requires_content_check
 
-    for unit in build_production_tenant_migrations():
-        assert unit.execution_role is None, unit.migration_id
-        assert not unit.is_typed, unit.migration_id
+    registry = build_production_tenant_migrations()
+    for unit in registry:
         # Role-bearing ordinary units are the only ones CG-4 checks; none exist,
-        # so no production unit is both role-bearing and function-defining.
+        # so no production unit is both role-bearing and ordinary.
         assert requires_content_check(unit) is False, unit.migration_id
+    assert [(unit.migration_id, unit.execution_role, unit.is_typed) for unit in registry] == [
+        ("t001_m01_baseline", None, False),
+        ("t002_m02_operation_registry", None, False),
+        ("t003_m02_lock_operation", "haloflow_m02_lock_owner", True),
+    ]
 
 
 def test_2a_u04_shipped_manifest_declares_the_lock_owner_and_its_n1_edge() -> None:
-    """R-A1, AQ-1: all-false profile with schema USAGE; exactly the N1 edge."""
+    """R-A1, AQ-1, R-B10 (X-6): all-false profile, schema USAGE and CREATE, exactly the N1 edge."""
 
     from haloflow.m01.provisioning.manifest import load_provisioning_manifest
 
@@ -83,7 +105,7 @@ def test_2a_u04_shipped_manifest_declares_the_lock_owner_and_its_n1_edge() -> No
         profile.replication,
         profile.bypassrls,
     ) == (False,) * 6
-    assert profile.tenant_schema_privileges == ("USAGE",)
+    assert profile.tenant_schema_privileges == ("CREATE", "USAGE")
     edges = [e for e in manifest.role_memberships if e.role == "haloflow_m02_lock_owner"]
     assert [(e.member, e.set, e.inherit, e.admin) for e in edges] == [
         ("haloflow_migrator", True, False, False)
@@ -101,22 +123,42 @@ def test_2a_u05_the_lock_owner_name_stays_out_of_m01_provisioning() -> None:
     assert offenders == []
 
 
-def test_2a_u06_no_2b_runtime_code_exists_in_2a() -> None:
-    """Scope: no `LOCK_*` runtime code or gateway in 2a (2b owns them).
+def test_2b_u_module_scope() -> None:
+    """X-11 (O-5), replacing 2A-U06: exact M02 module set, exact top-level `LOCK_*`
+    bindings per module, exact refusal-code vocabulary, and the gateway function
+    name confined to the three modules that must use it."""
 
-    Asserted as: the package holds no module beyond the three 2a modules, no
-    module binds a `LOCK_*` name other than the role constant, and none mentions
-    the 2b gateway function. Holds today (no package), per test cases v4 §5.
-    """
+    from haloflow.m02.codes import LockRefusalCode
 
     package = Path("src/haloflow/m02")
-    modules = {p.name for p in package.glob("*.py")}
-    assert modules <= {"__init__.py", "roles.py", "units.py"}
-    for path in package.glob("*.py"):
-        source = path.read_text()
-        bound = set(re.findall(r"^(LOCK_[A-Z0-9_]*)\s*[:=]", source, re.MULTILINE))
-        assert bound <= {"LOCK_OWNER_ROLE"}, (path, bound)
-        assert "m02_lock_operation" not in source, path
+    sources = {path.name: path.read_text() for path in package.glob("*.py")}
+    assert set(sources) == {
+        "__init__.py",
+        "roles.py",
+        "units.py",
+        "gateway_profile.py",
+        "codes.py",
+        "lock.py",
+    }
+    bound = {
+        name: set(re.findall(r"^(LOCK_[A-Z0-9_]*)\s*[:=]", source, re.MULTILINE))
+        for name, source in sources.items()
+    }
+    assert bound == {
+        "__init__.py": set(),
+        "roles.py": {"LOCK_OWNER_ROLE"},
+        "units.py": set(),
+        "gateway_profile.py": {"LOCK_OPERATION_PROFILE"},
+        "codes.py": set(),
+        "lock.py": set(),
+    }
+    assert {member.name for member in LockRefusalCode} == {
+        "LOCK_OPERATION_ID_REQUIRED",
+        "LOCK_OPERATION_NOT_FOUND",
+        "LOCK_TENANT_CONTEXT_INVALID",
+    }
+    mentions = {name for name, source in sources.items() if "m02_lock_operation" in source}
+    assert mentions == {"units.py", "gateway_profile.py", "lock.py"}
 
 
 def test_2a_u_role_constant() -> None:

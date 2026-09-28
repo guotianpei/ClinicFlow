@@ -190,6 +190,14 @@ class PreconditionCode(StrEnum):
     ORDINARY_ROLE_CONTENT_PROHIBITED = "ORDINARY_ROLE_CONTENT_PROHIBITED"
     ORDINARY_ROLE_CONTENT_UNPARSEABLE = "ORDINARY_ROLE_CONTENT_UNPARSEABLE"
 
+    # CP2-2b (architecture v3 section 5.1, AQ-2). An installed-state profile that
+    # cannot be bound at composition: keyed to no unit, to an ordinary unit, to a
+    # unit with another execution role or identity, or disagreeing with the unit's
+    # declaration in any agreement cell (section 5.3). Also the M02 rule: a
+    # lock-owner typed unit without a profile. Raised at startup; no operation
+    # exists, so it never reaches a ledger.
+    INSTALLED_STATE_PROFILE_INVALID = "INSTALLED_STATE_PROFILE_INVALID"
+
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than
 # by a module-level `assert`, which `python -O` would strip.
