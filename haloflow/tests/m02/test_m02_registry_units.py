@@ -105,7 +105,7 @@ def test_2a_u04_shipped_manifest_declares_the_lock_owner_and_its_n1_edge() -> No
         profile.replication,
         profile.bypassrls,
     ) == (False,) * 6
-    assert profile.tenant_schema_privileges == ("USAGE", "CREATE")
+    assert profile.tenant_schema_privileges == ("CREATE", "USAGE")
     edges = [e for e in manifest.role_memberships if e.role == "haloflow_m02_lock_owner"]
     assert [(e.member, e.set, e.inherit, e.admin) for e in edges] == [
         ("haloflow_migrator", True, False, False)
