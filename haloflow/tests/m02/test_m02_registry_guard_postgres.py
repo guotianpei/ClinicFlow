@@ -126,13 +126,25 @@ def test_2a_x_one_defect_mutant_is_refused(
 def test_2a_x19_x20_unsafe_pre_existing_lock_owner_is_refused_by_g1(
     m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str], attribute: str
 ) -> None:
-    """X19 = LOGIN; X20a–e = the other five. Template unchanged. L-5 staging asserted."""
+    """X19 = LOGIN; X20a–e = the other five. Template unchanged. L-5 staging asserted.
+
+    CP2-2b (erratum 2): runs over the t001 + t002 registry, not the production one.
+    From 2b the lock owner is t003's execution role, so over the production registry
+    M01 stage 1 refuses the unsafe role BEFORE t002 runs, and G-1 is never reached.
+    This row exists to exercise G-1, so it composes the unit set G-1 guards.
+    """
+
+    from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
+    from haloflow.m02.units import T002_MIGRATION_ID, T002_SQL
 
     _require_control("X00")
+    g1_registry = build_tenant_migration_registry(
+        TENANT_MIGRATIONS, {T002_MIGRATION_ID: T002_SQL}
+    )
     with m02.connect_admin(m02_ids) as conn:
         conn.execute(sql.SQL("ALTER ROLE {} " + attribute).format(sql.Identifier(m02.LOCK_OWNER)))
     try:
-        m02.expect_install_failure(m02_ids, m02.production_registry(), m02_tenant, m02.T002_ID)
+        m02.expect_install_failure(m02_ids, g1_registry, m02_tenant, m02.T002_ID)
         # L-5, asserted rather than hidden: the edge and the schema USAGE made
         # before t002 remain; the column grants are absent (oracle part 4).
         edges = m02.edges_into(m02_ids, m02.LOCK_OWNER)
