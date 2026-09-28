@@ -265,6 +265,11 @@ def check_profile_agreement(
 # booleans here, so the comparator never compares an OID with a text literal.
 # Supplied strings never enter SQL resolution: both are bound parameters.
 #
+# The ACL grantee OID is cast to int8 before it enters JSON. `oid` is not a
+# numeric type to jsonb, so an uncast OID becomes a JSON STRING, which the strict
+# parser below would (correctly) refuse as malformed. Measured in CI on
+# postgres:17, candidate v2: every real install failed VERIFICATION_FAILED.
+#
 # Columns (19, in this order): oid, prokind, pronargs, arg_is_uuid,
 # allargtypes_is_null, argmodes_all_in, nargdefaults_zero, rettype_is_uuid,
 # proretset, lang_is_plpgsql, owner, prosecdef, provolatile, proparallel,
@@ -293,7 +298,8 @@ SELECT p.oid,
        p.proacl IS NULL,
        COALESCE((SELECT pg_catalog.jsonb_agg(
                             pg_catalog.jsonb_build_array(
-                                acl.grantee, grantee.rolname, grantor.rolname,
+                                acl.grantee::pg_catalog.int8, grantee.rolname,
+                                grantor.rolname,
                                 acl.privilege_type, acl.is_grantable)
                             ORDER BY acl.grantee, acl.grantor, acl.privilege_type)
                    FROM pg_catalog.aclexplode(p.proacl) acl
