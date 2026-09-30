@@ -68,7 +68,7 @@ jobs:
       - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
-      - run: $VENV/bin/pytest tests/m01 tests/m02 -q
+      - run: $VENV/bin/pytest tests/m01 tests/m02 -q -rA
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.
