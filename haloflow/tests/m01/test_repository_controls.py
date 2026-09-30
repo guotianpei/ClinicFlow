@@ -901,3 +901,231 @@ def test_the_provisioning_manifest_is_resolved_through_the_package() -> None:
     assert "resources.files(" in source
     assert 'Path("src/' not in source
     assert "os.getcwd" not in source
+
+
+# --- L-1 runtime composition controls (test cases v2 + addendum 1, section 1) ---
+#
+# Bounded checks, stated as such: these AST controls catch direct-name and
+# attribute call forms. They are not proof against aliasing, getattr, reflection
+# or private-attribute mutation (L-1 architecture addendum 1 C2).
+
+RUNTIME_MODULE = "src/haloflow/m01/runtime.py"
+RUNTIME_CONSTRUCTED = frozenset(
+    {"TenantResolver", "TenantTransactionGateway", "TenantProvisioner"}
+)
+SUPPORTED_DECLARATION = "APPROVED_SUPPORTED_SCHEMA_VERSIONS"
+
+
+def _called_name(node: ast.Call) -> str:
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return ""
+
+
+def _runtime_construction_violations_in(path: str, source: str) -> list[str]:
+    """L1-A1. Only `m01/runtime.py` constructs the three runtime components."""
+
+    if path == RUNTIME_MODULE:
+        return []
+    return [
+        f"{path}: constructs {_called_name(node)}"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and _called_name(node) in RUNTIME_CONSTRUCTED
+    ]
+
+
+def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]:
+    """L1-A2. Only the composition root CALLS `compose_tenant_runtime`.
+
+    An import, a type reference or the definition itself is not a call, so no
+    other module (including `m01/runtime.py`) is exempt.
+    """
+
+    if path == COMPOSITION_ROOT:
+        return []
+    return [
+        f"{path}: calls compose_tenant_runtime"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and _called_name(node) == "compose_tenant_runtime"
+    ]
+
+
+def _is_literal_frozenset_of_three(value: ast.expr | None) -> bool:
+    return (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == "frozenset"
+        and not value.keywords
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Set)
+        and len(value.args[0].elts) == 1
+        and isinstance(value.args[0].elts[0], ast.Constant)
+        and type(value.args[0].elts[0].value) is int
+        and value.args[0].elts[0].value == 3
+    )
+
+
+def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
+    """Every assignment, at any depth, whose target is the declaration name."""
+
+    values: list[ast.expr | None] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == SUPPORTED_DECLARATION:
+                    values.append(node.value)
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == SUPPORTED_DECLARATION
+        ):
+            values.append(node.value)
+    return values
+
+
+def _declaration_violations(path: str, source: str) -> list[str]:
+    """L1-A4. The composition root assigns the declaration exactly once, at
+    module level, to the literal `frozenset({3})`; no other module assigns it."""
+
+    assigned = _declaration_assignments_in(source)
+    if path != COMPOSITION_ROOT:
+        return [f"{path}: assigns {SUPPORTED_DECLARATION}"] if assigned else []
+    module_level = [
+        node
+        for node in ast.parse(source).body
+        if (
+            isinstance(node, ast.Assign)
+            and any(
+                isinstance(t, ast.Name) and t.id == SUPPORTED_DECLARATION
+                for t in node.targets
+            )
+        )
+        or (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == SUPPORTED_DECLARATION
+        )
+    ]
+    violations: list[str] = []
+    if len(assigned) != 1 or len(module_level) != 1:
+        violations.append(
+            f"{path}: {len(assigned)} assignments, {len(module_level)} module-level"
+        )
+    if not all(_is_literal_frozenset_of_three(value) for value in assigned):
+        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{3}})")
+    return violations
+
+
+def _lock_operation_call_violations_in(path: str, source: str) -> list[str]:
+    """L1-F3 (R-L1.7, R-B2). L-1 adds no production caller of `lock_operation`."""
+
+    if path == "src/haloflow/m02/lock.py":
+        return []
+    return [
+        f"{path}: calls lock_operation"
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Call) and _called_name(node) == "lock_operation"
+    ]
+
+
+def _production_sources() -> list[tuple[str, str]]:
+    return [(str(path), path.read_text()) for path in Path("src/haloflow").rglob("*.py")]
+
+
+def test_l1_a1_only_the_runtime_module_constructs_runtime_components() -> None:
+    violations: list[str] = []
+    for path, source in _production_sources():
+        violations.extend(_runtime_construction_violations_in(path, source))
+    assert violations == []
+
+
+def test_l1_a1_negative_control() -> None:
+    rogue = "src/haloflow/modules/rogue/service.py"
+    assert _runtime_construction_violations_in(rogue, "g = TenantTransactionGateway(p, c)\n")
+    assert _runtime_construction_violations_in(
+        rogue, "r = m01.resolver.TenantResolver(s, supported_schema_versions=x)\n"
+    )
+    assert _runtime_construction_violations_in(rogue, "p = TenantProvisioner(c, r, x)\n")
+    in_runtime = _runtime_construction_violations_in(
+        RUNTIME_MODULE, "g = TenantTransactionGateway(p, c)\n"
+    )
+    assert in_runtime == []
+    # A type reference or import is not a construction.
+    type_only = (
+        "from haloflow.m01.gateway import TenantTransactionGateway\n"
+        "x: TenantTransactionGateway\n"
+    )
+    assert _runtime_construction_violations_in(rogue, type_only) == []
+
+
+def test_l1_a2_only_the_composition_root_calls_compose_tenant_runtime() -> None:
+    violations: list[str] = []
+    for path, source in _production_sources():
+        violations.extend(_runtime_composition_call_violations_in(path, source))
+    assert violations == []
+
+
+def test_l1_a2_negative_control() -> None:
+    rogue = "src/haloflow/modules/rogue/service.py"
+    assert _runtime_composition_call_violations_in(rogue, "rt = compose_tenant_runtime(d)\n")
+    assert _runtime_composition_call_violations_in(
+        rogue, "rt = runtime.compose_tenant_runtime(d)\n"
+    )
+    import_only = "from haloflow.m01.runtime import compose_tenant_runtime\n"
+    assert _runtime_composition_call_violations_in(rogue, import_only) == []
+    # runtime.py may define the builder, but not call it.
+    definition = "def compose_tenant_runtime(dependencies, *, registry, catalog, s):\n    ...\n"
+    assert _runtime_composition_call_violations_in(RUNTIME_MODULE, definition) == []
+    assert _runtime_composition_call_violations_in(
+        RUNTIME_MODULE, definition + "rt = compose_tenant_runtime(d)\n"
+    )
+    in_root = _runtime_composition_call_violations_in(
+        COMPOSITION_ROOT, "rt = compose_tenant_runtime(d)\n"
+    )
+    assert in_root == []
+
+
+def test_l1_a4_the_supported_set_is_declared_once_as_the_literal_three() -> None:
+    violations: list[str] = []
+    for path, source in _production_sources():
+        violations.extend(_declaration_violations(path, source))
+    assert violations == []
+    assert _declaration_assignments_in(Path(COMPOSITION_ROOT).read_text()), (
+        f"{COMPOSITION_ROOT} does not declare {SUPPORTED_DECLARATION}"
+    )
+
+
+def test_l1_a4_negative_control() -> None:
+    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({3})\n"
+    assert _declaration_violations(COMPOSITION_ROOT, good) == []
+    assert _declaration_violations(COMPOSITION_ROOT, good + good)
+    assert _declaration_violations(
+        COMPOSITION_ROOT,
+        "APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({registry.target_version})\n",
+    )
+    for wrong in ("frozenset({3, 2})", "frozenset({True})", "{3}", "frozenset([3])"):
+        source = f"APPROVED_SUPPORTED_SCHEMA_VERSIONS = {wrong}\n"
+        assert _declaration_violations(COMPOSITION_ROOT, source), wrong
+    assert _declaration_violations(
+        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({3})\n"
+    )
+    assert _declaration_violations("src/haloflow/m01/runtime.py", good)
+
+
+def test_l1_f3_no_production_caller_of_lock_operation() -> None:
+    violations: list[str] = []
+    for path, source in _production_sources():
+        violations.extend(_lock_operation_call_violations_in(path, source))
+    assert violations == []
+
+
+def test_l1_f3_negative_control() -> None:
+    assert _lock_operation_call_violations_in(RUNTIME_MODULE, "await lock_operation(h, op)\n")
+    assert _lock_operation_call_violations_in(RUNTIME_MODULE, "await lock.lock_operation(h, op)\n")
+    in_lock_module = _lock_operation_call_violations_in(
+        "src/haloflow/m02/lock.py", "lock_operation(h, op)\n"
+    )
+    assert in_lock_module == []

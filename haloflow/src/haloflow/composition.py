@@ -1,4 +1,4 @@
-"""The single production composition root for the tenant statement catalogue.
+"""The single production composition root.
 
 ADR-011 D-11.18 (B2). Statements are composed exactly once, at startup, from
 approved module definition sets. This module is the only place in production
@@ -6,6 +6,12 @@ code permitted to call ``build_statement_catalog``; repository-control tests
 enforce that, and the statement-catalogue manifest pins whatever this function
 produces. Without a single composition path the manifest would pin a constant
 rather than the catalogue the application actually runs.
+
+L-1: this module also declares the supported schema-version set and is the only
+production caller of `compose_tenant_runtime`, through
+`build_production_tenant_runtime`. No application entry point calls that yet
+(L-1W), and the production statement catalogue is empty, so the production path
+admits a version-3 tenant but serves no statement (L-1S).
 """
 
 from collections.abc import Mapping
@@ -19,6 +25,11 @@ from haloflow.m01.provisioning.units import (
     TENANT_MIGRATIONS,
     UnitDefinitions,
     build_tenant_migration_registry,
+)
+from haloflow.m01.runtime import (
+    TenantRuntime,
+    TenantRuntimeDependencies,
+    compose_tenant_runtime,
 )
 from haloflow.m01.statements import (
     M01_STATEMENTS,
@@ -43,8 +54,8 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
 # CP2-2a approved the M02 unit *set* (`t002_m02_operation_registry`, an ordinary
 # migrator-owned unit). CP2-2b adds the typed gateway unit `t003_m02_lock_operation`,
 # which makes the production target version 3. Version 3 says nothing about
-# runtime acceptance -- no runtime serves a version-3 tenant (L-1) -- nor about
-# upgrading active version-2 tenants, which have no path in 2b (L-6).
+# upgrading active version-2 tenants, which have no path in 2b (L-6). Runtime
+# acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     TENANT_MIGRATIONS,
     M02_TENANT_MIGRATIONS,
@@ -67,6 +78,14 @@ APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset({"haloflow_m02_lock_owner"}
 APPROVED_INSTALLED_STATE_PROFILES: Mapping[str, InstalledStateProfile] = MappingProxyType(
     {T003_MIGRATION_ID: LOCK_OPERATION_PROFILE}
 )
+
+
+# L-1 (requirements v2, L1-D2 = M1). The schema versions the production runtime
+# admits: exactly {3}. The one declaration -- resolver, gateway, provisioner and the
+# bundle all receive this object. A literal, never derived from the registry: a
+# derived set would make the coordination check vacuous and silently admit a future
+# target. Version 3 means "the M01 infrastructure baseline through t003" (R-E11).
+APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({3})
 
 
 def build_production_catalog() -> CompiledCatalog:
@@ -110,3 +129,22 @@ def build_production_tenant_migrations() -> TenantMigrationRegistry:
     )
     require_m02_installed_state_profiles(registry)
     return registry
+
+
+def build_production_tenant_runtime(dependencies: TenantRuntimeDependencies) -> TenantRuntime:
+    """Compose the production tenancy runtime. Startup-only.
+
+    Takes no registry, catalogue or set: a caller cannot substitute them. The
+    registry and catalogue are built first, so their own failures keep their own
+    outcomes and the generic builder is never reached. The declaration is read
+    here, at call time. The caller owns the pool's lifecycle (L-1W).
+    """
+
+    registry = build_production_tenant_migrations()
+    catalog = build_production_catalog()
+    return compose_tenant_runtime(
+        dependencies,
+        registry=registry,
+        catalog=catalog,
+        supported_schema_versions=APPROVED_SUPPORTED_SCHEMA_VERSIONS,
+    )
