@@ -133,3 +133,17 @@ async def test_tc_c2_d03_existing_grants_are_never_revoked(
 
     observed = await read_schema_acl(connection, schema_key)
     assert observed == full, "TC-C2-D03: no grant revoked"
+
+    # A grantee that stays in the input with only part of its privileges keeps the rest:
+    # the installer must not drop an omitted privilege of a still-present grantee.
+    from haloflow.m01.provisioning import MIGRATOR_ROLE
+
+    migrator = {e for e in full if e.grantee == MIGRATOR_ROLE}
+    assert {e.privilege_type for e in migrator} == {"USAGE", "CREATE"}
+    usage_only = [e for e in migrator if e.privilege_type == "USAGE"]
+
+    async with connection.transaction():
+        await install_schema_acl_entries(connection, schema_key, usage_only)
+
+    after_partial = await read_schema_acl(connection, schema_key)
+    assert after_partial == full, "TC-C2-D03: omitted privilege of a present grantee kept"
