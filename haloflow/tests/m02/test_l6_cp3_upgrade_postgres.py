@@ -630,8 +630,14 @@ async def _fence_tx(conn: AsyncConnection[Any], cap: Any, k: Any) -> Any:
 
 
 async def _claim_tx(conn: AsyncConnection[Any], **kwargs: Any) -> None:
+    """v7 (owner record 5c630668…8ea2): every direct claim passes the target-3
+    production registry, because `claim` applies the full §8 classified-state predicate
+    on every invocation and refuses (RC-08) without a registry (Codex v2 review)."""
+
+    from haloflow.composition import build_production_tenant_migrations
     from haloflow.m01.provisioning.upgrade import claim
 
+    kwargs.setdefault("registry", build_production_tenant_migrations())
     async with conn.transaction():
         await claim(conn, **kwargs)
 
@@ -2574,9 +2580,13 @@ async def test_tc_a04_b2_proven_rollback(
 async def test_tc_a04_b3_ambiguous_outcome(
     k0_tenant: Tenant, role_logins: dict[str, str], migrated_database: str
 ) -> None:
-    """Application-side ambiguity only (owner record f3c8b5e9…03ed). An INSERT that returned
-    success before termination, or any non-connection error, is an UNMET injection: never
-    a pass and never retried."""
+    """Application-side ambiguity only (owner record f3c8b5e9…03ed). v7 (owner record
+    5c630668…8ea2): the backend is terminated while its INSERT is provably blocked
+    on the barrier, then the barrier is released. The application gets a connection error
+    and cannot tell whether the row committed; the independent reader proves the server
+    outcome is a rollback (0 rows). A server-side unknown outcome is not constructed
+    deterministically and is not claimed. An INSERT that returned success, or any
+    non-connection error, is an UNMET injection: never a pass and never retried."""
 
     admin, t = migrated_database, k0_tenant
     probe = _Probe("b3", admin, t.tenant_id)
@@ -2586,8 +2596,12 @@ async def test_tc_a04_b3_ambiguous_outcome(
         task = await _refusing_attempt(role_logins, admin, t, probe)
         await _blocked_by_barrier(admin, probe, "TC-A04-b3")
         _assert_seam_order(probe, "TC-A04-b3")
-        probe.release_barrier()  # release, with no ordering imposed against the termination
-        _admin_one(admin, "SELECT pg_terminate_backend(%s)", (probe.pid,))
+        appender_pid = probe.pid
+        assert appender_pid is not None
+        if not _admin_one(admin, "SELECT pg_terminate_backend(%s)", (appender_pid,))[0]:
+            raise SetupError("TC-A04-b3: termination not delivered")
+        await _wait_until(lambda: _backend_gone(admin, appender_pid), "appender backend gone")
+        probe.release_barrier()  # only after the blocked backend is gone
         error = await _refused(task, "TC-A04-b3")
     finally:
         probe.release_barrier()
@@ -2598,7 +2612,7 @@ async def test_tc_a04_b3_ambiguous_outcome(
     _assert_code(error, "MAINTENANCE_EVIDENCE_WRITE_FAILED", "classify", "TC-A04-b3")
     count = len(_refusals(admin, t.tenant_id))
     print(f"L6_A04_B3_OBSERVED_COUNT={count}")
-    assert count in (0, 1), "TC-A04-b3: 0 or 1 by independent read"
+    assert count == 0, "TC-A04-b3: terminated while blocked, so 0 by independent read"
     _assert_r5(
         before,
         _r5_snapshot(admin, t),
