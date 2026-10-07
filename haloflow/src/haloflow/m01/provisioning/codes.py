@@ -198,6 +198,30 @@ class PreconditionCode(StrEnum):
     # exists, so it never reaches a ledger.
     INSTALLED_STATE_PROFILE_INVALID = "INSTALLED_STATE_PROFILE_INVALID"
 
+
+class MaintenanceCode(StrEnum):
+    """L-6 maintenance refusal codes (architecture v6 r3; plan v4 IP-14).
+
+    The ``005`` ``attempt_refused`` vocabulary that is not already a
+    ``SanitizedErrorCode`` (``LOCK_UNAVAILABLE``, RC-03, is reused from there, so the
+    two sets do not overlap), plus ``MAINTENANCE_EVIDENCE_WRITE_FAILED`` (RC-22): the
+    refusal evidence could not be appended. RC-22 is reported to the caller and never
+    stored.
+    """
+
+    MAINTENANCE_FENCE_LOST = "MAINTENANCE_FENCE_LOST"
+    MAINTENANCE_LOCK_LOST = "MAINTENANCE_LOCK_LOST"
+    MAINTENANCE_TOKEN_INVALID = "MAINTENANCE_TOKEN_INVALID"
+    MAINTENANCE_CASE_REFUSED = "MAINTENANCE_CASE_REFUSED"
+    MAINTENANCE_STATE_UNKNOWN = "MAINTENANCE_STATE_UNKNOWN"
+    MAINTENANCE_CLAIM_REFUSED = "MAINTENANCE_CLAIM_REFUSED"
+    MAINTENANCE_N_REFUSED = "MAINTENANCE_N_REFUSED"
+    MAINTENANCE_ESTABLISHMENT_INCOMPLETE = "MAINTENANCE_ESTABLISHMENT_INCOMPLETE"
+    MAINTENANCE_DRAIN_TIMEOUT = "MAINTENANCE_DRAIN_TIMEOUT"
+    MAINTENANCE_VERIFICATION_FAILED = "MAINTENANCE_VERIFICATION_FAILED"
+    MAINTENANCE_EVIDENCE_WRITE_FAILED = "MAINTENANCE_EVIDENCE_WRITE_FAILED"
+
+
 # The ledger column is varchar(64). A member longer than that would fail at write
 # time against a real tenant, so the width is asserted by a unit test rather than
 # by a module-level `assert`, which `python -O` would strip.

@@ -2,6 +2,7 @@ import ast
 import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -575,14 +576,225 @@ def _connection_callback_violations_in(path: str, source: str) -> list[str]:
     return violations
 
 
+# --- L-6 CP-3 reviewed test seams (owner record 5c630668…8ea2) ----------
+# Exactly two findings of the rule above are exempt, each identified structurally
+# (path, owning class, method, argument, rule) and each allowed EXACTLY ONCE: the
+# approved A04 appender probe (B5.1 v3 §4.4, Q3) and the `UpgradeTestHooks`
+# constructor parameter that wires it. Any other finding fails, a duplicate of an
+# exempt finding fails, and an exemption that no longer occurs fails. Production code
+# passes no hooks (`test_production_code_passes_no_upgrade_hooks`).
+#
+# Limits, stated: the structural reader resolves classes by their own `class`
+# statement in the same file. It does not follow inheritance, decorators,
+# `setattr`, dynamically built classes or code outside PROVISIONING_ROOT.
+
+UPGRADE_MODULE = "src/haloflow/m01/provisioning/upgrade.py"
+REVIEWED_L6_TEST_SEAMS: dict[tuple[str, str, str, str, str], int] = {
+    (UPGRADE_MODULE, "AppenderProbe", "wrap", "conn", "protocol"): 1,
+    (UPGRADE_MODULE, "TenantSchemaUpgrade", "__init__", "hooks", "init"): 1,
+}
+
+
+def _structured_callback_findings(path: str, source: str) -> list[tuple[str, str, str, str, str]]:
+    """The same three rules as `_connection_callback_violations_in`, reported as
+    (path, owning class or "", method or alias, argument, rule)."""
+
+    found: list[tuple[str, str, str, str, str]] = []
+    tree = ast.parse(source)
+    owners: dict[ast.AST, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for member in node.body:
+                owners[member] = node.name
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            is_protocol = any(
+                (isinstance(base, ast.Name) and base.id == "Protocol")
+                or (isinstance(base, ast.Attribute) and base.attr == "Protocol")
+                for base in node.bases
+            )
+            if not is_protocol:
+                continue
+            for member in node.body:
+                if not isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                arguments = [*member.args.args, *member.args.kwonlyargs, *member.args.posonlyargs]
+                for argument in arguments:
+                    annotation = ast.unparse(argument.annotation) if argument.annotation else ""
+                    if "Connection" in annotation:
+                        found.append((path, node.name, member.name, argument.arg, "protocol"))
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == "__init__":
+            arguments = [*node.args.args, *node.args.kwonlyargs, *node.args.posonlyargs]
+            for argument in arguments:
+                if CALLBACK_PARAMETER_NAMES.search(argument.arg) or _takes_a_connection(
+                    argument.annotation
+                ):
+                    found.append((path, owners.get(node, ""), "__init__", argument.arg, "init"))
+        if isinstance(node, ast.Assign | ast.AnnAssign):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name) and _takes_a_connection(node.value):
+                    found.append((path, "", target.id, "", "alias"))
+    return found
+
+
+def _unreviewed(path: str, source: str) -> list[str]:
+    """Findings of the existing rule that are not exactly the reviewed seams."""
+
+    structured = Counter(_structured_callback_findings(path, source))
+    rendered = _connection_callback_violations_in(path, source)
+    # The structural reader must see the same findings as the existing rule.
+    assert sum(structured.values()) == len(rendered), f"{path}: structural reader disagrees"
+    left: list[str] = []
+    for finding, count in structured.items():
+        allowed = REVIEWED_L6_TEST_SEAMS.get(finding, 0)
+        if count != allowed and allowed:
+            left.append(f"{finding}: occurs {count} times, exactly {allowed} reviewed")
+        elif not allowed:
+            left.append(f"{finding}: not reviewed")
+    return left
+
+
 def test_no_module_callback_receives_a_privileged_connection() -> None:
     """Requested in the PR-2 review disposition, 2026-09-01. Defense in depth."""
 
-    violations: list[str] = []
+    unreviewed: list[str] = []
+    seen: Counter[tuple[str, str, str, str, str]] = Counter()
     for path in PROVISIONING_ROOT.rglob("*.py"):
-        violations.extend(_connection_callback_violations_in(str(path), path.read_text()))
+        source = path.read_text()
+        unreviewed.extend(_unreviewed(str(path), source))
+        seen.update(
+            f
+            for f in _structured_callback_findings(str(path), source)
+            if f in REVIEWED_L6_TEST_SEAMS
+        )
 
+    assert unreviewed == []
+    assert dict(seen) == REVIEWED_L6_TEST_SEAMS, "a reviewed seam exemption is stale"
+
+
+def test_the_reviewed_seam_exemption_is_exact() -> None:
+    """Negative controls: the exemption names two findings, each once; not a file, a
+    class, a method name or an argument name."""
+
+    probe = (
+        "from typing import Protocol\n"
+        "from psycopg import AsyncConnection\n"
+        "class AppenderProbe(Protocol):\n"
+        "    def wrap(self, conn: AsyncConnection) -> object: ...\n"
+    )
+    upgrade = "class TenantSchemaUpgrade:\n    def __init__(self, *, hooks) -> None: ...\n"
+    # The approved shape passes.
+    assert _unreviewed(UPGRADE_MODULE, probe + upgrade) == []
+    # Another method, another Protocol, another argument name: each fails.
+    extra_method = probe + "    def unwrap(self, conn: AsyncConnection) -> object: ...\n"
+    assert len(_unreviewed(UPGRADE_MODULE, extra_method + upgrade)) == 1
+    other_protocol = (
+        "class OtherProbe(Protocol):\n    def wrap(self, conn: AsyncConnection) -> object: ...\n"
+    )
+    assert len(_unreviewed(UPGRADE_MODULE, probe + other_protocol + upgrade)) == 1
+    renamed = probe.replace("conn:", "connection:")
+    assert len(_unreviewed(UPGRADE_MODULE, renamed + upgrade)) == 1
+    # Another class with a `hooks` constructor parameter in the same file fails.
+    other_class = "class OtherUpgrade:\n    def __init__(self, *, hooks) -> None: ...\n"
+    assert len(_unreviewed(UPGRADE_MODULE, probe + upgrade + other_class)) == 1
+    # A duplicate of an exempt seam fails (exact occurrence count).
+    assert len(_unreviewed(UPGRADE_MODULE, probe + probe + upgrade)) == 1
+    duplicate_init = (
+        "class TenantSchemaUpgrade:\n    def __init__(self, *, hooks, hook) -> None: ...\n"
+    )
+    assert len(_unreviewed(UPGRADE_MODULE, probe + duplicate_init)) == 1
+    # The same shapes in another file fail.
+    assert len(_unreviewed("src/haloflow/m01/provisioning/runner.py", probe + upgrade)) == 2
+
+
+RUNTIME_PATH = "src/haloflow/m01/runtime.py"
+UPGRADE_ENTRY_POINTS = ("compose_tenant_upgrade", "TenantSchemaUpgrade")
+
+
+def _hooks_violations_in(path: str, source: str) -> list[str]:
+    """Production use of the upgrade entry points passes no hooks.
+
+    - no aliasing of either name on import;
+    - no `**` keyword expansion or `*` argument expansion in a call to either;
+    - `compose_tenant_upgrade(...)` passes `hooks` only as the literal None, if at all;
+    - `TenantSchemaUpgrade(...)` is constructed only in runtime.py, inside
+      `compose_tenant_upgrade`, forwarding exactly `hooks=hooks` from that parameter.
+    Limits, stated: calls through `getattr`, `functools.partial`, a variable holding
+    the function, or modules outside src/haloflow are not resolved.
+    """
+
+    violations: list[str] = []
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom | ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[-1] in UPGRADE_ENTRY_POINTS and alias.asname:
+                    violations.append(f"{path}: aliases {alias.name}")
+    enclosing: dict[ast.AST, str] = {}
+    for function in ast.walk(tree):
+        if isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            for inner in ast.walk(function):
+                enclosing.setdefault(inner, function.name)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = ast.unparse(node.func).split(".")[-1]
+        if name not in UPGRADE_ENTRY_POINTS:
+            continue
+        if any(k.arg is None for k in node.keywords) or any(
+            isinstance(a, ast.Starred) for a in node.args
+        ):
+            violations.append(f"{path}: {name} called with argument expansion")
+            continue
+        hooks = [k.value for k in node.keywords if k.arg == "hooks"]
+        if name == "compose_tenant_upgrade":
+            if any(not (isinstance(v, ast.Constant) and v.value is None) for v in hooks):
+                violations.append(f"{path}: compose_tenant_upgrade passes hooks")
+        else:
+            forwards = (
+                path == RUNTIME_PATH
+                and enclosing.get(node) == "compose_tenant_upgrade"
+                and len(hooks) == 1
+                and isinstance(hooks[0], ast.Name)
+                and hooks[0].id == "hooks"
+            )
+            if not forwards:
+                violations.append(f"{path}: TenantSchemaUpgrade constructed outside forwarding")
+    return violations
+
+
+def test_production_code_passes_no_upgrade_hooks() -> None:
+    violations: list[str] = []
+    for path in Path("src/haloflow").rglob("*.py"):
+        violations.extend(_hooks_violations_in(str(path), path.read_text()))
     assert violations == []
+
+
+def test_the_production_hooks_control_fails_when_it_should() -> None:
+    app = "src/haloflow/composition.py"
+    assert _hooks_violations_in(app, "compose_tenant_upgrade(d, registry=r, hooks=h)\n")
+    assert _hooks_violations_in(app, "compose_tenant_upgrade(d, registry=r, **extra)\n")
+    assert _hooks_violations_in(app, "compose_tenant_upgrade(*args)\n")
+    assert _hooks_violations_in(
+        app, "from haloflow.m01.runtime import compose_tenant_upgrade as build\n"
+    )
+    assert _hooks_violations_in(app, "TenantSchemaUpgrade(hooks=None)\n")
+    assert _hooks_violations_in(
+        RUNTIME_PATH,
+        "def compose_tenant_upgrade(d, *, registry, hooks=None):\n"
+        "    return TenantSchemaUpgrade(hooks=other)\n",
+    )
+    assert _hooks_violations_in(app, "compose_tenant_upgrade(d, registry=r)\n") == []
+    assert _hooks_violations_in(app, "compose_tenant_upgrade(d, registry=r, hooks=None)\n") == []
+    assert (
+        _hooks_violations_in(
+            RUNTIME_PATH,
+            "def compose_tenant_upgrade(d, *, registry, hooks=None):\n"
+            "    return TenantSchemaUpgrade(registry=registry, hooks=hooks)\n",
+        )
+        == []
+    )
 
 
 def test_the_module_callback_control_fails_when_it_should() -> None:
@@ -629,9 +841,9 @@ def test_the_module_callback_control_fails_when_it_should() -> None:
     )
     assert _connection_callback_violations_in(path, factory_alias) == []
 
-    # ...and every shipped file passes.
+    # ...and every shipped file passes, apart from the reviewed L-6 seams.
     for shipped in PROVISIONING_ROOT.rglob("*.py"):
-        assert _connection_callback_violations_in(str(shipped), shipped.read_text()) == []
+        assert _unreviewed(str(shipped), shipped.read_text()) == []
 
 
 # --- CP-2: M01 embeds no module execution role name (R-P1.2, R-P1B.1) ------

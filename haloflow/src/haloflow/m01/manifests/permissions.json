@@ -17,7 +17,13 @@
     ]
   },
   "haloflow_migrator": {
-    "allow": ["tenant_schema:checksummed_ddl", "shared.schema_migrations:controlled_write"],
+    "allow": [
+      "tenant_schema:checksummed_ddl",
+      "shared.schema_migrations:controlled_write",
+      "shared.tenant_maintenance_operations:select,update(state)",
+      "shared.tenant_maintenance_withheld:select,insert",
+      "shared.tenant_maintenance_attempts:select,insert"
+    ],
     "deny": [
       "database:login",
       "tenant_schema:business_runtime",
@@ -33,7 +39,11 @@
       "tenant_schema:provision",
       "shared.tenants:controlled_write",
       "shared.tenant_state_history:insert",
-      "shared.schema_migrations:read"
+      "shared.schema_migrations:read",
+      "shared.tenant_maintenance_operations:select,insert,update(state,current_attempt,entry_event_id,resume_event_id,t003_baseline,updated_at,neutralization_generation)",
+      "shared.tenant_maintenance_withheld:select,insert",
+      "shared.tenant_maintenance_attempts:select,insert",
+      "shared.tenant_state_history:select(tenant_id,event_id,new_state,reason_code,execution_id)"
     ],
     "deny": [
       "database:login",

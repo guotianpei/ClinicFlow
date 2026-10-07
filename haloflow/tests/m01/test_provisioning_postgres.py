@@ -59,9 +59,27 @@ SHARED_TABLES = (
     "support_access_grants",
     "access_audit_log",
     "isolation_alerts",
+    # L-6 CP-1 (revision 005 part 1; owner R3 amendment): the three maintenance tables.
+    "tenant_maintenance_operations",
+    "tenant_maintenance_withheld",
+    "tenant_maintenance_attempts",
 )
 TABLE_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
 AUDIT_SEQUENCE = "shared.access_audit_log_audit_id_seq"
+
+# L-6 CP-1 (owner R3 amendment): the P/M manifest tokens of plan v4 §8.2, as constants
+# because the provisioner's operations token is longer than a line.
+L6_OPS_P_TOKEN = (
+    "shared.tenant_maintenance_operations:select,insert,update(state,current_attempt,"
+    "entry_event_id,resume_event_id,t003_baseline,updated_at,neutralization_generation)"
+)
+L6_OPS_M_TOKEN = "shared.tenant_maintenance_operations:select,update(state)"
+L6_WITHHELD_TOKEN = "shared.tenant_maintenance_withheld:select,insert"
+L6_ATTEMPTS_TOKEN = "shared.tenant_maintenance_attempts:select,insert"
+L6_HISTORY_P_TOKEN = (
+    "shared.tenant_state_history:select(tenant_id,event_id,new_state,reason_code,execution_id)"
+)
+RUNTIME_TENANTS_TOKEN = "shared.tenants:select(tenant_id,schema_key,lifecycle_state,schema_version)"
 
 # The manifest's shared-schema tokens, expanded into the concrete table
 # privileges each one authorizes. This mapping is the translation F-3 says has to
@@ -76,7 +94,64 @@ TOKEN_TABLE_GRANTS: dict[str, dict[str, frozenset[str]]] = {
     "shared.schema_migrations:read": {"schema_migrations": frozenset({"SELECT"})},
     "shared.tenant_state_history:insert": {"tenant_state_history": frozenset({"INSERT"})},
     "shared.access_audit_log:insert": {"access_audit_log": frozenset({"INSERT"})},
+    # L-6 CP-1 (owner R3 amendment). Mixed tokens: the table-level part is here;
+    # the column-level part is pinned in TOKEN_COLUMN_GRANTS below. A purely
+    # column-scoped token maps to an empty table-level set, so it is translated
+    # (never silently out of scope) and its columns are checked exactly.
+    L6_OPS_P_TOKEN: {
+        "tenant_maintenance_operations": frozenset({"SELECT", "INSERT"})
+    },
+    L6_OPS_M_TOKEN: {"tenant_maintenance_operations": frozenset({"SELECT"})},
+    L6_WITHHELD_TOKEN: {
+        "tenant_maintenance_withheld": frozenset({"SELECT", "INSERT"})
+    },
+    L6_ATTEMPTS_TOKEN: {
+        "tenant_maintenance_attempts": frozenset({"SELECT", "INSERT"})
+    },
+    L6_HISTORY_P_TOKEN: {
+        "tenant_state_history": frozenset()
+    },
 }
+
+# L-6 CP-1 (owner R3 amendment). Column-level grants each token authorizes, beyond
+# its table-level part. Checked exhaustively by TC-E22c below over every
+# non-owner role, every SHARED_TABLES column and COLUMN_PRIVILEGES; a column grant
+# no token authorizes fails there as loudly as a missing one. The runtime token is
+# also listed here so that check sees it; it stays in NON_SHARED_TABLE_TOKENS for
+# the table-level control, unchanged.
+TOKEN_COLUMN_GRANTS: dict[str, dict[str, dict[str, frozenset[str]]]] = {
+    L6_OPS_P_TOKEN: {
+        "tenant_maintenance_operations": {
+            "UPDATE": frozenset(
+                {
+                    "state",
+                    "current_attempt",
+                    "entry_event_id",
+                    "resume_event_id",
+                    "t003_baseline",
+                    "updated_at",
+                    "neutralization_generation",
+                }
+            )
+        }
+    },
+    L6_OPS_M_TOKEN: {
+        "tenant_maintenance_operations": {"UPDATE": frozenset({"state"})}
+    },
+    L6_HISTORY_P_TOKEN: {
+        "tenant_state_history": {
+            "SELECT": frozenset(
+                {"tenant_id", "event_id", "new_state", "reason_code", "execution_id"}
+            )
+        }
+    },
+    RUNTIME_TENANTS_TOKEN: {
+        "tenants": {
+            "SELECT": frozenset({"tenant_id", "schema_key", "lifecycle_state", "schema_version"})
+        }
+    },
+}
+COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
 
 # Allow tokens that deliberately grant nothing on a shared table, each with the
 # reason it is out of this control's scope. Every allow token in the manifest must
@@ -1271,6 +1346,101 @@ def test_the_grant_control_rejects_an_untranslated_token() -> None:
         {"allow": ["shared.tenants:controlled_write"], "deny": []}
     )
     assert expected["tenants"] == frozenset({"SELECT", "INSERT", "UPDATE"})
+
+
+def _expected_shared_column_grants(
+    policy: dict[str, list[str]], columns: dict[str, list[str]]
+) -> dict[tuple[str, str, str], bool]:
+    """L-6 CP-1 (owner R3 amendment). Column privileges a role's allow tokens authorize.
+
+    A table-level privilege covers every column (PostgreSQL semantics); a column
+    grant from TOKEN_COLUMN_GRANTS covers only its columns. Fails closed like the
+    table translator: a token neither translator knows raises UntranslatedToken.
+    """
+
+    table_level = _expected_shared_table_grants(policy)
+    expected = {
+        (table, column, privilege): privilege in table_level[table]
+        for table in SHARED_TABLES
+        for column in columns[table]
+        for privilege in COLUMN_PRIVILEGES
+    }
+    for token in policy["allow"]:
+        for table, by_privilege in TOKEN_COLUMN_GRANTS.get(token, {}).items():
+            for privilege, granted in by_privilege.items():
+                unknown = granted - set(columns[table])
+                assert not unknown, (token, table, sorted(unknown))
+                for column in granted:
+                    expected[(table, column, privilege)] = True
+    return expected
+
+
+async def test_actual_shared_column_grants_match_the_permissions_manifest(
+    provisioning_harness: ProvisioningHarness,
+) -> None:
+    """TC-E22c (L-6 CP-1, owner R3 amendment). The column-level half of TC-E22.
+
+    Exhaustive over every non-owner role, every SHARED_TABLES column and
+    COLUMN_PRIVILEGES, using has_column_privilege (true for a table-level grant or a
+    grant on that column), so a column grant no token authorizes, or a missing
+    one, fails here.
+    """
+
+    manifest = json.loads((M01_ROOT / "manifests/permissions.json").read_text())
+    checked = {role: policy for role, policy in manifest.items() if role != OWNER_ROLE}
+
+    async with await AsyncConnection.connect(
+        provisioning_harness.admin_conninfo, autocommit=True
+    ) as admin:
+        columns: dict[str, list[str]] = {}
+        for table in SHARED_TABLES:
+            rows = await (
+                await admin.execute(
+                    """
+                    SELECT attname FROM pg_attribute
+                    WHERE attrelid = %s::regclass AND attnum > 0 AND NOT attisdropped
+                    """,
+                    (f"shared.{table}",),
+                )
+            ).fetchall()
+            columns[table] = [name for (name,) in rows]
+        actual: dict[tuple[str, str, str, str], bool] = {}
+        for role in checked:
+            for table in SHARED_TABLES:
+                for column in columns[table]:
+                    for privilege in COLUMN_PRIVILEGES:
+                        row = await (
+                            await admin.execute(
+                                "SELECT has_column_privilege(%s, %s, %s, %s)",
+                                (role, f"shared.{table}", column, privilege),
+                            )
+                        ).fetchone()
+                        actual[(role, table, column, privilege)] = bool(row and row[0])
+
+    expected = {
+        (role, *key): held
+        for role, policy in checked.items()
+        for key, held in _expected_shared_column_grants(policy, columns).items()
+    }
+    assert set(actual) == set(expected)
+    unexpected = {key for key, held in actual.items() if held and not expected[key]}
+    missing = {key for key, held in actual.items() if not held and expected[key]}
+    assert unexpected == set(), (
+        f"column grants the manifest does not authorize: {sorted(unexpected)}"
+    )
+    assert missing == set(), (
+        f"column grants the manifest requires, database lacks: {sorted(missing)}"
+    )
+
+
+def test_the_column_grant_control_rejects_an_untranslated_token() -> None:
+    """TC-E22c negative control: the column translator fails closed too."""
+
+    columns = {table: ["tenant_id"] for table in SHARED_TABLES}
+    with pytest.raises(UntranslatedToken):
+        _expected_shared_column_grants(
+            {"allow": ["shared.tenant_maintenance_attempts:select,insrt"], "deny": []}, columns
+        )
 
 
 # --- CP-4: stage 1, the role-safety preflight against a live catalogue ------
