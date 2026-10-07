@@ -31,6 +31,7 @@ from haloflow.m01.provisioning.codes import PreconditionCode
 from haloflow.m01.provisioning.provisioner import TenantProvisioner
 from haloflow.m01.provisioning.runner import ConnectionFactory, TenantMigrationRunner
 from haloflow.m01.provisioning.units import TenantMigrationRegistry
+from haloflow.m01.provisioning.upgrade import TenantSchemaUpgrade, UpgradeTestHooks
 from haloflow.m01.resolver import ControlStore, TenantResolver
 from haloflow.m01.statements import CompiledCatalog
 
@@ -105,4 +106,35 @@ def compose_tenant_runtime(
         gateway=gateway,
         provisioner=provisioner,
         supported_schema_versions=supported_schema_versions,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class TenantUpgradeDependencies:
+    """Deployment inputs for the L-6 upgrade (architecture v6 r3 §1): the P and M
+    connection factories and T_lock. Creating them is application wiring."""
+
+    provisioner_connect: ConnectionFactory
+    migrator_connect: ConnectionFactory
+    lock_timeout_seconds: float = 30.0
+
+
+def compose_tenant_upgrade(
+    dependencies: TenantUpgradeDependencies,
+    *,
+    registry: TenantMigrationRegistry,
+    hooks: UpgradeTestHooks | None = None,
+) -> TenantSchemaUpgrade:
+    """The only construction site of ``TenantSchemaUpgrade`` (§6a). Opens nothing.
+
+    ``hooks`` are the reviewed L-6 test seams; the production builder (CP-6) passes
+    ``None``.
+    """
+
+    return TenantSchemaUpgrade(
+        provisioner_connect=dependencies.provisioner_connect,
+        migrator_connect=dependencies.migrator_connect,
+        lock_timeout_seconds=dependencies.lock_timeout_seconds,
+        registry=registry,
+        hooks=hooks,
     )
