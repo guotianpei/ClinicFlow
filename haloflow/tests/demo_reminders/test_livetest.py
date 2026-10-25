@@ -19,6 +19,7 @@ nothing here proves the live Notifyre contract. All numbers are fictional
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -519,3 +520,169 @@ async def test_lt4_appointment_is_0900_clinic_time_whatever_the_run_time(
     assert _q(demo_db_url, "SELECT appt_start FROM reminder_records") == [
         (datetime(2026, 10, 28, 13, 0, tzinfo=UTC),)]
     assert "Wednesday, Oct 28 at 9:00 AM" in json.loads(rec.requests[0].content)["Body"]
+
+
+# ── Codex 185431Z P1: the WHOLE CLI operation is inside the bounded drain ─────
+
+
+def _bootstrap(demo_env: dict[str, str]) -> None:
+    from haloflow_demo.ownership import acquire_ownership
+    from haloflow_demo.settings import DemoSettings, validate_demo_database_url
+
+    async def _go() -> None:
+        s = DemoSettings.from_env(demo_env)
+        own = await acquire_ownership(s, validate_demo_database_url(s))
+        await own.close()
+
+    asyncio.run(_go())
+
+
+def _blocked_by(url: str, holder_pid: int, tag: str | None = None) -> bool:
+    rows = _q(url, "SELECT pg_blocking_pids(pid), query FROM pg_stat_activity WHERE datname ="
+                   " current_database() AND wait_event_type = 'Lock'")
+    return any(holder_pid in b and (tag is None or tag in q) for b, q in rows)
+
+
+def _replacement_refused(env: dict[str, str], tmp: Path) -> None:
+    b_wd = tmp / "b"
+    b_wd.mkdir()
+    b = _spawn(env, b_wd, "--mode", "ok")
+    b_out, _ = b.communicate(timeout=30)
+    assert b.returncode == 2 and "refused=process_lock_held" in b_out, b_out
+    assert _lines(b_wd / "calls.jsonl") == []
+
+
+def test_cli_sigterm_during_pre_admission_db_wait_is_bounded_with_no_request(
+    demo_env: dict[str, str], demo_db_url: str, tmp_path: Path
+) -> None:
+    _bootstrap(demo_env)
+    env = _env(demo_env)
+    holder = psycopg.connect(demo_db_url)
+    holder.execute("LOCK TABLE send_quota IN EXCLUSIVE MODE")   # blocks the reservation
+    a = _spawn(env, tmp_path, "--mode", "ok", "--drain-timeout", "1", "--cancel-grace", "1")
+    try:
+        _wait_for(lambda: _blocked_by(demo_db_url, holder.info.backend_pid), a,
+                  "reservation blocked by the test's lock")
+        t0 = time.monotonic()
+        a.send_signal(signal.SIGTERM)
+        _replacement_refused(env, tmp_path)
+        a_out, a_err = a.communicate(timeout=30)
+        elapsed = time.monotonic() - t0
+    finally:
+        holder.rollback()
+        holder.close()
+        if a.poll() is None:
+            a.kill()
+    assert a.returncode == 1, a_err
+    assert elapsed < 15
+    assert "state=INTERRUPTED" in a_out
+    time.sleep(0.5)  # the blocker is gone: nothing may commit late
+    assert _lines(tmp_path / "calls.jsonl") == [], "no request after pre-admission cancel"
+    assert _q(demo_db_url, "SELECT count(*) FROM send_quota") == [(0,)]
+    assert _q(demo_db_url, "SELECT count(*) FROM contact_history") == [(0,)]
+    _assert_clean(a_out + a_err)
+
+
+def test_cli_sigterm_while_outcome_waits_on_match_lock_is_bounded_and_gates(
+    demo_env: dict[str, str], demo_db_url: str, tmp_path: Path
+) -> None:
+    env = _env(demo_env)
+    a = _spawn(env, tmp_path, "--mode", "gated", "--drain-timeout", "1", "--cancel-grace", "1")
+    holder = psycopg.connect(demo_db_url)
+    try:
+        _wait_for(lambda: any(c["phase"] == "request_started"
+                              for c in _lines(tmp_path / "calls.jsonl")), a, "request")
+        holder.execute("SELECT 1 FROM demo_match_lock WHERE id = 1 FOR UPDATE")
+        (tmp_path / "go").touch()                       # the response returns now
+        _wait_for(lambda: _blocked_by(demo_db_url, holder.info.backend_pid, "match:outcome"),
+                  a, "outcome commit blocked on the match lock")
+        a.send_signal(signal.SIGTERM)
+        _replacement_refused(env, tmp_path)
+        a_out, a_err = a.communicate(timeout=30)
+    finally:
+        holder.rollback()
+        holder.close()
+        if a.poll() is None:
+            a.kill()
+    assert a.returncode == 1, a_err
+    assert "state=INTERRUPTED" in a_out
+    time.sleep(0.5)
+    assert [c["phase"] for c in _lines(tmp_path / "calls.jsonl")].count("request_started") == 1
+    assert _q(demo_db_url, "SELECT used FROM send_quota") == [(1,)], "no refund"
+    assert _q(demo_db_url, "SELECT outcome FROM contact_history") == [(None,)], "no late commit"
+    # the possibly-delivered attempt now holds the durable gate
+    c_wd = tmp_path / "c"
+    c_wd.mkdir()
+    c = _spawn(env, c_wd, "--mode", "ok")
+    c_out, _ = c.communicate(timeout=30)
+    assert c.returncode == 2 and "refused=live_test_unresolved" in c_out
+    assert _lines(c_wd / "calls.jsonl") == []
+    _assert_clean(a_out + a_err + c_out)
+
+
+def test_cli_cancellation_ignoring_outer_operation_exits_4_with_no_request(
+    demo_env: dict[str, str], demo_db_url: str, tmp_path: Path
+) -> None:
+    env = _env(demo_env)
+    a = _spawn(env, tmp_path, "--mode", "ok", "--outer-stubborn", "--drain-timeout", "1",
+               "--cancel-grace", "1")
+    try:
+        _wait_for(lambda: any(c["phase"] == "outer_started"
+                              for c in _lines(tmp_path / "calls.jsonl")), a, "outer started")
+        a.send_signal(signal.SIGTERM)
+        _replacement_refused(env, tmp_path)
+        a_out, a_err = a.communicate(timeout=30)
+    finally:
+        if a.poll() is None:
+            a.kill()
+    assert a.returncode == 4, a_err
+    assert "drain=incomplete" in a_out
+    phases = [c["phase"] for c in _lines(tmp_path / "calls.jsonl")]
+    assert "outer_cancel_received" in phases and "request_started" not in phases
+
+
+# ── bounded, sanitized failures after ownership ──────────────────────────────
+
+
+async def test_gate_lookup_failure_is_sanitized_and_sends_nothing(
+    demo_env: dict[str, str], capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import haloflow_demo.livetest as lt
+    from sqlalchemy.exc import DBAPIError
+
+    async def boom(own: Any) -> bool:
+        raise DBAPIError("SELECT secret FROM x WHERE k = %(k)s", {"k": TOKEN},
+                         Exception(f"err {TEST_NUMBER}"))
+
+    monkeypatch.setattr(lt, "_unresolved", boom)
+    rec = Recorder(_ok)
+    with caplog.at_level("DEBUG"):
+        code = await _run(_env(demo_env), rec)
+    out = capsys.readouterr()
+    logs = "\n".join(r.getMessage() + (r.exc_text or "") for r in caplog.records)
+    assert code == 2 and "refused=gate_check_failed" in out.out
+    assert rec.requests == []
+    _assert_clean(out.out + out.err + logs)
+    assert "SELECT" not in out.out + out.err + logs
+
+
+async def test_report_lookup_failure_is_sanitized_with_one_request(
+    demo_env: dict[str, str], capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import haloflow_demo.livetest as lt
+    from sqlalchemy.exc import DBAPIError
+
+    async def boom(own: Any, appt_id: str) -> bool:
+        raise DBAPIError("SELECT provider_message_id WHERE a = %(a)s", {"a": TEST_NUMBER},
+                         Exception(TOKEN))
+
+    monkeypatch.setattr(lt, "_provider_id_present", boom)
+    rec = Recorder(_ok)
+    code = await _run(_env(demo_env), rec)
+    out = capsys.readouterr()
+    assert code == 0 and "state=SUBMITTED" in out.out
+    assert "provider_id_present=unknown" in out.out
+    assert len(rec.requests) == 1, "no repeat request"
+    _assert_clean(out.out + out.err)
