@@ -1401,3 +1401,175 @@ async def test_i23_simulate_reply_action_is_labelled(
     assert _reminders(demo_db_url)["syn-a-2"] == "CONFIRMED"
     inbound = page["inbound"]
     assert any("SIMULATED — correlated by the demo, not by SMS" in str(row) for row in inbound)
+
+
+# ── P-NS: provenance namespaces (Codex ALIGN 20261025T165627Z) ────────────────
+# A send's provenance comes from its gateway's construction: StubGateway gives
+# 'stub', NotifyreGateway gives 'real'. An unknown gateway fails closed. A reply's
+# provenance comes from the callback mode: simulated (demo secret, HTTP or
+# in-process) gives 'stub'. Real ingress needs the real callback gate, which is
+# still refused. A stub-provenance reply never matches real history, so the
+# first real scenario is unique only if real history is empty. MockTransport
+# real sends prove nothing about live sends.
+
+
+def _real_gw(status: int = 200) -> Any:
+    from haloflow_demo.sending import NotifyreGateway
+
+    def _h(req: httpx.Request) -> httpx.Response:
+        if status == 200:
+            return httpx.Response(200, json={"success": True,
+                                             "payload": {"smsMessageID": "n-1"}})
+        return httpx.Response(status)
+
+    return NotifyreGateway(api_key="k", sender=SENDER, test_number=TEST_NUMBER,
+                           transport=httpx.MockTransport(_h))
+
+
+def test_p4_gateway_provenance_comes_from_construction() -> None:
+    assert StubGateway(TEST_NUMBER).provenance == "stub"
+    assert _real_gw().provenance == "real"
+
+
+async def test_p4_unknown_gateway_fails_closed(demo_env: dict[str, str], demo_db_url: str) -> None:
+    from haloflow_demo.sending import SendOutcome
+
+    class Foreign:
+        calls = 0
+
+        async def send(self, to: str, body: str) -> SendOutcome:
+            Foreign.calls += 1
+            return SendOutcome("SUBMITTED", None, "x")
+
+    class Forged(Foreign):
+        provenance = "realish"
+
+    s, own = await _own(_env(demo_env))
+    try:
+        r1 = await send_one(own, s, _appt(1), _patient(1), Foreign(), tenant_id=TENANT,  # type: ignore[arg-type]
+                            now=_clock(NOW))
+        r2 = await send_one(own, s, _appt(2), _patient(2), Forged(), tenant_id=TENANT,  # type: ignore[arg-type]
+                            now=_clock(NOW))
+    finally:
+        await own.close()
+    assert (r1.state, r1.reason) == ("NOT_SENT", "unknown_gateway")
+    assert (r2.state, r2.reason) == ("NOT_SENT", "unknown_gateway")
+    assert Foreign.calls == 0
+    assert _q(demo_db_url, "SELECT count(*) FROM contact_history") == [(0,)]
+    assert _q(demo_db_url, "SELECT count(*) FROM send_quota") == [(0,)]
+
+
+async def test_p1_simulated_reply_matches_only_stub_history(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    try:
+        await _send(own, s, 1)                       # stub A
+        await _send(own, s, 2)                       # stub B
+        await send_one(own, s, _appt(3), _patient(3), _real_gw(), tenant_id=TENANT,
+                       now=_clock(NOW))              # real C (MockTransport)
+        await _reply(own, s, "1", reply_id="rid-1")
+        await _process(own, s, _ehr())
+    finally:
+        await own.close()
+    assert sorted(_q(demo_db_url, "SELECT provenance FROM contact_history")) == [
+        ("real",), ("stub",), ("stub",)]
+    cands = _q(demo_db_url, "SELECT r.emr_appt_id FROM inbound_candidates c JOIN"
+                            " reminder_records r ON r.id = c.reminder_id ORDER BY 1")
+    assert cands == [("syn-a-1",), ("syn-a-2",)]
+    assert _disposition(demo_db_url, "rid-1") == ("PROCESSED", "uncorrelated_reply")
+    assert _reminders(demo_db_url)["syn-a-3"] == "SUBMITTED"
+
+
+async def test_p3_simulated_reply_never_matches_real_history(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), _real_gw(), tenant_id=TENANT,
+                           now=_clock(NOW))
+        await _reply(own, s, "1", reply_id="rid-http")
+        await _reply(own, s, "1", reply_id="rid-sim", correlation=r.reminder_id,
+                     at=REPLY_AT + timedelta(seconds=1))
+        await _process(own, s, _ehr(), at=REPLY_AT + timedelta(seconds=2))
+    finally:
+        await own.close()
+    assert _disposition(demo_db_url, "rid-http") == ("PROCESSED", "no_match")
+    assert _disposition(demo_db_url, "rid-sim") == ("PROCESSED", "no_match")
+    assert _reminders(demo_db_url) == {"syn-a-1": "SUBMITTED"}
+    assert _q(demo_db_url, "SELECT DISTINCT provenance FROM inbound_messages") == [("stub",)]
+
+
+async def test_p2_real_ingress_refused(demo_env: dict[str, str], demo_db_url: str) -> None:
+    from haloflow_demo.settings import StartupRefused, validate_startup
+
+    real = DemoSettings.from_env({**_env(demo_env), "DEMO_CALLBACK_MODE": "real"})
+    with pytest.raises(StartupRefused) as exc:
+        validate_startup(real)
+    assert exc.value.reason == "callback_real_unverified"
+    s, own = await _own(_env(demo_env))
+    raw = _event("rid-r", "1")
+    try:
+        res = await receive(own, real, raw, [_sig(raw, int(REPLY_AT.timestamp()))],
+                            now=_clock(REPLY_AT))
+    finally:
+        await own.close()
+    assert (res.status, res.reason) == (503, "callback_real_unverified")
+    assert _q(demo_db_url, "SELECT count(*) FROM inbound_messages") == [(0,)]
+
+
+async def test_p3_forged_provenance_fields_ignored(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    ts = int(REPLY_AT.timestamp())
+    raw = json.dumps({"Event": "sms_received", "Timestamp": ts, "Provenance": "real",
+                      "Payload": {"ReplyID": "rid-f", "RecipientNumber": SENDER,
+                                  "SenderNumber": TEST_NUMBER, "Message": "1",
+                                  "ReceivedDateUtc": ts, "Provenance": "real"}}).encode()
+    try:
+        await send_one(own, s, _appt(1), _patient(1), _real_gw(), tenant_id=TENANT,
+                       now=_clock(NOW))
+        res = await receive(own, s, raw, [_sig(raw, ts)], now=_clock(REPLY_AT))
+        await _process(own, s, _ehr())
+    finally:
+        await own.close()
+    assert res.status == 204
+    assert _q(demo_db_url, "SELECT provenance FROM inbound_messages") == [("stub",)]
+    assert _disposition(demo_db_url, "rid-f") == ("PROCESSED", "no_match")
+
+
+async def test_p_replay_keeps_original_provenance_and_effects_once(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    try:
+        await _send(own, s, 1)
+        await _reply(own, s, "1", reply_id="rid-1")
+        await _process(own, s, _ehr())
+        again = await _reply(own, s, "1", reply_id="rid-1")
+        await _process(own, s, _ehr())
+    finally:
+        await own.close()
+    assert again.status == 204
+    assert _q(demo_db_url, "SELECT provenance, state FROM inbound_messages") == [
+        ("stub", "PROCESSED")]
+    assert len(_tasks(demo_db_url)) == 1
+
+
+async def test_p_uncertain_real_attempt_counts_in_real_history_and_survives_reset(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.reset import reset_synthetic
+
+    s, own = await _own(_env(demo_env))
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), _real_gw(500), tenant_id=TENANT,
+                           now=_clock(NOW))
+        await _send(own, s, 2)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("UNCERTAIN", "5xx")
+    await reset_synthetic(s)
+    assert sorted(_q(demo_db_url, "SELECT provenance, outcome FROM contact_history")) == [
+        ("real", "UNCERTAIN"), ("stub", "SUBMITTED")]
