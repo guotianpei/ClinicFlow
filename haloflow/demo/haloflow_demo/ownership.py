@@ -133,7 +133,8 @@ class Ownership:
         """
         if self.owner_lost or self._closed:
             raise OwnerLost("owner lost or ownership closed")
-        mode = "FOR UPDATE" if exclusive else "FOR SHARE"
+        # Statement tags identify lock waits in pg_stat_activity (tests, operators).
+        mode = "FOR UPDATE /* fence:exclusive */" if exclusive else "FOR SHARE /* fence */"
         async with self.engine.begin() as conn:
             current = (await conn.execute(
                 text(f"SELECT owner_epoch FROM demo_settings WHERE id = 1 {mode}")

@@ -241,7 +241,8 @@ async def receive(
     digest = hashlib.sha256(raw).hexdigest()
     try:
         async with own.fenced() as conn:
-            await conn.execute(text("SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE"))
+            await conn.execute(text(
+                "SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE /* match:receipt */"))
             if hook is not None:
                 await hook("receipt_locked")
             existing = (await conn.execute(text(
@@ -481,7 +482,8 @@ async def _baseline(own: Ownership, ehr: ReadOnlyEhr, iid: int, seen_attempts: i
 async def _effect(own: Ownership, iid: int, cls: Cls, cands: list[_Cand],
                   hook: ProcessHook | None) -> object:
     async with own.fenced(exclusive=cls is Cls.OPT_OUT) as conn:
-        await conn.execute(text("SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE"))
+        await conn.execute(text(
+            "SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE /* match:effect */"))
         row = (await conn.execute(text(
             "SELECT id, cls, phone_key, attempts, simulated_correlation, received_at,"
             " baseline_reminder_id, baseline_value, baseline_ok"

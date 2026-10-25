@@ -289,7 +289,8 @@ async def _admit_contact(own: Ownership, rid: int, key: str, appt_start: datetim
     """Contact admission (v1r2): membership is ordered by the match lock, and
     ``contact_seq`` is drawn only after it is held."""
     async with own.fenced() as conn:
-        await conn.execute(text("SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE"))
+        await conn.execute(text(
+            "SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE /* match:contact */"))
         if hook is not None:
             await hook("contact_locked")
         seq = (await conn.execute(text("SELECT nextval('match_seq')"))).scalar_one()
@@ -341,6 +342,7 @@ async def _dispatch(
         try:
             row = (await conn.execute(text(
                 "SELECT paused, owner_epoch FROM demo_settings WHERE id = 1 FOR SHARE"
+                " /* dispatch:gate */"
             ))).one()
             if hook is not None:
                 await hook("locked")
@@ -351,7 +353,8 @@ async def _dispatch(
                 return SendOutcome("NOT_SENT", "paused", None)
             key = phone_key(await _phone_secret(conn), to)
             opted = (await conn.execute(
-                text("SELECT 1 FROM opt_outs WHERE phone_key = :k"), {"k": key}
+                text("SELECT 1 FROM opt_outs WHERE phone_key = :k /* dispatch:gate */"),
+                {"k": key},
             )).scalar_one_or_none()
             if opted is not None:
                 return SendOutcome("NOT_SENT", "opted_out", None)
