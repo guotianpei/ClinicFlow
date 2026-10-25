@@ -229,7 +229,8 @@ def build_server_configs(
     import uvicorn
 
     common: dict[str, Any] = {"workers": 1, "reload": False, "lifespan": "off",
-                              "access_log": False, "server_header": False}
+                              "access_log": False, "server_header": False,
+                              "timeout_graceful_shutdown": 5}
     staff_cfg = uvicorn.Config(staff_app, host=s.staff_host, port=s.staff_port, **common)
     cb_cfg = uvicorn.Config(callback_app, host=s.callback_host, port=s.callback_port, **common)
     return staff_cfg, cb_cfg

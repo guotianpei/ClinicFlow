@@ -11,6 +11,12 @@ Acquisition order (P-BOOT), each step recorded in ``events`` when given:
 Release order in :meth:`Ownership.close`: drain → ``db_lock_released`` →
 ``process_lock_released``. The process lock is released last, so no replacement
 can start while this process could still make an external call.
+
+External calls run as tasks owned by this object (:meth:`guard_external`), not
+by the request that started them, so shutdown can wait for them
+(:meth:`drain`). Once :meth:`begin_closing` is called, new external calls are
+refused. If :meth:`drain` cannot confirm every call finished, the caller must
+not release the process lock (the runner exits and the kernel releases it).
 """
 
 from __future__ import annotations
@@ -26,16 +32,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from haloflow_demo.db import ConnectedIdentity, check_identity, make_demo_engine
+from haloflow_demo.errors import OwnerLost
 from haloflow_demo.models import create_demo_tables
 from haloflow_demo.process_lock import ProcessLock
 from haloflow_demo.settings import DemoDbTarget, DemoSettings, StartupRefused
 
+__all__ = ["NullProcessLock", "OwnerLost", "Ownership", "acquire_ownership", "recover"]
+
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-
-
-class OwnerLost(Exception):
-    """This process is no longer the demo owner; no further effects allowed."""
 
 
 class _Lock(Protocol):
@@ -90,6 +95,8 @@ class Ownership:
         self._events = events
         self._watchdog: asyncio.Task[None] | None = None
         self._closed = False
+        self.closing_event = asyncio.Event()
+        self._inflight: set[asyncio.Task[object]] = set()
 
     @property
     def owner_lost(self) -> bool:
@@ -116,11 +123,47 @@ class Ownership:
                 raise OwnerLost("epoch changed")
             yield conn
 
+    @property
+    def closing(self) -> bool:
+        return self.closing_event.is_set()
+
+    def begin_closing(self) -> None:
+        """From now on every new external call is refused."""
+        self.closing_event.set()
+
     async def guard_external(self, call: Callable[[], Awaitable[T]]) -> T:
-        """Run an external call only while ownership is intact."""
-        if self.owner_lost or self._closed:
-            raise OwnerLost("owner lost before external call")
-        return await call()
+        """Run an external call only while ownership is intact and not closing.
+
+        The call runs as a task tracked by this object and shielded from the
+        caller's cancellation, so :meth:`drain` can account for it.
+        """
+        if self.owner_lost or self.closing or self._closed:
+            raise OwnerLost("owner lost or closing before external call")
+
+        async def _run() -> T:
+            return await call()
+
+        task: asyncio.Task[T] = asyncio.get_running_loop().create_task(_run())
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+        return await asyncio.shield(task)
+
+    @property
+    def inflight(self) -> int:
+        return len(self._inflight)
+
+    async def drain(self, timeout: float, cancel_grace: float) -> bool:
+        """Wait for tracked external calls; cancel stragglers. True only if all ended."""
+        pending = set(self._inflight)
+        if not pending:
+            return True
+        _, pending = await asyncio.wait(pending, timeout=timeout)
+        if not pending:
+            return True
+        for task in pending:
+            task.cancel()
+        _, still = await asyncio.wait(pending, timeout=cancel_grace)
+        return not still
 
     # ── watchdog (R-5) ───────────────────────────────────────────────────────
 

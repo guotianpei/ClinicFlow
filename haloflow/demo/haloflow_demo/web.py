@@ -14,17 +14,20 @@ import hashlib
 import hmac
 import html
 import secrets
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from haloflow_demo.errors import OwnerLost
+
 STAFF_BANNER = "Local demonstrator — no authentication; synthetic data only."
 CSRF_COOKIE = "demo_csrf_session"
 CSRF_FIELD = "csrf_token"
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
-ALLOWED_ORIGINS = frozenset({"http://127.0.0.1:8080", "http://localhost:8080"})
+UNAVAILABLE_TEXT = "demo owner unavailable"
 
 
 class StaffService(Protocol):
@@ -94,18 +97,42 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
     )
 
 
-def build_staff_app(service: StaffService, *, csrf_secret: bytes) -> FastAPI:
+def _install_gate(app: FastAPI, unavailable: Callable[[], bool] | None) -> None:
+    """R-5: every request gets 503 once ownership is lost or shutdown began."""
+
+    @app.middleware("http")
+    async def _gate(request: Request, call_next: Any) -> Response:
+        if unavailable is not None and unavailable():
+            return Response(UNAVAILABLE_TEXT, status_code=503)
+        response: Response = await call_next(request)
+        return response
+
+    @app.exception_handler(OwnerLost)
+    async def _owner_lost(request: Request, exc: OwnerLost) -> Response:
+        return Response(UNAVAILABLE_TEXT, status_code=503)
+
+
+def build_staff_app(
+    service: StaffService,
+    *,
+    csrf_secret: bytes,
+    unavailable: Callable[[], bool] | None = None,
+    staff_port: int = 8080,
+) -> FastAPI:
     if len(csrf_secret) < 32:
         raise ValueError("csrf_secret must be at least 32 bytes")
+    allowed_origins = frozenset({f"http://127.0.0.1:{staff_port}", f"http://localhost:{staff_port}"})
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware("http")
     async def _origin_check(request: Request, call_next: Any) -> Response:
         origin = request.headers.get("origin")
-        if origin is not None and origin not in ALLOWED_ORIGINS:
+        if origin is not None and origin not in allowed_origins:
             return Response("forbidden origin", status_code=403)
         response: Response = await call_next(request)
         return response
+
+    _install_gate(app, unavailable)
 
     # added last → runs first, so a bad Host is rejected before anything else
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=ALLOWED_HOSTS)
@@ -168,9 +195,10 @@ def build_staff_app(service: StaffService, *, csrf_secret: bytes) -> FastAPI:
     return app
 
 
-def build_callback_app() -> FastAPI:
+def build_callback_app(*, unavailable: Callable[[], bool] | None = None) -> FastAPI:
     """R-6: one route only. Inbound processing is Day-5 scope; until then 503."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    _install_gate(app, unavailable)
 
     @app.post("/webhooks/sms/inbound")
     async def inbound() -> Response:

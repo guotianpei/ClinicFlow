@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
+import httpx
 import psycopg
 from fastapi.testclient import TestClient
 from haloflow_demo.ownership import acquire_ownership
@@ -107,17 +108,24 @@ async def test_pause_resume_is_fenced_toggle(demo_env: dict[str, str], demo_db_u
         await own.close()
 
 
+def _aclient(app: object) -> httpx.AsyncClient:
+    # Same event loop as the test's database engine (the sync TestClient would
+    # run the app on another loop and break the asyncpg pool).
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app),  # type: ignore[arg-type]
+                             base_url="http://127.0.0.1:8080")
+
+
 async def test_staff_app_over_db_service_end_to_end(demo_env: dict[str, str]) -> None:
     own, svc = await _service(demo_env)
     try:
         app = build_staff_app(svc, csrf_secret=b"k" * 32, unavailable=lambda: own.owner_lost)
-        c = _client(app)
-        page = c.get("/demo/staff")
-        assert page.status_code == 200
-        assert "Synthetic Patient A" in page.text
-        r = c.post("/demo/batch/preview", data={CSRF_FIELD: _token(page.text)})
-        assert r.status_code == 200
-        assert "syn-a-6 — skip: no_phone" in r.text
+        async with _aclient(app) as c:
+            page = await c.get("/demo/staff")
+            assert page.status_code == 200
+            assert "Synthetic Patient A" in page.text
+            r = await c.post("/demo/batch/preview", data={CSRF_FIELD: _token(page.text)})
+            assert r.status_code == 200
+            assert "syn-a-6 — skip: no_phone" in r.text
     finally:
         await own.close()
 
@@ -126,13 +134,13 @@ async def test_owner_lost_makes_staff_app_503(demo_env: dict[str, str], demo_db_
     own, svc = await _service(demo_env)
     try:
         app = build_staff_app(svc, csrf_secret=b"k" * 32, unavailable=lambda: own.owner_lost)
-        c = _client(app)
-        tok = _token(c.get("/demo/staff").text)
-        with psycopg.connect(demo_db_url, autocommit=True) as conn:
-            conn.execute("UPDATE demo_settings SET owner_epoch = owner_epoch + 1")
-        r = c.post("/demo/pause", data={CSRF_FIELD: tok})
-        assert r.status_code == 503  # the fenced write detected the loss
-        assert own.owner_lost is True
-        assert c.get("/demo/staff").status_code == 503
+        async with _aclient(app) as c:
+            tok = _token((await c.get("/demo/staff")).text)
+            with psycopg.connect(demo_db_url, autocommit=True) as conn:
+                conn.execute("UPDATE demo_settings SET owner_epoch = owner_epoch + 1")
+            r = await c.post("/demo/pause", data={CSRF_FIELD: tok})
+            assert r.status_code == 503  # the fenced write detected the loss
+            assert own.owner_lost is True
+            assert (await c.get("/demo/staff")).status_code == 503
     finally:
         await own.close()
