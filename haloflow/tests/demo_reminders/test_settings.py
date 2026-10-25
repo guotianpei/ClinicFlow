@@ -232,3 +232,57 @@ def test_clinic_tz_invalid_refused() -> None:
     with pytest.raises(StartupRefused) as exc:
         validate_startup(_settings(CLINIC_TZ="Mars/Olympus"))
     assert _reason(exc) == "clinic_tz"
+
+
+# ── P-ALIAS (Codex checkpoint-1 finding 2): TCP / socket aliases of the legacy
+# or test database must be refused. Any two local endpoints with the same port
+# and database name are treated as the same database (conservative).
+
+
+@pytest.mark.parametrize(
+    ("demo", "other"),
+    [
+        ("postgresql:///haloflow_x_demo?host=/tmp&port=5433",
+         "postgresql+asyncpg://u@127.0.0.1:5433/haloflow_x_demo"),
+        ("postgresql://u@127.0.0.1:5433/haloflow_x_demo",
+         "postgresql:///haloflow_x_demo?host=/var/run/postgresql&port=5433"),
+        ("postgresql:///haloflow_x_demo",
+         "postgresql://u@localhost:5432/haloflow_x_demo"),
+        ("postgresql://u@[::1]/haloflow_x_demo",
+         "postgresql:///haloflow_x_demo?host=/tmp"),
+    ],
+    ids=["socket-vs-tcp", "tcp-vs-socket", "default-socket-vs-localhost", "ipv6-vs-socket"],
+)
+def test_p_alias_legacy_alias_refused(demo: str, other: str) -> None:
+    with pytest.raises(StartupRefused) as exc:
+        validate_demo_database_url(_settings(DEMO_DATABASE_URL=demo, DATABASE_URL=other))
+    assert _reason(exc) == "demo_db_equals_legacy"
+
+
+def test_p_alias_test_db_alias_refused() -> None:
+    s = _settings(
+        DEMO_DATABASE_URL="postgresql:///haloflow_x_demo?host=/tmp&port=5433",
+        DATABASE_URL="",
+        HALOFLOW_TEST_DATABASE_URL="postgresql://t@127.0.0.1:5433/haloflow_x_demo",
+    )
+    with pytest.raises(StartupRefused) as exc:
+        validate_demo_database_url(s)
+    assert _reason(exc) == "demo_db_equals_test"
+
+
+def test_p_alias_different_port_or_name_is_distinct() -> None:
+    validate_demo_database_url(_settings(
+        DEMO_DATABASE_URL="postgresql:///haloflow_x_demo?host=/tmp&port=5433",
+        DATABASE_URL="postgresql+asyncpg://u@127.0.0.1:5434/haloflow_x_demo",
+    ))
+    validate_demo_database_url(_settings(
+        DEMO_DATABASE_URL="postgresql:///haloflow_x_demo?host=/tmp&port=5433",
+        DATABASE_URL="postgresql+asyncpg://u@127.0.0.1:5433/haloflow_dev",
+    ))
+
+
+def test_p_alias_unparseable_legacy_url_fails_closed() -> None:
+    # If DATABASE_URL cannot be compared, the demo must not assume it differs.
+    with pytest.raises(StartupRefused) as exc:
+        validate_demo_database_url(_settings(DATABASE_URL="postgresql://u@127.0.0.1:notaport/x"))
+    assert _reason(exc) == "demo_db_compare_failed"

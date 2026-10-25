@@ -321,3 +321,92 @@ async def test_t21_claim_is_fenced(demo_env: dict[str, str], demo_db_url: str) -
         assert _q(demo_db_url, "SELECT count(*) FROM reminder_records") == [(0,)]
     finally:
         await own.close()
+
+
+# ── Codex checkpoint-1 lifecycle detail: Ownership itself enforces drain ──────
+
+
+async def test_close_refuses_to_release_while_guarded_work_runs(
+    demo_env: dict[str, str],
+) -> None:
+    from haloflow_demo.ownership import DrainIncomplete
+
+    own = await _own(demo_env)
+    release = asyncio.Event()
+
+    async def _blocked() -> str:
+        await release.wait()
+        return "ok"
+
+    call = asyncio.get_running_loop().create_task(own.guard_external(_blocked))
+    await asyncio.sleep(0.05)
+    assert own.inflight == 1
+    with pytest.raises(DrainIncomplete):
+        await own.close(drain_timeout=0.2, cancel_grace=0.0, cancel=False)
+    # the locks are still held: a second owner is refused by the process lock
+    with pytest.raises(StartupRefused) as exc:
+        await _own(demo_env)
+    assert exc.value.reason == "process_lock_held"
+    release.set()
+    assert await call == "ok"
+    await own.close()
+    own2 = await _own(demo_env)
+    await own2.close()
+
+
+async def test_fenced_refused_after_close(demo_env: dict[str, str]) -> None:
+    own = await _own(demo_env)
+    await own.close()
+    with pytest.raises(OwnerLost):
+        async with own.fenced():
+            pass
+
+
+async def test_fenced_still_allowed_while_closing_for_outcome_records(
+    demo_env: dict[str, str],
+) -> None:
+    own = await _own(demo_env)
+    try:
+        own.begin_closing()
+        async with own.fenced():
+            pass  # an in-flight call may still record its outcome during drain
+    finally:
+        await own.close()
+
+
+# ── lock file kind and unknown holders (Codex direction alignment, R2) ─────────
+
+
+def test_r2_non_regular_lock_file_refused(tmp_path: Path) -> None:
+    d = tmp_path / "locks"
+    d.mkdir(mode=0o700)
+    os.mkfifo(d / "fifo.lock")
+    with pytest.raises(StartupRefused) as exc:
+        ProcessLock(d / "fifo.lock").acquire()
+    assert exc.value.reason == "process_lock_unavailable"
+
+
+def test_r2_unknown_external_holder_is_refused_not_killed() -> None:
+    import subprocess
+    import sys
+
+    holder = subprocess.Popen(
+        [sys.executable, "-c",
+         "import fcntl, os, sys, time\n"
+         f"os.makedirs({str(LOCK_PATH.parent)!r}, mode=0o700, exist_ok=True)\n"
+         f"fd = os.open({str(LOCK_PATH)!r}, os.O_RDWR | os.O_CREAT, 0o600)\n"
+         "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+         "print('held', flush=True)\n"
+         "time.sleep(30)\n"],
+        stdout=subprocess.PIPE, text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "held"
+        with pytest.raises(StartupRefused) as exc:
+            ProcessLock().acquire()
+        assert exc.value.reason == "process_lock_held"
+        assert holder.poll() is None, "the demo must never kill an unknown holder"
+    finally:
+        holder.kill()
+        holder.wait(timeout=10)
