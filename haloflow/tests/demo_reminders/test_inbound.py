@@ -954,7 +954,9 @@ async def test_i18_baseline_read_failures_are_bounded(
         a2 = _q(demo_db_url, "SELECT state, attempts FROM inbound_messages")
         assert _reminders(demo_db_url) == {"syn-a-1": "SUBMITTED"}
         await _process(own, s, ehr)
-        task_id = _q(demo_db_url, "SELECT id FROM writeback_tasks")[0][0]
+        tasks_now = _q(demo_db_url, "SELECT id FROM writeback_tasks")
+        assert len(tasks_now) == 1, "bounded: the third failure applies the confirm"
+        task_id = tasks_now[0][0]
         result = await run_task(own, ehr, task_id)
     finally:
         await own.close()
