@@ -508,3 +508,14 @@ def test_cli_interrupt_during_send_is_bounded_and_keeps_locks_while_a_call_can_r
     _assert_clean(a_out + a_err + b_out)
     if expected_exit == 4:
         assert "drain=incomplete" in a_out
+
+
+async def test_lt4_appointment_is_0900_clinic_time_whatever_the_run_time(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    # a 16:00 EDT run still targets 09:00 clinic time on the target date
+    rec = Recorder(_ok)
+    assert await _run(_env(demo_env), rec, now=datetime(2026, 10, 26, 20, 0, tzinfo=UTC)) == 0
+    assert _q(demo_db_url, "SELECT appt_start FROM reminder_records") == [
+        (datetime(2026, 10, 28, 13, 0, tzinfo=UTC),)]
+    assert "Wednesday, Oct 28 at 9:00 AM" in json.loads(rec.requests[0].content)["Body"]
