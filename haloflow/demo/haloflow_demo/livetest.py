@@ -30,9 +30,12 @@ Lifecycle (Codex 185431Z): after ownership, the whole operation (gate, claim,
 reservation, contact admission, request, outcome commit, report lookup) runs
 as ONE task tracked by the ownership drain, and signals are handled from that
 point. On SIGTERM or SIGINT, closing begins and the bounded drain waits, then
-cancels. If anything ignores cancellation, the exit code is 4 and the locks are
-not released explicitly (the kernel releases them when the process exits).
-There is never an unbounded wait after the drain.
+cancels. If the operation ignores cancellation, the exit code is 4 and the locks
+are not released explicitly (the kernel releases them when the process exits).
+Cleanup (``own.close``) is hard-bounded by a deadline plus a cancellation grace
+and is never joined beyond them. If cleanup survives, the exit code is 4. The
+operation has ended by then, but cleanup may have released part of the
+ownership before it stalled. There is never an unbounded wait after the drain.
 
 Gate and operator policy are separate:
 - the durable ``live_test_unresolved`` gate blocks after any attempt that may
@@ -191,23 +194,30 @@ async def live_sms_test(
         if not op.done():
             own.begin_closing()
         drained = await own.drain(drain_timeout, cancel_grace)
+        if not drained:
+            _say(drain="incomplete")
+            return EXIT_DRAIN_INCOMPLETE  # no lock release: the process must exit now
+
+        # The drain confirmed the operation ended: reading it cannot block.
+        outcome = _Outcome()
+        if op.done() and not op.cancelled() and op.exception() is None:
+            outcome = op.result()
+        # Hard-bounded cleanup: an explicit task with a deadline, then a bounded
+        # cancellation grace. It is never joined beyond that. If cleanup
+        # survives, exit 4 now. The operation has already ended, but cleanup
+        # may have released part of the ownership before it stalled.
+        closer = loop.create_task(own.close())
+        done, _ = await asyncio.wait({closer}, timeout=drain_timeout)
+        if not done:
+            closer.cancel()
+            done, _ = await asyncio.wait({closer}, timeout=cancel_grace)
+        if not done or closer.cancelled() or closer.exception() is not None:
+            _say(drain="incomplete")
+            return EXIT_DRAIN_INCOMPLETE
     finally:
         stopper.cancel()
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.remove_signal_handler(sig)
-    if not drained:
-        _say(drain="incomplete")
-        return EXIT_DRAIN_INCOMPLETE  # no lock release: the process must exit now
-
-    # The drain confirmed the operation ended: reading it cannot block.
-    outcome = _Outcome()
-    if op.done() and not op.cancelled() and op.exception() is None:
-        outcome = op.result()
-    try:
-        await asyncio.wait_for(own.close(), timeout=drain_timeout)
-    except Exception:
-        _say(drain="incomplete")
-        return EXIT_DRAIN_INCOMPLETE
     if outcome.refused is not None:
         _say(refused=outcome.refused)
         return EXIT_REFUSED
