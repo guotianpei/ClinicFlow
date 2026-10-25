@@ -65,6 +65,22 @@ async def _finish(own: Ownership, row: Any, result: WritebackResult) -> str:
     return result.outcome.value
 
 
+async def _scenario_unavailable(own: Ownership, ehr: object, row: Any) -> bool:
+    """True (and a staff item) when the EHR cannot serve this exact appointment:
+    nothing is admitted, read or written."""
+    knows = getattr(ehr, "knows", None)
+    if knows is None or knows(str(row.emr_appt_id)):
+        return False
+    async with own.fenced() as conn:
+        await conn.execute(text(
+            "INSERT INTO follow_up_items(source_key, kind, reminder_id, detail)"
+            " VALUES (:s, 'writeback_scenario_unavailable', :r, :d)"
+            " ON CONFLICT ON CONSTRAINT uq_follow_up_source_kind DO NOTHING"
+        ), {"s": f"task:{row.id}", "r": row.reminder_id,
+            "d": INSTRUCTIONS["writeback_scenario_unavailable"]})
+    return True
+
+
 async def run_task(own: Ownership, ehr: ConditionalEhr, task_id: int, *,
                    mode: Literal["simulated", "real"] = "simulated") -> str:
     row = await _load(own, task_id)
@@ -72,6 +88,8 @@ async def run_task(own: Ownership, ehr: ConditionalEhr, task_id: int, *,
         return "already_running"
     if row.state not in ("PENDING", "NOT_APPLIED"):
         raise ValueError(f"write-back not allowed from state {row.state}")
+    if await _scenario_unavailable(own, ehr, row):
+        return "scenario_unavailable"
     async with own.fenced() as conn:
         admitted = (await conn.execute(text(
             "UPDATE writeback_tasks SET state = 'IN_FLIGHT', attempts = attempts + 1,"
@@ -97,6 +115,8 @@ async def reconcile_task(own: Ownership, ehr: ConditionalEhr, task_id: int) -> s
     row = await _load(own, task_id)
     if row.state != "UNCERTAIN":
         raise ValueError(f"reconcile not allowed from state {row.state}")
+    if await _scenario_unavailable(own, ehr, row):
+        return "scenario_unavailable"
     task = WritebackTask(task_id=int(row.id), emr_appt_id=str(row.emr_appt_id),
                          target_value=str(row.target_value),
                          observed_before=row.observed_before, state=str(row.state))

@@ -53,7 +53,7 @@ from haloflow_demo.errors import OwnerLost
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.reminders import claim_reminder
 from haloflow_demo.selection import Eligible
-from haloflow_demo.settings import DemoSettings
+from haloflow_demo.settings import DemoSettings, normalize_us_phone
 from haloflow_demo.strict_json import StrictJsonError, ci_get, loads_strict
 from haloflow_demo.synthetic_ehr import SyntheticAppointment, SyntheticPatient
 
@@ -97,7 +97,7 @@ def classify_exception(exc: BaseException) -> SendOutcome:
     return SendOutcome("UNCERTAIN", "transport", None)
 
 
-def _decode_2xx(resp: httpx.Response) -> SendOutcome:
+def _decode_2xx(resp: httpx.Response, recipient: str | None) -> SendOutcome:
     """N2: Success must be boolean true; SmsMessageID a non-empty string; an
     InvalidToNumbers listing our recipient is REJECTED(invalid_to). Duplicate or
     conflicting keys, or a malformed InvalidToNumbers, are malformed_2xx. Last
@@ -118,7 +118,12 @@ def _decode_2xx(resp: httpx.Response) -> SendOutcome:
         ):
             return SendOutcome("UNCERTAIN", "malformed_2xx", None)
         if invalid:
-            return SendOutcome("REJECTED", "invalid_to", None)
+            # Certain rejection only if every listed number IS our one intended
+            # recipient. Anything unrelated or unparseable is contradictory.
+            listed = {normalize_us_phone(ci_get(i, "Number")) for i in invalid}
+            if recipient is not None and listed == {recipient}:
+                return SendOutcome("REJECTED", "invalid_to", None)
+            return SendOutcome("UNCERTAIN", "unexpected_invalid_to", None)
     if ci_get(data, "Success") is not True or not isinstance(payload, dict):
         return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
     msg_id = ci_get(payload, "SmsMessageID")
@@ -127,10 +132,11 @@ def _decode_2xx(resp: httpx.Response) -> SendOutcome:
     return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
 
 
-def classify_response(resp: httpx.Response) -> SendOutcome:
+def classify_response(resp: httpx.Response, recipient: str | None = None) -> SendOutcome:
+    """``recipient``: the normalised number this request was sent to."""
     code = resp.status_code
     if 200 <= code < 300:
-        return _decode_2xx(resp)
+        return _decode_2xx(resp, recipient)
     if 300 <= code < 400:
         return SendOutcome("UNCERTAIN", "3xx", None)
     if 400 <= code < 500:
@@ -218,7 +224,7 @@ class NotifyreGateway:
             resp = await self.client.post("/sms/send", json=payload)
         except Exception as exc:
             return classify_exception(exc)
-        return classify_response(resp)
+        return classify_response(resp, recipient=to)
 
 
 # ── phone identity (opt-out) ──────────────────────────────────────────────────
@@ -272,8 +278,12 @@ def _clinic_day(now: datetime, tz: str) -> date:
 
 async def _mark(own: Ownership, rid: int, state: str, reason: str | None,
                 provider_id: str | None = None) -> None:
-    """Commit the outcome on the reminder and on its contact-history row together."""
+    """Commit the outcome on the reminder and on its contact-history row together,
+    under the match lock (established order: fence, then match lock), because
+    the outcome changes candidate membership and status."""
     async with own.fenced() as conn:
+        await conn.execute(text(
+            "SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE /* match:outcome */"))
         await conn.execute(text(
             "UPDATE reminder_records SET state = :s, reason = :r, provider_message_id = :p,"
             " updated_at = now() WHERE id = :id AND state = 'CLAIMED'"

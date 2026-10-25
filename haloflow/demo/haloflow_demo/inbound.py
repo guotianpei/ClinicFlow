@@ -116,6 +116,8 @@ INSTRUCTIONS = {
     "replay_conflict": "A reply event was re-sent with different content. Nothing was changed.",
     "writeback_conflict": "The EHR value changed after the reply. Nothing was written. "
                           "Check the appointment.",
+    "writeback_scenario_unavailable": "This confirmation belongs to an earlier demo run. "
+                                      "Nothing was written. Update the EHR manually.",
 }
 
 

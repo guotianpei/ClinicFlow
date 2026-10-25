@@ -57,20 +57,40 @@ def _utcnow() -> datetime:
     return datetime.now(tz=UTC)
 
 
+class ScenarioUnavailable(LookupError):
+    """The appointment belongs to no synthetic scenario in this process (another
+    owner epoch, i.e. before a restart, or a date never loaded). Fail closed."""
+
+
 class _EhrRouter:
-    """Routes calls to the synthetic EHR that holds the appointment."""
+    """Routes a call to the synthetic EHR that created the appointment.
+
+    Appointment IDs are qualified by owner epoch and clinic date, so they are
+    unique. The index maps each exact ID to its one EHR instance, and nothing is
+    reconstructed from an ID: a task from an earlier process cannot reach
+    regenerated fixtures.
+    """
 
     supports_conditional_write = True
     conditional_contract_verified = False  # synthetic: proves nothing about a real EHR
 
-    def __init__(self, ehrs: dict[date, SyntheticEhr]) -> None:
-        self._ehrs = ehrs
+    def __init__(self) -> None:
+        self._index: dict[str, SyntheticEhr] = {}
+
+    def register(self, ehr: SyntheticEhr) -> None:
+        for a in ehr.fixtures.appointments:
+            if a.emr_appt_id in self._index and self._index[a.emr_appt_id] is not ehr:
+                raise RuntimeError("duplicate synthetic appointment id")
+            self._index[a.emr_appt_id] = ehr
+
+    def knows(self, appt_id: str) -> bool:
+        return appt_id in self._index
 
     def _find(self, appt_id: str) -> SyntheticEhr:
-        for ehr in self._ehrs.values():
-            if any(a.emr_appt_id == appt_id for a in ehr.fixtures.appointments):
-                return ehr
-        raise LookupError("appointment not in the synthetic EHR")
+        ehr = self._index.get(appt_id)
+        if ehr is None:
+            raise ScenarioUnavailable("appointment not in this process's synthetic scenario")
+        return ehr
 
     async def read_confirmation(self, appt_id: str) -> Observation:
         return await self._find(appt_id).read_confirmation(appt_id)
@@ -96,7 +116,7 @@ class DbStaffService:
         self._now = now
         self._gateway: SmsGateway = gateway or StubGateway(settings.sms_test_number)
         self._ehr: dict[date, SyntheticEhr] = {}
-        self.ehr = _EhrRouter(self._ehr)
+        self.ehr = _EhrRouter()
 
     def _target(self) -> date:
         return clinic_target_date(self._now(), self._settings.clinic_tz,
@@ -104,7 +124,14 @@ class DbStaffService:
 
     def _ehr_for(self, target: date) -> SyntheticEhr:
         if target not in self._ehr:
-            self._ehr[target] = SyntheticEhr(default_fixtures(target, self._settings.clinic_tz))
+            scenario = f"e{self._own.epoch}-{target:%Y%m%d}"
+            ehr = SyntheticEhr(default_fixtures(target, self._settings.clinic_tz, scenario))
+            self.ehr.register(ehr)
+            self._ehr[target] = ehr
+        return self._ehr[target]
+
+    def ehr_for_date(self, target: date) -> SyntheticEhr:
+        """The synthetic EHR this process created for ``target`` (tests, inspection)."""
         return self._ehr[target]
 
     async def _reminders(self) -> dict[str, tuple[int, str]]:

@@ -66,13 +66,19 @@ class EhrResponseLost(Exception):
     """The request may have been applied; the response was lost."""
 
 
-def default_fixtures(anchor: date, tz: str = "America/New_York") -> Fixtures:
+def default_fixtures(anchor: date, tz: str = "America/New_York",
+                     scenario: str | None = None) -> Fixtures:
     """Deterministic fixtures for one clinic day.
 
     Cases: plain single appointment (A); shared phone alias (B and C share "shared");
     one patient with two open appointments (D); no phone (E); cancelled (F).
+
+    ``scenario`` qualifies the appointment IDs (``syn-<scenario>-a-N``) so that
+    IDs are unique across dates and owner epochs. The staff service passes
+    ``e<epoch>-<yyyymmdd>`` (Codex 175423Z, P1).
     """
     zone = ZoneInfo(tz)
+    pre = "syn-a-" if scenario is None else f"syn-{scenario}-a-"
 
     def at(h: int, m: int = 0) -> datetime:
         return datetime.combine(anchor, time(h, m), tzinfo=zone).astimezone(UTC)
@@ -86,13 +92,13 @@ def default_fixtures(anchor: date, tz: str = "America/New_York") -> Fixtures:
         "syn-p-f": SyntheticPatient("syn-p-f", "Synthetic Patient F", "foxtrot"),
     }
     appointments = [
-        SyntheticAppointment("syn-a-1", "syn-p-a", at(9), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-2", "syn-p-b", at(9, 30), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-3", "syn-p-c", at(10), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-4", "syn-p-d", at(10, 30), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-5", "syn-p-d", at(15), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-6", "syn-p-e", at(11), ApptStatus.SCHEDULED, "1"),
-        SyntheticAppointment("syn-a-7", "syn-p-f", at(11, 30), ApptStatus.CANCELLED, "1"),
+        SyntheticAppointment(pre + "1", "syn-p-a", at(9), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "2", "syn-p-b", at(9, 30), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "3", "syn-p-c", at(10), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "4", "syn-p-d", at(10, 30), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "5", "syn-p-d", at(15), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "6", "syn-p-e", at(11), ApptStatus.SCHEDULED, "1"),
+        SyntheticAppointment(pre + "7", "syn-p-f", at(11, 30), ApptStatus.CANCELLED, "1"),
     ]
     return Fixtures(patients=patients, appointments=appointments)
 
