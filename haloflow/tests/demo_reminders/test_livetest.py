@@ -686,3 +686,31 @@ async def test_report_lookup_failure_is_sanitized_with_one_request(
     assert "provider_id_present=unknown" in out.out
     assert len(rec.requests) == 1, "no repeat request"
     _assert_clean(out.out + out.err)
+
+
+# ── Codex 191526Z P2: final cleanup is hard-bounded ───────────────────────────
+
+
+def test_cli_cancellation_ignoring_cleanup_is_hard_bounded_exit_4(
+    demo_env: dict[str, str], demo_db_url: str, tmp_path: Path
+) -> None:
+    env = _env(demo_env)
+    a = _spawn(env, tmp_path, "--mode", "ok", "--stubborn-close", "--drain-timeout", "1",
+               "--cancel-grace", "1")
+    try:
+        _wait_for(lambda: any(c["phase"] == "close_started"
+                              for c in _lines(tmp_path / "calls.jsonl")), a, "close started")
+        t0 = time.monotonic()
+        _replacement_refused(env, tmp_path)          # locks still held while A is alive
+        a_out, a_err = a.communicate(timeout=30)
+        elapsed = time.monotonic() - t0
+    finally:
+        if a.poll() is None:
+            a.kill()
+    assert a.returncode == 4, a_err
+    assert "drain=incomplete" in a_out
+    assert elapsed < 15, elapsed
+    phases = [c["phase"] for c in _lines(tmp_path / "calls.jsonl")]
+    assert phases.count("request_started") == 1, "no extra send"
+    assert "close_cancel_received" in phases
+    _assert_clean(a_out + a_err)
