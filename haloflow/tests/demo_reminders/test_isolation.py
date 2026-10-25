@@ -42,7 +42,12 @@ class _NoSocket(Exception):
 def _refuse(*a, **k):
     raise _NoSocket("socket creation attempted")
 
-socket.socket = _refuse            # type: ignore[assignment,misc]
+class _GuardSocket(socket.socket):
+    # A subclass, not a function: ssl subclasses socket.socket at import.
+    def __init__(self, *a, **k):
+        raise _NoSocket("socket creation attempted")
+
+socket.socket = _GuardSocket       # type: ignore[assignment,misc]
 socket.create_connection = _refuse # type: ignore[assignment]
 socket.getaddrinfo = _refuse       # type: ignore[assignment]
 
