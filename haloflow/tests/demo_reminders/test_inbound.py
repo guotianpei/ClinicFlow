@@ -1701,3 +1701,54 @@ async def test_replay_same_reply_id_cannot_switch_correlation(
         assert _disposition(demo_db_url, "rid-x") == ("PROCESSED", "uncorrelated_reply")
         assert _reminders(demo_db_url) == {"syn-a-1": "SUBMITTED", "syn-a-2": "SUBMITTED"}
         assert _tasks(demo_db_url) == []
+
+
+# ── Codex implementation review 20261025T172354Z: reset path, log redaction ───
+
+
+async def test_reset_refuses_older_schema_as_upgrade_unavailable(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.reset import reset_synthetic
+    from haloflow_demo.settings import StartupRefused
+
+    s, own = await _own(_env(demo_env))
+    await own.close()
+    _q(demo_db_url, "UPDATE demo_meta SET value = '2' WHERE key = 'schema_version'")
+    with pytest.raises(StartupRefused) as exc:
+        await reset_synthetic(s)
+    assert exc.value.reason == "demo_schema_upgrade_unavailable"
+
+
+def test_demo_engine_hides_sql_parameters(demo_env: dict[str, str]) -> None:
+    from haloflow_demo.db import make_demo_engine
+
+    engine = make_demo_engine(validate_demo_database_url(DemoSettings.from_env(demo_env)))
+    assert engine.sync_engine.hide_parameters is True
+
+
+async def test_dispatcher_failure_log_has_no_sql_or_parameters(
+    demo_env: dict[str, str], caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from haloflow_demo.service import DbStaffService
+    from sqlalchemy.exc import DBAPIError
+
+    s, own = await _own(_env(demo_env))
+    svc = DbStaffService(own, s, now=_clock(REPLY_AT))
+    marker = "rid-PARAM-MARKER"
+
+    async def failing() -> Any:
+        own.begin_closing()  # one iteration only
+        raise DBAPIError("SELECT secret FROM t WHERE x = %(p)s", {"p": marker},
+                         Exception(f"boom {marker}"))
+
+    monkeypatch.setattr(svc, "process_now", failing)
+    try:
+        with caplog.at_level("DEBUG"):
+            await asyncio.wait_for(svc.dispatcher_loop(interval=0.01), timeout=5)
+    finally:
+        await own.close()
+    logged = "\n".join(r.getMessage() + (r.exc_text or "") for r in caplog.records)
+    assert "dispatcher iteration failed" in logged
+    assert marker not in logged and "SELECT" not in logged
+    assert not any(r.exc_info for r in caplog.records if r.name == "haloflow_demo.service")

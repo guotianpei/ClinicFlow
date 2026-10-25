@@ -19,6 +19,17 @@ L3 drain cannot finish (call ignores cancellation): exit 4; no explicit lock
    release; replacement refused until A is dead, accepted after.
 T02 configured start-up with pending CLAIMED / IN_FLIGHT rows: recovery runs,
    the only outbound connections are to the demo database, 0 calls.
+
+Day 5 (Codex 20261025T172354Z, P1 shutdown lifecycle). The reply dispatcher is
+inside the bounded drain:
+L4 SIGTERM while the dispatcher's baseline EHR read is suspended: listeners
+   stop; a replacement is refused while A drains; the drain timeout cancels the
+   read; bounded exit 0; no effect committed.
+L5 SIGTERM while the dispatcher's effect transaction waits on a targeted DB
+   lock (the match lock held by the test): bounded exit; no effect committed,
+   even after the test releases its lock.
+L6 the baseline read ignores cancellation: exit 4, no explicit lock release,
+   replacement refused until A is dead; no effect committed.
 """
 
 from __future__ import annotations
@@ -304,3 +315,116 @@ def test_t02_configured_startup_recovers_and_contacts_only_the_demo_db(
     assert all(f"'127.0.0.1', {db_port}" in a for a in addresses), addresses
     assert _lines(wd / "calls.jsonl") == []
     _evidence("t02", wd, {"a_exit": a.returncode, "states": states, "writeback": wb})
+
+
+# ── Day 5: the reply dispatcher is inside the bounded drain ───────────────────
+
+
+@pytest.fixture
+def dispatch_env(run_env: dict[str, str]) -> dict[str, str]:
+    return {**run_env, "DEMO_DISPATCHER": "on", "DEMO_SMS_TEST_NUMBER": "+15550100199",
+            "DEMO_SMS_SENDER": "+15550100100",
+            "DEMO_CALLBACK_SECRET": "lifecycle-test-secret-0123456789"}
+
+
+def _phases(wd: Path) -> list[str]:
+    return [str(c["phase"]) for c in _lines(wd / "calls.jsonl")]
+
+
+def _no_effect(url: str) -> None:
+    with psycopg.connect(url, autocommit=True) as conn:
+        assert conn.execute("SELECT state FROM inbound_messages").fetchall() == [("RECEIVED",)]
+        assert conn.execute("SELECT state FROM reminder_records").fetchall() == [("SUBMITTED",)]
+        assert conn.execute("SELECT count(*) FROM writeback_tasks").fetchone() == (0,)
+
+
+def test_l4_shutdown_during_suspended_baseline_read_is_bounded(
+    dispatch_env: dict[str, str], demo_db_url: str, tmp_path: Path, children: Children
+) -> None:
+    wd = tmp_path / "l4"
+    wd.mkdir()
+    a = children.start(RUNNER, dispatch_env, "--workdir", str(wd), "--seed-reply",
+                       "--ehr-read", "block", "--drain-timeout", "2", "--cancel-grace", "2")
+    _wait(lambda: "ehr_read_started" in _phases(wd), a, "baseline read started")
+    t0 = time.monotonic()
+    a.send_signal(signal.SIGTERM)
+    _wait(lambda: "listeners_stopped" in _events(wd), a, "listeners_stopped")
+    b_code, b_info = _replacement(children, dispatch_env, wd)
+    assert b_code == 2 and b_info.get("reason") == "process_lock_held", b_info
+    _, a_err = a.communicate(timeout=TIMEOUT)
+    elapsed = time.monotonic() - t0
+    assert a.returncode == 0, a_err
+    assert elapsed < 15, elapsed
+    events = _events(wd)
+    _assert_order(events, ORDER)
+    assert "ehr_read_cancel_received" in _phases(wd)
+    assert "ehr_read_finished" not in _phases(wd)
+    _no_effect(demo_db_url)
+    _evidence("l4", wd, {"a_exit": a.returncode, "elapsed_s": elapsed, "b_refused": b_info})
+
+
+def _wait_blocked_by(url: str, waiter_tag: str, holder_pid: int,
+                     proc: subprocess.Popen[str]) -> None:
+    def blocked() -> bool:
+        with psycopg.connect(url, autocommit=True) as conn:
+            rows = conn.execute(
+                "SELECT pg_blocking_pids(pid) FROM pg_stat_activity WHERE datname ="
+                " current_database() AND wait_event_type = 'Lock' AND position(%s in query) > 0",
+                (waiter_tag,)).fetchall()
+        return any(holder_pid in r[0] for r in rows)
+    _wait(blocked, proc, f"{waiter_tag} blocked by {holder_pid}")
+
+
+def test_l5_shutdown_while_effect_waits_on_db_lock_is_bounded(
+    dispatch_env: dict[str, str], demo_db_url: str, tmp_path: Path, children: Children
+) -> None:
+    wd = tmp_path / "l5"
+    wd.mkdir()
+    a = children.start(RUNNER, dispatch_env, "--workdir", str(wd), "--seed-reply",
+                       "--ehr-read", "ok", "--drain-timeout", "2", "--cancel-grace", "2")
+    _wait(lambda: "seeded" in _phases(wd), a, "seeded")
+    holder = psycopg.connect(demo_db_url)
+    try:
+        holder.execute("SELECT 1 FROM demo_match_lock WHERE id = 1 FOR UPDATE")
+        _wait_blocked_by(demo_db_url, "match:effect", holder.info.backend_pid, a)
+        t0 = time.monotonic()
+        a.send_signal(signal.SIGTERM)
+        _wait(lambda: "listeners_stopped" in _events(wd), a, "listeners_stopped")
+        b_code, b_info = _replacement(children, dispatch_env, wd)
+        assert b_code == 2 and b_info.get("reason") == "process_lock_held", b_info
+        _, a_err = a.communicate(timeout=TIMEOUT)
+        elapsed = time.monotonic() - t0
+    finally:
+        holder.rollback()
+        holder.close()
+    assert a.returncode == 0, a_err
+    assert elapsed < 15, elapsed
+    _assert_order(_events(wd), ORDER)
+    time.sleep(0.5)  # after the test's lock is gone, nothing may commit late
+    _no_effect(demo_db_url)
+    _evidence("l5", wd, {"a_exit": a.returncode, "elapsed_s": elapsed, "b_refused": b_info})
+
+
+def test_l6_cancellation_ignoring_baseline_read_exits_4_without_release(
+    dispatch_env: dict[str, str], demo_db_url: str, tmp_path: Path, children: Children
+) -> None:
+    wd = tmp_path / "l6"
+    wd.mkdir()
+    a = children.start(RUNNER, dispatch_env, "--workdir", str(wd), "--seed-reply",
+                       "--ehr-read", "stubborn", "--drain-timeout", "2", "--cancel-grace", "2")
+    _wait(lambda: "ehr_read_started" in _phases(wd), a, "baseline read started")
+    a.send_signal(signal.SIGTERM)
+    _wait(lambda: "listeners_stopped" in _events(wd), a, "listeners_stopped")
+    b_code, b_info = _replacement(children, dispatch_env, wd)
+    assert b_code == 2 and b_info.get("reason") == "process_lock_held", b_info
+    _, a_err = a.communicate(timeout=TIMEOUT)
+    assert a.returncode == 4, a_err
+    events = _events(wd)
+    assert "drain_incomplete" in events
+    assert "db_lock_released" not in events and "process_lock_released" not in events
+    assert "ehr_read_cancel_received" in _phases(wd)
+    _no_effect(demo_db_url)
+    (wd / "B.refused").unlink(missing_ok=True)
+    b2_code, b2_info = _replacement(children, dispatch_env, wd)
+    assert b2_code == 0, b2_info  # the kernel released the lock when A died
+    _evidence("l6", wd, {"a_exit": a.returncode, "b_refused": b_info, "b2_exit": b2_code})
