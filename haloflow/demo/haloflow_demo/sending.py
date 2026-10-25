@@ -5,10 +5,12 @@ Per appointment:
   2. one fenced transaction: preconditions in order (test number configured,
      not paused, not opted out) then the atomic cap reservation on the clinic
      day; the reserved day is recorded on the reminder;
-  3. quota-day revalidation immediately before the call: if the clinic day has
+  3. quota-day revalidation before handing off: if the clinic day has
      changed since the reservation, NOT_SENT(quota_day_expired), no call
      (reservations are never refunded);
-  4. ONE provider attempt through ``Ownership.guard_external``;
+  4. ONE provider attempt through ``Ownership.guard_external``. Inside that
+     tracked task, immediately before the request, pause, opt-out and the
+     clinic day are checked again, because the task can start after step 3;
   5. the outcome committed immediately (fenced). If ownership is lost before
      or after the call, the row stays CLAIMED and restart recovery marks it
      UNCERTAIN(restart_after_claim); it is never re-sent blindly.
@@ -218,6 +220,29 @@ async def _mark(own: Ownership, rid: int, state: str, reason: str | None,
         ), {"s": state, "r": reason, "p": provider_id, "id": rid})
 
 
+async def _dispatch_gate(
+    own: Ownership, to: str, day: date, tz: str, now: Callable[[], datetime]
+) -> str | None:
+    """Last-moment checks; returns a NOT_SENT reason or None. Read-only."""
+    try:
+        async with own.engine.connect() as conn:
+            paused = (await conn.execute(
+                text("SELECT paused FROM demo_settings WHERE id = 1"))).scalar_one()
+            if paused:
+                return "paused"
+            key = phone_key(await _phone_secret(conn), to)
+            opted = (await conn.execute(
+                text("SELECT 1 FROM opt_outs WHERE phone_key = :k"), {"k": key}
+            )).scalar_one_or_none()
+            if opted is not None:
+                return "opted_out"
+    except DBAPIError:
+        return "dispatch_check_failed"
+    if _clinic_day(now(), tz) != day:
+        return "quota_day_expired"
+    return None
+
+
 async def send_one(
     own: Ownership,
     settings: DemoSettings,
@@ -287,6 +312,13 @@ async def send_one(
     body = reminder_text(first_name_of(patient), appt.start_utc, tz)
 
     async def _call() -> SendOutcome:
+        # Runs inside the tracked external task, immediately before the request
+        # (Codex Day-4 review P1): the task may start after the outer checks, so
+        # pause, opt-out and the clinic day are checked again here. The clock is
+        # read last, closest to the request. The reservation stays consumed.
+        gap = await _dispatch_gate(own, to, day, tz, now)
+        if gap is not None:
+            return SendOutcome("NOT_SENT", gap, None)
         try:
             return await gateway.send(to, body)
         except Exception as exc:
