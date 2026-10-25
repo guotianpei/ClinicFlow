@@ -1,0 +1,75 @@
+"""Fixtures for the reminder demonstrator suite (tests/demo_reminders).
+
+Layers (package v2 §3): U = unit, no database; D = PostgreSQL on a throwaway
+``*_demo`` database. D tests need ``DEMO_TEST_ADMIN_URL``: a ``postgresql://``
+URL for a local role that may CREATE/DROP DATABASE. Each D test gets a fresh
+database named ``haloflow_t<random>_demo``, dropped afterwards. Dropping here is
+test harness behaviour only; demo code never issues DROP (R-8, T13).
+
+Evidence from Claude's container is PG16 development evidence only; it does not
+establish PostgreSQL 17 behaviour (package v2 §4).
+"""
+
+from __future__ import annotations
+
+import os
+import secrets
+from collections.abc import Iterator
+from urllib.parse import urlsplit, urlunsplit
+
+import psycopg
+import pytest
+
+DEMO_ENV_KEYS = (
+    "DATABASE_URL",
+    "HALOFLOW_TEST_DATABASE_URL",
+    "DEMO_DATABASE_URL",
+    "DEMO_SMS_MODE",
+    "DEMO_SMS_DAILY_CAP",
+    "DEMO_SMS_TEST_NUMBER",
+    "DEMO_CALLBACK_MODE",
+    "DEMO_CALLBACK_SECRET",
+    "DEMO_CALLBACK_BIND",
+    "DEMO_STAFF_BIND",
+    "DEMO_DISPATCHER",
+    "DEMO_EHR_WRITE",
+    "DEMO_LOCK_DIR",
+    "CLINIC_TZ",
+)
+
+
+def _admin_url() -> str:
+    url = os.environ.get("DEMO_TEST_ADMIN_URL", "")
+    if not url:
+        pytest.skip("DEMO_TEST_ADMIN_URL is not configured (D-layer test)")
+    return url
+
+
+def _with_dbname(url: str, dbname: str) -> str:
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, "/" + dbname, parts.query, ""))
+
+
+@pytest.fixture
+def demo_db_url() -> Iterator[str]:
+    """A fresh, empty ``*_demo`` database; yields its ``postgresql://`` URL."""
+    admin = _admin_url()
+    name = f"haloflow_t{secrets.token_hex(4)}_demo"
+    with psycopg.connect(admin, autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{name}"')
+    try:
+        yield _with_dbname(admin, name)
+    finally:
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+
+@pytest.fixture
+def demo_env(demo_db_url: str, tmp_path: os.PathLike[str]) -> dict[str, str]:
+    """A minimal valid demo environment pointing at the fresh database."""
+    return {
+        "DEMO_DATABASE_URL": demo_db_url,
+        "DATABASE_URL": "postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev",
+        "DEMO_LOCK_DIR": str(tmp_path),
+        "CLINIC_TZ": "America/New_York",
+    }
