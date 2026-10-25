@@ -507,3 +507,102 @@ async def test_t26_staff_send_action_and_submitted_label(demo_env: dict[str, str
             assert "SIMULATED" in r.text
     finally:
         await own.close()
+
+
+# ── Codex Day-4 review P1: the reservation-to-dispatch gap ────────────────────
+# The tracked external task may start after the outer checks. Day, pause and
+# opt-out are re-checked inside the tracked callable, immediately before the
+# provider request. The reservation stays consumed (no refund).
+
+
+class _MutableClock:
+    def __init__(self, t: datetime) -> None:
+        self.t = t
+
+    def __call__(self) -> datetime:
+        return self.t
+
+
+async def test_p1_midnight_between_outer_check_and_child_start(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    clock = _MutableClock(datetime(2026, 10, 27, 3, 59, 59, tzinfo=UTC))  # 10-26 23:59:59 EDT
+    s, own = await _own(_env(demo_env))
+    gw = StubGateway(TEST_NUMBER)
+
+    def _advance() -> None:  # runs after the outer checks, before the child starts
+        clock.t = datetime(2026, 10, 27, 4, 0, 1, tzinfo=UTC)  # 10-27 00:00:01 EDT
+
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=clock,
+                           before_call=_advance)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "quota_day_expired")
+    assert gw.calls == []
+    assert _q(demo_db_url, "SELECT state, reason FROM reminder_records") == [
+        ("NOT_SENT", "quota_day_expired")]
+    assert _q(demo_db_url, "SELECT clinic_day, used FROM send_quota") == [(date(2026, 10, 26), 1)]
+
+
+async def test_p1_pause_in_the_gap_sends_nothing(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    gw = StubGateway(TEST_NUMBER)
+
+    def _pause() -> None:
+        _q(demo_db_url, "UPDATE demo_settings SET paused = true WHERE id = 1")
+
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           before_call=_pause)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "paused")
+    assert gw.calls == []
+    assert _q(demo_db_url, "SELECT used FROM send_quota") == [(1,)]  # reservation kept
+
+
+async def test_p1_opt_out_in_the_gap_sends_nothing(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.sending import phone_key
+
+    s, own = await _own(_env(demo_env))
+    gw = StubGateway(TEST_NUMBER)
+
+    def _opt_out() -> None:
+        secret = _q(demo_db_url, "SELECT value FROM demo_meta WHERE key='phone_key_secret'")[0][0]
+        _q(demo_db_url, "INSERT INTO opt_outs(phone_key) VALUES (%s)",
+           (phone_key(secret, TEST_NUMBER),))
+
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           before_call=_opt_out)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "opted_out")
+    assert gw.calls == []
+    assert _q(demo_db_url, "SELECT used FROM send_quota") == [(1,)]
+
+
+async def test_p1_dispatch_check_runs_inside_the_tracked_task(
+    demo_env: dict[str, str],
+) -> None:
+    """The last checks and the request run in the same tracked task (no gap)."""
+    s, own = await _own(_env(demo_env))
+    seen: list[int] = []
+
+    class _Probe(StubGateway):
+        async def send(self, to: str, body: str) -> SendOutcome:
+            seen.append(own.inflight)
+            return await super().send(to, body)
+
+    gw = _Probe(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW))
+    finally:
+        await own.close()
+    assert r.state == "SUBMITTED"
+    assert seen == [1], "the provider request ran inside the tracked external task"
