@@ -25,10 +25,10 @@ import asyncpg
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-from haloflow.demo.db import ConnectedIdentity, check_identity, make_demo_engine
-from haloflow.demo.models import create_demo_tables
-from haloflow.demo.process_lock import ProcessLock, lock_path_for
-from haloflow.demo.settings import DemoDbTarget, DemoSettings, StartupRefused
+from haloflow_demo.db import ConnectedIdentity, check_identity, make_demo_engine
+from haloflow_demo.models import create_demo_tables
+from haloflow_demo.process_lock import ProcessLock
+from haloflow_demo.settings import DemoDbTarget, DemoSettings, StartupRefused
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -53,8 +53,14 @@ class NullProcessLock:
         return None
 
 
+# PostgreSQL scopes advisory locks to the current database, so one constant key
+# identifies "the demo owner of this database" however it is reached (TCP,
+# localhost, ::1 or a Unix socket). A URL-derived key would not (correction R2).
+DEMO_ADVISORY_KEY = 0x48414C4F464C4F57 & 0x7FFFFFFFFFFFFFFF  # "HALOFLOW", positive bigint
+
+
 def advisory_key(target: DemoDbTarget) -> int:
-    return int(target.key_hash[:15], 16)  # < 2**60, fits a signed bigint
+    return DEMO_ADVISORY_KEY
 
 
 def _record(events: list[str] | None, name: str) -> None:
@@ -170,7 +176,7 @@ async def acquire_ownership(
     events: list[str] | None = None,
     process_lock: _Lock | None = None,
 ) -> Ownership:
-    lock: _Lock = process_lock or ProcessLock(lock_path_for(settings.lock_dir, target))
+    lock: _Lock = process_lock or ProcessLock()
     lock.acquire()
     _record(events, "process_lock")
     lock_conn: asyncpg.Connection | None = None

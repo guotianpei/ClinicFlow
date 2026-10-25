@@ -20,6 +20,10 @@ from urllib.parse import urlsplit, urlunsplit
 import psycopg
 import pytest
 
+from .harness import ensure_demo_on_path
+
+ensure_demo_on_path()
+
 DEMO_ENV_KEYS = (
     "DATABASE_URL",
     "HALOFLOW_TEST_DATABASE_URL",
@@ -33,7 +37,6 @@ DEMO_ENV_KEYS = (
     "DEMO_STAFF_BIND",
     "DEMO_DISPATCHER",
     "DEMO_EHR_WRITE",
-    "DEMO_LOCK_DIR",
     "CLINIC_TZ",
 )
 
@@ -65,11 +68,10 @@ def demo_db_url() -> Iterator[str]:
 
 
 @pytest.fixture
-def demo_env(demo_db_url: str, tmp_path: os.PathLike[str]) -> dict[str, str]:
+def demo_env(demo_db_url: str) -> dict[str, str]:
     """A minimal valid demo environment pointing at the fresh database."""
     return {
         "DEMO_DATABASE_URL": demo_db_url,
         "DATABASE_URL": "postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev",
-        "DEMO_LOCK_DIR": str(tmp_path),
         "CLINIC_TZ": "America/New_York",
     }

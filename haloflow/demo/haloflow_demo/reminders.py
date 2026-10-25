@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from haloflow.demo.ownership import Ownership
-from haloflow.demo.synthetic_ehr import SyntheticAppointment
+from haloflow_demo.ownership import Ownership
+from haloflow_demo.synthetic_ehr import SyntheticAppointment
 
 
 async def claim_reminder(own: Ownership, tenant_id: str, appt: SyntheticAppointment) -> int | None:

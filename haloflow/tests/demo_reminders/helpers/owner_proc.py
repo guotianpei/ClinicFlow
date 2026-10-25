@@ -26,12 +26,11 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from haloflow_demo.ownership import NullProcessLock, OwnerLost, acquire_ownership
+from haloflow_demo.reminders import claim_reminder
+from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
+from haloflow_demo.synthetic_ehr import ApptStatus, SyntheticAppointment
 from sqlalchemy import text
-
-from haloflow.demo.ownership import NullProcessLock, OwnerLost, acquire_ownership
-from haloflow.demo.reminders import claim_reminder
-from haloflow.demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
-from haloflow.demo.synthetic_ehr import ApptStatus, SyntheticAppointment
 
 
 def _write(path: Path, payload: dict[str, object]) -> None:
@@ -66,6 +65,12 @@ async def main() -> int:
         print(f"refused: {exc.reason}", flush=True)
         return 2
     own.start_watchdog(interval=args.watchdog)
+
+    async def _report_loss() -> None:
+        await own.lost.wait()
+        _write(wd / f"{args.role}.lost", {"t": time.time()})
+
+    loss_reporter = asyncio.get_running_loop().create_task(_report_loss())
     _write(
         wd / f"{args.role}.ready",
         {"pid": os.getpid(), "epoch": own.epoch, "lock_backend_pid": own.lock_backend_pid,
@@ -111,6 +116,7 @@ async def main() -> int:
                 )).all()
             _write(wd / "B.state", {"rows": [list(r) for r in rows], "t": time.time()})
     finally:
+        loss_reporter.cancel()
         await own.close()
     return code
 

@@ -8,8 +8,7 @@ socket.
 from __future__ import annotations
 
 import pytest
-
-from haloflow.demo.settings import (
+from haloflow_demo.settings import (
     DemoSettings,
     StartupRefused,
     build_server_configs,
@@ -18,7 +17,7 @@ from haloflow.demo.settings import (
     validate_demo_database_url,
     validate_startup,
 )
-from haloflow.demo.web import NullStaffService, build_callback_app, build_staff_app
+from haloflow_demo.web import NullStaffService, build_callback_app, build_staff_app
 
 GOOD_DB = "postgresql://demo@127.0.0.1:5433/haloflow_reminders_demo"
 LEGACY_DB = "postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev"

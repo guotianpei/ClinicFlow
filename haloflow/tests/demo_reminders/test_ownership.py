@@ -16,12 +16,11 @@ from pathlib import Path
 
 import psycopg
 import pytest
-
-from haloflow.demo.ownership import NullProcessLock, OwnerLost, acquire_ownership
-from haloflow.demo.process_lock import ProcessLock, lock_path_for
-from haloflow.demo.reminders import claim_reminder
-from haloflow.demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
-from haloflow.demo.synthetic_ehr import ApptStatus, SyntheticAppointment
+from haloflow_demo.ownership import NullProcessLock, OwnerLost, acquire_ownership
+from haloflow_demo.process_lock import LOCK_PATH, ProcessLock
+from haloflow_demo.reminders import claim_reminder
+from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
+from haloflow_demo.synthetic_ehr import ApptStatus, SyntheticAppointment
 
 
 def _settings(env: dict[str, str]) -> DemoSettings:
@@ -107,7 +106,7 @@ async def test_t05_refused_instance_does_not_bump_epoch(
 
 
 def test_process_lock_never_unlinks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    path = tmp_path / "x.lock"
+    path = tmp_path / "locks" / "x.lock"
 
     def _boom(*a: object, **k: object) -> None:
         raise AssertionError("ProcessLock must never unlink its file")
@@ -124,7 +123,7 @@ def test_process_lock_never_unlinks(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_process_lock_second_holder_refused_until_release(tmp_path: Path) -> None:
-    path = tmp_path / "y.lock"
+    path = tmp_path / "locks" / "y.lock"
     a, b = ProcessLock(path), ProcessLock(path)
     a.acquire()
     with pytest.raises(StartupRefused) as exc:
@@ -135,16 +134,55 @@ def test_process_lock_second_holder_refused_until_release(tmp_path: Path) -> Non
     b.release()
 
 
-def test_lock_path_is_keyed_to_canonical_demo_instance(tmp_path: Path) -> None:
+def test_r2_lock_location_is_one_fixed_host_wide_path() -> None:
+    # Not a setting and not derived from the database URL (correction R2).
+    assert Path("/tmp/haloflow-demo-locks/reminders-demo.lock") == LOCK_PATH
+    assert ProcessLock().path == LOCK_PATH
+    s = DemoSettings.from_env({"DEMO_DATABASE_URL": "postgresql://u@127.0.0.1/haloflow_x_demo",
+                               "DEMO_LOCK_DIR": "/somewhere/else"})
+    assert not any("lock" in name for name in vars(s))
+
+
+def test_r2_advisory_key_is_identical_for_equivalent_endpoints() -> None:
+    from haloflow_demo.ownership import advisory_key
+
     def t(url: str):  # type: ignore[no-untyped-def]
         return validate_demo_database_url(DemoSettings.from_env({"DEMO_DATABASE_URL": url}))
 
-    same_a = lock_path_for(tmp_path, t("postgresql://a@localhost/haloflow_x_demo"))
-    same_b = lock_path_for(tmp_path, t("postgresql+asyncpg://b:pw@127.0.0.1:5432/haloflow_x_demo"))
-    other = lock_path_for(tmp_path, t("postgresql://a@127.0.0.1:5432/haloflow_y_demo"))
-    assert same_a == same_b
-    assert same_a != other
-    assert same_a.parent == tmp_path
+    keys = {
+        advisory_key(t("postgresql://a@127.0.0.1:5433/haloflow_x_demo")),
+        advisory_key(t("postgresql://a@localhost:5433/haloflow_x_demo")),
+        advisory_key(t("postgresql://a@/haloflow_x_demo?host=/tmp&port=5433")),
+    }
+    assert len(keys) == 1
+
+
+def test_r2_symlinked_lock_file_refused(tmp_path: Path) -> None:
+    d = tmp_path / "locks"
+    d.mkdir(mode=0o700)
+    (d / "z.lock").symlink_to(tmp_path / "elsewhere.lock")
+    with pytest.raises(StartupRefused) as exc:
+        ProcessLock(d / "z.lock").acquire()
+    assert exc.value.reason == "process_lock_unavailable"
+
+
+def test_r2_group_accessible_lock_dir_refused(tmp_path: Path) -> None:
+    d = tmp_path / "open"
+    d.mkdir()
+    d.chmod(0o755)
+    with pytest.raises(StartupRefused) as exc:
+        ProcessLock(d / "w.lock").acquire()
+    assert exc.value.reason == "process_lock_unavailable"
+
+
+def test_r2_symlinked_lock_dir_refused(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    with pytest.raises(StartupRefused) as exc:
+        ProcessLock(link / "v.lock").acquire()
+    assert exc.value.reason == "process_lock_unavailable"
 
 
 # ── R-4 fencing ───────────────────────────────────────────────────────────────

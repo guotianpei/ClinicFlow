@@ -12,8 +12,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
-from haloflow.demo.web import (
+from haloflow_demo.web import (
     CSRF_COOKIE,
     CSRF_FIELD,
     STAFF_BANNER,

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from sqlalchemy import URL, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-from haloflow.demo.settings import LOOPBACK_HOSTS, DemoDbTarget, StartupRefused
+from haloflow_demo.settings import LOOPBACK_HOSTS, DemoDbTarget, StartupRefused
 
 
 @dataclass(frozen=True)

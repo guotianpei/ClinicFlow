@@ -23,8 +23,8 @@ from sqlalchemy import (
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from haloflow.demo.db import check_identity, read_identity
-from haloflow.demo.settings import DemoDbTarget
+from haloflow_demo.db import check_identity, read_identity
+from haloflow_demo.settings import DemoDbTarget
 
 SCHEMA_VERSION = 1
 

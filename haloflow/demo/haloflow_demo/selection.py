@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from enum import StrEnum
 from zoneinfo import ZoneInfo
 
-from haloflow.demo.synthetic_ehr import ApptStatus, SyntheticAppointment, SyntheticPatient
+from haloflow_demo.synthetic_ehr import ApptStatus, SyntheticAppointment, SyntheticPatient
 
 
 class SkipReason(StrEnum):

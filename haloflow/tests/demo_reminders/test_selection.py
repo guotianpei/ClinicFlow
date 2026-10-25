@@ -13,13 +13,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from haloflow.demo.selection import (
+from haloflow_demo.selection import (
     SkipReason,
     clinic_target_date,
     format_local,
     select_eligible,
 )
-from haloflow.demo.synthetic_ehr import (
+from haloflow_demo.synthetic_ehr import (
     ApptStatus,
     SyntheticAppointment,
     SyntheticEhr,

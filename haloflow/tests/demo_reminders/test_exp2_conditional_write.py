@@ -21,9 +21,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-
-from haloflow.demo.synthetic_ehr import ApptStatus, Fixtures, SyntheticAppointment, SyntheticEhr
-from haloflow.demo.writeback import Outcome, WritebackTask, attempt_writeback, reconcile
+from haloflow_demo.synthetic_ehr import ApptStatus, Fixtures, SyntheticAppointment, SyntheticEhr
+from haloflow_demo.writeback import Outcome, WritebackTask, attempt_writeback, reconcile
 
 APPT = "wb-1"
 TARGET = "2"

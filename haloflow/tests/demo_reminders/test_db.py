@@ -9,11 +9,10 @@ from typing import Any
 
 import psycopg
 import pytest
+from haloflow_demo.db import ConnectedIdentity, check_identity, make_demo_engine
+from haloflow_demo.models import DEMO_TABLES, create_demo_tables
+from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
 from sqlalchemy import event
-
-from haloflow.demo.db import ConnectedIdentity, check_identity, make_demo_engine
-from haloflow.demo.models import DEMO_TABLES, create_demo_tables
-from haloflow.demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
 
 EXPECTED_TABLES = {
     "reminder_records",
@@ -126,7 +125,7 @@ def test_p_id_check_identity_accepts_loopback_and_socket() -> None:
 async def test_p_id_create_tables_checks_connected_identity(
     demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import haloflow.demo.models as models
+    import haloflow_demo.models as models
 
     target = validate_demo_database_url(DemoSettings.from_env(demo_env))
     engine = make_demo_engine(target)

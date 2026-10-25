@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Literal, Protocol
 
-from haloflow.demo.synthetic_ehr import EhrConnectError, Observation, WriteResult
+from haloflow_demo.synthetic_ehr import EhrConnectError, Observation, WriteResult
 
 RETRYABLE_STATES = frozenset({"PENDING", "NOT_APPLIED"})
 

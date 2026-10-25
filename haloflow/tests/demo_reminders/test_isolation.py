@@ -5,9 +5,12 @@ empty environment, ``import haloflow.ehr.base`` and
 ``import haloflow.modules.reminders.models`` both raise a pydantic
 ``ValidationError`` (``database_url`` missing), and with ``DATABASE_URL`` set the
 models import pulls in ``haloflow.database``, which builds the legacy engine.
-The demo therefore lives in the self-contained package ``haloflow.demo``
-(deviation D-1 from package v2 §2.3) and must not import any of the modules
-listed in ``FORBIDDEN`` below.
+The demo therefore lives in the self-contained package ``haloflow_demo``
+(deviation D-1 from package v2 §2.3), outside the production source tree at
+``haloflow/demo/haloflow_demo`` (correction R1: the unchanged repository control
+C-1 forbids new direct SQLAlchemy/asyncpg importers under ``src/haloflow``). It
+must not import any ``haloflow`` module, nor the modules listed in
+``FORBIDDEN`` below.
 """
 
 from __future__ import annotations
@@ -19,16 +22,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-DEMO_PKG = Path(__file__).resolve().parents[2] / "src" / "haloflow" / "demo"
+from .harness import DEMO_ROOT, demo_subprocess_env
+
+DEMO_PKG = DEMO_ROOT / "haloflow_demo"
 
 FORBIDDEN = (
-    "haloflow.config",
-    "haloflow.database",
-    "haloflow.ehr",
-    "haloflow.integrations",
-    "haloflow.scheduler",
-    "haloflow.main",
-    "haloflow.modules",
+    "haloflow",  # the whole production package, incl. config/database/ehr/scheduler
     "apscheduler",
     "tenacity",
 )
@@ -51,8 +50,8 @@ socket.socket = _GuardSocket       # type: ignore[assignment,misc]
 socket.create_connection = _refuse # type: ignore[assignment]
 socket.getaddrinfo = _refuse       # type: ignore[assignment]
 
-from haloflow.demo.web import build_callback_app, build_staff_app
-from haloflow.demo.web import NullStaffService
+from haloflow_demo.web import build_callback_app, build_staff_app
+from haloflow_demo.web import NullStaffService
 
 callback = build_callback_app()
 staff = build_staff_app(NullStaffService(), csrf_secret=b"x" * 32)
@@ -65,8 +64,9 @@ print(json.dumps({
 
 
 def _clean_env() -> dict[str, str]:
-    keep = {"PATH", "HOME", "LANG", "LC_ALL", "PYTHONPATH", "VIRTUAL_ENV"}
-    return {k: v for k, v in os.environ.items() if k in keep}
+    keep = {"PATH", "HOME", "LANG", "LC_ALL", "VIRTUAL_ENV"}
+    base = {k: v for k, v in os.environ.items() if k in keep}
+    return demo_subprocess_env(base)
 
 
 def test_t01_construct_both_apps_with_empty_env_opens_no_socket() -> None:

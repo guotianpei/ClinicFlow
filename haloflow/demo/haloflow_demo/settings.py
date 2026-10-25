@@ -8,7 +8,6 @@ no ``.env`` file is read implicitly and nothing is imported from the legacy
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -69,11 +68,6 @@ class DemoDbTarget:
     user: str | None
     password: str | None = field(repr=False)
     canonical: tuple[str, int, str]
-
-    @property
-    def key_hash(self) -> str:
-        raw = "|".join(str(p) for p in self.canonical)
-        return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def _canonical(url: str) -> tuple[str, int, str, str | None, str | None, str | None, str | None]:
@@ -157,7 +151,6 @@ class DemoSettings:
     callback_port: int
     dispatcher: bool
     ehr_write: str
-    lock_dir: str
     reminder_days_before: int = 2
 
     @property
@@ -188,13 +181,7 @@ class DemoSettings:
             callback_port=cb[1],
             dispatcher=g("DEMO_DISPATCHER", "") == "on",
             ehr_write="real" if g("DEMO_EHR_WRITE", "") == "real" else "simulated",
-            lock_dir=g("DEMO_LOCK_DIR", "") or _default_lock_dir(env),
         )
-
-
-def _default_lock_dir(env: Mapping[str, str]) -> str:
-    home = env.get("HOME", "")
-    return f"{home}/.haloflow-demo" if home else "/tmp/haloflow-demo"
 
 
 def validate_demo_database_url(s: DemoSettings) -> DemoDbTarget:
