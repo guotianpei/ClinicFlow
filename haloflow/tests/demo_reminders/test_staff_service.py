@@ -68,7 +68,8 @@ async def test_page_lists_synthetic_appointments_in_clinic_time(demo_env: dict[s
     try:
         data = await svc.page_data()
         ids = [a["emr_appt_id"] for a in data["appointments"]]
-        assert ids == [f"syn-a-{i}" for i in range(1, 8)]
+        # Scenario-qualified IDs: owner epoch + clinic date (Codex 175423Z, P1)
+        assert ids == [f"syn-e1-20261028-a-{i}" for i in range(1, 8)]
         first = data["appointments"][0]
         assert first["patient"] == "Synthetic Patient A"
         assert first["when"] == "Wednesday, Oct 28 at 9:00 AM EDT"
@@ -82,10 +83,11 @@ async def test_preview_decisions_and_no_writes(demo_env: dict[str, str], demo_db
     own, svc = await _service(demo_env)
     try:
         preview = {p["emr_appt_id"]: p["decision"] for p in await svc.preview_batch()}
+        q = "syn-e1-20261028-a-"
         assert preview == {
-            "syn-a-1": "eligible", "syn-a-2": "eligible", "syn-a-3": "eligible",
-            "syn-a-4": "eligible", "syn-a-5": "eligible",
-            "syn-a-6": "skip: no_phone", "syn-a-7": "skip: cancelled",
+            q + "1": "eligible", q + "2": "eligible", q + "3": "eligible",
+            q + "4": "eligible", q + "5": "eligible",
+            q + "6": "skip: no_phone", q + "7": "skip: cancelled",
         }
         with psycopg.connect(demo_db_url) as conn:
             assert conn.execute("SELECT count(*) FROM reminder_records").fetchone() == (0,)
@@ -125,7 +127,7 @@ async def test_staff_app_over_db_service_end_to_end(demo_env: dict[str, str]) ->
             assert "Synthetic Patient A" in page.text
             r = await c.post("/demo/batch/preview", data={CSRF_FIELD: _token(page.text)})
             assert r.status_code == 200
-            assert "syn-a-6 — skip: no_phone" in r.text
+            assert "syn-e1-20261028-a-6 — skip: no_phone" in r.text
     finally:
         await own.close()
 
@@ -142,5 +144,45 @@ async def test_owner_lost_makes_staff_app_503(demo_env: dict[str, str], demo_db_
             assert r.status_code == 503  # the fenced write detected the loss
             assert own.owner_lost is True
             assert (await c.get("/demo/staff")).status_code == 503
+    finally:
+        await own.close()
+
+
+# ── Codex 175423Z P1: scenario identity pinned across dates and restart ──────
+
+
+async def test_scenario_ids_are_unique_per_epoch_and_date(demo_env: dict[str, str]) -> None:
+    from datetime import timedelta
+
+    clock = {"now": NOW}
+    s = DemoSettings.from_env(demo_env)
+    own = await acquire_ownership(s, validate_demo_database_url(s))
+    svc = DbStaffService(own, s, now=lambda: clock["now"])
+    try:
+        day1 = [a["emr_appt_id"] for a in (await svc.page_data())["appointments"]]
+        clock["now"] = NOW + timedelta(days=1)
+        day2 = [a["emr_appt_id"] for a in (await svc.page_data())["appointments"]]
+    finally:
+        await own.close()
+    assert day1[0] == "syn-e1-20261028-a-1" and day2[0] == "syn-e1-20261029-a-1"
+    assert not set(day1) & set(day2)
+
+
+async def test_router_routes_exact_id_and_refuses_unknown(demo_env: dict[str, str]) -> None:
+    from haloflow_demo.service import ScenarioUnavailable
+
+    own, svc = await _service(demo_env)
+    try:
+        await svc.page_data()
+        obs = await svc.ehr.read_confirmation("syn-e1-20261028-a-1")
+        assert obs.value == "1"
+        for unknown in ("syn-a-1", "syn-e1-20261029-a-1", "syn-e0-20261028-a-1"):
+            assert svc.ehr.knows(unknown) is False
+            try:
+                await svc.ehr.read_confirmation(unknown)
+            except ScenarioUnavailable:
+                pass
+            else:
+                raise AssertionError(f"{unknown} was served")
     finally:
         await own.close()

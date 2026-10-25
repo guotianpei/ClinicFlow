@@ -1752,3 +1752,146 @@ async def test_dispatcher_failure_log_has_no_sql_or_parameters(
     assert "dispatcher iteration failed" in logged
     assert marker not in logged and "SELECT" not in logged
     assert not any(r.exc_info for r in caplog.records if r.name == "haloflow_demo.service")
+
+
+# ── Codex 175423Z P1: write-back pinned to its original synthetic appointment ─
+
+
+async def _confirmed_via_service(svc: Any, own: Any, s: DemoSettings) -> tuple[str, int]:
+    appt = (await svc.page_data())["appointments"][0]["emr_appt_id"]
+    sent = await svc.send_to_appointment(appt)
+    assert sent["state"] == "SUBMITTED", sent
+    res = await svc.simulate_reply(sent["reminder_id"], "1")
+    assert res.status == 204
+    await svc.process_now()
+    return appt, int(_q(svc._settings.database_url, "SELECT id FROM writeback_tasks")[0][0])
+
+
+async def test_writeback_after_date_rollover_targets_the_original_appointment(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.service import DbStaffService
+
+    clock = {"now": NOW}
+    s, own = await _own(_env(demo_env))
+    svc = DbStaffService(own, s, now=lambda: clock["now"])
+    try:
+        appt, tid = await _confirmed_via_service(svc, own, s)
+        clock["now"] = NOW + timedelta(days=1)          # rollover: new target date
+        page = await svc.page_data()
+        new_first = page["appointments"][0]
+        result = await svc.run_writeback(tid)
+        old_ehr = svc.ehr_for_date(APPT_START.date())
+        new_ehr = svc.ehr_for_date((APPT_START + timedelta(days=1)).date())
+    finally:
+        await own.close()
+    assert appt == "syn-e1-20261028-a-1"
+    assert result == "DONE"
+    assert (await old_ehr.read_confirmation(appt)).value == "2"
+    assert old_ehr.applied_writes == 1 and new_ehr.applied_writes == 0
+    assert new_first["emr_appt_id"] == "syn-e1-20261029-a-1"
+    assert new_first["status"].endswith("reminder: none"), "no old-state overlay"
+
+
+async def test_writeback_after_restart_fails_closed(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.service import DbStaffService
+
+    s, own = await _own(_env(demo_env))
+    svc = DbStaffService(own, s, now=_clock(NOW))
+    try:
+        appt, tid = await _confirmed_via_service(svc, own, s)
+    finally:
+        await own.close()
+    s, own = await _own(_env(demo_env))                # restart: epoch 2, empty cache
+    svc2 = DbStaffService(own, s, now=_clock(NOW))
+    try:
+        page = await svc2.page_data()                    # regenerates the SAME date
+        result = await svc2.run_writeback(tid)
+        regenerated = svc2.ehr_for_date(APPT_START.date())
+    finally:
+        await own.close()
+    assert result == "scenario_unavailable"
+    assert regenerated.write_attempts == 0
+    assert all(not a["emr_appt_id"].startswith("syn-e1-") for a in page["appointments"])
+    assert all(a["status"].endswith("reminder: none") for a in page["appointments"])
+    assert _q(demo_db_url, "SELECT state FROM writeback_tasks WHERE id = %s", (tid,)) == [
+        ("PENDING",)]
+    assert "writeback_scenario_unavailable" in [k for k, _ in _items(demo_db_url)]
+
+
+# ── Codex 175423Z P2: InvalidToNumbers must name the intended recipient ───────
+
+
+@pytest.mark.parametrize(("entries", "state", "reason"), [
+    ([{"number": TEST_NUMBER, "message": "invalid"}], "REJECTED", "invalid_to"),
+    ([{"number": "(555) 010-0199", "message": "invalid"}], "REJECTED", "invalid_to"),
+    ([{"number": OTHER_NUMBER, "message": "invalid"}], "UNCERTAIN", "unexpected_invalid_to"),
+    ([{"number": "not-a-number", "message": "x"}], "UNCERTAIN", "unexpected_invalid_to"),
+    ([{"number": TEST_NUMBER}, {"number": OTHER_NUMBER}], "UNCERTAIN", "unexpected_invalid_to"),
+])
+def test_n2_invalid_to_requires_the_intended_recipient(
+    entries: list[dict[str, str]], state: str, reason: str
+) -> None:
+    from haloflow_demo.sending import classify_response
+
+    resp = httpx.Response(200, json={"success": True, "payload": {
+        "smsMessageID": "m", "invalidToNumbers": entries}})
+    out = classify_response(resp, recipient=TEST_NUMBER)
+    assert (out.state, out.reason) == (state, reason)
+
+
+def test_n2_invalid_to_without_known_recipient_is_uncertain() -> None:
+    from haloflow_demo.sending import classify_response
+
+    resp = httpx.Response(200, json={"success": True, "payload": {
+        "smsMessageID": "m", "invalidToNumbers": [{"number": TEST_NUMBER}]}})
+    assert classify_response(resp).reason == "unexpected_invalid_to"
+
+
+async def test_n2_gateway_passes_its_recipient(demo_env: dict[str, str]) -> None:
+    from haloflow_demo.sending import NotifyreGateway
+
+    def _h(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"success": True, "payload": {
+            "smsMessageID": "m", "invalidToNumbers": [{"number": TEST_NUMBER}]}})
+
+    gw = NotifyreGateway(api_key="k", sender=SENDER, test_number=TEST_NUMBER,
+                         transport=httpx.MockTransport(_h))
+    out = await gw.send(TEST_NUMBER, "x")
+    assert (out.state, out.reason) == ("REJECTED", "invalid_to")
+
+
+# ── Codex 175423Z protocol: outcome recording takes the match lock in order ───
+
+
+async def test_outcome_recording_serialises_with_receipt(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+    receipt_holds = asyncio.Event()
+    receipts: list[asyncio.Task[ReceiveResult]] = []
+
+    async def receipt_hook(stage: str) -> None:
+        if stage == "receipt_locked":
+            receipt_holds.set()
+            # the send's outcome commit must wait on the receipt's match lock
+            await _wait_for_blocked(demo_db_url, "match:outcome", blocker_tag="match:receipt")
+
+    async def send_hook(stage: str) -> None:
+        if stage == "before_send":
+            receipts.append(asyncio.create_task(
+                _reply(own, s, "1", reply_id="rid-race", hook=receipt_hook)))
+            await asyncio.wait_for(receipt_holds.wait(), timeout=5)
+
+    try:
+        r = await _send(own, s, 1, hook=send_hook)
+        await receipts[0]
+        await _process(own, s, _ehr())
+    finally:
+        await own.close()
+    assert r.state == "SUBMITTED"
+    assert _q(demo_db_url, "SELECT status_at_receipt FROM inbound_candidates") == [("CLAIMED",)]
+    assert _disposition(demo_db_url, "rid-race") == ("PROCESSED", "reply_to_unverified_send")
+    assert _tasks(demo_db_url) == []
