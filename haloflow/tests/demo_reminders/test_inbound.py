@@ -1261,14 +1261,30 @@ async def test_i22_crash_after_in_flight(demo_env: dict[str, str], demo_db_url: 
 
 
 async def test_i32_concurrent_runs_make_one_call(
-    demo_env: dict[str, str], demo_db_url: str
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import haloflow_demo.tasks as tasks_mod
     from haloflow_demo.tasks import run_task
 
     s, own = await _own(_env(demo_env))
     ehr = _ehr()
+    real_load = tasks_mod._load
+    arrived = 0
+    both = asyncio.Event()
+
+    async def barrier_load(o: Any, task_id: int) -> Any:
+        # Barrier: both runs read the task (PENDING) before either tries to admit it.
+        nonlocal arrived
+        row = await real_load(o, task_id)
+        arrived += 1
+        if arrived >= 2:
+            both.set()
+        await asyncio.wait_for(both.wait(), timeout=5)
+        return row
+
     try:
         tid = await _confirmed_task(own, s, demo_db_url, ehr)
+        monkeypatch.setattr(tasks_mod, "_load", barrier_load)
         results = await asyncio.gather(run_task(own, ehr, tid), run_task(own, ehr, tid),
                                        return_exceptions=True)
     finally:
