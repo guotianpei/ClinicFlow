@@ -37,10 +37,21 @@ from haloflow_demo.models import create_demo_tables
 from haloflow_demo.process_lock import ProcessLock
 from haloflow_demo.settings import DemoDbTarget, DemoSettings, StartupRefused
 
-__all__ = ["NullProcessLock", "OwnerLost", "Ownership", "acquire_ownership", "recover"]
+__all__ = [
+    "DrainIncomplete",
+    "NullProcessLock",
+    "OwnerLost",
+    "Ownership",
+    "acquire_ownership",
+    "recover",
+]
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
+
+
+class DrainIncomplete(Exception):
+    """Tracked external work is still running; the locks were NOT released."""
 
 
 class _Lock(Protocol):
@@ -111,9 +122,13 @@ class Ownership:
 
     @contextlib.asynccontextmanager
     async def fenced(self) -> AsyncIterator[AsyncConnection]:
-        """A transaction that commits only if this process still holds the epoch."""
-        if self.owner_lost:
-            raise OwnerLost("owner lost")
+        """A transaction that commits only if this process still holds the epoch.
+
+        Allowed while closing (an in-flight call may still record its outcome
+        during drain); refused once :meth:`close` has released ownership.
+        """
+        if self.owner_lost or self._closed:
+            raise OwnerLost("owner lost or ownership closed")
         async with self.engine.begin() as conn:
             current = (await conn.execute(
                 text("SELECT owner_epoch FROM demo_settings WHERE id = 1 FOR SHARE")
@@ -152,7 +167,7 @@ class Ownership:
     def inflight(self) -> int:
         return len(self._inflight)
 
-    async def drain(self, timeout: float, cancel_grace: float) -> bool:
+    async def drain(self, timeout: float, cancel_grace: float, *, cancel: bool = True) -> bool:
         """Wait for tracked external calls; cancel stragglers. True only if all ended."""
         pending = set(self._inflight)
         if not pending:
@@ -160,6 +175,8 @@ class Ownership:
         _, pending = await asyncio.wait(pending, timeout=timeout)
         if not pending:
             return True
+        if not cancel:
+            return False
         for task in pending:
             task.cancel()
         _, still = await asyncio.wait(pending, timeout=cancel_grace)
@@ -181,16 +198,30 @@ class Ownership:
 
     # ── shutdown ─────────────────────────────────────────────────────────────
 
-    async def close(self, drain: Callable[[], Awaitable[None]] | None = None) -> None:
+    async def close(
+        self,
+        drain: Callable[[], Awaitable[None]] | None = None,
+        *,
+        drain_timeout: float = 10.0,
+        cancel_grace: float = 2.0,
+        cancel: bool = True,
+    ) -> None:
+        """Begin closing, drain tracked external work, then release DB lock and
+        process lock, in that order. Raises :class:`DrainIncomplete` and
+        releases NOTHING if any tracked external call is still running."""
         if self._closed:
             return
-        self._closed = True
+        self.begin_closing()
         if self._watchdog is not None:
             self._watchdog.cancel()
             with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._watchdog
+            self._watchdog = None
         if drain is not None:
             await drain()
+        if not await self.drain(drain_timeout, cancel_grace, cancel=cancel):
+            raise DrainIncomplete(f"{self.inflight} external call(s) still running")
+        self._closed = True
         with contextlib.suppress(Exception):
             await self._lock_conn.fetchval("SELECT pg_advisory_unlock($1)", self._key)
         with contextlib.suppress(Exception):

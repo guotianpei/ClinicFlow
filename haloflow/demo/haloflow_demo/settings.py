@@ -102,20 +102,43 @@ def _canonical(url: str) -> tuple[str, int, str, str | None, str | None, str | N
         if host not in LOOPBACK_HOSTS:
             raise StartupRefused("demo_db_not_local")
         host_class = "loopback"
-    port = parts.port or int(query.get("port", [str(_DEFAULT_PG_PORT)])[-1])
+    try:
+        port = parts.port or int(query.get("port", [str(_DEFAULT_PG_PORT)])[-1])
+    except ValueError as exc:
+        raise StartupRefused("demo_db_url_invalid", "port") from exc
     dbname = unquote(parts.path.lstrip("/")) or unquote(query.get("dbname", [""])[-1])
     return (host_class, port, dbname, host, socket_dir,
             unquote(parts.username) if parts.username else None,
             unquote(parts.password) if parts.password else None)
 
 
-def _same_database(a: str, b: str) -> bool:
+def _local_key(url: str) -> tuple[int, str] | None:
+    """(port, dbname) of a local PostgreSQL URL; ``None`` if certainly not local.
+
+    Conservative alias rule (Codex checkpoint-1 finding 2): every local endpoint
+    (127.0.0.1, localhost, ::1, any Unix-socket directory, the default socket)
+    with the same port and database name is treated as the same database.
+    Anything that cannot be compared fails closed.
+    """
     try:
-        ca = _canonical(a)[:3]
-        cb = _canonical(b)[:3]
-    except StartupRefused:
+        _hc, port, dbname, _h, _sd, user, _pw = _canonical(url)
+    except StartupRefused as exc:
+        if exc.reason == "demo_db_scheme" or str(exc) == "demo_db_not_local":
+            return None  # a different scheme, or a plainly remote host
+        raise StartupRefused("demo_db_compare_failed", exc.reason) from exc
+    if not dbname:
+        if not user:
+            raise StartupRefused("demo_db_compare_failed", "no database name")
+        dbname = user  # libpq default: database name = user name
+    return (port, dbname)
+
+
+def _same_database(demo_url: str, other_url: str) -> bool:
+    other = _local_key(other_url)
+    if other is None:
         return False
-    return ca == cb
+    demo = _local_key(demo_url)
+    return demo == other
 
 
 # ── settings ──────────────────────────────────────────────────────────────────

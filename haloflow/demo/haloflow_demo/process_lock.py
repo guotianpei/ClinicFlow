@@ -63,6 +63,11 @@ class ProcessLock:
             fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
         except OSError as exc:
             raise StartupRefused("process_lock_unavailable", str(exc)) from exc
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
+            os.close(fd)
+            raise StartupRefused("process_lock_unavailable",
+                                 "lock file is not a regular owned file")
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
