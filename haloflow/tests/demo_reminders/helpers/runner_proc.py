@@ -12,6 +12,10 @@ Harness-only injections (never used by ``python -m haloflow_demo``):
 - ``--seed-reply`` (Day 5): once started, one stub reminder is sent and one
   signed simulated "1" reply is received, so the dispatcher
   (``DEMO_DISPATCHER=on``) has a CONFIRM to process;
+- ``--effect-pause`` (Day 5): inside the dispatcher's effect transaction,
+  after admission and after the effects are written but before commit, wait
+  until ``release`` exists, logging ``effect_paused`` and then
+  ``effect_cancel_received`` or ``effect_resumed``;
 - ``--ehr-read ok|block|stubborn``: the synthetic EHR baseline read returns at
   once (``ok``), or blocks until ``release`` exists (``stubborn`` also ignores
   cancellation). The phases go to ``calls.jsonl``.
@@ -54,6 +58,7 @@ async def main() -> int:
     ap.add_argument("--blocked", action="store_true")
     ap.add_argument("--stubborn", action="store_true")
     ap.add_argument("--seed-reply", action="store_true")
+    ap.add_argument("--effect-pause", action="store_true")
     ap.add_argument("--ehr-read", choices=["real", "ok", "block", "stubborn"], default="real")
     args = ap.parse_args()
     _wd = args.workdir
@@ -64,6 +69,25 @@ async def main() -> int:
     from haloflow_demo.settings import DemoSettings
 
     release = _wd / "release"
+
+    if args.effect_pause:
+        import haloflow_demo.inbound as inbound_mod
+
+        real_apply = inbound_mod._apply
+
+        async def _paused_apply(conn: object, row: object, cls: object, d: object) -> object:
+            result = await real_apply(conn, row, cls, d)  # type: ignore[arg-type]
+            _log("calls.jsonl", {"phase": "effect_paused"})
+            try:
+                while not release.exists():
+                    await asyncio.sleep(0.02)
+            except asyncio.CancelledError:
+                _log("calls.jsonl", {"phase": "effect_cancel_received"})
+                raise
+            _log("calls.jsonl", {"phase": "effect_resumed"})
+            return result
+
+        inbound_mod._apply = _paused_apply  # type: ignore[assignment]
 
     if args.ehr_read != "real":
         import haloflow_demo.service as service_mod

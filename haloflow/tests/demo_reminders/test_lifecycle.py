@@ -30,6 +30,9 @@ L5 SIGTERM while the dispatcher's effect transaction waits on a targeted DB
    even after the test releases its lock.
 L6 the baseline read ignores cancellation: exit 4, no explicit lock release,
    replacement refused until A is dead; no effect committed.
+L7 SIGTERM while an ADMITTED effect transaction is paused before commit: it
+   must end (cancelled by the bounded drain) before the DB lock and the process
+   lock are released; no effect committed.
 """
 
 from __future__ import annotations
@@ -428,3 +431,32 @@ def test_l6_cancellation_ignoring_baseline_read_exits_4_without_release(
     b2_code, b2_info = _replacement(children, dispatch_env, wd)
     assert b2_code == 0, b2_info  # the kernel released the lock when A died
     _evidence("l6", wd, {"a_exit": a.returncode, "b_refused": b_info, "b2_exit": b2_code})
+
+
+def _t(wd: Path, name: str, key: str, value: str) -> float:
+    for rec in _lines(wd / name):
+        if rec.get(key) == value:
+            return float(str(rec["t"]))
+    raise AssertionError(f"{value} not recorded")
+
+
+def test_l7_admitted_effect_ends_before_locks_are_released(
+    dispatch_env: dict[str, str], demo_db_url: str, tmp_path: Path, children: Children
+) -> None:
+    wd = tmp_path / "l7"
+    wd.mkdir()
+    a = children.start(RUNNER, dispatch_env, "--workdir", str(wd), "--seed-reply",
+                       "--ehr-read", "ok", "--effect-pause", "--drain-timeout", "2",
+                       "--cancel-grace", "2")
+    _wait(lambda: "effect_paused" in _phases(wd), a, "effect paused before commit")
+    a.send_signal(signal.SIGTERM)
+    _, a_err = a.communicate(timeout=TIMEOUT)
+    assert a.returncode == 0, a_err
+    events = _events(wd)
+    _assert_order(events, ORDER)
+    assert "effect_cancel_received" in _phases(wd), _phases(wd)
+    ended = _t(wd, "calls.jsonl", "phase", "effect_cancel_received")
+    assert ended < _t(wd, "events.jsonl", "event", "db_lock_released")
+    assert ended < _t(wd, "events.jsonl", "event", "process_lock_released")
+    _no_effect(demo_db_url)
+    _evidence("l7", wd, {"a_exit": a.returncode})
