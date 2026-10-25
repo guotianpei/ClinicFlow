@@ -143,7 +143,8 @@ def _raise(exc: Exception) -> Callable[[httpx.Request], httpx.Response]:
         (lambda r: httpx.Response(400, text="<html>bad</html>"), "UNCERTAIN", "malformed_4xx"),
         (lambda r: httpx.Response(200, json={"payload": {}}), "UNCERTAIN", "incomplete_2xx"),
         (lambda r: httpx.Response(200, text="not json"), "UNCERTAIN", "incomplete_2xx"),
-        (lambda r: httpx.Response(200, json={"payload": {"smsMessageID": "m-1"}}),
+        (lambda r: httpx.Response(200, json={"success": True,
+                                              "payload": {"smsMessageID": "m-1"}}),
          "SUBMITTED", None),
     ],
     ids=["connect", "connect_timeout", "read_timeout", "write_timeout", "transport", "302",
@@ -165,7 +166,7 @@ async def test_t22_request_shape() -> None:
 
     def _h(req: httpx.Request) -> httpx.Response:
         captured.append(req)
-        return httpx.Response(200, json={"payload": {"smsMessageID": "m-1"}})
+        return httpx.Response(200, json={"success": True, "payload": {"smsMessageID": "m-1"}})
 
     gw = NotifyreGateway(api_key="secret-token", sender="+15550100100", test_number=TEST_NUMBER,
                          transport=httpx.MockTransport(_h))
@@ -175,8 +176,65 @@ async def test_t22_request_shape() -> None:
     assert req.headers["x-api-token"] == "secret-token"
     import json
     body = json.loads(req.content)
-    assert body["recipients"] == [{"type": "mobile_number", "value": TEST_NUMBER}]
-    assert body["body"] == "hello" and body["from"] == "+15550100100"
+    # N1: documented key casing (docs.notifyre.com curl sample, Send SMS)
+    assert set(body) == {"Body", "From", "Recipients"}
+    assert body["Recipients"] == [{"type": "mobile_number", "value": TEST_NUMBER}]
+    assert body["Body"] == "hello" and body["From"] == "+15550100100"
+
+
+# ── N2: strict 2xx decoding (Notifyre envelope Success/Payload/InvalidToNumbers) ──
+
+
+def _r200(body: object) -> httpx.Response:
+    return httpx.Response(200, json=body)
+
+
+def _r200_raw(text: str) -> httpx.Response:
+    return httpx.Response(200, text=text, headers={"content-type": "application/json"})
+
+
+@pytest.mark.parametrize(
+    ("resp", "state", "reason"),
+    [
+        (_r200({"success": True, "payload": {"smsMessageID": "m", "invalidToNumbers": []}}),
+         "SUBMITTED", None),
+        (_r200({"Success": True, "Payload": {"SmsMessageID": "m", "InvalidToNumbers": None}}),
+         "SUBMITTED", None),
+        (_r200({"success": "true", "payload": {"smsMessageID": "m"}}),
+         "UNCERTAIN", "incomplete_2xx"),
+        (_r200({"success": False, "payload": {"smsMessageID": "m"}}),
+         "UNCERTAIN", "incomplete_2xx"),
+        (_r200({"success": True, "payload": {"smsMessageID": ""}}),
+         "UNCERTAIN", "incomplete_2xx"),
+        (_r200({"success": True, "payload": {"smsMessageID": 5}}),
+         "UNCERTAIN", "incomplete_2xx"),
+        (_r200({"success": True, "payload": {"smsMessageID": "m",
+                                             "invalidToNumbers": [{"number": TEST_NUMBER,
+                                                                   "message": "invalid"}]}}),
+         "REJECTED", "invalid_to"),
+        (_r200({"success": True, "payload": {"smsMessageID": "m", "invalidToNumbers": "x"}}),
+         "UNCERTAIN", "malformed_2xx"),
+        (_r200({"success": True, "payload": {"smsMessageID": "m",
+                                             "invalidToNumbers": [{"number": 1}]}}),
+         "UNCERTAIN", "malformed_2xx"),
+        (_r200({"success": True, "payload": {"smsMessageID": "m", "SmsMessageID": "n"}}),
+         "UNCERTAIN", "malformed_2xx"),
+        (_r200({"success": True, "payload": {"messageId": "m"}}),
+         "UNCERTAIN", "incomplete_2xx"),
+        (_r200_raw('{"success": true, "success": true, "payload": {"smsMessageID": "m"}}'),
+         "UNCERTAIN", "malformed_2xx"),
+        (_r200_raw('{"success": true, "payload": {"smsMessageID": "a", "smsMessageID": "b"}}'),
+         "UNCERTAIN", "malformed_2xx"),
+    ],
+    ids=["camel_ok", "pascal_ok", "success_string", "success_false", "empty_id", "int_id",
+         "invalid_to", "invalid_to_not_list", "invalid_to_bad_item", "conflicting_variants",
+         "undocumented_key", "duplicate_success", "duplicate_id"],
+)
+def test_n2_strict_2xx_decoding(resp: httpx.Response, state: str, reason: str | None) -> None:
+    out = classify_response(resp)
+    assert (out.state, out.reason) == (state, reason)
+    if state == "SUBMITTED":
+        assert out.provider_message_id == "m"
 
 
 def test_t23_client_never_follows_redirects_and_never_retries() -> None:
@@ -765,4 +823,39 @@ async def test_g2_epoch_change_seen_by_the_gate_makes_no_call(
     finally:
         await own.close()
     assert (r.state, r.reason) == ("CLAIMED", "owner_unavailable")
+    assert gw.calls == []
+
+
+# ── G1: a failing conn.begin() at dispatch is NOT_SENT(dispatch_check_failed) ──
+
+
+async def test_g1_dispatch_begin_failure_sends_nothing(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sqlalchemy.exc import DBAPIError
+    from sqlalchemy.ext.asyncio import AsyncConnection
+
+    s, own = await _own(_env(demo_env))
+    gw = StubGateway(TEST_NUMBER)
+    armed = {"on": False}
+    real_begin = AsyncConnection.begin
+
+    def begin(self: AsyncConnection) -> Any:
+        if armed["on"]:
+            armed["on"] = False
+            raise DBAPIError("BEGIN", {}, Exception("injected"))
+        return real_begin(self)
+
+    monkeypatch.setattr(AsyncConnection, "begin", begin)
+
+    async def hook(stage: str) -> None:
+        if stage == "before_lock":
+            armed["on"] = True
+
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT,
+                           now=_clock(NOW), dispatch_hook=hook)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "dispatch_check_failed")
     assert gw.calls == []
