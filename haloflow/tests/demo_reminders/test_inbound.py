@@ -187,16 +187,34 @@ def _disposition(url: str, reply_id: str) -> tuple[str, str | None]:
     return rows[0]
 
 
-async def _wait_for_lock_waiter(url: str, timeout: float = 5.0) -> None:
+def _waiters(url: str, waiter_tag: str) -> list[tuple[int, list[int]]]:
+    return [(int(pid), list(blockers)) for pid, blockers in _q(
+        url, "SELECT pid, pg_blocking_pids(pid) FROM pg_stat_activity"
+             " WHERE datname = current_database() AND wait_event_type = 'Lock'"
+             " AND position(%s in query) > 0", (waiter_tag,))]
+
+
+def _backend_query(url: str, pid: int) -> str:
+    rows = _q(url, "SELECT query FROM pg_stat_activity WHERE pid = %s", (pid,))
+    return str(rows[0][0]) if rows else ""
+
+
+async def _wait_for_blocked(url: str, waiter_tag: str, *, blocker_pid: int | None = None,
+                            blocker_tag: str | None = None, timeout: float = 5.0) -> None:
+    """Wait until the exact operation tagged ``waiter_tag`` is lock-waiting AND is
+    blocked by the expected holder (by PID, or by the holder's last statement tag).
+    Never terminates anything."""
     loop = asyncio.get_running_loop()
     end = loop.time() + timeout
     while loop.time() < end:
-        n = _q(url, "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
-                    " AND datname = current_database()")[0][0]
-        if n:
-            return
+        for _pid, blockers in _waiters(url, waiter_tag):
+            if blocker_pid is not None and blocker_pid in blockers:
+                return
+            if blocker_tag is not None and any(
+                    blocker_tag in _backend_query(url, b) for b in blockers):
+                return
         await asyncio.sleep(0.02)
-    raise AssertionError("no lock waiter appeared")
+    raise AssertionError(f"no {waiter_tag!r} waiter blocked by the expected holder")
 
 
 # ── I01: classification (U) ───────────────────────────────────────────────────
@@ -882,7 +900,7 @@ async def test_i38_receipt_waiting_on_contact_lock_sees_the_contact(
     async def hook(stage: str) -> None:
         if stage == "contact_locked" and not pending:   # B holds the match lock
             pending.append(asyncio.create_task(_reply(own, s, "1", reply_id="rid-1")))
-            await _wait_for_lock_waiter(demo_db_url)
+            await _wait_for_blocked(demo_db_url, "match:receipt", blocker_tag="match:contact")
 
     try:
         await _send(own, s, 1)
@@ -904,7 +922,7 @@ async def test_i39_contact_waiting_on_receipt_lock_is_not_a_candidate(
     async def hook(stage: str) -> None:
         if stage == "receipt_locked" and not pending:
             pending.append(asyncio.create_task(_send(own, s, 2)))
-            await _wait_for_lock_waiter(demo_db_url)
+            await _wait_for_blocked(demo_db_url, "match:contact", blocker_tag="match:receipt")
 
     try:
         await _send(own, s, 1)
@@ -1109,7 +1127,8 @@ async def test_i43_closing_during_match_lock_wait_applies_nothing(
         holder = psycopg.connect(demo_db_url)
         holder.execute("SELECT 1 FROM demo_match_lock WHERE id = 1 FOR UPDATE")
         task = asyncio.create_task(_process(own, s, _ehr()))
-        await _wait_for_lock_waiter(demo_db_url)
+        await _wait_for_blocked(demo_db_url, "match:effect",
+                                blocker_pid=holder.info.backend_pid)
         own.begin_closing()
         holder.rollback()
         holder.close()
@@ -1130,7 +1149,7 @@ async def test_i30_stop_waits_for_dispatch_lock(demo_env: dict[str, str], demo_d
     async def hook(stage: str) -> None:
         if stage == "before_send":
             stop = asyncio.create_task(_process(own, s, ehr))
-            await _wait_for_lock_waiter(demo_db_url)
+            await _wait_for_blocked(demo_db_url, "fence:exclusive", blocker_tag="dispatch:gate")
             order.append("send")
             pending.append(stop)
 
@@ -1369,8 +1388,13 @@ async def test_i23_staff_page_shows_replies_items_and_labels(
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://127.0.0.1:8080") as c:
             page = (await c.get("/demo/staff")).text
-            no_csrf = await c.post("/demo/inbound/process", data={})
-            no_csrf2 = await c.post("/demo/reply/simulate", data={"text": "1"})
+            no_csrf = [(await c.post(path, data=data)).status_code for path, data in [
+                ("/demo/inbound/process", {}),
+                ("/demo/reply/simulate", {"reminder_id": "1", "text": "1"}),
+                ("/demo/appointments/send", {"emr_appt_id": "syn-a-1"}),
+                ("/demo/tasks/run", {"task_id": "1"}),
+                ("/demo/tasks/reconcile", {"task_id": "1"}),
+            ]]
             tok = re.search(rf'name="{CSRF_FIELD}" value="([^"]+)"', page)
     finally:
         await own.close()
@@ -1378,7 +1402,8 @@ async def test_i23_staff_page_shows_replies_items_and_labels(
     assert "5550100199" not in page and "555 010 0199" not in page
     assert "Cancel requested" in page and "Cancel the appointment in the EHR" in page
     assert "SIMULATED" in page and "Delivered" not in page
-    assert no_csrf.status_code == 403 and no_csrf2.status_code == 403
+    assert no_csrf == [403] * 5
+    assert _reminders(demo_db_url) == {"syn-a-1": "CANCEL_REQUESTED"}, "no action ran"
     assert tok is not None
 
 
@@ -1573,3 +1598,88 @@ async def test_p_uncertain_real_attempt_counts_in_real_history_and_survives_rese
     await reset_synthetic(s)
     assert sorted(_q(demo_db_url, "SELECT provenance, outcome FROM contact_history")) == [
         ("real", "UNCERTAIN"), ("stub", "SUBMITTED")]
+
+
+
+# ── Codex tests-only review 20261025T170549Z: impostors, correlation replay ───
+
+
+async def test_p4_impostor_gateways_claiming_valid_provenance_fail_closed(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.sending import SendOutcome
+
+    calls: list[str] = []
+
+    class ClaimsReal:
+        provenance = "real"
+
+        async def send(self, to: str, body: str) -> SendOutcome:
+            calls.append("real")
+            return SendOutcome("SUBMITTED", None, "x")
+
+    class ClaimsStub(ClaimsReal):
+        provenance = "stub"
+
+    StubGateway_ = type("StubGateway", (ClaimsStub,), {})       # same-name impostor
+    NotifyreGateway_ = type("NotifyreGateway", (ClaimsReal,), {})
+
+    s, own = await _own(_env(demo_env))
+    try:
+        results = [await send_one(own, s, _appt(i), _patient(i), gw(), tenant_id=TENANT,  # type: ignore[arg-type]
+                                  now=_clock(NOW))
+                   for i, gw in enumerate((ClaimsReal, ClaimsStub, StubGateway_,
+                                           NotifyreGateway_), start=1)]
+    finally:
+        await own.close()
+    assert [(r.state, r.reason) for r in results] == [("NOT_SENT", "unknown_gateway")] * 4
+    assert calls == []
+    assert _q(demo_db_url, "SELECT count(*) FROM contact_history") == [(0,)]
+    assert _q(demo_db_url, "SELECT count(*) FROM send_quota") == [(0,)]
+
+
+async def test_p4_real_gateway_with_tampered_provenance_fails_closed(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    gw = _real_gw()
+    gw.provenance = "stub"         # instance tampering after construction
+    s, own = await _own(_env(demo_env))
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW))
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "unknown_gateway")
+    assert _q(demo_db_url, "SELECT count(*) FROM contact_history") == [(0,)]
+
+
+@pytest.mark.parametrize("first_correlated", [False, True])
+async def test_replay_same_reply_id_cannot_switch_correlation(
+    demo_env: dict[str, str], demo_db_url: str, first_correlated: bool
+) -> None:
+    s, own = await _own(_env(demo_env))
+    try:
+        await _send(own, s, 1)
+        r2 = await _send(own, s, 2)
+        corr_first = r2.reminder_id if first_correlated else None
+        corr_second = None if first_correlated else r2.reminder_id
+        a = await _reply(own, s, "1", reply_id="rid-x", correlation=corr_first)
+        cands_before = _q(demo_db_url, "SELECT contact_seq, reminder_id, status_at_receipt"
+                                       " FROM inbound_candidates ORDER BY 1")
+        b = await _reply(own, s, "1", reply_id="rid-x", correlation=corr_second)
+        await _process(own, s, _ehr())
+        c = await _reply(own, s, "1", reply_id="rid-x", correlation=corr_second)
+        await _process(own, s, _ehr())
+    finally:
+        await own.close()
+    assert (a.status, b.status, c.status) == (204, 204, 204)
+    assert _q(demo_db_url, "SELECT simulated_correlation, provenance FROM inbound_messages") == [
+        (corr_first, "stub")]
+    assert _q(demo_db_url, "SELECT contact_seq, reminder_id, status_at_receipt"
+                           " FROM inbound_candidates ORDER BY 1") == cands_before
+    if first_correlated:
+        assert _reminders(demo_db_url) == {"syn-a-1": "SUBMITTED", "syn-a-2": "CONFIRMED"}
+        assert len(_tasks(demo_db_url)) == 1
+    else:
+        assert _disposition(demo_db_url, "rid-x") == ("PROCESSED", "uncorrelated_reply")
+        assert _reminders(demo_db_url) == {"syn-a-1": "SUBMITTED", "syn-a-2": "SUBMITTED"}
+        assert _tasks(demo_db_url) == []
