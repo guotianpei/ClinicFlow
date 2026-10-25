@@ -231,6 +231,10 @@ def validate_startup(s: DemoSettings) -> DemoDbTarget:
         raise StartupRefused("sms_daily_cap", str(cap))
     if s.staff_host not in LOOPBACK_HOSTS:
         raise StartupRefused("staff_bind_not_loopback")
+    if s.sms_mode == "real":
+        # Notifyre send contract (endpoint, payload, response id, sender
+        # registration) not yet verified; only the labelled stub may run.
+        raise StartupRefused("sms_real_unverified")
     if s.callback_mode == "real" and s.callback_secret.strip() in ("", "changeme"):
         raise StartupRefused("callback_secret")
     try:

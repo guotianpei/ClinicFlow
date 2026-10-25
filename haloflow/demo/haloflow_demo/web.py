@@ -34,6 +34,7 @@ class StaffService(Protocol):
     async def page_data(self) -> dict[str, Any]: ...
     async def set_paused(self, paused: bool) -> None: ...
     async def preview_batch(self) -> list[dict[str, Any]]: ...
+    async def send_batch(self) -> list[dict[str, Any]]: ...
 
 
 class NullStaffService:
@@ -47,6 +48,9 @@ class NullStaffService:
         return None
 
     async def preview_batch(self) -> list[dict[str, Any]]:
+        return []
+
+    async def send_batch(self) -> list[dict[str, Any]]:
         return []
 
 
@@ -87,6 +91,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         f"<body><p><strong>{_e(STAFF_BANNER)}</strong></p>"
         f"<p>Modes: {label_text}. Paused: {_e(data.get('paused'))}.</p>"
         f"{form('/demo/batch/preview', 'Preview batch')}"
+        f"{form('/demo/batch/send', 'Send batch (simulated)')}"
         f"{form('/demo/pause', 'Pause sending')}{form('/demo/resume', 'Resume sending')}"
         f"{preview_html}"
         "<h2>Appointments</h2><table>"
@@ -184,6 +189,13 @@ def build_staff_app(
         if not await _csrf_ok(request):
             return _forbidden()
         await service.set_paused(False)
+        return _back()
+
+    @app.post("/demo/batch/send")
+    async def batch_send(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        await service.send_batch()
         return _back()
 
     @app.post("/demo/batch/preview")

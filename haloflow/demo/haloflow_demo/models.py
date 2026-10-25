@@ -6,6 +6,7 @@ tables with ``checkfirst``. It never issues DROP, TRUNCATE or DELETE.
 
 from __future__ import annotations
 
+import secrets
 from datetime import date, datetime
 
 from sqlalchemy import (
@@ -24,9 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from haloflow_demo.db import check_identity, read_identity
-from haloflow_demo.settings import DemoDbTarget
+from haloflow_demo.settings import DemoDbTarget, StartupRefused
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: reminder_records.reserved_day; demo_meta phone_key_secret
 
 
 class DemoBase(DeclarativeBase):
@@ -50,6 +51,7 @@ class ReminderRecord(DemoBase):
     reason: Mapped[str | None] = mapped_column(String(64))
     mode: Mapped[str | None] = mapped_column(String(16))
     provider_message_id: Mapped[str | None] = mapped_column(String(256))
+    reserved_day: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = _ts()
     updated_at: Mapped[datetime] = _ts()
 
@@ -132,12 +134,21 @@ DEMO_TABLES: tuple[str, ...] = tuple(DemoBase.metadata.tables)
 
 
 async def create_demo_tables(engine: AsyncEngine, target: DemoDbTarget) -> None:
-    """Identity check, then ``CREATE TABLE`` with ``checkfirst``. Never destructive."""
+    """Identity check, then ``CREATE TABLE`` with ``checkfirst``. Never destructive.
+
+    There is no migration: a demo database created by an older schema version is
+    refused (``demo_schema_mismatch``); use a fresh ``*_demo`` database.
+    """
     async with engine.begin() as conn:
         check_identity(await read_identity(conn), target)
         await conn.run_sync(DemoBase.metadata.create_all, checkfirst=True)
         await conn.execute(
-            text("INSERT INTO demo_meta(key, value) VALUES ('schema_version', :v) "
-                 "ON CONFLICT (key) DO NOTHING"),
-            {"v": str(SCHEMA_VERSION)},
+            text("INSERT INTO demo_meta(key, value) VALUES ('schema_version', :v), "
+                 "('phone_key_secret', :s) ON CONFLICT (key) DO NOTHING"),
+            {"v": str(SCHEMA_VERSION), "s": secrets.token_hex(32)},
         )
+        found = (await conn.execute(
+            text("SELECT value FROM demo_meta WHERE key = 'schema_version'")
+        )).scalar_one()
+        if found != str(SCHEMA_VERSION):
+            raise StartupRefused("demo_schema_mismatch", f"database has {found}")
