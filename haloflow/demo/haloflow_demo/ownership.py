@@ -24,8 +24,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
-from typing import Protocol, TypeVar
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
+from typing import Any, Protocol, TypeVar
 
 import asyncpg
 from sqlalchemy import text
@@ -168,6 +168,16 @@ class Ownership:
         self._inflight.add(task)
         task.add_done_callback(self._inflight.discard)
         return await asyncio.shield(task)
+
+    def spawn_tracked(self, coro: Coroutine[Any, Any, T]) -> asyncio.Task[T]:
+        """Run long-lived internal work (the reply dispatcher) as a tracked task,
+        so :meth:`drain` waits for it, cancels it after the timeout, and reports
+        an incomplete drain if it ignores cancellation. The process then exits
+        without releasing its locks."""
+        task: asyncio.Task[T] = asyncio.get_running_loop().create_task(coro)
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+        return task
 
     @property
     def inflight(self) -> int:

@@ -92,7 +92,6 @@ async def run(
     staff_app = build_staff_app(service, csrf_secret=secrets.token_bytes(32),
                                 unavailable=gate, staff_port=settings.staff_port)
     callback_app = build_callback_app(unavailable=gate, receiver=service.receive_http)
-    dispatcher: asyncio.Task[None] | None = None
     staff_cfg, cb_cfg = build_server_configs(settings, staff_app, callback_app)
     servers = [uvicorn.Server(staff_cfg), uvicorn.Server(cb_cfg)]
 
@@ -112,7 +111,9 @@ async def run(
         if all(s.started for s in servers):
             events.append("listening")
             if settings.dispatcher:  # R-16: only after start-up has completed
-                dispatcher = loop.create_task(service.dispatcher_loop())
+                # Tracked: the bounded drain waits for it, cancels it after the
+                # timeout, and an incomplete drain exits 4 without lock release.
+                own.spawn_tracked(service.dispatcher_loop())
                 events.append("dispatcher_started")
             if on_started is not None:
                 on_started(own)
@@ -131,10 +132,6 @@ async def run(
             s.should_exit = True
         await asyncio.gather(*server_tasks, return_exceptions=True)
         events.append("listeners_stopped")
-        if dispatcher is not None:
-            # closing is set: the loop admits no new effect; wait for its iteration
-            await asyncio.gather(dispatcher, return_exceptions=True)
-            events.append("dispatcher_stopped")
     finally:
         for w in waiters:
             w.cancel()

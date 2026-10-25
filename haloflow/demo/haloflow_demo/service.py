@@ -14,6 +14,7 @@ callback path, so every label is SIMULATED whatever the settings request.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -246,9 +247,11 @@ class DbStaffService:
         while not (self._own.closing or self._own.owner_lost):
             try:
                 await self.process_now()
-            except Exception:
-                logger.exception("dispatcher iteration failed")
-            await asyncio.sleep(interval)
+            except Exception as exc:
+                # Class name only: DB errors can carry SQL and parameter values.
+                logger.error("dispatcher iteration failed: %s", type(exc).__name__)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._own.closing_event.wait(), timeout=interval)
 
     async def set_paused(self, paused: bool) -> None:
         async with self._own.fenced(exclusive=True) as conn:

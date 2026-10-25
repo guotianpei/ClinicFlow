@@ -40,8 +40,9 @@ def sqlalchemy_url(target: DemoDbTarget) -> URL:
 def make_demo_engine(target: DemoDbTarget) -> AsyncEngine:
     if not isinstance(target, DemoDbTarget):
         raise TypeError("make_demo_engine requires a validated DemoDbTarget")
+    # hide_parameters: SQL parameter values never appear in exception text or logs.
     return create_async_engine(sqlalchemy_url(target), pool_size=5, max_overflow=5,
-                               pool_pre_ping=True)
+                               pool_pre_ping=True, hide_parameters=True)
 
 
 async def read_identity(conn: AsyncConnection) -> ConnectedIdentity:

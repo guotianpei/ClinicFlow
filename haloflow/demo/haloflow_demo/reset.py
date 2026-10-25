@@ -14,6 +14,12 @@ Preserved: ``send_quota`` (today's allowance cannot be regained),
 later row inherits a contact), ``demo_meta`` including ``phone_key_secret``,
 ``demo_settings``, ``demo_match_lock`` and the ``match_seq`` sequence.
 
+Older schemas: no preserving upgrade exists. A database at another schema
+version is refused (``demo_schema_upgrade_unavailable``), and this command does
+not offer to rebuild it. Every v2 build refused real SMS and real callbacks, so
+a v2 database can hold only stub-provenance state. Any schema change made after
+a real send must ship a preserving upgrade before it is used.
+
 Limit: deleting the whole database by hand is outside what this code can
 prevent.
 """
@@ -40,7 +46,9 @@ async def reset_synthetic(settings: DemoSettings) -> None:
                 found = (await conn.execute(text(
                     "SELECT value FROM demo_meta WHERE key = 'schema_version'"))).scalar_one()
                 if found != str(SCHEMA_VERSION):
-                    raise StartupRefused("demo_schema_mismatch", f"database has {found}")
+                    # No preserving upgrade exists for older schemas. See the module docstring.
+                    raise StartupRefused("demo_schema_upgrade_unavailable",
+                                         f"database has {found}")
                 await conn.execute(text("UPDATE contact_history SET reminder_id = NULL"))
                 await conn.execute(text("TRUNCATE " + ", ".join(SYNTHETIC_TABLES)))
         finally:
