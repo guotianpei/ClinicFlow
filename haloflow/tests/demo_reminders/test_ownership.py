@@ -389,22 +389,37 @@ def test_r2_non_regular_lock_file_refused(tmp_path: Path) -> None:
 
 
 def test_r2_unknown_external_holder_is_refused_not_killed() -> None:
+    import select
     import subprocess
     import sys
 
+    # Non-blocking and bounded (Codex checkpoint-3 review): if the lock is
+    # already held (e.g. a real demo is running), the child reports "busy" and
+    # this test fails with a clear message instead of hanging.
     holder = subprocess.Popen(
         [sys.executable, "-c",
          "import fcntl, os, sys, time\n"
          f"os.makedirs({str(LOCK_PATH.parent)!r}, mode=0o700, exist_ok=True)\n"
-         f"fd = os.open({str(LOCK_PATH)!r}, os.O_RDWR | os.O_CREAT, 0o600)\n"
-         "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+         f"fd = os.open({str(LOCK_PATH)!r}, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)\n"
+         "try:\n"
+         "    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+         "except BlockingIOError:\n"
+         "    print('busy', flush=True)\n"
+         "    sys.exit(3)\n"
          "print('held', flush=True)\n"
          "time.sleep(30)\n"],
         stdout=subprocess.PIPE, text=True,
     )
     try:
         assert holder.stdout is not None
-        assert holder.stdout.readline().strip() == "held"
+        ready, _, _ = select.select([holder.stdout], [], [], 10.0)
+        assert ready, "holder did not report readiness within 10 s"
+        state = holder.stdout.readline().strip()
+        assert state != "busy", (
+            f"{LOCK_PATH} is already held by another process (a running demo?); "
+            "stop it before running this suite"
+        )
+        assert state == "held"
         with pytest.raises(StartupRefused) as exc:
             ProcessLock().acquire()
         assert exc.value.reason == "process_lock_held"
