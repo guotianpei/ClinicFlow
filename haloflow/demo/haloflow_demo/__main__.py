@@ -5,6 +5,9 @@ demonstrator with no authentication.
 
 ``reset-synthetic`` clears the synthetic tables and preserves the send quota,
 opt-outs, contact history and secrets. It is refused while the server runs.
+
+``live-sms-test`` sends ONE real SMS to DEMO_SMS_TEST_NUMBER through the full
+send pipeline. It needs DEMO_LIVE_TEST=outbound-once. See livetest.py.
 """
 
 from __future__ import annotations
@@ -35,9 +38,17 @@ async def _reset() -> int:
     return 0
 
 
+async def _live() -> int:
+    from haloflow_demo.livetest import live_sms_test
+
+    return await live_sms_test(dict(os.environ))
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["reset-synthetic"]:
         sys.exit(asyncio.run(_reset()))
+    if sys.argv[1:] == ["live-sms-test"]:
+        exit_process(_live)
     if sys.argv[1:]:
         print(f"unknown command: {' '.join(sys.argv[1:])}", file=sys.stderr)
         sys.exit(64)

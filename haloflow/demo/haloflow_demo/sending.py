@@ -132,6 +132,33 @@ def _decode_2xx(resp: httpx.Response, recipient: str | None) -> SendOutcome:
     return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
 
 
+# Documented Notifyre response names (Send SMS). Only these spellings are ever
+# reported, and only their names, never values (live-sms-test output).
+DOCUMENTED_RESPONSE_KEYS = ("success", "statuscode", "message", "payload", "errors",
+                            "smsmessageid", "friendlyid", "invalidtonumbers")
+
+
+def observed_response_keys(resp: httpx.Response) -> tuple[str, ...]:
+    """The documented key names present (top level and Payload), in their observed
+    casing. Unknown keys are never returned; a malformed body gives ()."""
+    try:
+        data = loads_strict(resp.content)
+    except Exception:
+        return ()
+    if not isinstance(data, dict):
+        return ()
+    found: list[str] = []
+    payload: object = None
+    for k, v in data.items():
+        if k.casefold() in DOCUMENTED_RESPONSE_KEYS:
+            found.append(k)
+            if k.casefold() == "payload":
+                payload = v
+    if isinstance(payload, dict):
+        found.extend(k for k in payload if k.casefold() in DOCUMENTED_RESPONSE_KEYS)
+    return tuple(found)
+
+
 def classify_response(resp: httpx.Response, recipient: str | None = None) -> SendOutcome:
     """``recipient``: the normalised number this request was sent to."""
     code = resp.status_code
@@ -202,6 +229,7 @@ class NotifyreGateway:
         timeout: float = 10.0,
     ) -> None:
         self.provenance = "real"  # a Notifyre HTTP attempt
+        self.last_keys: tuple[str, ...] = ()
         self.test_number = test_number
         self._sender = sender
         self.transport_retries = 0
@@ -224,6 +252,7 @@ class NotifyreGateway:
             resp = await self.client.post("/sms/send", json=payload)
         except Exception as exc:
             return classify_exception(exc)
+        self.last_keys = observed_response_keys(resp)
         return classify_response(resp, recipient=to)
 
 
