@@ -1399,10 +1399,12 @@ async def test_i23_staff_page_shows_replies_items_and_labels(
     svc = DbStaffService(own, s, now=_clock(NOW))
     app = build_staff_app(svc, csrf_secret=b"s" * 32)
     try:
-        await _send(own, s, 1)
+        # A reminder for the service's own (scenario-qualified) appointment.
+        appt = (await svc.page_data())["appointments"][0]["emr_appt_id"]
+        await svc.send_to_appointment(appt)
         await _reply(own, s, "<script>alert(1)</script> 555 010 0199", reply_id="rid-x")
         await _reply(own, s, "3", reply_id="rid-3", at=REPLY_AT + timedelta(seconds=1))
-        await _process(own, s, _ehr(), at=REPLY_AT + timedelta(seconds=2))
+        await _process(own, s, svc.ehr, at=REPLY_AT + timedelta(seconds=2))
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://127.0.0.1:8080") as c:
             page = (await c.get("/demo/staff")).text
@@ -1421,7 +1423,7 @@ async def test_i23_staff_page_shows_replies_items_and_labels(
     assert "Cancel requested" in page and "Cancel the appointment in the EHR" in page
     assert "SIMULATED" in page and "Delivered" not in page
     assert no_csrf == [403] * 5
-    assert _reminders(demo_db_url) == {"syn-a-1": "CANCEL_REQUESTED"}, "no action ran"
+    assert _reminders(demo_db_url) == {appt: "CANCEL_REQUESTED"}, "no action ran"
     assert tok is not None
 
 

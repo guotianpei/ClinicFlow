@@ -231,7 +231,7 @@ def _r200_raw(text: str) -> httpx.Response:
          "undocumented_key", "duplicate_success", "duplicate_id"],
 )
 def test_n2_strict_2xx_decoding(resp: httpx.Response, state: str, reason: str | None) -> None:
-    out = classify_response(resp)
+    out = classify_response(resp, recipient=TEST_NUMBER)
     assert (out.state, out.reason) == (state, reason)
     if state == "SUBMITTED":
         assert out.provider_message_id == "m"
