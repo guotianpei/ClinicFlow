@@ -23,6 +23,10 @@ EXPECTED_TABLES = {
     "follow_up_items",
     "writeback_tasks",
     "demo_meta",
+    # Day 5 (package v1r2): durable contact history, receipt snapshot, match lock
+    "contact_history",
+    "inbound_candidates",
+    "demo_match_lock",
 }
 
 
