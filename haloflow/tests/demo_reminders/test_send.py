@@ -606,3 +606,163 @@ async def test_p1_dispatch_check_runs_inside_the_tracked_task(
         await own.close()
     assert r.state == "SUBMITTED"
     assert seen == [1], "the provider request ran inside the tracked external task"
+
+
+# ── Codex review of 9dbf74c: changes DURING the gate, and ownership after it ──
+# Linearisation: the dispatch holds FOR SHARE on demo_settings from its checks
+# through the provider request; pause and opt-out writers take FOR UPDATE on
+# that row. A writer that starts while a dispatch is between check and send
+# therefore waits until that send finishes (it applies to later sends). A final
+# synchronous ownership/closing admission runs after every await, immediately
+# before the request.
+
+
+async def _blocked_writer_probe(
+    demo_db_url: str, sql: str, params: tuple[object, ...] = ()
+) -> tuple[asyncio.Task[float], list[float]]:
+    """Start a writer in a thread; return its task and a list it appends its finish time to."""
+    import time as _time
+
+    done: list[float] = []
+
+    def _write() -> float:
+        with psycopg.connect(demo_db_url, autocommit=True) as conn:
+            conn.execute("SET lock_timeout = '10s'")
+            conn.execute(sql, params)
+        t = _time.monotonic()
+        done.append(t)
+        return t
+
+    return asyncio.get_running_loop().create_task(asyncio.to_thread(_write)), done
+
+
+async def test_g1_pause_during_gate_waits_for_the_in_flight_send(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    import time as _time
+
+    s, own = await _own(_env(demo_env))
+    sent_at: list[float] = []
+    writer: list[asyncio.Task[float]] = []
+    writer_done: list[list[float]] = []
+
+    class _Gw(StubGateway):
+        async def send(self, to: str, body: str) -> SendOutcome:
+            sent_at.append(_time.monotonic())
+            return await super().send(to, body)
+
+    async def _hook(point: str) -> None:
+        if point == "locked":  # inside the gate, after the dispatch lock
+            task, done = await _blocked_writer_probe(
+                demo_db_url, "UPDATE demo_settings SET paused = true WHERE id = 1")
+            writer.append(task)
+            writer_done.append(done)
+            await asyncio.sleep(0.4)
+            assert done == [], "the pause writer must wait while the dispatch is in its gate"
+
+    gw = _Gw(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           dispatch_hook=_hook)
+        finished = await asyncio.wait_for(writer[0], timeout=15)
+        r2 = await send_one(own, s, _appt(2), _patient(2), gw, tenant_id=TENANT, now=_clock(NOW))
+    finally:
+        await own.close()
+    assert r.state == "SUBMITTED"
+    assert finished > sent_at[0], "pause committed only after the in-flight request"
+    assert (r2.state, r2.reason) == ("NOT_SENT", "paused")
+    assert len(gw.calls) == 1
+
+
+async def test_g1_opt_out_during_gate_waits_for_the_in_flight_send(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    from haloflow_demo.sending import record_opt_out
+
+    s, own = await _own(_env(demo_env))
+    writer: list[asyncio.Task[None]] = []
+
+    async def _hook(point: str) -> None:
+        if point == "locked":
+            writer.append(asyncio.get_running_loop().create_task(
+                record_opt_out(own, TEST_NUMBER)))
+            await asyncio.sleep(0.4)
+            assert not writer[0].done(), "the opt-out writer must wait for the dispatch"
+
+    gw = StubGateway(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           dispatch_hook=_hook)
+        await asyncio.wait_for(writer[0], timeout=15)
+        r2 = await send_one(own, s, _appt(2), _patient(2), gw, tenant_id=TENANT, now=_clock(NOW))
+    finally:
+        await own.close()
+    assert r.state == "SUBMITTED"
+    assert (r2.state, r2.reason) == ("NOT_SENT", "opted_out")
+    assert len(gw.calls) == 1
+
+
+async def test_g1_pause_committed_before_gate_lock_blocks_the_send(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+
+    async def _hook(point: str) -> None:
+        if point == "before_lock":
+            _q(demo_db_url, "UPDATE demo_settings SET paused = true WHERE id = 1")
+
+    gw = StubGateway(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           dispatch_hook=_hook)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("NOT_SENT", "paused")
+    assert gw.calls == []
+
+
+@pytest.mark.parametrize("how", ["closing", "lost"])
+async def test_g2_ownership_change_during_gate_makes_no_call(
+    demo_env: dict[str, str], demo_db_url: str, how: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+
+    async def _hook(point: str) -> None:
+        if point == "before_send":  # after every await in the gate
+            if how == "closing":
+                own.begin_closing()
+            else:
+                own.lost.set()
+
+    gw = StubGateway(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           dispatch_hook=_hook)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("CLAIMED", "owner_unavailable")
+    assert gw.calls == []
+    assert _q(demo_db_url, "SELECT state FROM reminder_records") == [("CLAIMED",)]
+    s2, own2 = await _own(_env(demo_env))  # restart recovery semantics retained
+    await own2.close()
+    assert _q(demo_db_url, "SELECT state, reason FROM reminder_records") == [
+        ("UNCERTAIN", "restart_after_claim")]
+
+
+async def test_g2_epoch_change_seen_by_the_gate_makes_no_call(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    s, own = await _own(_env(demo_env))
+
+    async def _hook(point: str) -> None:
+        if point == "before_lock":
+            _q(demo_db_url, "UPDATE demo_settings SET owner_epoch = owner_epoch + 1 WHERE id = 1")
+
+    gw = StubGateway(TEST_NUMBER)
+    try:
+        r = await send_one(own, s, _appt(1), _patient(1), gw, tenant_id=TENANT, now=_clock(NOW),
+                           dispatch_hook=_hook)
+    finally:
+        await own.close()
+    assert (r.state, r.reason) == ("CLAIMED", "owner_unavailable")
+    assert gw.calls == []
