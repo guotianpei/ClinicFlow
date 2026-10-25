@@ -1,32 +1,51 @@
-"""DB-backed staff service for Day 3: list synthetic appointments, preview the
-eligible batch (no writes), pause/resume (fenced, R-14).
+"""DB-backed staff service.
 
-Mode labels are what this build can actually do. Day 3 has no real SMS, EHR or
+Day 3: list, preview and pause. Day 4: send batch (stub). Day 5:
+- send to one appointment;
+- simulated replies (in-process, labelled, through the same verifier);
+- process replies;
+- follow-up items;
+- write-back Run and Reconcile.
+
+Mode labels are what this build can actually do. There is no real SMS, EHR or
 callback path, so every label is SIMULATED whatever the settings request.
 """
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import secrets
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import text
 
+from haloflow_demo.inbound import ReceiveResult, process_pending, receive
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
-from haloflow_demo.sending import SmsGateway, StubGateway, send_batch
+from haloflow_demo.sending import SmsGateway, StubGateway, send_batch, send_one
 from haloflow_demo.settings import DemoSettings
-from haloflow_demo.synthetic_ehr import SyntheticEhr, default_fixtures
+from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
+from haloflow_demo.tasks import reconcile_task, run_task
+
+logger = logging.getLogger(__name__)
 
 TENANT_ID = "demo-clinic"
 LABELS = {"sms": "SIMULATED", "ehr": "SIMULATED", "callback": "SIMULATED"}
-
+SIMULATED_CORRELATION_LABEL = "SIMULATED — correlated by the demo, not by SMS"
 
 # What staff see. A submission is never shown as delivered: no delivery
 # callback is in scope (R-12).
 STATE_LABELS = {"CLAIMED": "Sending", "SUBMITTED": "Submitted", "NOT_SENT": "Not sent",
-                "REJECTED": "Rejected by provider", "UNCERTAIN": "Uncertain (not re-sent)"}
+                "REJECTED": "Rejected by provider", "UNCERTAIN": "Uncertain (not re-sent)",
+                "CONFIRMED": "Confirmed by patient",
+                "RESCHEDULE_REQUESTED": "Reschedule requested — call patient",
+                "CANCEL_REQUESTED": "Cancel requested — staff to cancel in EHR"}
 
 
 def _label(state: str | None) -> str:
@@ -35,6 +54,31 @@ def _label(state: str | None) -> str:
 
 def _utcnow() -> datetime:
     return datetime.now(tz=UTC)
+
+
+class _EhrRouter:
+    """Routes calls to the synthetic EHR that holds the appointment."""
+
+    supports_conditional_write = True
+    conditional_contract_verified = False  # synthetic: proves nothing about a real EHR
+
+    def __init__(self, ehrs: dict[date, SyntheticEhr]) -> None:
+        self._ehrs = ehrs
+
+    def _find(self, appt_id: str) -> SyntheticEhr:
+        for ehr in self._ehrs.values():
+            if any(a.emr_appt_id == appt_id for a in ehr.fixtures.appointments):
+                return ehr
+        raise LookupError("appointment not in the synthetic EHR")
+
+    async def read_confirmation(self, appt_id: str) -> Observation:
+        return await self._find(appt_id).read_confirmation(appt_id)
+
+    async def write_confirmation_conditional(
+        self, appt_id: str, target: str, expected_version: int
+    ) -> WriteResult:
+        return await self._find(appt_id).write_confirmation_conditional(
+            appt_id, target, expected_version)
 
 
 class DbStaffService:
@@ -51,6 +95,7 @@ class DbStaffService:
         self._now = now
         self._gateway: SmsGateway = gateway or StubGateway(settings.sms_test_number)
         self._ehr: dict[date, SyntheticEhr] = {}
+        self.ehr = _EhrRouter(self._ehr)
 
     def _target(self) -> date:
         return clinic_target_date(self._now(), self._settings.clinic_tz,
@@ -61,13 +106,13 @@ class DbStaffService:
             self._ehr[target] = SyntheticEhr(default_fixtures(target, self._settings.clinic_tz))
         return self._ehr[target]
 
-    async def _reminder_states(self) -> dict[str, str]:
+    async def _reminders(self) -> dict[str, tuple[int, str]]:
         async with self._own.engine.connect() as conn:
             rows = (await conn.execute(
-                text("SELECT emr_appt_id, state FROM reminder_records WHERE tenant_id = :t"),
+                text("SELECT emr_appt_id, id, state FROM reminder_records WHERE tenant_id = :t"),
                 {"t": TENANT_ID},
             )).all()
-        return {str(r[0]): str(r[1]) for r in rows}
+        return {str(r[0]): (int(r[1]), str(r[2])) for r in rows}
 
     async def _paused(self) -> bool:
         async with self._own.engine.connect() as conn:
@@ -76,25 +121,57 @@ class DbStaffService:
             )).scalar_one()
         return bool(value)
 
+    async def _lists(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]],
+                                    list[dict[str, Any]]]:
+        tz = self._settings.clinic_tz
+        async with self._own.engine.connect() as conn:
+            inbound = [
+                {"masked_from": r.masked_from, "text": r.body, "cls": r.cls,
+                 "state": r.state, "disposition": r.disposition,
+                 "received": format_local(r.received_at, tz),
+                 "label": SIMULATED_CORRELATION_LABEL if r.simulated_correlation is not None
+                 else "SIMULATED"}
+                for r in (await conn.execute(text(
+                    "SELECT masked_from, body, cls, state, disposition, received_at,"
+                    " simulated_correlation FROM inbound_messages ORDER BY id DESC LIMIT 50"
+                ))).all()]
+            items = [
+                {"kind": r.kind, "detail": r.detail, "appointment": r.emr_appt_id,
+                 "status": r.status}
+                for r in (await conn.execute(text(
+                    "SELECT f.kind, f.detail, f.status, r.emr_appt_id FROM follow_up_items f"
+                    " LEFT JOIN reminder_records r ON r.id = f.reminder_id ORDER BY f.id"
+                ))).all()]
+            tasks = [
+                {"task_id": r.id, "appointment": r.emr_appt_id, "state": r.state,
+                 "reason": r.reason}
+                for r in (await conn.execute(text(
+                    "SELECT t.id, t.state, t.reason, r.emr_appt_id FROM writeback_tasks t"
+                    " JOIN reminder_records r ON r.id = t.reminder_id ORDER BY t.id"
+                ))).all()]
+        return inbound, items, tasks
+
     async def page_data(self) -> dict[str, Any]:
         target = self._target()
         ehr = self._ehr_for(target)
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
-        states = await self._reminder_states()
-        rows = [
-            {
+        reminders = await self._reminders()
+        rows = []
+        for a in appts:
+            rem = reminders.get(a.emr_appt_id)
+            rows.append({
                 "emr_appt_id": a.emr_appt_id,
+                "reminder_id": rem[0] if rem else None,
                 "patient": ehr.patients[a.emr_patient_id].display_name
                 if a.emr_patient_id in ehr.patients else "(unknown)",
                 "when": format_local(a.start_utc, tz),
-                "status": f"{a.status.value}; reminder: "
-                          f"{_label(states.get(a.emr_appt_id))}",
-            }
-            for a in appts
-        ]
+                "status": f"{a.status.value}; reminder: {_label(rem[1] if rem else None)}",
+            })
+        inbound, items, tasks = await self._lists()
         return {"paused": await self._paused(), "target_date": target.isoformat(),
-                "appointments": rows, "inbound": [], "items": [], "labels": dict(LABELS)}
+                "appointments": rows, "inbound": inbound, "items": items, "tasks": tasks,
+                "labels": dict(LABELS)}
 
     async def preview_batch(self) -> list[dict[str, Any]]:
         """Read-only: no claim, no reservation, no external call."""
@@ -103,24 +180,75 @@ class DbStaffService:
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
         result = select_eligible(appts, ehr.patients, target, tz,
-                                 existing_appt_ids=set(await self._reminder_states()))
+                                 existing_appt_ids=set(await self._reminders()))
         decision: dict[str, str] = {e.appointment.emr_appt_id: "eligible" for e in result.eligible}
         decision.update({s.emr_appt_id: f"skip: {s.reason.value}" for s in result.skipped})
         return [{"emr_appt_id": a.emr_appt_id, "decision": decision[a.emr_appt_id]}
                 for a in appts if a.emr_appt_id in decision]
 
-    async def send_batch(self) -> list[dict[str, Any]]:
-        """Send to every eligible appointment on the target date (stub gateway)."""
+    async def _eligible(self) -> list[Any]:
         target = self._target()
         ehr = self._ehr_for(target)
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
-        result = select_eligible(appts, ehr.patients, target, tz,
-                                 existing_appt_ids=set(await self._reminder_states()))
-        sent = await send_batch(self._own, self._settings, result.eligible, self._gateway,
-                                tenant_id=TENANT_ID, now=self._now)
+        return select_eligible(appts, ehr.patients, target, tz,
+                               existing_appt_ids=set(await self._reminders())).eligible
+
+    async def send_batch(self) -> list[dict[str, Any]]:
+        """Send to every eligible appointment on the target date (stub gateway)."""
+        sent = await send_batch(self._own, self._settings, await self._eligible(),
+                                self._gateway, tenant_id=TENANT_ID, now=self._now)
         return [{"reminder_id": r.reminder_id, "state": r.state, "reason": r.reason}
                 for r in sent]
+
+    async def send_to_appointment(self, emr_appt_id: str) -> dict[str, Any]:
+        """Send one reminder, so the demo phone has a single contact."""
+        for e in await self._eligible():
+            if e.appointment.emr_appt_id == emr_appt_id:
+                r = await send_one(self._own, self._settings, e.appointment, e.patient,
+                                   self._gateway, tenant_id=TENANT_ID, now=self._now)
+                return {"reminder_id": r.reminder_id, "state": r.state, "reason": r.reason}
+        return {"reminder_id": None, "state": "SKIPPED", "reason": "not_eligible"}
+
+    async def receive_http(self, raw: bytes, signature_headers: list[str]) -> ReceiveResult:
+        """The callback route's receiver: never carries a simulated correlation."""
+        return await receive(self._own, self._settings, raw, signature_headers, now=self._now)
+
+    async def simulate_reply(self, reminder_id: int, message: str) -> ReceiveResult:
+        """A labelled simulated reply from the test number, signed with the demo
+        secret and passed through the same verifier, with an in-process correlation."""
+        at = self._now()
+        ts = int(at.timestamp())
+        to = self._settings.sms_test_number
+        sender = self._settings.sms_sender
+        if to is None or sender is None:
+            return ReceiveResult(400, "numbers_unset", None)
+        raw = json.dumps({"Event": "sms_received", "Timestamp": ts, "Payload": {
+            "ReplyID": "sim-" + secrets.token_hex(12), "RecipientID": "sim",
+            "RecipientNumber": sender, "SenderNumber": to, "Message": message[:1600],
+            "ReceivedDateUtc": ts}}).encode()
+        secret = self._settings.callback_secret
+        v = hmac.new(secret.encode(), str(ts).encode() + b"." + raw, hashlib.sha256).hexdigest()
+        return await receive(self._own, self._settings, raw, [f"t={ts},v={v}"], now=lambda: at,
+                             simulated_correlation=reminder_id)
+
+    async def process_now(self) -> list[tuple[int, str | None]]:
+        return await process_pending(self._own, self._settings, self.ehr, now=self._now)
+
+    async def run_writeback(self, task_id: int) -> str:
+        return await run_task(self._own, self.ehr, task_id)
+
+    async def reconcile_writeback(self, task_id: int) -> str:
+        return await reconcile_task(self._own, self.ehr, task_id)
+
+    async def dispatcher_loop(self, interval: float = 2.0) -> None:
+        """R-16: runs only after start-up; stops when closing or ownership is lost."""
+        while not (self._own.closing or self._own.owner_lost):
+            try:
+                await self.process_now()
+            except Exception:
+                logger.exception("dispatcher iteration failed")
+            await asyncio.sleep(interval)
 
     async def set_paused(self, paused: bool) -> None:
         async with self._own.fenced(exclusive=True) as conn:

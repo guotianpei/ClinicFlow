@@ -17,9 +17,21 @@ Per appointment:
      or after the call, the row stays CLAIMED and restart recovery marks it
      UNCERTAIN(restart_after_claim); it is never re-sent blindly.
 
+Day 5 adds:
+  * contact admission (package v1r2): after the quota-day check and before
+    dispatch, a separate fenced transaction takes the match lock, draws
+    ``contact_seq`` and records the contact in ``contact_history`` with the
+    gateway's construction provenance. The outcome commit also records the
+    outcome there. NOT_SENT and REJECTED are the certain no-message outcomes;
+  * provenance (P-NS): StubGateway is 'stub' and NotifyreGateway is 'real'.
+    Any other gateway fails closed (NOT_SENT(unknown_gateway)) before any
+    reservation, contact or call;
+  * N1/N2: documented Notifyre request key casing, and strict 2xx decoding.
+
 Real Notifyre mode is refused at start-up until the send contract (endpoint,
 payload, response id, sender registration) is verified against Notifyre's
-documentation and a controlled test (``sms_real_unverified``).
+documentation and a controlled test (``sms_real_unverified``). MockTransport
+tests prove nothing about live sends.
 """
 
 from __future__ import annotations
@@ -42,6 +54,7 @@ from haloflow_demo.ownership import Ownership
 from haloflow_demo.reminders import claim_reminder
 from haloflow_demo.selection import Eligible
 from haloflow_demo.settings import DemoSettings
+from haloflow_demo.strict_json import StrictJsonError, ci_get, loads_strict
 from haloflow_demo.synthetic_ehr import SyntheticAppointment, SyntheticPatient
 
 CLINIC_NAME = "HaloVox Demo Clinic"  # Q-B4 (Rachel, 2026-10-25)
@@ -84,17 +97,40 @@ def classify_exception(exc: BaseException) -> SendOutcome:
     return SendOutcome("UNCERTAIN", "transport", None)
 
 
+def _decode_2xx(resp: httpx.Response) -> SendOutcome:
+    """N2: Success must be boolean true; SmsMessageID a non-empty string; an
+    InvalidToNumbers listing our recipient is REJECTED(invalid_to). Duplicate or
+    conflicting keys, or a malformed InvalidToNumbers, are malformed_2xx. Last
+    key never wins."""
+    try:
+        data = loads_strict(resp.content)
+    except StrictJsonError:
+        return SendOutcome("UNCERTAIN", "malformed_2xx", None)
+    except Exception:
+        return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
+    if not isinstance(data, dict):
+        return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
+    payload = ci_get(data, "Payload")
+    invalid = ci_get(payload, "InvalidToNumbers") if isinstance(payload, dict) else None
+    if invalid is not None:
+        if not isinstance(invalid, list) or not all(
+            isinstance(i, dict) and isinstance(ci_get(i, "Number"), str) for i in invalid
+        ):
+            return SendOutcome("UNCERTAIN", "malformed_2xx", None)
+        if invalid:
+            return SendOutcome("REJECTED", "invalid_to", None)
+    if ci_get(data, "Success") is not True or not isinstance(payload, dict):
+        return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
+    msg_id = ci_get(payload, "SmsMessageID")
+    if isinstance(msg_id, str) and msg_id:
+        return SendOutcome("SUBMITTED", None, msg_id)
+    return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
+
+
 def classify_response(resp: httpx.Response) -> SendOutcome:
     code = resp.status_code
     if 200 <= code < 300:
-        try:
-            data: Any = resp.json()
-            msg_id = data["payload"]["smsMessageID"]
-        except Exception:
-            return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
-        if isinstance(msg_id, str) and msg_id:
-            return SendOutcome("SUBMITTED", None, msg_id)
-        return SendOutcome("UNCERTAIN", "incomplete_2xx", None)
+        return _decode_2xx(resp)
     if 300 <= code < 400:
         return SendOutcome("UNCERTAIN", "3xx", None)
     if 400 <= code < 500:
@@ -114,6 +150,8 @@ def classify_response(resp: httpx.Response) -> SendOutcome:
 
 
 class SmsGateway(Protocol):
+    provenance: str
+
     async def send(self, to: str, body: str) -> SendOutcome: ...
 
 
@@ -124,6 +162,9 @@ class StubGateway:
     test_number: str | None
     script: list[SendOutcome | Exception] = field(default_factory=list)
     calls: list[tuple[str, str]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.provenance = "stub"  # never leaves the process
 
     async def send(self, to: str, body: str) -> SendOutcome:
         if self.test_number is None or to != self.test_number:
@@ -154,6 +195,7 @@ class NotifyreGateway:
         transport: httpx.AsyncBaseTransport | None = None,
         timeout: float = 10.0,
     ) -> None:
+        self.provenance = "real"  # a Notifyre HTTP attempt
         self.test_number = test_number
         self._sender = sender
         self.transport_retries = 0
@@ -168,8 +210,10 @@ class NotifyreGateway:
     async def send(self, to: str, body: str) -> SendOutcome:
         if self.test_number is None or to != self.test_number:
             return SendOutcome("NOT_SENT", "not_test_number", None)
-        payload = {"body": body, "from": self._sender,
-                   "recipients": [{"type": "mobile_number", "value": to}]}
+        # N1: documented key casing (docs.notifyre.com, Send SMS curl sample).
+        # The recipient type is ambiguous in the docs; settled by the live test.
+        payload = {"Body": body, "From": self._sender,
+                   "Recipients": [{"type": "mobile_number", "value": to}]}
         try:
             resp = await self.client.post("/sms/send", json=payload)
         except Exception as exc:
@@ -191,6 +235,17 @@ async def _phone_secret(conn: Any) -> str:
         text("SELECT value FROM demo_meta WHERE key = 'phone_key_secret'")
     )).scalar_one()
     return str(value)
+
+
+def gateway_provenance(gateway: object) -> str | None:
+    """Provenance from trusted construction: the known gateway classes set it in
+    their constructors. Anything else, or a mismatch, is unknown (fail closed)."""
+    p = getattr(gateway, "provenance", None)
+    if isinstance(gateway, NotifyreGateway) and p == "real":
+        return "real"
+    if isinstance(gateway, StubGateway) and p == "stub":
+        return "stub"
+    return None
 
 
 async def record_opt_out(own: Ownership, e164: str) -> None:
@@ -217,11 +272,33 @@ def _clinic_day(now: datetime, tz: str) -> date:
 
 async def _mark(own: Ownership, rid: int, state: str, reason: str | None,
                 provider_id: str | None = None) -> None:
+    """Commit the outcome on the reminder and on its contact-history row together."""
     async with own.fenced() as conn:
         await conn.execute(text(
             "UPDATE reminder_records SET state = :s, reason = :r, provider_message_id = :p,"
             " updated_at = now() WHERE id = :id AND state = 'CLAIMED'"
         ), {"s": state, "r": reason, "p": provider_id, "id": rid})
+        await conn.execute(text(
+            "UPDATE contact_history SET outcome = :s WHERE contact_seq ="
+            " (SELECT contact_seq FROM reminder_records WHERE id = :id) AND outcome IS NULL"
+        ), {"s": state, "id": rid})
+
+
+async def _admit_contact(own: Ownership, rid: int, key: str, appt_start: datetime,
+                         provenance: str, hook: DispatchHook | None) -> None:
+    """Contact admission (v1r2): membership is ordered by the match lock, and
+    ``contact_seq`` is drawn only after it is held."""
+    async with own.fenced() as conn:
+        await conn.execute(text("SELECT id FROM demo_match_lock WHERE id = 1 FOR UPDATE"))
+        if hook is not None:
+            await hook("contact_locked")
+        seq = (await conn.execute(text("SELECT nextval('match_seq')"))).scalar_one()
+        await conn.execute(text(
+            "INSERT INTO contact_history(contact_seq, phone_key, reminder_id, appt_start,"
+            " provenance) VALUES (:q, :k, :r, :a, :p)"
+        ), {"q": seq, "k": key, "r": rid, "a": appt_start, "p": provenance})
+        await conn.execute(text("UPDATE reminder_records SET contact_seq = :q WHERE id = :r"),
+                           {"q": seq, "r": rid})
 
 
 DispatchHook = Callable[[str], Awaitable[None]]
@@ -255,8 +332,12 @@ async def _dispatch(
         conn = await own.engine.connect()
     except DBAPIError:
         return SendOutcome("NOT_SENT", "dispatch_check_failed", None)
+    trans = None
     try:
-        trans = await conn.begin()
+        try:
+            trans = await conn.begin()
+        except DBAPIError:
+            return SendOutcome("NOT_SENT", "dispatch_check_failed", None)
         try:
             row = (await conn.execute(text(
                 "SELECT paused, owner_epoch FROM demo_settings WHERE id = 1 FOR SHARE"
@@ -288,8 +369,9 @@ async def _dispatch(
         except Exception as exc:
             return classify_exception(exc)
     finally:
-        with contextlib.suppress(Exception):
-            await trans.rollback()
+        if trans is not None:
+            with contextlib.suppress(Exception):
+                await trans.rollback()
         with contextlib.suppress(Exception):
             await conn.close()
 
@@ -309,8 +391,13 @@ async def send_one(
     rid = await claim_reminder(own, tenant_id, appt)
     if rid is None:
         return SendResult(None, "SKIPPED", "already_claimed")
+    provenance = gateway_provenance(gateway)
+    if provenance is None:  # fail closed: no reservation, no contact, no call
+        await _mark(own, rid, "NOT_SENT", "unknown_gateway")
+        return SendResult(rid, "NOT_SENT", "unknown_gateway")
     to = settings.sms_test_number
     tz = settings.clinic_tz
+    key: str | None = None
 
     # 2. preconditions + reservation, one fenced transaction
     reason: str | None = None
@@ -338,10 +425,11 @@ async def send_one(
                 ), {"d": day, "cap": settings.sms_daily_cap})).scalar_one_or_none()
                 if used is None:
                     reason = "daily_cap"
-                else:
+                else:  # key was computed by the opt-out check above (to is set)
                     await conn.execute(text(
-                        "UPDATE reminder_records SET reserved_day = :d, mode = 'stub'"
-                        " WHERE id = :id"), {"d": day, "id": rid})
+                        "UPDATE reminder_records SET reserved_day = :d, mode = :m,"
+                        " phone_key = :k WHERE id = :id"),
+                        {"d": day, "m": provenance, "k": key, "id": rid})
             if reason is not None:
                 await conn.execute(text(
                     "UPDATE reminder_records SET state = 'NOT_SENT', reason = :r,"
@@ -357,6 +445,20 @@ async def send_one(
     if _clinic_day(now(), tz) != day:
         await _mark(own, rid, "NOT_SENT", "quota_day_expired")
         return SendResult(rid, "NOT_SENT", "quota_day_expired")
+
+    # 3b. contact admission (v1r2), committed before dispatch
+    assert key is not None
+    if own.owner_lost or own.closing:
+        return SendResult(rid, "CLAIMED", "owner_unavailable")
+    try:
+        await _admit_contact(own, rid, key, appt.start_utc, provenance, dispatch_hook)
+    except OwnerLost:
+        return SendResult(rid, "CLAIMED", "owner_unavailable")
+    except DBAPIError:  # no contact recorded, so nothing may be sent
+        await _mark(own, rid, "NOT_SENT", "contact_unavailable")
+        return SendResult(rid, "NOT_SENT", "contact_unavailable")
+    if dispatch_hook is not None:
+        await dispatch_hook("contact_admitted")
 
     # 4. one guarded attempt
     if before_call is not None:

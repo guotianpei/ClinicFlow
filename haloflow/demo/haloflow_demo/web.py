@@ -14,7 +14,7 @@ import hashlib
 import hmac
 import html
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
 from fastapi import FastAPI, Request
@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from haloflow_demo.errors import OwnerLost
+from haloflow_demo.inbound import MAX_BODY
 
 STAFF_BANNER = "Local demonstrator — no authentication; synthetic data only."
 CSRF_COOKIE = "demo_csrf_session"
@@ -35,6 +36,14 @@ class StaffService(Protocol):
     async def set_paused(self, paused: bool) -> None: ...
     async def preview_batch(self) -> list[dict[str, Any]]: ...
     async def send_batch(self) -> list[dict[str, Any]]: ...
+    async def send_to_appointment(self, emr_appt_id: str) -> dict[str, Any]: ...
+    async def simulate_reply(self, reminder_id: int, message: str) -> Any: ...
+    async def process_now(self) -> Any: ...
+    async def run_writeback(self, task_id: int) -> str: ...
+    async def reconcile_writeback(self, task_id: int) -> str: ...
+
+
+Receiver = Callable[[bytes, list[str]], Awaitable[Any]]
 
 
 class NullStaffService:
@@ -53,6 +62,21 @@ class NullStaffService:
     async def send_batch(self) -> list[dict[str, Any]]:
         return []
 
+    async def send_to_appointment(self, emr_appt_id: str) -> dict[str, Any]:
+        return {}
+
+    async def simulate_reply(self, reminder_id: int, message: str) -> Any:
+        return None
+
+    async def process_now(self) -> Any:
+        return []
+
+    async def run_writeback(self, task_id: int) -> str:
+        return "none"
+
+    async def reconcile_writeback(self, task_id: int) -> str:
+        return "none"
+
 
 def _token(secret: bytes, session_id: str) -> str:
     return hmac.new(secret, session_id.encode(), hashlib.sha256).hexdigest()
@@ -63,16 +87,45 @@ def _e(value: object) -> str:
 
 
 def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | None) -> str:
+    hidden = f'<input type="hidden" name="{CSRF_FIELD}" value="{_e(token)}">'
+
+    def form(action: str, label: str, fields: dict[str, object] | None = None) -> str:
+        extra = "".join(f'<input type="hidden" name="{_e(k)}" value="{_e(v)}">'
+                        for k, v in (fields or {}).items())
+        return (f'<form method="post" action="{action}">{hidden}{extra}'
+                f"<button>{_e(label)}</button></form>")
+
     rows: list[str] = []
     for a in data.get("appointments", []):
+        actions = form("/demo/appointments/send", "Send to this appointment (simulated)",
+                       {"emr_appt_id": a.get("emr_appt_id")})
+        if a.get("reminder_id") is not None:
+            actions += "".join(
+                form("/demo/reply/simulate", f"Simulate reply {r}",
+                     {"reminder_id": a.get("reminder_id"), "text": r})
+                for r in ("1", "2", "3", "STOP"))
         rows.append(f"<tr><td>{_e(a.get('emr_appt_id'))}</td><td>{_e(a.get('patient'))}</td>"
-                    f"<td>{_e(a.get('when'))}</td><td>{_e(a.get('status'))}</td></tr>")
+                    f"<td>{_e(a.get('when'))}</td><td>{_e(a.get('status'))}</td>"
+                    f"<td>{actions}</td></tr>")
     inbound = "".join(
-        f"<li>{_e(m.get('masked_from'))}: {_e(m.get('text'))}</li>"
+        f"<li>{_e(m.get('received'))} {_e(m.get('masked_from'))}: {_e(m.get('text'))}"
+        f" [{_e(m.get('cls'))}; {_e(m.get('state'))}; {_e(m.get('disposition'))}]"
+        f" ({_e(m.get('label'))})</li>"
         for m in data.get("inbound", [])
     )
     items = "".join(
-        f"<li>{_e(i.get('kind'))}: {_e(i.get('detail'))}</li>" for i in data.get("items", [])
+        f"<li>{_e(i.get('kind'))} ({_e(i.get('appointment'))}): {_e(i.get('detail'))}</li>"
+        for i in data.get("items", [])
+    )
+    tasks = "".join(
+        f"<li>Task {_e(tk.get('task_id'))} ({_e(tk.get('appointment'))}):"
+        f" {_e(tk.get('state'))} {_e(tk.get('reason') or '')}"
+        + (form("/demo/tasks/run", "Run write-back (simulated)", {"task_id": tk.get("task_id")})
+           if tk.get("state") in ("PENDING", "NOT_APPLIED") else "")
+        + (form("/demo/tasks/reconcile", "Reconcile (read only)",
+                {"task_id": tk.get("task_id")}) if tk.get("state") == "UNCERTAIN" else "")
+        + "</li>"
+        for tk in data.get("tasks", [])
     )
     labels = data.get("labels", {})
     label_text = ", ".join(f"{_e(k)}={_e(v)}" for k, v in labels.items())
@@ -81,10 +134,6 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         preview_html = "<h2>Batch preview</h2><ul>" + "".join(
             f"<li>{_e(p.get('emr_appt_id'))} — {_e(p.get('decision'))}</li>" for p in preview
         ) + "</ul>"
-    hidden = f'<input type="hidden" name="{CSRF_FIELD}" value="{_e(token)}">'
-
-    def form(action: str, label: str) -> str:
-        return f'<form method="post" action="{action}">{hidden}<button>{label}</button></form>'
 
     return (
         "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head>"
@@ -92,12 +141,14 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         f"<p>Modes: {label_text}. Paused: {_e(data.get('paused'))}.</p>"
         f"{form('/demo/batch/preview', 'Preview batch')}"
         f"{form('/demo/batch/send', 'Send batch (simulated)')}"
+        f"{form('/demo/inbound/process', 'Process replies now')}"
         f"{form('/demo/pause', 'Pause sending')}{form('/demo/resume', 'Resume sending')}"
         f"{preview_html}"
         "<h2>Appointments</h2><table>"
-        "<tr><th>Appointment</th><th>Patient</th><th>When</th><th>Status</th></tr>"
+        "<tr><th>Appointment</th><th>Patient</th><th>When</th><th>Status</th><th></th></tr>"
         f"{''.join(rows)}</table>"
-        f"<h2>Inbound</h2><ul>{inbound}</ul><h2>Follow-up items</h2><ul>{items}</ul>"
+        f"<h2>Replies</h2><ul>{inbound}</ul><h2>Follow-up items</h2><ul>{items}</ul>"
+        f"<h2>Write-back tasks</h2><ul>{tasks}</ul>"
         "</body></html>"
     )
 
@@ -204,16 +255,96 @@ def build_staff_app(
             return _forbidden()
         return await _page(request, await service.preview_batch())
 
+    async def _field(request: Request, name: str) -> str | None:
+        value = (await request.form()).get(name)
+        return value if isinstance(value, str) else None
+
+    async def _int_field(request: Request, name: str) -> int | None:
+        value = await _field(request, name)
+        return int(value) if value is not None and value.isdigit() else None
+
+    @app.post("/demo/appointments/send")
+    async def send_one_appt(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        appt = await _field(request, "emr_appt_id")
+        if appt is None:
+            return Response("bad request", status_code=400)
+        await service.send_to_appointment(appt)
+        return _back()
+
+    @app.post("/demo/reply/simulate")
+    async def simulate_reply(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        rid = await _int_field(request, "reminder_id")
+        message = await _field(request, "text")
+        if rid is None or message is None:
+            return Response("bad request", status_code=400)
+        await service.simulate_reply(rid, message)
+        return _back()
+
+    @app.post("/demo/inbound/process")
+    async def process_now(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        await service.process_now()
+        return _back()
+
+    @app.post("/demo/tasks/run")
+    async def run_task(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        tid = await _int_field(request, "task_id")
+        if tid is None:
+            return Response("bad request", status_code=400)
+        try:
+            await service.run_writeback(tid)
+        except ValueError:
+            return Response("not allowed in this state", status_code=409)
+        return _back()
+
+    @app.post("/demo/tasks/reconcile")
+    async def reconcile_task(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        tid = await _int_field(request, "task_id")
+        if tid is None:
+            return Response("bad request", status_code=400)
+        try:
+            await service.reconcile_writeback(tid)
+        except ValueError:
+            return Response("not allowed in this state", status_code=409)
+        return _back()
+
     return app
 
 
-def build_callback_app(*, unavailable: Callable[[], bool] | None = None) -> FastAPI:
-    """R-6: one route only. Inbound processing is Day-5 scope; until then 503."""
+def build_callback_app(
+    *, unavailable: Callable[[], bool] | None = None, receiver: Receiver | None = None
+) -> FastAPI:
+    """R-6: one route only. The route passes ONLY the raw bytes and the signature
+    header values to ``receiver``; nothing from the request can supply a
+    simulated correlation or a provenance. The body is capped while it is read."""
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     _install_gate(app, unavailable)
 
     @app.post("/webhooks/sms/inbound")
-    async def inbound() -> Response:
-        return Response("inbound not enabled in this stage", status_code=503)
+    async def inbound(request: Request) -> Response:
+        if receiver is None:
+            return Response("inbound not enabled", status_code=503)
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            if not declared.isdigit():
+                return Response(status_code=400)
+            if int(declared) > MAX_BODY:
+                return Response(status_code=413)
+        buf = bytearray()
+        async for chunk in request.stream():
+            buf += chunk
+            if len(buf) > MAX_BODY:
+                return Response(status_code=413)
+        result = await receiver(bytes(buf), request.headers.getlist("notifyre-signature"))
+        return Response(status_code=int(result.status))
 
     return app

@@ -166,6 +166,7 @@ class DemoSettings:
     sms_mode: str
     sms_daily_cap_raw: str
     sms_test_number: str | None = field(repr=False)
+    sms_sender: str | None = field(repr=False)  # our registered number (inbound recipient)
     callback_mode: str
     callback_secret: str = field(repr=False)
     staff_host: str
@@ -196,6 +197,7 @@ class DemoSettings:
             sms_mode="real" if g("DEMO_SMS_MODE", "") == "real" else "stub",
             sms_daily_cap_raw=g("DEMO_SMS_DAILY_CAP", "") or "10",
             sms_test_number=normalize_us_phone(g("DEMO_SMS_TEST_NUMBER", "")),
+            sms_sender=normalize_us_phone(g("DEMO_SMS_SENDER", "")),
             callback_mode="real" if g("DEMO_CALLBACK_MODE", "") == "real" else "simulated",
             callback_secret=g("DEMO_CALLBACK_SECRET", ""),
             staff_host=staff[0],
@@ -237,6 +239,10 @@ def validate_startup(s: DemoSettings) -> DemoDbTarget:
         raise StartupRefused("sms_real_unverified")
     if s.callback_mode == "real" and s.callback_secret.strip() in ("", "changeme"):
         raise StartupRefused("callback_secret")
+    if s.callback_mode == "real":
+        # Real ingress (Notifyre-Signature over live events, public HTTPS exposure
+        # of the callback route only) is not yet verified; refused (P-NS).
+        raise StartupRefused("callback_real_unverified")
     try:
         ZoneInfo(s.clinic_tz)
     except (ZoneInfoNotFoundError, ValueError) as exc:

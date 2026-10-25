@@ -304,6 +304,12 @@ async def acquire_ownership(
 async def recover(own: Ownership) -> None:
     """R-13: local state only; no SMS or EHR call."""
     async with own.fenced() as conn:
+        # A contact admitted before a crash is uncertain: it may have reached the phone.
+        await conn.execute(text(
+            "UPDATE contact_history SET outcome = 'UNCERTAIN' WHERE outcome IS NULL AND"
+            " contact_seq IN (SELECT contact_seq FROM reminder_records WHERE state = 'CLAIMED'"
+            " AND contact_seq IS NOT NULL)"
+        ))
         await conn.execute(text(
             "UPDATE reminder_records SET state = 'UNCERTAIN', reason = 'restart_after_claim', "
             "updated_at = now() WHERE state = 'CLAIMED'"
