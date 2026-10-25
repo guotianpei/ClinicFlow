@@ -9,8 +9,10 @@ Per appointment:
      changed since the reservation, NOT_SENT(quota_day_expired), no call
      (reservations are never refunded);
   4. ONE provider attempt through ``Ownership.guard_external``. Inside that
-     tracked task, immediately before the request, pause, opt-out and the
-     clinic day are checked again, because the task can start after step 3;
+     tracked task (``_dispatch``) the settings row is held FOR SHARE from the
+     last checks (epoch, pause, opt-out, clinic day) through the request, so
+     pause/opt-out writers (FOR UPDATE) serialise with it; a final synchronous
+     ownership/closing admission runs immediately before the request;
   5. the outcome committed immediately (fenced). If ownership is lost before
      or after the call, the row stays CLAIMED and restart recovery marks it
      UNCERTAIN(restart_after_claim); it is never re-sent blindly.
@@ -22,6 +24,7 @@ documentation and a controlled test (``sms_real_unverified``).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 from collections.abc import Awaitable, Callable
@@ -191,7 +194,8 @@ async def _phone_secret(conn: Any) -> str:
 
 
 async def record_opt_out(own: Ownership, e164: str) -> None:
-    async with own.fenced() as conn:
+    # exclusive: serialises with in-flight dispatches (see _dispatch)
+    async with own.fenced(exclusive=True) as conn:
         key = phone_key(await _phone_secret(conn), e164)
         await conn.execute(text("INSERT INTO opt_outs(phone_key) VALUES (:k) "
                                 "ON CONFLICT (phone_key) DO NOTHING"), {"k": key})
@@ -220,27 +224,74 @@ async def _mark(own: Ownership, rid: int, state: str, reason: str | None,
         ), {"s": state, "r": reason, "p": provider_id, "id": rid})
 
 
-async def _dispatch_gate(
-    own: Ownership, to: str, day: date, tz: str, now: Callable[[], datetime]
-) -> str | None:
-    """Last-moment checks; returns a NOT_SENT reason or None. Read-only."""
+DispatchHook = Callable[[str], Awaitable[None]]
+
+
+async def _dispatch(
+    own: Ownership,
+    gateway: SmsGateway,
+    to: str,
+    body: str,
+    day: date,
+    tz: str,
+    now: Callable[[], datetime],
+    hook: DispatchHook | None,
+) -> SendOutcome:
+    """The last checks and the one request, inside the tracked external task.
+
+    Linearisation (Codex reviews of b8e8bd1 and 9dbf74c): a read-only
+    transaction holds the settings row FOR SHARE from the checks through the
+    provider request. Pause and opt-out writers take that row FOR UPDATE, so a
+    writer either commits before this lock (the send is blocked) or waits until
+    this request has been made (the change applies to later sends). The owner
+    epoch is checked under the same lock. After every await, a final
+    synchronous ownership/closing admission runs immediately before the
+    request. ``hook`` exists for tests only: points "before_lock", "locked",
+    "before_send".
+    """
+    if hook is not None:
+        await hook("before_lock")
     try:
-        async with own.engine.connect() as conn:
-            paused = (await conn.execute(
-                text("SELECT paused FROM demo_settings WHERE id = 1"))).scalar_one()
-            if paused:
-                return "paused"
+        conn = await own.engine.connect()
+    except DBAPIError:
+        return SendOutcome("NOT_SENT", "dispatch_check_failed", None)
+    try:
+        trans = await conn.begin()
+        try:
+            row = (await conn.execute(text(
+                "SELECT paused, owner_epoch FROM demo_settings WHERE id = 1 FOR SHARE"
+            ))).one()
+            if hook is not None:
+                await hook("locked")
+            if row.owner_epoch != own.epoch:
+                own._mark_lost(f"epoch {row.owner_epoch} != {own.epoch} at dispatch")
+                raise OwnerLost("epoch changed before dispatch")
+            if row.paused:
+                return SendOutcome("NOT_SENT", "paused", None)
             key = phone_key(await _phone_secret(conn), to)
             opted = (await conn.execute(
                 text("SELECT 1 FROM opt_outs WHERE phone_key = :k"), {"k": key}
             )).scalar_one_or_none()
             if opted is not None:
-                return "opted_out"
-    except DBAPIError:
-        return "dispatch_check_failed"
-    if _clinic_day(now(), tz) != day:
-        return "quota_day_expired"
-    return None
+                return SendOutcome("NOT_SENT", "opted_out", None)
+        except DBAPIError:
+            return SendOutcome("NOT_SENT", "dispatch_check_failed", None)
+        if _clinic_day(now(), tz) != day:  # clock read last, closest to the request
+            return SendOutcome("NOT_SENT", "quota_day_expired", None)
+        if hook is not None:
+            await hook("before_send")
+        # Final synchronous admission: no await between this check and the request.
+        if own.owner_lost or own.closing:
+            raise OwnerLost("owner lost or closing at dispatch")
+        try:
+            return await gateway.send(to, body)
+        except Exception as exc:
+            return classify_exception(exc)
+    finally:
+        with contextlib.suppress(Exception):
+            await trans.rollback()
+        with contextlib.suppress(Exception):
+            await conn.close()
 
 
 async def send_one(
@@ -253,6 +304,7 @@ async def send_one(
     tenant_id: str,
     now: Callable[[], datetime],
     before_call: Callable[[], None] | None = None,
+    dispatch_hook: DispatchHook | None = None,
 ) -> SendResult:
     rid = await claim_reminder(own, tenant_id, appt)
     if rid is None:
@@ -312,17 +364,7 @@ async def send_one(
     body = reminder_text(first_name_of(patient), appt.start_utc, tz)
 
     async def _call() -> SendOutcome:
-        # Runs inside the tracked external task, immediately before the request
-        # (Codex Day-4 review P1): the task may start after the outer checks, so
-        # pause, opt-out and the clinic day are checked again here. The clock is
-        # read last, closest to the request. The reservation stays consumed.
-        gap = await _dispatch_gate(own, to, day, tz, now)
-        if gap is not None:
-            return SendOutcome("NOT_SENT", gap, None)
-        try:
-            return await gateway.send(to, body)
-        except Exception as exc:
-            return classify_exception(exc)
+        return await _dispatch(own, gateway, to, body, day, tz, now, dispatch_hook)
 
     call: Callable[[], Awaitable[SendOutcome]] = _call
     try:

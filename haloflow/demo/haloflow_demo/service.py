@@ -123,6 +123,6 @@ class DbStaffService:
                 for r in sent]
 
     async def set_paused(self, paused: bool) -> None:
-        async with self._own.fenced() as conn:
+        async with self._own.fenced(exclusive=True) as conn:
             await conn.execute(text("UPDATE demo_settings SET paused = :p WHERE id = 1"),
                                {"p": paused})

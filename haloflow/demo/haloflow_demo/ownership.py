@@ -121,17 +121,22 @@ class Ownership:
     # ── fencing ──────────────────────────────────────────────────────────────
 
     @contextlib.asynccontextmanager
-    async def fenced(self) -> AsyncIterator[AsyncConnection]:
+    async def fenced(self, *, exclusive: bool = False) -> AsyncIterator[AsyncConnection]:
         """A transaction that commits only if this process still holds the epoch.
 
         Allowed while closing (an in-flight call may still record its outcome
         during drain); refused once :meth:`close` has released ownership.
+
+        ``exclusive=True`` takes the settings row FOR UPDATE. Pause and opt-out
+        writers use it so they serialise with in-flight dispatches, which hold
+        the row FOR SHARE from their last checks through the provider request.
         """
         if self.owner_lost or self._closed:
             raise OwnerLost("owner lost or ownership closed")
+        mode = "FOR UPDATE" if exclusive else "FOR SHARE"
         async with self.engine.begin() as conn:
             current = (await conn.execute(
-                text("SELECT owner_epoch FROM demo_settings WHERE id = 1 FOR SHARE")
+                text(f"SELECT owner_epoch FROM demo_settings WHERE id = 1 {mode}")
             )).scalar_one_or_none()
             if current != self.epoch:
                 self._mark_lost(f"epoch {current} != {self.epoch}")
