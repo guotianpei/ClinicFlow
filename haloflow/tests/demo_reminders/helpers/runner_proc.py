@@ -76,6 +76,10 @@ async def main() -> int:
     probe_tasks: list[asyncio.Task[None]] = []
 
     def on_started(own: Ownership) -> None:
+        # Exact identity of this owner's lock session, so a test can terminate
+        # THIS backend and nothing else (Codex checkpoint-2 review, item 3).
+        (_wd / "owner.json").write_text(json.dumps(
+            {"pid": os.getpid(), "lock_backend_pid": own.lock_backend_pid, "epoch": own.epoch}))
         if args.blocked:
             async def _place() -> None:
                 try:

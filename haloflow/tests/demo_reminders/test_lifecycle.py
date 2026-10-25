@@ -38,7 +38,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
-from .harness import demo_subprocess_env
+from .harness import demo_subprocess_env, terminate_owner_backend, verify_owner_backend
 
 RUNNER = Path(__file__).parent / "helpers" / "runner_proc.py"
 OWNER = Path(__file__).parent / "helpers" / "owner_proc.py"
@@ -187,25 +187,55 @@ def test_l1_graceful_drain_with_blocked_call(
 def test_l2_lock_loss_shuts_down_in_order_with_nonzero_exit(
     run_env: dict[str, str], demo_db_url: str, tmp_path: Path, children: Children
 ) -> None:
-    wd = tmp_path / "l2"
-    wd.mkdir()
-    a = children.start(RUNNER, run_env, "--workdir", str(wd), "--watchdog", "0.3")
-    _wait(lambda: "listening" in _events(wd), a, "listening")
-    with psycopg.connect(demo_db_url, autocommit=True) as conn:
-        pid = conn.execute(
-            "SELECT pid FROM pg_locks WHERE locktype='advisory' AND granted"
-        ).fetchone()
-        assert pid is not None
-        conn.execute("SELECT pg_terminate_backend(%s)", (pid[0],))
-    _, a_err = a.communicate(timeout=TIMEOUT)
-    assert a.returncode == 3, a_err
-    events = _events(wd)
-    assert "owner_lost" in events
-    _assert_order(events, ["listening", "owner_lost", "closing", "listeners_stopped", "drained",
-                           "db_lock_released", "process_lock_released"])
-    assert _lines(wd / "probe.jsonl")[0]["result"] == "refused"
-    assert _lines(wd / "calls.jsonl") == []
-    _evidence("l2", wd, {"a_exit": a.returncode})
+    from haloflow_demo.ownership import DEMO_ADVISORY_KEY
+
+    admin_url = os.environ["DEMO_TEST_ADMIN_URL"]
+    # Unrelated advisory-lock holders that must survive: the same key in another
+    # database, and another key in the demo database.
+    other_db = psycopg.connect(admin_url, autocommit=True)
+    other_db.execute("SELECT pg_advisory_lock(%s)", (DEMO_ADVISORY_KEY,))
+    other_pid = other_db.execute("SELECT pg_backend_pid()").fetchone()
+    same_db = psycopg.connect(demo_db_url, autocommit=True)
+    try:
+        wd = tmp_path / "l2"
+        wd.mkdir()
+        a = children.start(RUNNER, run_env, "--workdir", str(wd), "--watchdog", "0.3")
+        _wait(lambda: "listening" in _events(wd) and (wd / "owner.json").exists(), a, "listening")
+        same_db.execute("SELECT pg_advisory_lock(%s)", (12345,))
+        same_pid = same_db.execute("SELECT pg_backend_pid()").fetchone()
+        owner = json.loads((wd / "owner.json").read_text())
+        target_pid = int(owner["lock_backend_pid"])
+        # The old selection (first granted advisory lock in the cluster) is
+        # ambiguous here: it sees at least three holders.
+        with psycopg.connect(admin_url) as conn:
+            holders = conn.execute(
+                "SELECT count(DISTINCT pid) FROM pg_locks WHERE locktype='advisory' AND granted"
+            ).fetchone()
+        assert holders is not None and holders[0] >= 3
+        assert other_pid is not None and same_pid is not None
+        assert target_pid not in (other_pid[0], same_pid[0])
+        # The check discriminates: both unrelated holders are rejected.
+        for unrelated in (other_pid[0], same_pid[0]):
+            with pytest.raises(AssertionError):
+                verify_owner_backend(demo_db_url, unrelated)
+        terminate_owner_backend(demo_db_url, target_pid)
+        _, a_err = a.communicate(timeout=TIMEOUT)
+        assert a.returncode == 3, a_err
+        events = _events(wd)
+        assert "owner_lost" in events
+        _assert_order(events, ["listening", "owner_lost", "closing", "listeners_stopped",
+                               "drained", "db_lock_released", "process_lock_released"])
+        assert _lines(wd / "probe.jsonl")[0]["result"] == "refused"
+        assert _lines(wd / "calls.jsonl") == []
+        # The unrelated sessions are alive and still hold their locks.
+        assert other_db.execute("SELECT 1").fetchone() == (1,)
+        assert same_db.execute("SELECT 1").fetchone() == (1,)
+        _evidence("l2", wd, {"a_exit": a.returncode, "terminated_pid": target_pid,
+                             "unrelated_pids_survived": [other_pid[0], same_pid[0]],
+                             "advisory_holders_seen": holders[0]})
+    finally:
+        other_db.close()
+        same_db.close()
 
 
 def test_l3_drain_incomplete_never_releases_lock_explicitly(

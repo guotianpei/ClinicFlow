@@ -22,6 +22,8 @@ from haloflow_demo.reminders import claim_reminder
 from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
 from haloflow_demo.synthetic_ehr import ApptStatus, SyntheticAppointment
 
+from .harness import terminate_owner_backend
+
 
 def _settings(env: dict[str, str]) -> DemoSettings:
     return DemoSettings.from_env(env)
@@ -227,7 +229,7 @@ async def test_t08_lock_backend_terminated_sets_owner_lost_within_interval(
     try:
         own.start_watchdog(interval=2.0)
         t0 = time.monotonic()
-        _q(demo_db_url, "SELECT pg_terminate_backend(%s)", (own.lock_backend_pid,))
+        terminate_owner_backend(demo_db_url, own.lock_backend_pid)
         await asyncio.wait_for(own.lost.wait(), timeout=3.0)
         assert time.monotonic() - t0 <= 3.0
         assert own.owner_lost is True

@@ -48,7 +48,7 @@ import psycopg
 import pytest
 from haloflow_demo.process_lock import LOCK_PATH
 
-from .harness import demo_subprocess_env
+from .harness import demo_subprocess_env, terminate_owner_backend
 
 HELPER = Path(__file__).parent / "helpers" / "owner_proc.py"
 TIMEOUT = 30.0
@@ -111,9 +111,8 @@ def _calls(wd: Path) -> list[dict[str, object]]:
 
 
 def _terminate_backend(db_url: str, pid: object) -> None:
-    with psycopg.connect(db_url, autocommit=True) as conn:
-        ok = conn.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone()
-    assert ok == (True,)
+    # Verify PID, database and demo key first; never terminate an unrelated session.
+    terminate_owner_backend(db_url, int(pid))  # type: ignore[call-overload]
 
 
 def _epoch(db_url: str) -> int:
