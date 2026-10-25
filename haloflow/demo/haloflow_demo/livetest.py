@@ -26,9 +26,20 @@ refused at start-up.
    spellings. Never a number, token, body, value, unknown key or exception
    text.
 
-On SIGTERM or SIGINT, the bounded drain applies. If the call ignores
-cancellation, the exit code is 4 and the locks are not released explicitly
-(the kernel releases them when the process exits).
+Lifecycle (Codex 185431Z): after ownership, the whole operation (gate, claim,
+reservation, contact admission, request, outcome commit, report lookup) runs
+as ONE task tracked by the ownership drain, and signals are handled from that
+point. On SIGTERM or SIGINT, closing begins and the bounded drain waits, then
+cancels. If anything ignores cancellation, the exit code is 4 and the locks are
+not released explicitly (the kernel releases them when the process exits).
+There is never an unbounded wait after the drain.
+
+Gate and operator policy are separate:
+- the durable ``live_test_unresolved`` gate blocks after any attempt that may
+  have reached the phone (in flight, uncertain or recovered);
+- a definite NOT_SENT or REJECTED does not trigger the gate. By operator
+  policy there is still no second attempt without a fresh, explicit owner
+  confirmation.
 """
 
 from __future__ import annotations
@@ -37,6 +48,7 @@ import asyncio
 import re
 import signal
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -88,6 +100,56 @@ def _local_inputs(env: Mapping[str, str], s: DemoSettings) -> str | None:
     return None
 
 
+async def _provider_id_present(own: Ownership, appt_id: str) -> bool:
+    async with own.engine.connect() as conn:
+        pid = (await conn.execute(text(
+            "SELECT provider_message_id FROM reminder_records WHERE emr_appt_id = :a"),
+            {"a": appt_id})).scalar_one_or_none()
+    return bool(pid)
+
+
+@dataclass(frozen=True)
+class _Outcome:
+    refused: str | None = None
+    state: str = "INTERRUPTED"
+    reason: str = "owner_unavailable"
+    provider_id: str = "no"
+
+
+async def _operation(own: Ownership, s: DemoSettings, token: str,
+                     transport: httpx.AsyncBaseTransport | None,
+                     now: Callable[[], datetime], gateway_out: list[NotifyreGateway]) -> _Outcome:
+    """Everything after ownership, run as ONE tracked task: the gate, the send
+    and the report lookup are all inside the bounded drain. Every failure is
+    reduced to a fixed enum, with no exception text."""
+    try:
+        unresolved = await _unresolved(own)
+    except Exception:
+        return _Outcome(refused="gate_check_failed")
+    if unresolved:
+        return _Outcome(refused="live_test_unresolved")
+    assert s.sms_sender is not None and s.sms_test_number is not None
+    tz = s.clinic_tz
+    day = clinic_target_date(now(), tz, days_before=s.reminder_days_before)
+    start = datetime.combine(day, time(9, 0), tzinfo=ZoneInfo(tz)).astimezone(UTC)
+    appt = SyntheticAppointment(f"syn-e{own.epoch}-{day:%Y%m%d}-live-1", "syn-p-live", start,
+                                ApptStatus.SCHEDULED)
+    patient = SyntheticPatient("syn-p-live", "Synthetic Demo", "live")
+    gateway = NotifyreGateway(api_key=token, sender=s.sms_sender,
+                              test_number=s.sms_test_number, transport=transport)
+    gateway_out.append(gateway)
+    try:
+        result = await send_one(own, s, appt, patient, gateway, tenant_id=TENANT_ID, now=now)
+    except Exception:
+        return _Outcome(state="ERROR", reason="internal")
+    present = "no"
+    try:
+        present = "yes" if await _provider_id_present(own, appt.emr_appt_id) else "no"
+    except Exception:
+        present = "unknown"
+    return _Outcome(state=result.state, reason=result.reason or "none", provider_id=present)
+
+
 async def live_sms_test(
     env: Mapping[str, str],
     *,
@@ -114,32 +176,19 @@ async def live_sms_test(
         _say(refused="startup_failed")
         return EXIT_REFUSED
 
-    if await _unresolved(own):
-        await own.close()
-        _say(refused="live_test_unresolved")
-        return EXIT_REFUSED
-
-    assert s.sms_sender is not None and s.sms_test_number is not None
-    tz = s.clinic_tz
-    day = clinic_target_date(now(), tz, days_before=s.reminder_days_before)
-    start = datetime.combine(day, time(9, 0), tzinfo=ZoneInfo(tz)).astimezone(UTC)
-    appt = SyntheticAppointment(f"syn-e{own.epoch}-{day:%Y%m%d}-live-1", "syn-p-live", start,
-                                ApptStatus.SCHEDULED)
-    patient = SyntheticPatient("syn-p-live", "Synthetic Demo", "live")
-    gateway = NotifyreGateway(api_key=env["NOTIFYRE_API_KEY"], sender=s.sms_sender,
-                              test_number=s.sms_test_number, transport=transport)
-
+    # From here on, everything is either tracked (bounded by the drain) or
+    # local. Signals are handled from the moment ownership exists.
     loop = asyncio.get_running_loop()
     stop = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
-    send = loop.create_task(send_one(own, s, appt, patient, gateway, tenant_id=TENANT_ID,
-                                     now=now))
+    gateways: list[NotifyreGateway] = []
+    op = own.spawn_tracked(_operation(own, s, env["NOTIFYRE_API_KEY"], transport, now,
+                                      gateways))
     stopper = loop.create_task(stop.wait())
     try:
-        await asyncio.wait({send, stopper}, return_when=asyncio.FIRST_COMPLETED)
-        interrupted = not send.done()
-        if interrupted:
+        await asyncio.wait({op, stopper}, return_when=asyncio.FIRST_COMPLETED)
+        if not op.done():
             own.begin_closing()
         drained = await own.drain(drain_timeout, cancel_grace)
     finally:
@@ -150,22 +199,19 @@ async def live_sms_test(
         _say(drain="incomplete")
         return EXIT_DRAIN_INCOMPLETE  # no lock release: the process must exit now
 
-    state, reason = "INTERRUPTED", "owner_unavailable"
+    # The drain confirmed the operation ended: reading it cannot block.
+    outcome = _Outcome()
+    if op.done() and not op.cancelled() and op.exception() is None:
+        outcome = op.result()
     try:
-        result = await send
-        state, reason = result.state, result.reason or "none"
-    except asyncio.CancelledError:
-        pass
+        await asyncio.wait_for(own.close(), timeout=drain_timeout)
     except Exception:
-        state, reason = "ERROR", "internal"
-    present = "no"
-    if state != "INTERRUPTED":
-        async with own.engine.connect() as conn:
-            pid = (await conn.execute(text(
-                "SELECT provider_message_id FROM reminder_records WHERE emr_appt_id = :a"),
-                {"a": appt.emr_appt_id})).scalar_one_or_none()
-        present = "yes" if pid else "no"
-    await own.close()
-    _say(state=state, reason=reason, provider_id_present=present,
-         response_keys=",".join(gateway.last_keys) or "none")
-    return EXIT_SUBMITTED if state == "SUBMITTED" else EXIT_OTHER
+        _say(drain="incomplete")
+        return EXIT_DRAIN_INCOMPLETE
+    if outcome.refused is not None:
+        _say(refused=outcome.refused)
+        return EXIT_REFUSED
+    keys = gateways[0].last_keys if gateways else ()
+    _say(state=outcome.state, reason=outcome.reason, provider_id_present=outcome.provider_id,
+         response_keys=",".join(keys) or "none")
+    return EXIT_SUBMITTED if outcome.state == "SUBMITTED" else EXIT_OTHER
