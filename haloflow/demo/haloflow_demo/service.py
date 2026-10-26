@@ -27,6 +27,7 @@ from typing import Any
 from sqlalchemy import text
 
 from haloflow_demo.inbound import ReceiveResult, process_pending, receive
+from haloflow_demo.noresponse import flag_no_response
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
 from haloflow_demo.sending import SmsGateway, StubGateway, send_batch, send_one
@@ -46,7 +47,8 @@ STATE_LABELS = {"CLAIMED": "Sending", "SUBMITTED": "Submitted", "NOT_SENT": "Not
                 "REJECTED": "Rejected by provider", "UNCERTAIN": "Uncertain (not re-sent)",
                 "CONFIRMED": "Confirmed by patient",
                 "RESCHEDULE_REQUESTED": "Reschedule requested — call patient",
-                "CANCEL_REQUESTED": "Cancel requested — staff to cancel in EHR"}
+                "CANCEL_REQUESTED": "Cancel requested — staff to cancel in EHR",
+                "NO_RESPONSE": "No reply — call patient"}
 
 
 def _label(state: str | None) -> str:
@@ -263,6 +265,10 @@ class DbStaffService:
     async def process_now(self) -> list[tuple[int, str | None]]:
         return await process_pending(self._own, self._settings, self.ehr, now=self._now)
 
+    async def check_no_response(self) -> list[int]:
+        """Day 6: flag overdue unanswered reminders (no external call)."""
+        return await flag_no_response(self._own, self._now)
+
     async def run_writeback(self, task_id: int) -> str:
         return await run_task(self._own, self.ehr, task_id)
 
@@ -277,6 +283,11 @@ class DbStaffService:
             except Exception as exc:
                 # Class name only: DB errors can carry SQL and parameter values.
                 logger.error("dispatcher iteration failed: %s", type(exc).__name__)
+            if not (self._own.closing or self._own.owner_lost):
+                try:
+                    await self.check_no_response()
+                except Exception as exc:
+                    logger.error("no-response check failed: %s", type(exc).__name__)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._own.closing_event.wait(), timeout=interval)
 

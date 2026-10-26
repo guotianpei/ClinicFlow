@@ -39,6 +39,7 @@ class StaffService(Protocol):
     async def send_to_appointment(self, emr_appt_id: str) -> dict[str, Any]: ...
     async def simulate_reply(self, reminder_id: int, message: str) -> Any: ...
     async def process_now(self) -> Any: ...
+    async def check_no_response(self) -> list[int]: ...
     async def run_writeback(self, task_id: int) -> str: ...
     async def reconcile_writeback(self, task_id: int) -> str: ...
 
@@ -69,6 +70,9 @@ class NullStaffService:
         return None
 
     async def process_now(self) -> Any:
+        return []
+
+    async def check_no_response(self) -> list[int]:
         return []
 
     async def run_writeback(self, task_id: int) -> str:
@@ -142,6 +146,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         f"{form('/demo/batch/preview', 'Preview batch')}"
         f"{form('/demo/batch/send', 'Send batch (simulated)')}"
         f"{form('/demo/inbound/process', 'Process replies now')}"
+        f"{form('/demo/noresponse/check', 'Check for no reply now')}"
         f"{form('/demo/pause', 'Pause sending')}{form('/demo/resume', 'Resume sending')}"
         f"{preview_html}"
         "<h2>Appointments</h2><table>"
@@ -247,6 +252,13 @@ def build_staff_app(
         if not await _csrf_ok(request):
             return _forbidden()
         await service.send_batch()
+        return _back()
+
+    @app.post("/demo/noresponse/check")
+    async def noresponse_check(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        await service.check_no_response()
         return _back()
 
     @app.post("/demo/batch/preview")
