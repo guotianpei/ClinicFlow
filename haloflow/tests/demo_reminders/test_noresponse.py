@@ -718,3 +718,71 @@ async def test_nr_t14d_staff_check_requires_csrf(
         await own.close()
     assert _state(demo_db_url, rid) == "NO_RESPONSE"
     assert len(_nr_items(demo_db_url)) == 1
+
+
+# ── r2 additions (Codex implementation review r1): mutation coverage ─────────
+
+
+async def test_nr_t16_uncorrelated_single_match_to_a1_does_not_answer_later_a2(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    """Kills N13: the single candidate must be this reminder, not any reminder."""
+    s, own = await _own(_env(demo_env))
+    start = _start()
+    try:
+        r1 = await _send(own, s, 1, start)
+        await _reply(own, s, "maybe", reply_id="rid-1", at=datetime.now(UTC))  # snapshot {a-1}
+        r2 = await _send(own, s, 2, start)
+        snap = _q(demo_db_url, "SELECT reminder_id FROM inbound_candidates")
+        assert snap == [(r1,)]
+        t = max(_sent_at(demo_db_url, r1), _sent_at(demo_db_url, r2))
+        assert await _flag(own, t + H24) == [r2]
+    finally:
+        await own.close()
+    assert _state(demo_db_url, r1) == "SUBMITTED"
+
+
+async def test_nr_t17_epoch_change_before_check_is_owner_lost_with_no_effect(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    """Kills N17: the check runs inside the ownership fence."""
+    from haloflow_demo.errors import OwnerLost
+
+    s, own = await _own(_env(demo_env))
+    try:
+        rid = await _send(own, s, 1, _start())
+        at = _sent_at(demo_db_url, rid) + H24
+        _q(demo_db_url, "UPDATE demo_settings SET owner_epoch = owner_epoch + 1")
+        with pytest.raises(OwnerLost):
+            await _flag(own, at)
+    finally:
+        await own.close()
+    assert _state(demo_db_url, rid) == "SUBMITTED"
+    assert _nr_items(demo_db_url) == []
+
+
+async def test_nr_t18_reply_explicitly_correlated_to_another_reminder_does_not_answer(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    """Kills N06 through the staff service: a-2 is NOT_SENT (paused), so a reply
+    simulated for a-2 has the snapshot {a-1} only; it must not answer a-1."""
+    from haloflow_demo.service import DbStaffService
+
+    s, own = await _own(_env(demo_env))
+    start = _start()
+    try:
+        r1 = await _send(own, s, 1, start)
+        svc = DbStaffService(own, s, now=lambda: datetime.now(UTC))
+        await svc.set_paused(True)
+        r2 = await send_one(own, s, _appt(2, start), _patient(2), StubGateway(TEST_NUMBER),
+                            tenant_id=TENANT, now=_clock(NOW))
+        assert r2.state == "NOT_SENT" and r2.reminder_id is not None
+        res = await svc.simulate_reply(int(r2.reminder_id), "maybe")
+        assert res is not None
+        rows = _q(demo_db_url, "SELECT m.simulated_correlation, c.reminder_id"
+                               " FROM inbound_messages m"
+                               " JOIN inbound_candidates c ON c.inbound_id = m.id")
+        assert rows == [(int(r2.reminder_id), r1)]
+        assert await _flag(own, _sent_at(demo_db_url, r1) + H24) == [r1]
+    finally:
+        await own.close()
