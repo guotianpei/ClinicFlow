@@ -1,0 +1,26 @@
+{
+ "files_checked": [
+  "tests/m01/fixtures/function_policy/cases.json",
+  "tests/m01/fixtures/function_policy/controls/C01.json",
+  "tests/m01/fixtures/function_policy/controls/C02.json",
+  "tests/m01/fixtures/function_policy/controls/C03.json",
+  "tests/m01/fixtures/function_policy/controls/C04.json",
+  "tests/m01/fixtures/function_policy/controls/C05.json",
+  "tests/m01/fixtures/function_policy/controls/C06.json",
+  "tests/m01/fixtures/function_policy/fixture-hashes.json",
+  "tests/m01/fixtures/function_policy/sql-fixtures.json",
+  "tests/m01/phase_signature/sig_cases.py",
+  "tests/m01/phase_signature/sig_killrun.py",
+  "tests/m01/phase_signature/sig_overlay.py",
+  "tests/m01/test_function_policy_comment_phase.py",
+  "tests/m01/test_function_policy_constructed_ast.py",
+  "tests/m01/test_typed_plan_ownership.py"
+ ],
+ "stats": {
+  "json_leaf_version": 84,
+  "json_leaf_hash": 86,
+  "py_lines": 48
+ },
+ "rederived": 111,
+ "violations": []
+}

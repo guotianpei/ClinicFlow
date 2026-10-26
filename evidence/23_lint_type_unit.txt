@@ -1,0 +1,11 @@
+$ ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+All checks passed!
+exit=0
+$ mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
+Success: no issues found in 33 source files
+exit=0
+$ pytest tests/m01 tests/m02 -m 'not postgres' -q
+........................................................................ [ 96%]
+........................................                                 [100%]
+1192 passed, 377 deselected in 9.74s
+exit=0

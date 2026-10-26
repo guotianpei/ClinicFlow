@@ -1,0 +1,29 @@
+$ PIP_NO_CACHE_DIR=1 scripts/verified-install.sh --python python3.12 --target linux-x86_64-cp312 --project . --locks locks --evidence /tmp/claude-0/vi-evd --envdir /tmp/claude-0/vi-env
+  Building editable for haloflow (pyproject.toml): finished with status 'done'
+  Created wheel for haloflow: filename=haloflow-0.1.0-py3-none-any.whl size=1322 sha256=34cefed154f56370ecd6a341fa63988ad31835c3f06434160cc8c614fce2a98e
+  Stored in directory: /tmp/pip-ephem-wheel-cache-u3v734oi/wheels/d9/c2/17/b9be33da83ff23a1c1cec866543b03a88966e31e501c051e76
+Successfully built haloflow
+Installing collected packages: haloflow
+Successfully installed haloflow-0.1.0
+
+[notice] A new release of pip is available: 26.2.1 -> 26.2.2
+[notice] To update, run: /tmp/claude-0/vi-env/bin/python -m pip install --upgrade pip
+--- exit: 0
+== 6. premises, and the run manifest
+   OK: 66 locked distributions, covered in both directions:
+       every locked name appears in exactly one install report,
+       every reported name is locked, versions match, every installed
+       artifact hash is among the pinned hashes for that distribution;
+       installed set is exactly those 66 names;
+       pip check clean; declared requirements satisfied;
+       project 0.1.0 installed editable from /home/claude/clinicflow/haloflow;
+       source content sha256 0a62224815edeeaf7d19bacde00a84692f954b23117af450e8bc7b892d83c192 over 201 files
+       -- dependency verification only; reviewed-source binding pending (no expected source digest was supplied)
+       This run verifies DEPENDENCIES. It says nothing about which
+       reviewed source tree it was pointed at.
+--- exit: 0
+verified-install: the environment at /tmp/claude-0/vi-env is installed and verified
+   gates are the caller's; this stage runs none.
+exit=0
+$ installed pglast
+7.21 (17, 7)

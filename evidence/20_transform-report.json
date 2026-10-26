@@ -1,0 +1,1995 @@
+{
+  "declaration_replacements": 84,
+  "classified": {
+    "674e9db796896ae96b8b2cdbc61808e8805a52334b2611760c73a1f56fffa23a": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/main/function-v3-candidate.input.json",
+      "final": "674e9db796896ae96b8b2cdbc61808e8805a52334b2611760c73a1f56fffa23a"
+    },
+    "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json",
+      "final": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d"
+    },
+    "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/gateway/lock-operation-shape.canonical.json",
+      "final": "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577"
+    },
+    "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C02.json",
+      "final": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24"
+    },
+    "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/gateway/begin-key-scope-shape.canonical.json",
+      "final": "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f"
+    },
+    "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C03.json",
+      "final": "d6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b"
+    },
+    "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C04.json",
+      "final": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021"
+    },
+    "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C05.json",
+      "final": "ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac"
+    },
+    "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C06.json",
+      "final": "bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f"
+    },
+    "273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/cases.json",
+      "final": "a0093f63f4bb2dbebfea7e4557771e5c0ccdbcea6ebd5cfe572b3fbd729d1932"
+    },
+    "7c0fe15ca54ad356f2483b17ca194223ac3cbec485051973f74eafca833a8899": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/expected-refusals.json",
+      "final": "7c0fe15ca54ad356f2483b17ca194223ac3cbec485051973f74eafca833a8899"
+    },
+    "3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "final": "6a94578323fbf994093712ad604a4d9b026b16dd7c92f79759207c88c0cd56ea"
+    },
+    "75127cf90b6f8fc3e122757365bb0049a16cf5ea47aea2c852c3fec3379f6bcd": {
+      "formula": "F-X3B",
+      "subject": "variant:A-table",
+      "final": "dcf0c4dda949748471db0cfc3fbeca2e1f18fc0c4db5398862bc42305ef4a518"
+    },
+    "593f6116cacf835c5dcd1f1f0384073e3439f3f6508decd9dbaef00b48d48dc1": {
+      "formula": "F-X3B",
+      "subject": "variant:A-temp",
+      "final": "6eaf6d723215561dd00d49ab378270466692b2f80368399698eca8e57f3b39e5"
+    },
+    "d2f6c64a2c7d2512925a571e721986a54469df0adcaa18e4a14a963b2d69c78d": {
+      "formula": "F-X3B",
+      "subject": "variant:A-unlogged",
+      "final": "5983f0bb491066118a9064395d986be6ed9df171e15061d91d47de148658ffda"
+    },
+    "c0fcb94cb99f57de46242466cc539425fc4c472ca6f01073b8abd2e4b93232ce": {
+      "formula": "F-X3B",
+      "subject": "variant:A-ctas",
+      "final": "a2290fdbdc37ea91be54d08ceb563854bdfabbb460dc89630e4d1532671f55a1"
+    },
+    "380cc6551987ab7749dbf8b612015838e1d17a85afad01fae2e24fb2e9f86884": {
+      "formula": "F-X3B",
+      "subject": "variant:A-partition",
+      "final": "b29e3a6debb0497e148f02eb42e89b19dbf8ecf97d443228973b3ccd6a2e72d3"
+    },
+    "91a4ddae2bd59407a8e8365447759eda37b7dd19973a1bbaff9b28e4ef329e86": {
+      "formula": "F-X3B",
+      "subject": "variant:A-select-into",
+      "final": "ae0693cca3ec90e03e6c9af10f293a916e95b2b8e369a5b9e9601af5b265da58"
+    },
+    "99ce27a5ea7f5cc7b4bb693088f355efab88c1f41173b858b58739be3426972b": {
+      "formula": "F-X3B",
+      "subject": "variant:A-materialized",
+      "final": "aa99c9fb4654349f7629cc65c9bf155eea44873ecb85f59c68072ea99c49d5ca"
+    },
+    "4bfc6e16407095778d7f76832f10103fcf77b1f8a28a88361dbc2ee3d77cdc69": {
+      "formula": "F-X3B",
+      "subject": "variant:A-table-grant",
+      "final": "767bde0e9d9949f4711e689582ccd43b7b23de89757cacdaacdc6edf1a2b4881"
+    },
+    "7b5db961f1465e4e352a67f0e2595cf73b6b5deb52baad364e5f7a4969ac79f2": {
+      "formula": "F-X3B",
+      "subject": "variant:A-schema-grant",
+      "final": "8e4f97769b89717b132ea3c9059cb1601a36c1fc9f08c3c80128bb3679577312"
+    },
+    "e1ea69f681ee2b9183712075ab7e2a6882bd217fe3e987f92193ea8172884a24": {
+      "formula": "F-X3B",
+      "subject": "variant:A-role-grant",
+      "final": "70d93423cf288383887d9b495bd71e9ca2cd82adbc533a45aeba2419c0e15c2a"
+    },
+    "8d946f17fac6aec0a2c09e570b1a7b39fce77bd6d59a6aafbb8086e2cbb981f8": {
+      "formula": "F-X3B",
+      "subject": "variant:A-default-privilege",
+      "final": "41de116a6e812ba5db96636cf448471f8808399223628341b0685b978eb8b3db"
+    },
+    "acf2c541535b33f59fb81b9df5d68e5f23313a3d12f28e9871065b5c363ac544": {
+      "formula": "F-X3B",
+      "subject": "variant:A-unknown-select",
+      "final": "24207737219d6072eacc7b8215f4e293aaca9ff4ef0a7af11ddc9e791d076312"
+    },
+    "b90d149bfebe3f783c6591e5d1a9bf65ab4f99b96197c5d0a59becacd762feee": {
+      "formula": "F-X3B",
+      "subject": "variant:A-session-set",
+      "final": "37a2e7b41c24d1ea9d577ac31ec379ddcd34a532e5c01f83bd9188c15f00d306"
+    },
+    "aaeb9f3a7101335be9ebea542dd95d90da7082d4ae9377ec6706202833b8bc74": {
+      "formula": "F-X3B",
+      "subject": "variant:A-session-reset",
+      "final": "20e63887e04e1615ee428099bef92f4c26d07e6fe42691c7859830e2c337e9eb"
+    },
+    "93f64ad7231ab3c474c6f4fbb7217dab7c7fcf4d4d9ee50c5f6461520d37c22a": {
+      "formula": "F-X3B",
+      "subject": "variant:A-language",
+      "final": "03bdfa686fc4bfd2d9a04a1c10b7906331bcab8634766190de9fc589e3321239"
+    },
+    "308f95cb25de3c8f5c24d5448f0b23362c04814e6d1021840a41db9859bfb502": {
+      "formula": "F-X3B",
+      "subject": "variant:A-invoker",
+      "final": "ecf223f2f135d8e6c4f7f00a6f5a7919a5a7723b93f6a161e649059e5c6cd2cc"
+    },
+    "bfbe115a3baae064f68a6a0589801ac7b9dcc1f798310b6752ca8fe8edf4904f": {
+      "formula": "F-X3B",
+      "subject": "variant:A-replace",
+      "final": "076724a6aedd4f8925f122b5cc35e14a9e4f2eea3f83a573f04bd4253763dc8c"
+    },
+    "d38045df595de5cdbd7f13acb4ab88fb35d1210aba23e6f098032d06a13b9c43": {
+      "formula": "F-X3B",
+      "subject": "variant:A-volatility",
+      "final": "5e39498160da28de1da5c431a1dd50985dcaa2fcf1134c6eff99a5bbaf4f27ad"
+    },
+    "74706685fc56048f468e9c1bb5f667dba3f74c482bb9820946a2afb571ae254e": {
+      "formula": "F-X3B",
+      "subject": "variant:A-parallel",
+      "final": "772f269796c5927c33244650a70da1a307ac801dc16b6f542f569507aa7da4e2"
+    },
+    "34ee622b09058f3b346735e9bcfdba56e136ea96bfe26f63f7a33aa6bc8f4c30": {
+      "formula": "F-X3B",
+      "subject": "variant:A-strict",
+      "final": "11404d1f5630dfbca77fba67b8391ebc647c34ff33f2f094bdca0823f6191da5"
+    },
+    "a41f4255ca04538cead40b1c7d7028199e6dc50ae37c8ce4e86974102cf0cc0b": {
+      "formula": "F-X3B",
+      "subject": "variant:A-path-order",
+      "final": "066e1fb2664750dd8727e1bc75ba2704fbae033403456b6b22ac9dc13b82d7dd"
+    },
+    "b7914e7be4477c2ed7aa4b838d885b453467d5177f3497234a7723136896d462": {
+      "formula": "F-X3B",
+      "subject": "variant:A-path-public",
+      "final": "7ccd259b4a3bc2f45658c30c3a3d0685d02387dc88b8c0bcd7c9ad8475c1c2c4"
+    },
+    "c227ae09aab42f6aac298aa4113d33eeed9bbda268bd49029d9662e0fbbb9d76": {
+      "formula": "F-X3B",
+      "subject": "variant:A-path-from-current",
+      "final": "a5d2983732e3c34f056f40ac3875e1337afff91a4c8a28383e8cf0d17331a6a1"
+    },
+    "c7ca71f99d9a88a673036ca9b67dfccea07a0438d20af7218b4663e38d51b561": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-language",
+      "final": "7bfedfba9fcc4c24458bce6aa6f331ce7188ab795b9099a07801099010805657"
+    },
+    "7de0f7dcbb177fbcd8b6e789fda7e29ba5663e52e96aa7a12368adad70413b2c": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-volatility",
+      "final": "e97a602f46d2cccea99bc62e11ffd0dd367f7fa6824ab35ebd54cf4c8f40ba8c"
+    },
+    "50c4c03902e3c87665942ac899d59fabaf04a1ba68ea179bbde689d9acb8fa27": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-parallel",
+      "final": "ab7dc9897619df77c345b0af24f250cecc4faa5a4926cc6acf4261851ad2b69a"
+    },
+    "6fd2934e885060dfad2f0e29630730017ec1f74be827962a2dde5cd8ef8e4bda": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-strict",
+      "final": "3f0c4466e401b4d35cdab7c054d442a3076d9210319e3bed77b54f736ce62a94"
+    },
+    "cf27777f73c298bd2e7c6e844824367e03caa5793ba2ec8df871c8b47f048952": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-security",
+      "final": "f4a768c3068b85aae09d3cc364b86247009b8e0f34248f98b0c0f9d61625d8b2"
+    },
+    "5c4103644ecfcbd144126940396ce67b2efc8e3552b322cf033c28151197958b": {
+      "formula": "F-X3B",
+      "subject": "variant:A-duplicate-language",
+      "final": "d8d901bdcec8fbde978669c3ee98f5a40ba05111cb48c0d9a7601802c1586f70"
+    },
+    "81fa0706fec2486612972906af09b9793beb9cd2fe26781ebf40cc56ffda8fe2": {
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-cost",
+      "final": "b9a48b39391643515fcafa7b31f2d378d1f024eed04b98bf8abcafc8cf070806"
+    },
+    "3bc28cc937b06810a9edd2b1711056255138b58a7a52fc278ed506f091a91c19": {
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-config",
+      "final": "39b6c0f7d5fcab52eba09e85371079a6a201dea1ba530a8a7e6f64ae16071bb5"
+    },
+    "cbe9c09849b0df11af85a09711dab0d501b430d8c3195ecd504b7b784c636c08": {
+      "formula": "F-X3B",
+      "subject": "variant:A-body-drift",
+      "final": "722906135398af31b12420e7d3594cd23c6dd5e0573b66e30e21657e613b399b"
+    },
+    "06647157de8944f7668b9eaa8c96e963685e7dde78c6353ab60e6bd53b7b768c": {
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-option",
+      "final": "609b795723cea34dd0d3289faafe93165a23b3ad78a9006a75698b4c3c3605ab"
+    },
+    "350ab7e348de7f37c99a73002736c44824b550228dfa5224e38fcf7e72ba141d": {
+      "formula": "F-X3B",
+      "subject": "variant:A-duplicate-grantee",
+      "final": "19277f67fde981fbc1beb539981bed50e75d0d9b858546db916db3878c98dbb7"
+    },
+    "3b24709753f9f1aabaa46a4261f167f49f5c3207dfb815d5e5de2bf5ba0f14ef": {
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-grantee",
+      "final": "374aaaa6f2070239c189bbd319896d70c29e3ae7f656b4d43109d39744f5cbeb"
+    },
+    "2ce11b3a3077dab78c4cdeb60fbae89e3ec2ddbd14d4bb9ace66e248523a9019": {
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-grantee",
+      "final": "a5515c3d8a532187891332895b91300f14f00c4828114f299c481a92376f4f66"
+    },
+    "2ed2e943165d09cb6192ac40cef42360ae958a02256108404159cb3b0b151489": {
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-all",
+      "final": "ef0aff1cd97db65cf779c1a17651ff988840f7c127411fbe686d355fa43d8616"
+    },
+    "021cd092095a4223f3836e897d237b0ce30ea6f5217da282dfa060992feae156": {
+      "formula": "F-X3B",
+      "subject": "variant:A-revoke-execute",
+      "final": "afb12cc97602454f16a8f126d42dac2a33243f0d6376e44f82371d2092043e37"
+    },
+    "355a1b2098fd5bbe810f78fb628a292a527e280134f9b762a3b8f684b7743aa2": {
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-grant-signature",
+      "final": "c2882e43efaaaed943b695cc797227b8d9692f92fcf7ec282942a0fa368ff465"
+    },
+    "1f28837460eeab92a8ebda41c48e3d8e733c16aef383d2186335e1211b0b4112": {
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-schema",
+      "final": "a9e9c3b226dc50c4d7a7c8a9d15b8462af984ec8b4b8399f086791117f9eb884"
+    },
+    "3f0f59aa7f458d03017362c4eeddcdadca14c7ea41969b6a29da3e3eda0ff38d": {
+      "formula": "F-X3B",
+      "subject": "variant:A-unqualified-create",
+      "final": "cc4b1df4aa53b15735ebe2b99cbc19f0e88926f4dc95b10ca6bbb8ce33daa187"
+    },
+    "a1b5e5e095f5efcfcd81518b2875a3f840a7aa5cd31a69d2dc92aa972627236a": {
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-name",
+      "final": "1b2f56605c4ade9c4cfbdb9850df738cf838acdfb55561c5cbbf54383e3d044c"
+    },
+    "1bb8a0985abfbb96dcf921cf168a754afc5dd0ee6950f66ddbd3e44f6c1ff01e": {
+      "formula": "F-X3B",
+      "subject": "variant:A-split-grant",
+      "final": "82c8afb211e0bfb7ec5eee296a86307ba8f1042e72fea5be924573c78844639d"
+    },
+    "733517233cee9570660e21d46f188e2e819ea8441df5fc4adafb767bf818fe6e": {
+      "formula": "F-X3B",
+      "subject": "variant:A-bare-setof",
+      "final": "6bf77dd609a19eced595da88745fe48fb1ea076468d4c1d5ad2beec212bb89d8"
+    },
+    "99f8c3d2601bc8417968198e3b3cdf0947b0dab458d536deb20fd5c7d218a44f": {
+      "formula": "F-X3B",
+      "subject": "variant:A-explicit-bound",
+      "final": "cb7574ddd3d1f6456dd2ebaeb8869ba6aa770fd4449cb06c6c63996a2b6fc713"
+    },
+    "a95da0d7dd2deae6f2818c98d3dbf6c68e650cacd16ff8a682d279701b573ae1": {
+      "formula": "F-X3B",
+      "subject": "variant:A-multiple-bounds",
+      "final": "dc04e92623daceea7661581a3f294db5961c80e4c89e3031cafd03b0e4dc4b02"
+    },
+    "4b91c16b971b8fe2847e0e161455d4393e84289fafe8d0d4954d80872d48d9ce": {
+      "formula": "F-X3B",
+      "subject": "variant:A-output-name",
+      "final": "33f0483a7b42893104f6d9d7353a3dfa5ef9697a328292afea389cb23cee16a3"
+    },
+    "d15204d3457d94465b9c0b46199b368dede689b0f2f05ae2c0f775e359ec6e1a": {
+      "formula": "F-X3B",
+      "subject": "variant:A-output-order",
+      "final": "58e7f0b3f67d87ab3ce3d62846e921831d5b57ee17f7287555ff0a9437cd97c3"
+    },
+    "5b35ffe2856acd81a3b7c3fb7b2a2a0b36c51c11e1aac7361c4ed8f2e6672890": {
+      "formula": "F-X3B",
+      "subject": "variant:P-column-default",
+      "final": "c5f42cf0d4741985a5986837417722327cc8b29c3b9327835d98efa61065ba8f"
+    },
+    "6a2554442e8a5f530f493fa67392a6f17248cbe43516fed88e5d91f353780309": {
+      "formula": "F-X3B",
+      "subject": "variant:P-out-table",
+      "final": "7b3b495d3dd8354f92ad1d17f04a2c9256779fb99dab2cd3993f6ad5e3bde132"
+    },
+    "0cf3c29293be8d461bc5ec210480659368d273cb71b1063888a37741a2d8c1b6": {
+      "formula": "F-X3B",
+      "subject": "variant:P-inout-table",
+      "final": "d3b1b73f4ad04c2feccc7e6f725373fd1d964e49f1df1405995f42cbb1f909e4"
+    },
+    "6f91461f7d81e3c3111d3558d51fda4d70468644f3e40af37f4e295942c47c6c": {
+      "formula": "F-X3B",
+      "subject": "variant:P-unnamed-table",
+      "final": "d69d4caa73f91c14b82b99bcffab6709f8c9b1c6bfd46a9f8ad25983565e359b"
+    },
+    "a2c369d5360eb3932d4607011753fdba206d9049192ebf2cd5b638e236fc7d23": {
+      "formula": "F-X3B",
+      "subject": "variant:A-out-no-table",
+      "final": "9f6a94280a18b86e156536fda54660e52087a76f32bce8a3cc8fbada5efb548e"
+    },
+    "79d7083e1b925d574673ec610763ea5aaaeb00eec4fd3cc8aefb4ec63ded637f": {
+      "formula": "F-X3B",
+      "subject": "variant:A-inout-no-table",
+      "final": "5d8323ba0e9e3d8d8abd51de6298cfdc720b6024b9e2480ff65a1d912981bb70"
+    },
+    "a3de70e83beb86fc1b564539c655ace20d5022befc18b9be325e5e534dbe7e68": {
+      "formula": "F-X3B",
+      "subject": "variant:A-input-array",
+      "final": "d4350c2e778c3b3fab2905df992aa032ed316812dce9edbda00d9d490be706fc"
+    },
+    "18f83b6b6cbb3be35cf0cc70a7e471c5ed30b450bf3d683aa4f525ec7be181c4": {
+      "formula": "F-X3B",
+      "subject": "variant:A-variadic-table",
+      "final": "92c693b68a4e59491cd972b83944523083fcb0726ac3988af53176e5a8056fa7"
+    },
+    "f14495c556474cb216daa28a8a98eefe06b74d6f66ad3aeac35da1534d9c24d1": {
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-null",
+      "final": "ee571c6d142abe2a22281b4472ee4c4252d615ba2abcfb75e6402ae351b5da5c"
+    },
+    "e044587f38c55c3a52e4d00c452ec487d45f768e88e01faf2291503006f610d6": {
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-wrong",
+      "final": "a0ac493bcb68d1cb1d8c508a56696edead5d52fc0fbaf53c4db9c8163b91ad6b"
+    },
+    "a101b958e6cc0a095093faee88738c098cfb51fc13a3d96d462a897b6bcbe21a": {
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-missing",
+      "final": "d8d52a3eca3eadcdd51645962d07025bb061f336d6834585a7a81b9716983c29"
+    },
+    "09d43241e09d71b262aa929af3356f9af7deaad28b97cd226240a7ceaca6bb77": {
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-undeclared",
+      "final": "8e044408ceb909653037dcd5c82357a26fd9f6585e4805b8a2d7ecb4251f16ad"
+    },
+    "c16ff223085214caef75be1415d541ff15ecf39638a7421d72850397a7401d46": {
+      "formula": "F-X3B",
+      "subject": "variant:A-revoke-missing",
+      "final": "4d2d0152b4577ca31b75fa494db3f2257a09737521b4c837c745703a067b15a7"
+    },
+    "01f6ed71cd8c4c9fa3f4727b6dced59af72a6fd9d59bf112d762ca71f4c2187b": {
+      "formula": "F-X3B",
+      "subject": "variant:A-create-duplicate",
+      "final": "c8c6a9e9b25d5e32dfb6da4e4acb22b164c5ce541af773a1fdd1a07074455394"
+    },
+    "ba4f895dcb986540862814ed8c8846f39b9aed1c12510f94abf8d14b3f76d8ad": {
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-before-revoke",
+      "final": "d81426cb9ef190607e11f9deaeadd88510f6be3c5f3a4e016be69aa5d7426875"
+    },
+    "75030e6d10948806cdace99ea314dfadca7aee8798b1b976219d99c4dec391f9": {
+      "formula": "F-X3B",
+      "subject": "variant:POS-quoted-words",
+      "final": "0eb82fe16a24b10d609ef1945589b1a96b970289f7350582b310d0612dc46d6d"
+    },
+    "5b44f988a3afaeae468e5865f750f900f1994da17aa5104f837a2679664a861c": {
+      "formula": "F-X3B",
+      "subject": "variant:POS-acl-order",
+      "final": "01bdf8993015b2dd1be4feabf010d3bb5a6624a5c86c9b57c150c5b99ec98be4"
+    },
+    "45bd75be2560bebdeee107425db9cf11d44080f71810d16bf591b947da86dc0c": {
+      "formula": "F-X3B",
+      "subject": "variant:POS-array-keyword",
+      "final": "066fc772060defc70cd0a928abf087e19a568163f20303dcaf9e69dfc5ba3a49"
+    },
+    "b00d39435b4ca4285be3da9e85380bb662d777f04f796b5f778b087fdd96171d": {
+      "formula": "F-X3B",
+      "subject": "variant:A-empty-acl-grant",
+      "final": "69dbfc506b1e74ac94c165327f7333c3d0d3191b5052f824e56a01f0a94ea84c"
+    },
+    "be969ceba828c1aae46acb979e1d410cfea9dde12f4e65cb979ce479dde0108d": {
+      "formula": "F-X3B",
+      "subject": "variant:A-input-name",
+      "final": "483cfe1a0c0346cfbdbbf3cd2f55affefa41fb407f7a0a7e1aab8baae0eea9f4"
+    },
+    "d772d1d7d014363c2ee3f6ff0c6ab4d0687c9ead005249130e7b7dea489db511": {
+      "formula": "F-X3B",
+      "subject": "variant:A-input-order",
+      "final": "3fc2b87a9fbcd049a7c5411cfe7557de5a56196523ec83c6cf73ca6befa67d35"
+    },
+    "fc87bc3611eba43353482ceaa6fa9f7ee24f95088d2c0549c3b93dcb521964af": {
+      "formula": "F-X3B",
+      "subject": "variant:A-input-type",
+      "final": "e17dd6a3a9327ef5be5c565eec6b0aa02e4d053563c0f59e3165382a6e991039"
+    },
+    "34bf42ec74785abd0b8f741527f0c7664ecab0098767547b1e6668d237498e19": {
+      "formula": "F-X3B",
+      "subject": "variant:A-input-default",
+      "final": "366af496e9435083a6e1f40cb4badd0332beccd7c79157d6a82e64f9e7e3a82c"
+    },
+    "b18b7ecdc4ed411ac824fb2799c4cafe325d8c1ad1fd99684ba6c340ed2284e6": {
+      "formula": "F-X3B",
+      "subject": "variant:P-parse-error",
+      "final": "a8b149dc9e2e12b4326bb5a7fd4c8ee069b442c630c2bf2b5cd90bd1c3e029bc"
+    },
+    "81df3882e56f848813442c77ae273ef391da5fa7d9363e69a45897c79948b81e": {
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-create-schema",
+      "final": "186df836ba2e9b0ce0d439bfd0d39e19c7973f79faf7b279c7ce0114c6283116"
+    },
+    "d9db55bfc17877c5538b2aa9c3060da5c8861ad1f3af86935b9264dc5a590431": {
+      "formula": "F-X3C",
+      "subject": "variant:A-unqualified-create",
+      "final": "ce8daf6e25752ed8b5f933e92c1e05ad81db11509fe2f6b3c37c538e700c43ba"
+    },
+    "f3bce1918d55e9c2dc2f0807153a62e649dfa3567256bb67981320083427b252": {
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-create-name",
+      "final": "0feef73f4f4b0670cd5e5d9e858fa39578107b80ebef4a955df93c3d8cabb320"
+    },
+    "fb253b3a19b81882b1711e28fa237534597a5f07071fdfc336dbdb487518a8fc": {
+      "formula": "F-X3C",
+      "subject": "variant:A-input-type",
+      "final": "a01df4a3950c81384ebcf92eedb53113d3781ec7b1e87218fac73620ff823a04"
+    },
+    "8781e2a5be4e930f55d6ed9fa74de60aa8281ae9d509c30e79762e1a92e2a6d9": {
+      "formula": "F-X3C",
+      "subject": "variant:A-input-order",
+      "final": "0673cd3c9b8d042fdf61dd8d6554ce44d2f6b67d3b6072903e41e1b111ffdf86"
+    },
+    "7749a96862d3a81fd644527f86eba7943684a14ade6e6615a375c1921142d7af": {
+      "formula": "F-X3C",
+      "subject": "variant:A-input-name",
+      "final": "6f9b096ac1f2104fcd0d3f179265f7539866c39a0562d97bf5e6f3087521d9f7"
+    },
+    "89c47edfb649a422f4cc239546049cc13fc32a8fa11a175d51a01e7260f39885": {
+      "formula": "F-X3C",
+      "subject": "variant:A-output-name",
+      "final": "f24fb067c6c33d4b12e5a0da07a536bf328b18573fedec7366e8b5ba083be075"
+    },
+    "65fc257d23b09c9c7a0de83672dffe99e2ea94cde9501215868a65b3fe9ee7e0": {
+      "formula": "F-X3C",
+      "subject": "variant:A-output-order",
+      "final": "d21ec8dc759be80ef32bd8e7fabdea7c4fb7955e7d8ca93ae718564d8bfb0ca7"
+    },
+    "77acecf1f850eb6063f241ee921fc9027fd421138204b64f327907a5051bdfbc": {
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-grant-signature",
+      "final": "bb0418651d62ad389f8701fdc91ca6b43b379635ceef442672d567ed0a945867"
+    },
+    "02f39025475b8d9a66a7e698751c1d1e9905f093f5ac512794c3da76b52b3f66": {
+      "formula": "F-X3C",
+      "subject": "controls/C01.json",
+      "final": "b923dc2073b3e468229c92ea493d43735d15bd4f425d1f3041f316cdaef58872"
+    },
+    "7717d341f74a2f3643d2533e7412b15381f116ad91a8d04a0c0447943d7d9711": {
+      "formula": "F-X3C",
+      "subject": "cases.controls[1](C02)",
+      "final": "c7ad9584050ccc72ddb2c760b08e5a7cdd174369166e7eef8b8633e6168512c8"
+    },
+    "520b4e2ba00b761fe58e71282b5280e51a680a765457e7a1587afdcfa54846a2": {
+      "formula": "F-X3C",
+      "subject": "cases.controls[2](C03)",
+      "final": "d51385cbc3b6fc0036de1dccb0436a33fec85a272fd5e8be0540b5e667b17037"
+    },
+    "f3679242d4aa26c326f89296f24408fbb371c0c67aadb88903c4c07e4969b3b9": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/conftest.py",
+      "final": "f3679242d4aa26c326f89296f24408fbb371c0c67aadb88903c4c07e4969b3b9"
+    },
+    "108c7128775316ed47c2ad4e829a4b26badaf38433534b81b6ff3153f552dd5c": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_child_plugin.py",
+      "final": "108c7128775316ed47c2ad4e829a4b26badaf38433534b81b6ff3153f552dd5c"
+    },
+    "36b38533c5dbf5d4264fb1519dc042950cafb04032c0805f36f3724653bd5914": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_overlay.py",
+      "final": "5a2f6d76eba2f84c90de1f28fcc13a29231c4c1feeaf8d5fb7dca591149a8a26"
+    },
+    "60bb473a641b694cd818f1acae01ddf405029ebd93351894b8423d6220d8f92c": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/test_sig_part_a.py",
+      "final": "60bb473a641b694cd818f1acae01ddf405029ebd93351894b8423d6220d8f92c"
+    },
+    "eb9c02c3d2cd6e706b31aba38417e8ba9fdc292087bbf81348d7ada12554d53b": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/test_sig_part_b.py",
+      "final": "eb9c02c3d2cd6e706b31aba38417e8ba9fdc292087bbf81348d7ada12554d53b"
+    },
+    "e797c624784160e751490658cf986216cc40fb4de0a0373974d5f3d4f1ea77ba": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_cases.py",
+      "final": "e5828aec68e4225c585ba3cd1949ef334349eeb03588b6c71e0c037794a85456"
+    },
+    "c8e53344ad06598bafa2462057121372056c67db85b5d95ad9b4b6d80843cefe": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/test_sig_part_c.py",
+      "final": "c8e53344ad06598bafa2462057121372056c67db85b5d95ad9b4b6d80843cefe"
+    },
+    "4cb12f6a3c5b86b17e72661be705f040ebea14c49cb290a1495a6c51efbe6bac": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/test_sig_part_d.py",
+      "final": "4cb12f6a3c5b86b17e72661be705f040ebea14c49cb290a1495a6c51efbe6bac"
+    },
+    "f5e8b4bd1f2b9d454a2c7d0d9eec83c7ec229c05d01180fd5ee3a6cf9213d45a": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/test_sig_part_e.py",
+      "final": "f5e8b4bd1f2b9d454a2c7d0d9eec83c7ec229c05d01180fd5ee3a6cf9213d45a"
+    },
+    "4ad3676095b505ea160eda14473be1218e31aeb5607f5f24f6e4eaba676d8881": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/typed_recording.py",
+      "final": "4ad3676095b505ea160eda14473be1218e31aeb5607f5f24f6e4eaba676d8881"
+    },
+    "ecf57cab4a3e0d6128047c9654d4605e47267d7ff7f6b424fc48a7541a5afdb0": {
+      "formula": "F-FILE",
+      "subject": "src/haloflow/m01/provisioning/function_policy.py",
+      "final": "f2636f0ca216b78c5a8a4dcbe576958f2ab618b90728c8022c81656aace677a1"
+    },
+    "9bae5c2ecd50d7077536348f7b2838d756af9a73d405e5b72f665e615991e29b": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "final": "d236428ec38ef94d495da5542a77468d043554c32fc251ae352274d040ca569d"
+    },
+    "df240e641f324c0084766b57a3db8a2bd16880c6075757e7973c1c25ed07bf45": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/test_function_policy.py",
+      "final": "df240e641f324c0084766b57a3db8a2bd16880c6075757e7973c1c25ed07bf45"
+    },
+    "9062a5029fdc020dace20897501de3b81e493a4c44e44c5216fcbbb100fc203c": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/test_function_policy_phases.py",
+      "final": "9062a5029fdc020dace20897501de3b81e493a4c44e44c5216fcbbb100fc203c"
+    },
+    "5e232d1563edb413560a939b4564194b268ebda631266900f1ddfa5aa75d0ebd": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/main/legacy-t001.canonical.json",
+      "final": "5e232d1563edb413560a939b4564194b268ebda631266900f1ddfa5aa75d0ebd"
+    },
+    "e1bc9ac7564c95b48c5c39240d25759b702ef5ced48c9fe976fc3a6091fbda82": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/main/legacy-role-set.canonical.json",
+      "final": "e1bc9ac7564c95b48c5c39240d25759b702ef5ced48c9fe976fc3a6091fbda82"
+    },
+    "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083": {
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_checksum/vectors/main/acl-reordered.canonical.json",
+      "final": "a5b907e508b32cd8e956387eff30407339b8ad46255913e4860907e224987083"
+    },
+    "6ef0819028a95867dee62685212cd7028400bce5d62e1ee19691dc4e6556c6be": {
+      "formula": "F-FCS",
+      "subject": "variant:POS-quoted-words",
+      "final": "f2a4c104d71902f1bae1cafbdaf1863101497d20608b3e6a7a966b2fccd59d0b"
+    },
+    "fb54de3b588f356fae739f8618353e8a993badefd9f113c6927bf6682fcb1302": {
+      "formula": "F-FCS",
+      "subject": "typed:second",
+      "final": "5f30a04a3a0405e3ac6a3cdea4409a2725805b0d1882adda10c7182c2f886977"
+    },
+    "cdca6609a357923e16e16353b897c457b16acc27b1c3ab466885b689e9ec25fa": {
+      "formula": "F-FCS",
+      "subject": "typed:second_body_drift",
+      "final": "7f3005fea5d5971e17258db7215011b141006163647ba72466e64b05e665defa"
+    },
+    "b2c180430b5d8e41e26996cdf56cf13a3f97b877ced33b4634db5fb1db459565": {
+      "formula": "F-FCS",
+      "subject": "typed:annex",
+      "final": "d8747e437b6ec06c2ecadeb0123d86c08f41160fb7e901bb38780e88c50defd0"
+    },
+    "d1fdb29da8d41800ad2621aca0672797d2d3aad8d6ad5b22b2605d20003e65c4": {
+      "formula": "F-FCS",
+      "subject": "variant:A-body-drift",
+      "final": "19dbcff03675106872c1f5cf7157ef0e73c41beab35b713963d36fcdda856bf7"
+    },
+    "83ef32f3091ebc05b975a1de0c70308720c628a5494bdd0ffb03ea054e09014b": {
+      "formula": "F-FCS",
+      "subject": "variant:A-table",
+      "final": "b66bded6e8b5e395db411d63ff12c07eb1a51c4c5f0a62d767f10a322c41a91d"
+    },
+    "5144450b0025678a741687aa7e0522922e159f11125b91aa4f65dae269bfd4e2": {
+      "formula": "F-FCS",
+      "subject": "variant:A-unknown-select",
+      "final": "896854bb4190f021545daa4c289120563f459e8b955cf86432d47aefba513978"
+    },
+    "1b7163fdec1ce4b1e2b928a21fb9320027914e7c1f6ec25fda04d73e825caf04": {
+      "formula": "F-FCS",
+      "subject": "typed:payload_nul",
+      "final": "67e430a22cab7c7e1035e40430a52ac9ff74e33d5fa909e76c851baf5e88de65"
+    }
+  },
+  "replacements": [
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "new": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "new": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "new": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_function_policy_comment_phase.py",
+      "old": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "new": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_function_policy_constructed_ast.py",
+      "old": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "new": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "new": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C02.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "new": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C02.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "new": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C02.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_function_policy_constructed_ast.py",
+      "old": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "new": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C02.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+      "new": "d6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C03.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+      "new": "d6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C03.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+      "new": "d6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C03.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "new": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C04.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "new": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C04.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "new": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C04.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_function_policy_constructed_ast.py",
+      "old": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "new": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C04.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+      "new": "ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C05.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+      "new": "ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C05.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+      "new": "ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C05.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/cases.json",
+      "old": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+      "new": "bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C06.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+      "new": "bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C06.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+      "new": "bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/controls/C06.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3",
+      "new": "a0093f63f4bb2dbebfea7e4557771e5c0ccdbcea6ebd5cfe572b3fbd729d1932",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/cases.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3",
+      "new": "a0093f63f4bb2dbebfea7e4557771e5c0ccdbcea6ebd5cfe572b3fbd729d1932",
+      "count": 2,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/cases.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805",
+      "new": "3569cf597ec5633b77309e4be12d2f0a36ba7c8b76b34a0569a78a9f5f0bbb9e",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/sql-fixtures.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805",
+      "new": "3569cf597ec5633b77309e4be12d2f0a36ba7c8b76b34a0569a78a9f5f0bbb9e",
+      "count": 2,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/sql-fixtures.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "75127cf90b6f8fc3e122757365bb0049a16cf5ea47aea2c852c3fec3379f6bcd",
+      "new": "dcf0c4dda949748471db0cfc3fbeca2e1f18fc0c4db5398862bc42305ef4a518",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "593f6116cacf835c5dcd1f1f0384073e3439f3f6508decd9dbaef00b48d48dc1",
+      "new": "6eaf6d723215561dd00d49ab378270466692b2f80368399698eca8e57f3b39e5",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-temp"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "d2f6c64a2c7d2512925a571e721986a54469df0adcaa18e4a14a963b2d69c78d",
+      "new": "5983f0bb491066118a9064395d986be6ed9df171e15061d91d47de148658ffda",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-unlogged"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "c0fcb94cb99f57de46242466cc539425fc4c472ca6f01073b8abd2e4b93232ce",
+      "new": "a2290fdbdc37ea91be54d08ceb563854bdfabbb460dc89630e4d1532671f55a1",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-ctas"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "380cc6551987ab7749dbf8b612015838e1d17a85afad01fae2e24fb2e9f86884",
+      "new": "b29e3a6debb0497e148f02eb42e89b19dbf8ecf97d443228973b3ccd6a2e72d3",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-partition"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "91a4ddae2bd59407a8e8365447759eda37b7dd19973a1bbaff9b28e4ef329e86",
+      "new": "ae0693cca3ec90e03e6c9af10f293a916e95b2b8e369a5b9e9601af5b265da58",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-select-into"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "99ce27a5ea7f5cc7b4bb693088f355efab88c1f41173b858b58739be3426972b",
+      "new": "aa99c9fb4654349f7629cc65c9bf155eea44873ecb85f59c68072ea99c49d5ca",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-materialized"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "4bfc6e16407095778d7f76832f10103fcf77b1f8a28a88361dbc2ee3d77cdc69",
+      "new": "767bde0e9d9949f4711e689582ccd43b7b23de89757cacdaacdc6edf1a2b4881",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-table-grant"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "7b5db961f1465e4e352a67f0e2595cf73b6b5deb52baad364e5f7a4969ac79f2",
+      "new": "8e4f97769b89717b132ea3c9059cb1601a36c1fc9f08c3c80128bb3679577312",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-schema-grant"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "e1ea69f681ee2b9183712075ab7e2a6882bd217fe3e987f92193ea8172884a24",
+      "new": "70d93423cf288383887d9b495bd71e9ca2cd82adbc533a45aeba2419c0e15c2a",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-role-grant"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "8d946f17fac6aec0a2c09e570b1a7b39fce77bd6d59a6aafbb8086e2cbb981f8",
+      "new": "41de116a6e812ba5db96636cf448471f8808399223628341b0685b978eb8b3db",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-default-privilege"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "acf2c541535b33f59fb81b9df5d68e5f23313a3d12f28e9871065b5c363ac544",
+      "new": "24207737219d6072eacc7b8215f4e293aaca9ff4ef0a7af11ddc9e791d076312",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-unknown-select"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "b90d149bfebe3f783c6591e5d1a9bf65ab4f99b96197c5d0a59becacd762feee",
+      "new": "37a2e7b41c24d1ea9d577ac31ec379ddcd34a532e5c01f83bd9188c15f00d306",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-session-set"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "aaeb9f3a7101335be9ebea542dd95d90da7082d4ae9377ec6706202833b8bc74",
+      "new": "20e63887e04e1615ee428099bef92f4c26d07e6fe42691c7859830e2c337e9eb",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-session-reset"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "93f64ad7231ab3c474c6f4fbb7217dab7c7fcf4d4d9ee50c5f6461520d37c22a",
+      "new": "03bdfa686fc4bfd2d9a04a1c10b7906331bcab8634766190de9fc589e3321239",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-language"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "308f95cb25de3c8f5c24d5448f0b23362c04814e6d1021840a41db9859bfb502",
+      "new": "ecf223f2f135d8e6c4f7f00a6f5a7919a5a7723b93f6a161e649059e5c6cd2cc",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-invoker"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "bfbe115a3baae064f68a6a0589801ac7b9dcc1f798310b6752ca8fe8edf4904f",
+      "new": "076724a6aedd4f8925f122b5cc35e14a9e4f2eea3f83a573f04bd4253763dc8c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-replace"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "d38045df595de5cdbd7f13acb4ab88fb35d1210aba23e6f098032d06a13b9c43",
+      "new": "5e39498160da28de1da5c431a1dd50985dcaa2fcf1134c6eff99a5bbaf4f27ad",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-volatility"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "74706685fc56048f468e9c1bb5f667dba3f74c482bb9820946a2afb571ae254e",
+      "new": "772f269796c5927c33244650a70da1a307ac801dc16b6f542f569507aa7da4e2",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-parallel"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "34ee622b09058f3b346735e9bcfdba56e136ea96bfe26f63f7a33aa6bc8f4c30",
+      "new": "11404d1f5630dfbca77fba67b8391ebc647c34ff33f2f094bdca0823f6191da5",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-strict"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a41f4255ca04538cead40b1c7d7028199e6dc50ae37c8ce4e86974102cf0cc0b",
+      "new": "066e1fb2664750dd8727e1bc75ba2704fbae033403456b6b22ac9dc13b82d7dd",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-path-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "b7914e7be4477c2ed7aa4b838d885b453467d5177f3497234a7723136896d462",
+      "new": "7ccd259b4a3bc2f45658c30c3a3d0685d02387dc88b8c0bcd7c9ad8475c1c2c4",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-path-public"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "c227ae09aab42f6aac298aa4113d33eeed9bbda268bd49029d9662e0fbbb9d76",
+      "new": "a5d2983732e3c34f056f40ac3875e1337afff91a4c8a28383e8cf0d17331a6a1",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-path-from-current"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "c7ca71f99d9a88a673036ca9b67dfccea07a0438d20af7218b4663e38d51b561",
+      "new": "7bfedfba9fcc4c24458bce6aa6f331ce7188ab795b9099a07801099010805657",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-language"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "7de0f7dcbb177fbcd8b6e789fda7e29ba5663e52e96aa7a12368adad70413b2c",
+      "new": "e97a602f46d2cccea99bc62e11ffd0dd367f7fa6824ab35ebd54cf4c8f40ba8c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-volatility"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "50c4c03902e3c87665942ac899d59fabaf04a1ba68ea179bbde689d9acb8fa27",
+      "new": "ab7dc9897619df77c345b0af24f250cecc4faa5a4926cc6acf4261851ad2b69a",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-parallel"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "6fd2934e885060dfad2f0e29630730017ec1f74be827962a2dde5cd8ef8e4bda",
+      "new": "3f0c4466e401b4d35cdab7c054d442a3076d9210319e3bed77b54f736ce62a94",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-strict"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "cf27777f73c298bd2e7c6e844824367e03caa5793ba2ec8df871c8b47f048952",
+      "new": "f4a768c3068b85aae09d3cc364b86247009b8e0f34248f98b0c0f9d61625d8b2",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-security"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "5c4103644ecfcbd144126940396ce67b2efc8e3552b322cf033c28151197958b",
+      "new": "d8d901bdcec8fbde978669c3ee98f5a40ba05111cb48c0d9a7601802c1586f70",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-duplicate-language"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "81fa0706fec2486612972906af09b9793beb9cd2fe26781ebf40cc56ffda8fe2",
+      "new": "b9a48b39391643515fcafa7b31f2d378d1f024eed04b98bf8abcafc8cf070806",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-cost"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "3bc28cc937b06810a9edd2b1711056255138b58a7a52fc278ed506f091a91c19",
+      "new": "39b6c0f7d5fcab52eba09e85371079a6a201dea1ba530a8a7e6f64ae16071bb5",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-config"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "cbe9c09849b0df11af85a09711dab0d501b430d8c3195ecd504b7b784c636c08",
+      "new": "722906135398af31b12420e7d3594cd23c6dd5e0573b66e30e21657e613b399b",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-body-drift"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "06647157de8944f7668b9eaa8c96e963685e7dde78c6353ab60e6bd53b7b768c",
+      "new": "609b795723cea34dd0d3289faafe93165a23b3ad78a9006a75698b4c3c3605ab",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-option"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "350ab7e348de7f37c99a73002736c44824b550228dfa5224e38fcf7e72ba141d",
+      "new": "19277f67fde981fbc1beb539981bed50e75d0d9b858546db916db3878c98dbb7",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-duplicate-grantee"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "3b24709753f9f1aabaa46a4261f167f49f5c3207dfb815d5e5de2bf5ba0f14ef",
+      "new": "374aaaa6f2070239c189bbd319896d70c29e3ae7f656b4d43109d39744f5cbeb",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-missing-grantee"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "2ce11b3a3077dab78c4cdeb60fbae89e3ec2ddbd14d4bb9ace66e248523a9019",
+      "new": "a5515c3d8a532187891332895b91300f14f00c4828114f299c481a92376f4f66",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-extra-grantee"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "2ed2e943165d09cb6192ac40cef42360ae958a02256108404159cb3b0b151489",
+      "new": "ef0aff1cd97db65cf779c1a17651ff988840f7c127411fbe686d355fa43d8616",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-all"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "021cd092095a4223f3836e897d237b0ce30ea6f5217da282dfa060992feae156",
+      "new": "afb12cc97602454f16a8f126d42dac2a33243f0d6376e44f82371d2092043e37",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-revoke-execute"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "355a1b2098fd5bbe810f78fb628a292a527e280134f9b762a3b8f684b7743aa2",
+      "new": "c2882e43efaaaed943b695cc797227b8d9692f92fcf7ec282942a0fa368ff465",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-grant-signature"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "355a1b2098fd5bbe810f78fb628a292a527e280134f9b762a3b8f684b7743aa2",
+      "new": "c2882e43efaaaed943b695cc797227b8d9692f92fcf7ec282942a0fa368ff465",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-grant-signature"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "1f28837460eeab92a8ebda41c48e3d8e733c16aef383d2186335e1211b0b4112",
+      "new": "a9e9c3b226dc50c4d7a7c8a9d15b8462af984ec8b4b8399f086791117f9eb884",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-schema"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "1f28837460eeab92a8ebda41c48e3d8e733c16aef383d2186335e1211b0b4112",
+      "new": "a9e9c3b226dc50c4d7a7c8a9d15b8462af984ec8b4b8399f086791117f9eb884",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-schema"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "3f0f59aa7f458d03017362c4eeddcdadca14c7ea41969b6a29da3e3eda0ff38d",
+      "new": "cc4b1df4aa53b15735ebe2b99cbc19f0e88926f4dc95b10ca6bbb8ce33daa187",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-unqualified-create"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "3f0f59aa7f458d03017362c4eeddcdadca14c7ea41969b6a29da3e3eda0ff38d",
+      "new": "cc4b1df4aa53b15735ebe2b99cbc19f0e88926f4dc95b10ca6bbb8ce33daa187",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-unqualified-create"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a1b5e5e095f5efcfcd81518b2875a3f840a7aa5cd31a69d2dc92aa972627236a",
+      "new": "1b2f56605c4ade9c4cfbdb9850df738cf838acdfb55561c5cbbf54383e3d044c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "a1b5e5e095f5efcfcd81518b2875a3f840a7aa5cd31a69d2dc92aa972627236a",
+      "new": "1b2f56605c4ade9c4cfbdb9850df738cf838acdfb55561c5cbbf54383e3d044c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-wrong-create-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "1bb8a0985abfbb96dcf921cf168a754afc5dd0ee6950f66ddbd3e44f6c1ff01e",
+      "new": "82c8afb211e0bfb7ec5eee296a86307ba8f1042e72fea5be924573c78844639d",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-split-grant"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "733517233cee9570660e21d46f188e2e819ea8441df5fc4adafb767bf818fe6e",
+      "new": "6bf77dd609a19eced595da88745fe48fb1ea076468d4c1d5ad2beec212bb89d8",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-bare-setof"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "99f8c3d2601bc8417968198e3b3cdf0947b0dab458d536deb20fd5c7d218a44f",
+      "new": "cb7574ddd3d1f6456dd2ebaeb8869ba6aa770fd4449cb06c6c63996a2b6fc713",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-explicit-bound"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a95da0d7dd2deae6f2818c98d3dbf6c68e650cacd16ff8a682d279701b573ae1",
+      "new": "dc04e92623daceea7661581a3f294db5961c80e4c89e3031cafd03b0e4dc4b02",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-multiple-bounds"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "4b91c16b971b8fe2847e0e161455d4393e84289fafe8d0d4954d80872d48d9ce",
+      "new": "33f0483a7b42893104f6d9d7353a3dfa5ef9697a328292afea389cb23cee16a3",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-output-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "4b91c16b971b8fe2847e0e161455d4393e84289fafe8d0d4954d80872d48d9ce",
+      "new": "33f0483a7b42893104f6d9d7353a3dfa5ef9697a328292afea389cb23cee16a3",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-output-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "d15204d3457d94465b9c0b46199b368dede689b0f2f05ae2c0f775e359ec6e1a",
+      "new": "58e7f0b3f67d87ab3ce3d62846e921831d5b57ee17f7287555ff0a9437cd97c3",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-output-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "d15204d3457d94465b9c0b46199b368dede689b0f2f05ae2c0f775e359ec6e1a",
+      "new": "58e7f0b3f67d87ab3ce3d62846e921831d5b57ee17f7287555ff0a9437cd97c3",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-output-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "5b35ffe2856acd81a3b7c3fb7b2a2a0b36c51c11e1aac7361c4ed8f2e6672890",
+      "new": "c5f42cf0d4741985a5986837417722327cc8b29c3b9327835d98efa61065ba8f",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:P-column-default"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "6a2554442e8a5f530f493fa67392a6f17248cbe43516fed88e5d91f353780309",
+      "new": "7b3b495d3dd8354f92ad1d17f04a2c9256779fb99dab2cd3993f6ad5e3bde132",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:P-out-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "0cf3c29293be8d461bc5ec210480659368d273cb71b1063888a37741a2d8c1b6",
+      "new": "d3b1b73f4ad04c2feccc7e6f725373fd1d964e49f1df1405995f42cbb1f909e4",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:P-inout-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "6f91461f7d81e3c3111d3558d51fda4d70468644f3e40af37f4e295942c47c6c",
+      "new": "d69d4caa73f91c14b82b99bcffab6709f8c9b1c6bfd46a9f8ad25983565e359b",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:P-unnamed-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a2c369d5360eb3932d4607011753fdba206d9049192ebf2cd5b638e236fc7d23",
+      "new": "9f6a94280a18b86e156536fda54660e52087a76f32bce8a3cc8fbada5efb548e",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-out-no-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "79d7083e1b925d574673ec610763ea5aaaeb00eec4fd3cc8aefb4ec63ded637f",
+      "new": "5d8323ba0e9e3d8d8abd51de6298cfdc720b6024b9e2480ff65a1d912981bb70",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-inout-no-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a3de70e83beb86fc1b564539c655ace20d5022befc18b9be325e5e534dbe7e68",
+      "new": "d4350c2e778c3b3fab2905df992aa032ed316812dce9edbda00d9d490be706fc",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-array"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "18f83b6b6cbb3be35cf0cc70a7e471c5ed30b450bf3d683aa4f525ec7be181c4",
+      "new": "92c693b68a4e59491cd972b83944523083fcb0726ac3988af53176e5a8056fa7",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-variadic-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "f14495c556474cb216daa28a8a98eefe06b74d6f66ad3aeac35da1534d9c24d1",
+      "new": "ee571c6d142abe2a22281b4472ee4c4252d615ba2abcfb75e6402ae351b5da5c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-null"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "e044587f38c55c3a52e4d00c452ec487d45f768e88e01faf2291503006f610d6",
+      "new": "a0ac493bcb68d1cb1d8c508a56696edead5d52fc0fbaf53c4db9c8163b91ad6b",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-wrong"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "a101b958e6cc0a095093faee88738c098cfb51fc13a3d96d462a897b6bcbe21a",
+      "new": "d8d52a3eca3eadcdd51645962d07025bb061f336d6834585a7a81b9716983c29",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-missing"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "09d43241e09d71b262aa929af3356f9af7deaad28b97cd226240a7ceaca6bb77",
+      "new": "8e044408ceb909653037dcd5c82357a26fd9f6585e4805b8a2d7ecb4251f16ad",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-undeclared"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_function_policy_comment_phase.py",
+      "old": "09d43241e09d71b262aa929af3356f9af7deaad28b97cd226240a7ceaca6bb77",
+      "new": "8e044408ceb909653037dcd5c82357a26fd9f6585e4805b8a2d7ecb4251f16ad",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-comment-undeclared"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "c16ff223085214caef75be1415d541ff15ecf39638a7421d72850397a7401d46",
+      "new": "4d2d0152b4577ca31b75fa494db3f2257a09737521b4c837c745703a067b15a7",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-revoke-missing"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "01f6ed71cd8c4c9fa3f4727b6dced59af72a6fd9d59bf112d762ca71f4c2187b",
+      "new": "c8c6a9e9b25d5e32dfb6da4e4acb22b164c5ce541af773a1fdd1a07074455394",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-create-duplicate"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "ba4f895dcb986540862814ed8c8846f39b9aed1c12510f94abf8d14b3f76d8ad",
+      "new": "d81426cb9ef190607e11f9deaeadd88510f6be3c5f3a4e016be69aa5d7426875",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-grant-before-revoke"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "75030e6d10948806cdace99ea314dfadca7aee8798b1b976219d99c4dec391f9",
+      "new": "0eb82fe16a24b10d609ef1945589b1a96b970289f7350582b310d0612dc46d6d",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:POS-quoted-words"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "5b44f988a3afaeae468e5865f750f900f1994da17aa5104f837a2679664a861c",
+      "new": "01bdf8993015b2dd1be4feabf010d3bb5a6624a5c86c9b57c150c5b99ec98be4",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:POS-acl-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "45bd75be2560bebdeee107425db9cf11d44080f71810d16bf591b947da86dc0c",
+      "new": "066fc772060defc70cd0a928abf087e19a568163f20303dcaf9e69dfc5ba3a49",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:POS-array-keyword"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "b00d39435b4ca4285be3da9e85380bb662d777f04f796b5f778b087fdd96171d",
+      "new": "69dbfc506b1e74ac94c165327f7333c3d0d3191b5052f824e56a01f0a94ea84c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-empty-acl-grant"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "be969ceba828c1aae46acb979e1d410cfea9dde12f4e65cb979ce479dde0108d",
+      "new": "483cfe1a0c0346cfbdbbf3cd2f55affefa41fb407f7a0a7e1aab8baae0eea9f4",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "be969ceba828c1aae46acb979e1d410cfea9dde12f4e65cb979ce479dde0108d",
+      "new": "483cfe1a0c0346cfbdbbf3cd2f55affefa41fb407f7a0a7e1aab8baae0eea9f4",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "d772d1d7d014363c2ee3f6ff0c6ab4d0687c9ead005249130e7b7dea489db511",
+      "new": "3fc2b87a9fbcd049a7c5411cfe7557de5a56196523ec83c6cf73ca6befa67d35",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "d772d1d7d014363c2ee3f6ff0c6ab4d0687c9ead005249130e7b7dea489db511",
+      "new": "3fc2b87a9fbcd049a7c5411cfe7557de5a56196523ec83c6cf73ca6befa67d35",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "fc87bc3611eba43353482ceaa6fa9f7ee24f95088d2c0549c3b93dcb521964af",
+      "new": "e17dd6a3a9327ef5be5c565eec6b0aa02e4d053563c0f59e3165382a6e991039",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-type"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "fc87bc3611eba43353482ceaa6fa9f7ee24f95088d2c0549c3b93dcb521964af",
+      "new": "e17dd6a3a9327ef5be5c565eec6b0aa02e4d053563c0f59e3165382a6e991039",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-type"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "34bf42ec74785abd0b8f741527f0c7664ecab0098767547b1e6668d237498e19",
+      "new": "366af496e9435083a6e1f40cb4badd0332beccd7c79157d6a82e64f9e7e3a82c",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:A-input-default"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "old": "b18b7ecdc4ed411ac824fb2799c4cafe325d8c1ad1fd99684ba6c340ed2284e6",
+      "new": "a8b149dc9e2e12b4326bb5a7fd4c8ee069b442c630c2bf2b5cd90bd1c3e029bc",
+      "count": 1,
+      "formula": "F-X3B",
+      "subject": "variant:P-parse-error"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "81df3882e56f848813442c77ae273ef391da5fa7d9363e69a45897c79948b81e",
+      "new": "186df836ba2e9b0ce0d439bfd0d39e19c7973f79faf7b279c7ce0114c6283116",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-create-schema"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "d9db55bfc17877c5538b2aa9c3060da5c8861ad1f3af86935b9264dc5a590431",
+      "new": "ce8daf6e25752ed8b5f933e92c1e05ad81db11509fe2f6b3c37c538e700c43ba",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-unqualified-create"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "f3bce1918d55e9c2dc2f0807153a62e649dfa3567256bb67981320083427b252",
+      "new": "0feef73f4f4b0670cd5e5d9e858fa39578107b80ebef4a955df93c3d8cabb320",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-create-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "fb253b3a19b81882b1711e28fa237534597a5f07071fdfc336dbdb487518a8fc",
+      "new": "a01df4a3950c81384ebcf92eedb53113d3781ec7b1e87218fac73620ff823a04",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-input-type"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "8781e2a5be4e930f55d6ed9fa74de60aa8281ae9d509c30e79762e1a92e2a6d9",
+      "new": "0673cd3c9b8d042fdf61dd8d6554ce44d2f6b67d3b6072903e41e1b111ffdf86",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-input-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "7749a96862d3a81fd644527f86eba7943684a14ade6e6615a375c1921142d7af",
+      "new": "6f9b096ac1f2104fcd0d3f179265f7539866c39a0562d97bf5e6f3087521d9f7",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-input-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "89c47edfb649a422f4cc239546049cc13fc32a8fa11a175d51a01e7260f39885",
+      "new": "f24fb067c6c33d4b12e5a0da07a536bf328b18573fedec7366e8b5ba083be075",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-output-name"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "65fc257d23b09c9c7a0de83672dffe99e2ea94cde9501215868a65b3fe9ee7e0",
+      "new": "d21ec8dc759be80ef32bd8e7fabdea7c4fb7955e7d8ca93ae718564d8bfb0ca7",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-output-order"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "77acecf1f850eb6063f241ee921fc9027fd421138204b64f327907a5051bdfbc",
+      "new": "bb0418651d62ad389f8701fdc91ca6b43b379635ceef442672d567ed0a945867",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "variant:A-wrong-grant-signature"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "02f39025475b8d9a66a7e698751c1d1e9905f093f5ac512794c3da76b52b3f66",
+      "new": "b923dc2073b3e468229c92ea493d43735d15bd4f425d1f3041f316cdaef58872",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "controls/C01.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "7717d341f74a2f3643d2533e7412b15381f116ad91a8d04a0c0447943d7d9711",
+      "new": "c7ad9584050ccc72ddb2c760b08e5a7cdd174369166e7eef8b8633e6168512c8",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "cases.controls[1](C02)"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_cases.py",
+      "old": "520b4e2ba00b761fe58e71282b5280e51a680a765457e7a1587afdcfa54846a2",
+      "new": "d51385cbc3b6fc0036de1dccb0436a33fec85a272fd5e8be0540b5e667b17037",
+      "count": 1,
+      "formula": "F-X3C",
+      "subject": "cases.controls[2](C03)"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_killrun.py",
+      "old": "36b38533c5dbf5d4264fb1519dc042950cafb04032c0805f36f3724653bd5914",
+      "new": "cb1884b5a0bb612fe0e76b3fd343b2701c932694c60cd85c9de4f6bc8cbcb592",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_overlay.py"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_killrun.py",
+      "old": "e797c624784160e751490658cf986216cc40fb4de0a0373974d5f3d4f1ea77ba",
+      "new": "e5828aec68e4225c585ba3cd1949ef334349eeb03588b6c71e0c037794a85456",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_cases.py"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "ecf57cab4a3e0d6128047c9654d4605e47267d7ff7f6b424fc48a7541a5afdb0",
+      "new": "f2636f0ca216b78c5a8a4dcbe576958f2ab618b90728c8022c81656aace677a1",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "src/haloflow/m01/provisioning/function_policy.py"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "9bae5c2ecd50d7077536348f7b2838d756af9a73d405e5b72f665e615991e29b",
+      "new": "bcb527693ba3229fd9ec0c6b353f9a5d9b9539900a9c942b33bd27171afa86b6",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/fixture-hashes.json"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "6ef0819028a95867dee62685212cd7028400bce5d62e1ee19691dc4e6556c6be",
+      "new": "f2a4c104d71902f1bae1cafbdaf1863101497d20608b3e6a7a966b2fccd59d0b",
+      "count": 2,
+      "formula": "F-FCS",
+      "subject": "variant:POS-quoted-words"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "fb54de3b588f356fae739f8618353e8a993badefd9f113c6927bf6682fcb1302",
+      "new": "5f30a04a3a0405e3ac6a3cdea4409a2725805b0d1882adda10c7182c2f886977",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "typed:second"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "cdca6609a357923e16e16353b897c457b16acc27b1c3ab466885b689e9ec25fa",
+      "new": "7f3005fea5d5971e17258db7215011b141006163647ba72466e64b05e665defa",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "typed:second_body_drift"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "b2c180430b5d8e41e26996cdf56cf13a3f97b877ced33b4634db5fb1db459565",
+      "new": "d8747e437b6ec06c2ecadeb0123d86c08f41160fb7e901bb38780e88c50defd0",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "typed:annex"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "d1fdb29da8d41800ad2621aca0672797d2d3aad8d6ad5b22b2605d20003e65c4",
+      "new": "19dbcff03675106872c1f5cf7157ef0e73c41beab35b713963d36fcdda856bf7",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "variant:A-body-drift"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "83ef32f3091ebc05b975a1de0c70308720c628a5494bdd0ffb03ea054e09014b",
+      "new": "b66bded6e8b5e395db411d63ff12c07eb1a51c4c5f0a62d767f10a322c41a91d",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "variant:A-table"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "5144450b0025678a741687aa7e0522922e159f11125b91aa4f65dae269bfd4e2",
+      "new": "896854bb4190f021545daa4c289120563f459e8b955cf86432d47aefba513978",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "variant:A-unknown-select"
+    },
+    {
+      "round": 0,
+      "file": "tests/m01/test_typed_plan_ownership.py",
+      "old": "1b7163fdec1ce4b1e2b928a21fb9320027914e7c1f6ec25fda04d73e825caf04",
+      "new": "67e430a22cab7c7e1035e40430a52ac9ff74e33d5fa909e76c851baf5e88de65",
+      "count": 1,
+      "formula": "F-FCS",
+      "subject": "typed:payload_nul"
+    },
+    {
+      "round": 1,
+      "file": "tests/m01/fixtures/function_policy/fixture-hashes.json",
+      "old": "3569cf597ec5633b77309e4be12d2f0a36ba7c8b76b34a0569a78a9f5f0bbb9e",
+      "new": "6a94578323fbf994093712ad604a4d9b026b16dd7c92f79759207c88c0cd56ea",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/sql-fixtures.json"
+    },
+    {
+      "round": 1,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "3569cf597ec5633b77309e4be12d2f0a36ba7c8b76b34a0569a78a9f5f0bbb9e",
+      "new": "6a94578323fbf994093712ad604a4d9b026b16dd7c92f79759207c88c0cd56ea",
+      "count": 2,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/sql-fixtures.json"
+    },
+    {
+      "round": 1,
+      "file": "tests/m01/phase_signature/sig_killrun.py",
+      "old": "cb1884b5a0bb612fe0e76b3fd343b2701c932694c60cd85c9de4f6bc8cbcb592",
+      "new": "16fc6c39ea347a77f66e9bf4c82ec7af0ef861a95471bfcccf9b5b392f7ee9e5",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_overlay.py"
+    },
+    {
+      "round": 1,
+      "file": "tests/m01/phase_signature/sig_overlay.py",
+      "old": "bcb527693ba3229fd9ec0c6b353f9a5d9b9539900a9c942b33bd27171afa86b6",
+      "new": "d236428ec38ef94d495da5542a77468d043554c32fc251ae352274d040ca569d",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/fixtures/function_policy/fixture-hashes.json"
+    },
+    {
+      "round": 2,
+      "file": "tests/m01/phase_signature/sig_killrun.py",
+      "old": "16fc6c39ea347a77f66e9bf4c82ec7af0ef861a95471bfcccf9b5b392f7ee9e5",
+      "new": "5a2f6d76eba2f84c90de1f28fcc13a29231c4c1feeaf8d5fb7dca591149a8a26",
+      "count": 1,
+      "formula": "F-FILE",
+      "subject": "tests/m01/phase_signature/sig_overlay.py"
+    }
+  ],
+  "unclassified_literals_left_as_is": [
+    [
+      "tests/m01/fixtures/function_policy/cases.json",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/cases.json",
+      "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/cases.json",
+      "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C01.json",
+      "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C02.json",
+      "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C03.json",
+      "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C04.json",
+      "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C05.json",
+      "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/controls/C06.json",
+      "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "563e93d6be5185ce0d82081207de43743857fa5426e81429442c126edefbb146"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "97a5ff15e03323aef2b2e97a058153766847e9e4bdd300dcf57db0beb834b213"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "bb0908213ffb2b6fa85b63f12c14f0d237f2300081bfe58371af16132e05199a"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "be40293f2c39c154a83c6502eb38a06107ee256e31bb395aaa864edd2d9f53f1"
+    ],
+    [
+      "tests/m01/fixtures/function_policy/sql-fixtures.json",
+      "c4d1c1a405a5201d99853ac87e056dac3cd1016f525ebe909904348b968f5bbd"
+    ],
+    [
+      "tests/m01/phase_signature/sig_killrun.py",
+      "14e3bd3bd70efaeabf966f5f5fc6669e2d278d172f2a9404d4fd7d9d6681fa3c"
+    ],
+    [
+      "tests/m01/phase_signature/sig_killrun.py",
+      "9a9362daa86bd33920c32507eb086bd8a031f75668a35614e32aa2003104ba5b"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "2247ca40763d314792511b50983b56f10b3dc7ddc9aee8d371a8b9fae9eb0a66"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "44a699ed494b138cffddab4f5e04b5673ba1ffa43b2ef5e6d25a99a79155a4c9"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "557928c92a5c1cc12ad4447d02883d279361f73d9b3e21a34b3103329f65f5c1"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "74f0fcc09dd0a0ea520cf730f7adc67871147b260c8b725356317abc6bdf8047"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "7b892adf57e5edea097e9c5456f4f280680295a1a490eb677f5c5796c66acc2e"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "93945c74f620d6f9c262b1fae20dd8b9266a57bbadffbdd2ea48b882a85c9eb4"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "ac89e536d6d78f8c6f5da202197bd27c5d01d330d1ab0e3a60c9cb1c5ccc8307"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "adef27d57c9da65ccaef7f56b2c810165ecc232ed5e2d4c08d7d558485397385"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "b0a1801df44dd1c3c07de851d1a1736685fbecdad393204aa1c84588b7b2f605"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "b851d78e1dd04a81447e8134c8f817706c8a2c62d0ae779b9ae13b6f39e30744"
+    ],
+    [
+      "tests/m01/test_installed_state_legacy_identity.py",
+      "fa5df7662cdfd33657b387c1e2f44723af5c6a8f29f20c3dbbb319e726c37dd9"
+    ],
+    [
+      "tests/m01/test_pglast_721.py",
+      "6adea880c1cd8ee54028e520348427ec19b173a0ce6d36854ac2008488289843"
+    ],
+    [
+      "tests/m01/test_pglast_721.py",
+      "fff7b9cebb6cf85d8327535d27934163ed3b7375a2064f82857dc9e9af5e2a6d"
+    ],
+    [
+      "tests/m01/test_provisioning.py",
+      "54dfd1447d43914bcad1861e14896a98a1dcc614d74d80bc303466df3a76aab5"
+    ],
+    [
+      "tests/m01/test_provisioning.py",
+      "a2db1ef35b4a2901637ff5d0c057bbbf1bebeee3940b990aa1966eb646b7ff37"
+    ],
+    [
+      "tests/m01/test_provisioning.py",
+      "ae14cee61b96ad55183e2bf34d3f39a3099eee7a80e652a53caa494147e36bca"
+    ],
+    [
+      "tests/m01/test_provisioning.py",
+      "f5303756caca3f52e97a6dff10e82fc85f09ed3bb318c7ffc8ed8c1fc6ec5b56"
+    ],
+    [
+      "tests/m01/test_typed_plan_ownership.py",
+      "09fe5c6697e5d532f9d1fc3b341d21b7f84e279a15071114f169a51a4b94c429"
+    ],
+    [
+      "tests/m02/m02_support.py",
+      "944e1d60c21f9efb574b73dce21073c8bb4cc2e8b08dabdd74be43c730c61200"
+    ],
+    [
+      "tests/m02/test_pglast_721_t003_postgres.py",
+      "6adea880c1cd8ee54028e520348427ec19b173a0ce6d36854ac2008488289843"
+    ],
+    [
+      "tests/m02/test_pglast_721_t003_postgres.py",
+      "fff7b9cebb6cf85d8327535d27934163ed3b7375a2064f82857dc9e9af5e2a6d"
+    ]
+  ]
+}

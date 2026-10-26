@@ -1,0 +1,56 @@
+$ git rev-parse HEAD; git status --porcelain
+24800a0add325ef1efe9e09b2a31eaf66ea84f7d
+$ pglast
+7.21
+$ pytest tests/m01/test_pglast_721.py tests/m01/test_ordinary_content.py -q -p no:cacheprovider
+FAILED tests/m01/test_pglast_721.py::test_pgl02_function_policy_loads_the_pinned_parser
+FAILED tests/m01/test_pglast_721.py::test_pgl03_function_policy_refuses_any_other_parser_version[7.17]
+FAILED tests/m01/test_pglast_721.py::test_pgl04_ordinary_content_refuses_any_other_parser_version[7.17]
+FAILED tests/m01/test_pglast_721.py::test_pgl05_ordinary_content_pin_is_7_21
+FAILED tests/m01/test_pglast_721.py::test_pgl06_installed_defelem_shape_is_exactly_the_pinned_shape
+FAILED tests/m01/test_pglast_721.py::test_pgl08_validator_admits_a_real_7_21_defelem
+FAILED tests/m01/test_pglast_721.py::test_pgl09_validator_refuses_any_other_defelem_shape[slots0]
+FAILED tests/m01/test_pglast_721.py::test_pgl10_a_7_17_declaration_is_now_refused_as_policy_invalid
+FAILED tests/m01/test_pglast_721.py::test_pgl11_every_control_now_declares_7_21_and_is_admitted
+FAILED tests/m01/test_pglast_721.py::test_pgl12_t003_declares_7_21_with_the_new_checksum
+FAILED tests/m01/test_ordinary_content.py::test_u02_one_create_table_is_admitted_and_the_same_object_is_returned
+FAILED tests/m01/test_ordinary_content.py::test_u03_several_create_table_statements_are_admitted
+FAILED tests/m01/test_ordinary_content.py::test_u04_explicitly_prohibited_kinds_are_refused[create-function]
+FAILED tests/m01/test_ordinary_content.py::test_u04_explicitly_prohibited_kinds_are_refused[create-procedure]
+FAILED tests/m01/test_ordinary_content.py::test_u04_explicitly_prohibited_kinds_are_refused[create-or-replace]
+FAILED tests/m01/test_ordinary_content.py::test_u04_explicitly_prohibited_kinds_are_refused[do-block]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[select]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[insert]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[grant]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[set-role]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[ctas]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[foreign-table]
+FAILED tests/m01/test_ordinary_content.py::test_u05_kinds_not_on_the_allowed_list_are_refused[select-into]
+FAILED tests/m01/test_ordinary_content.py::test_u06_an_allowed_first_statement_does_not_admit_the_rest[rf2-create-insert]
+FAILED tests/m01/test_ordinary_content.py::test_u06_an_allowed_first_statement_does_not_admit_the_rest[rf3-create-select]
+FAILED tests/m01/test_ordinary_content.py::test_u06_an_allowed_first_statement_does_not_admit_the_rest[rf4-cp7b-shape]
+FAILED tests/m01/test_ordinary_content.py::test_u07_zero_statements_are_refused
+FAILED tests/m01/test_ordinary_content.py::test_u09_a_syntax_error_is_unparseable
+FAILED tests/m01/test_ordinary_content.py::test_u10_the_parser_is_called_exactly_once_with_the_exact_text
+FAILED tests/m01/test_ordinary_content.py::test_u11_prohibited_kinds_win_even_if_the_allowed_list_names_them
+FAILED tests/m01/test_ordinary_content.py::test_u13_a_subclass_of_create_stmt_is_not_admitted
+FAILED tests/m01/test_ordinary_content.py::test_u14_an_unexpected_parse_result_is_unparseable[list-not-tuple]
+FAILED tests/m01/test_ordinary_content.py::test_u14_an_unexpected_parse_result_is_unparseable[element-not-rawstmt]
+FAILED tests/m01/test_ordinary_content.py::test_u16_the_installed_parser_matches_the_literal_pins_and_is_used
+FAILED tests/m01/test_ordinary_content.py::test_u17_every_loader_fault_fails_closed_with_the_environment_code[i-import-ast]
+FAILED tests/m01/test_ordinary_content.py::test_u17_every_loader_fault_fails_closed_with_the_environment_code[j-createstmt-missing]
+FAILED tests/m01/test_ordinary_content.py::test_u17_every_loader_fault_fails_closed_with_the_environment_code[k-dostmt-not-a-class]
+FAILED tests/m01/test_ordinary_content.py::test_u17_every_loader_fault_fails_closed_with_the_environment_code[l-import-ast-raises-runtimeerror]
+FAILED tests/m01/test_ordinary_content.py::test_u19_known_create_stmt_variants_are_admitted[temp]
+FAILED tests/m01/test_ordinary_content.py::test_u19_known_create_stmt_variants_are_admitted[unlogged]
+FAILED tests/m01/test_ordinary_content.py::test_u19_known_create_stmt_variants_are_admitted[if-not-exists]
+FAILED tests/m01/test_ordinary_content.py::test_u19_known_create_stmt_variants_are_admitted[partition-of]
+42 failed, 23 passed in 0.60s
+exit=1
+$ pytest tests/m02/test_pglast_721_t003_postgres.py --collect-only -q
+tests/m02/test_pglast_721_t003_postgres.py::test_pgt7_fresh_install_records_the_new_checksum
+tests/m02/test_pglast_721_t003_postgres.py::test_pgt8_a_7_17_era_ledger_record_is_refused_as_drift_with_no_change
+tests/m02/test_pglast_721_t003_postgres.py::test_pgt10_an_unsupported_parser_at_install_is_refused_before_any_statement[7.17]
+tests/m02/test_pglast_721_t003_postgres.py::test_pgt10_an_unsupported_parser_at_install_is_refused_before_any_statement[7.21.1]
+
+4 tests collected in 0.02s

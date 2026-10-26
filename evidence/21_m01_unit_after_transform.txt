@@ -1,0 +1,2 @@
+$ pytest tests/m01 -m 'not postgres' -q -p no:cacheprovider (working tree: D-1a source + transformed fixtures)
+1093 passed, 198 deselected in 10.31s
