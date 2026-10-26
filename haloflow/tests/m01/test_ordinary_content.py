@@ -47,7 +47,7 @@ PARSER_VERSION_MISMATCH = PreconditionCode.INSTALL_PARSER_VERSION_MISMATCH.value
 
 # The pins, as LITERALS. Deliberately not read from `function_policy.py`: two
 # implementations that drift together would still agree with each other.
-PINNED_PGLAST_VERSION = "7.17"
+PINNED_PGLAST_VERSION = "7.21"
 PINNED_GRAMMAR_MAJOR = 17
 
 CREATE_ONE = f"CREATE TABLE {SCHEMA}.cg4_probe (id int);"
@@ -418,8 +418,8 @@ _LOADER_FAULTS = {
         lambda mp: mp.setattr(importlib.metadata, "version", _fake_version("7.16")),
         PARSER_VERSION_MISMATCH,
     ),
-    "d-version-7.17.1": (
-        lambda mp: mp.setattr(importlib.metadata, "version", _fake_version("7.17.1")),
+    "d-version-7.21.1": (
+        lambda mp: mp.setattr(importlib.metadata, "version", _fake_version("7.21.1")),
         PARSER_VERSION_MISMATCH,
     ),
     "e-grammar-raises": (
