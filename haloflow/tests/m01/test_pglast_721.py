@@ -111,7 +111,8 @@ def test_pgl06_installed_defelem_shape_is_exactly_the_pinned_shape() -> None:
 def test_pgl07_arg_location_is_position_metadata_only() -> None:
     """Installed-source facts: slot type ParseLoc, ignored in comparisons like location;
     parsed values are integers."""
-    assert pglast.ast.DefElem.__slots__["arg_location"] == "ParseLoc"
+    info = pglast.ast.DefElem.__slots__["arg_location"]
+    assert info.c_type == "ParseLoc" and info.py_type is int
     assert "arg_location" in pglast.ast.DefElem._ATTRS_TO_IGNORE_IN_COMPARISON
     sql = _control()["template"].replace("{schema}", SCHEMA)
     seen = 0
