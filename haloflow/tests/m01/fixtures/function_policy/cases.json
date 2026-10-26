@@ -45,7 +45,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -101,7 +101,7 @@
         "sha256": "674e9db796896ae96b8b2cdbc61808e8805a52334b2611760c73a1f56fffa23a"
       },
       "payload_file": "controls/C01.json",
-      "payload_sha256": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
+      "payload_sha256": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
@@ -160,7 +160,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -205,7 +205,7 @@
         "sha256": "fbfb2dc89d8f9d45c9f6c199121d3c44aa096b67b533bbcc2b2ffd2ce15ab577"
       },
       "payload_file": "controls/C02.json",
-      "payload_sha256": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
+      "payload_sha256": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
@@ -276,7 +276,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -322,7 +322,7 @@
         "sha256": "c0bac8d7765f137d0499a4c1229df80c9dd93878c3546aeea7164320e673195f"
       },
       "payload_file": "controls/C03.json",
-      "payload_sha256": "5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013",
+      "payload_sha256": "d6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives. Positive proves complete multi-column TABLE/record shape, negative A-output-order isolates ordering; dimension controls use C04 deliberately."
@@ -381,7 +381,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -458,7 +458,7 @@
         ]
       },
       "payload_file": "controls/C04.json",
-      "payload_sha256": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+      "payload_sha256": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
@@ -493,7 +493,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -563,7 +563,7 @@
         ]
       },
       "payload_file": "controls/C05.json",
-      "payload_sha256": "c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7",
+      "payload_sha256": "ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."
@@ -611,7 +611,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -683,7 +683,7 @@
         ]
       },
       "payload_file": "controls/C06.json",
-      "payload_sha256": "76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573",
+      "payload_sha256": "bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f",
       "payload_encoding": "UTF-8, JSON sort_keys=true indent=2 ensure_ascii=false, trailing LF; artifact fingerprint, not function checksum",
       "validation_status": "candidate control; parser and policy acceptance of this full control NOT RUN in this session",
       "role_in_suite": "Candidate positive control; must independently parse and pass policy validation before associated negatives."

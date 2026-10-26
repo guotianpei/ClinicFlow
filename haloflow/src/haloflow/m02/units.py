@@ -406,7 +406,7 @@ T003_DEFINITION: Final = UnitDefinition(
         "policy_format": 1,
         "semantic_version": 1,
         "parser_package": "pglast",
-        "parser_version": "7.17",
+        "parser_version": "7.21",
         "grammar_major": 17,
         "functions": [
             {

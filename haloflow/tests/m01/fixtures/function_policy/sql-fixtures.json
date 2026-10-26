@@ -49,7 +49,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -99,7 +99,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "75127cf90b6f8fc3e122757365bb0049a16cf5ea47aea2c852c3fec3379f6bcd",
+      "payload_sha256": "dcf0c4dda949748471db0cfc3fbeca2e1f18fc0c4db5398862bc42305ef4a518",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -148,7 +148,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -198,7 +198,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "593f6116cacf835c5dcd1f1f0384073e3439f3f6508decd9dbaef00b48d48dc1",
+      "payload_sha256": "6eaf6d723215561dd00d49ab378270466692b2f80368399698eca8e57f3b39e5",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -247,7 +247,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -297,7 +297,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "d2f6c64a2c7d2512925a571e721986a54469df0adcaa18e4a14a963b2d69c78d",
+      "payload_sha256": "5983f0bb491066118a9064395d986be6ed9df171e15061d91d47de148658ffda",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -346,7 +346,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -396,7 +396,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "c0fcb94cb99f57de46242466cc539425fc4c472ca6f01073b8abd2e4b93232ce",
+      "payload_sha256": "a2290fdbdc37ea91be54d08ceb563854bdfabbb460dc89630e4d1532671f55a1",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -445,7 +445,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -495,7 +495,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "380cc6551987ab7749dbf8b612015838e1d17a85afad01fae2e24fb2e9f86884",
+      "payload_sha256": "b29e3a6debb0497e148f02eb42e89b19dbf8ecf97d443228973b3ccd6a2e72d3",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -544,7 +544,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -594,7 +594,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "91a4ddae2bd59407a8e8365447759eda37b7dd19973a1bbaff9b28e4ef329e86",
+      "payload_sha256": "ae0693cca3ec90e03e6c9af10f293a916e95b2b8e369a5b9e9601af5b265da58",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -643,7 +643,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -693,7 +693,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "99ce27a5ea7f5cc7b4bb693088f355efab88c1f41173b858b58739be3426972b",
+      "payload_sha256": "aa99c9fb4654349f7629cc65c9bf155eea44873ecb85f59c68072ea99c49d5ca",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -742,7 +742,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -792,7 +792,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "4bfc6e16407095778d7f76832f10103fcf77b1f8a28a88361dbc2ee3d77cdc69",
+      "payload_sha256": "767bde0e9d9949f4711e689582ccd43b7b23de89757cacdaacdc6edf1a2b4881",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -841,7 +841,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -891,7 +891,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "7b5db961f1465e4e352a67f0e2595cf73b6b5deb52baad364e5f7a4969ac79f2",
+      "payload_sha256": "8e4f97769b89717b132ea3c9059cb1601a36c1fc9f08c3c80128bb3679577312",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -940,7 +940,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -990,7 +990,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "e1ea69f681ee2b9183712075ab7e2a6882bd217fe3e987f92193ea8172884a24",
+      "payload_sha256": "70d93423cf288383887d9b495bd71e9ca2cd82adbc533a45aeba2419c0e15c2a",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1039,7 +1039,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1089,7 +1089,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "8d946f17fac6aec0a2c09e570b1a7b39fce77bd6d59a6aafbb8086e2cbb981f8",
+      "payload_sha256": "41de116a6e812ba5db96636cf448471f8808399223628341b0685b978eb8b3db",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1138,7 +1138,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1188,7 +1188,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "acf2c541535b33f59fb81b9df5d68e5f23313a3d12f28e9871065b5c363ac544",
+      "payload_sha256": "24207737219d6072eacc7b8215f4e293aaca9ff4ef0a7af11ddc9e791d076312",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1237,7 +1237,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1287,7 +1287,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "b90d149bfebe3f783c6591e5d1a9bf65ab4f99b96197c5d0a59becacd762feee",
+      "payload_sha256": "37a2e7b41c24d1ea9d577ac31ec379ddcd34a532e5c01f83bd9188c15f00d306",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1336,7 +1336,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1386,7 +1386,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "aaeb9f3a7101335be9ebea542dd95d90da7082d4ae9377ec6706202833b8bc74",
+      "payload_sha256": "20e63887e04e1615ee428099bef92f4c26d07e6fe42691c7859830e2c337e9eb",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1435,7 +1435,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1485,7 +1485,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "93f64ad7231ab3c474c6f4fbb7217dab7c7fcf4d4d9ee50c5f6461520d37c22a",
+      "payload_sha256": "03bdfa686fc4bfd2d9a04a1c10b7906331bcab8634766190de9fc589e3321239",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1534,7 +1534,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1584,7 +1584,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "308f95cb25de3c8f5c24d5448f0b23362c04814e6d1021840a41db9859bfb502",
+      "payload_sha256": "ecf223f2f135d8e6c4f7f00a6f5a7919a5a7723b93f6a161e649059e5c6cd2cc",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1633,7 +1633,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1683,7 +1683,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "bfbe115a3baae064f68a6a0589801ac7b9dcc1f798310b6752ca8fe8edf4904f",
+      "payload_sha256": "076724a6aedd4f8925f122b5cc35e14a9e4f2eea3f83a573f04bd4253763dc8c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1732,7 +1732,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1782,7 +1782,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "d38045df595de5cdbd7f13acb4ab88fb35d1210aba23e6f098032d06a13b9c43",
+      "payload_sha256": "5e39498160da28de1da5c431a1dd50985dcaa2fcf1134c6eff99a5bbaf4f27ad",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1831,7 +1831,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1881,7 +1881,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "74706685fc56048f468e9c1bb5f667dba3f74c482bb9820946a2afb571ae254e",
+      "payload_sha256": "772f269796c5927c33244650a70da1a307ac801dc16b6f542f569507aa7da4e2",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -1930,7 +1930,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -1980,7 +1980,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "34ee622b09058f3b346735e9bcfdba56e136ea96bfe26f63f7a33aa6bc8f4c30",
+      "payload_sha256": "11404d1f5630dfbca77fba67b8391ebc647c34ff33f2f094bdca0823f6191da5",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2029,7 +2029,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2079,7 +2079,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "a41f4255ca04538cead40b1c7d7028199e6dc50ae37c8ce4e86974102cf0cc0b",
+      "payload_sha256": "066e1fb2664750dd8727e1bc75ba2704fbae033403456b6b22ac9dc13b82d7dd",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2128,7 +2128,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2178,7 +2178,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "b7914e7be4477c2ed7aa4b838d885b453467d5177f3497234a7723136896d462",
+      "payload_sha256": "7ccd259b4a3bc2f45658c30c3a3d0685d02387dc88b8c0bcd7c9ad8475c1c2c4",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2227,7 +2227,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2277,7 +2277,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "c227ae09aab42f6aac298aa4113d33eeed9bbda268bd49029d9662e0fbbb9d76",
+      "payload_sha256": "a5d2983732e3c34f056f40ac3875e1337afff91a4c8a28383e8cf0d17331a6a1",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2326,7 +2326,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2376,7 +2376,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "c7ca71f99d9a88a673036ca9b67dfccea07a0438d20af7218b4663e38d51b561",
+      "payload_sha256": "7bfedfba9fcc4c24458bce6aa6f331ce7188ab795b9099a07801099010805657",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2425,7 +2425,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2475,7 +2475,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "7de0f7dcbb177fbcd8b6e789fda7e29ba5663e52e96aa7a12368adad70413b2c",
+      "payload_sha256": "e97a602f46d2cccea99bc62e11ffd0dd367f7fa6824ab35ebd54cf4c8f40ba8c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2524,7 +2524,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2574,7 +2574,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "50c4c03902e3c87665942ac899d59fabaf04a1ba68ea179bbde689d9acb8fa27",
+      "payload_sha256": "ab7dc9897619df77c345b0af24f250cecc4faa5a4926cc6acf4261851ad2b69a",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2623,7 +2623,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2673,7 +2673,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "6fd2934e885060dfad2f0e29630730017ec1f74be827962a2dde5cd8ef8e4bda",
+      "payload_sha256": "3f0c4466e401b4d35cdab7c054d442a3076d9210319e3bed77b54f736ce62a94",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2722,7 +2722,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2772,7 +2772,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "cf27777f73c298bd2e7c6e844824367e03caa5793ba2ec8df871c8b47f048952",
+      "payload_sha256": "f4a768c3068b85aae09d3cc364b86247009b8e0f34248f98b0c0f9d61625d8b2",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2821,7 +2821,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2871,7 +2871,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "5c4103644ecfcbd144126940396ce67b2efc8e3552b322cf033c28151197958b",
+      "payload_sha256": "d8d901bdcec8fbde978669c3ee98f5a40ba05111cb48c0d9a7601802c1586f70",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -2920,7 +2920,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -2970,7 +2970,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "81fa0706fec2486612972906af09b9793beb9cd2fe26781ebf40cc56ffda8fe2",
+      "payload_sha256": "b9a48b39391643515fcafa7b31f2d378d1f024eed04b98bf8abcafc8cf070806",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3019,7 +3019,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3069,7 +3069,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "3bc28cc937b06810a9edd2b1711056255138b58a7a52fc278ed506f091a91c19",
+      "payload_sha256": "39b6c0f7d5fcab52eba09e85371079a6a201dea1ba530a8a7e6f64ae16071bb5",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3118,7 +3118,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3168,7 +3168,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "cbe9c09849b0df11af85a09711dab0d501b430d8c3195ecd504b7b784c636c08",
+      "payload_sha256": "722906135398af31b12420e7d3594cd23c6dd5e0573b66e30e21657e613b399b",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3217,7 +3217,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3267,7 +3267,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "06647157de8944f7668b9eaa8c96e963685e7dde78c6353ab60e6bd53b7b768c",
+      "payload_sha256": "609b795723cea34dd0d3289faafe93165a23b3ad78a9006a75698b4c3c3605ab",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3316,7 +3316,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3366,7 +3366,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "350ab7e348de7f37c99a73002736c44824b550228dfa5224e38fcf7e72ba141d",
+      "payload_sha256": "19277f67fde981fbc1beb539981bed50e75d0d9b858546db916db3878c98dbb7",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3415,7 +3415,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3465,7 +3465,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "3b24709753f9f1aabaa46a4261f167f49f5c3207dfb815d5e5de2bf5ba0f14ef",
+      "payload_sha256": "374aaaa6f2070239c189bbd319896d70c29e3ae7f656b4d43109d39744f5cbeb",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3514,7 +3514,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3564,7 +3564,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "2ce11b3a3077dab78c4cdeb60fbae89e3ec2ddbd14d4bb9ace66e248523a9019",
+      "payload_sha256": "a5515c3d8a532187891332895b91300f14f00c4828114f299c481a92376f4f66",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3613,7 +3613,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3663,7 +3663,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "2ed2e943165d09cb6192ac40cef42360ae958a02256108404159cb3b0b151489",
+      "payload_sha256": "ef0aff1cd97db65cf779c1a17651ff988840f7c127411fbe686d355fa43d8616",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3712,7 +3712,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3762,7 +3762,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "021cd092095a4223f3836e897d237b0ce30ea6f5217da282dfa060992feae156",
+      "payload_sha256": "afb12cc97602454f16a8f126d42dac2a33243f0d6376e44f82371d2092043e37",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3811,7 +3811,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3861,7 +3861,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "355a1b2098fd5bbe810f78fb628a292a527e280134f9b762a3b8f684b7743aa2",
+      "payload_sha256": "c2882e43efaaaed943b695cc797227b8d9692f92fcf7ec282942a0fa368ff465",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -3910,7 +3910,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -3960,7 +3960,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "1f28837460eeab92a8ebda41c48e3d8e733c16aef383d2186335e1211b0b4112",
+      "payload_sha256": "a9e9c3b226dc50c4d7a7c8a9d15b8462af984ec8b4b8399f086791117f9eb884",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4009,7 +4009,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -4059,7 +4059,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "3f0f59aa7f458d03017362c4eeddcdadca14c7ea41969b6a29da3e3eda0ff38d",
+      "payload_sha256": "cc4b1df4aa53b15735ebe2b99cbc19f0e88926f4dc95b10ca6bbb8ce33daa187",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4108,7 +4108,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -4158,7 +4158,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "a1b5e5e095f5efcfcd81518b2875a3f840a7aa5cd31a69d2dc92aa972627236a",
+      "payload_sha256": "1b2f56605c4ade9c4cfbdb9850df738cf838acdfb55561c5cbbf54383e3d044c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4207,7 +4207,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -4257,7 +4257,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "1bb8a0985abfbb96dcf921cf168a754afc5dd0ee6950f66ddbd3e44f6c1ff01e",
+      "payload_sha256": "82c8afb211e0bfb7ec5eee296a86307ba8f1042e72fea5be924573c78844639d",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4317,7 +4317,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4356,7 +4356,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "733517233cee9570660e21d46f188e2e819ea8441df5fc4adafb767bf818fe6e",
+      "payload_sha256": "6bf77dd609a19eced595da88745fe48fb1ea076468d4c1d5ad2beec212bb89d8",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4416,7 +4416,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4455,7 +4455,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "99f8c3d2601bc8417968198e3b3cdf0947b0dab458d536deb20fd5c7d218a44f",
+      "payload_sha256": "cb7574ddd3d1f6456dd2ebaeb8869ba6aa770fd4449cb06c6c63996a2b6fc713",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4515,7 +4515,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4554,7 +4554,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "a95da0d7dd2deae6f2818c98d3dbf6c68e650cacd16ff8a682d279701b573ae1",
+      "payload_sha256": "dc04e92623daceea7661581a3f294db5961c80e4c89e3031cafd03b0e4dc4b02",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4614,7 +4614,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4653,7 +4653,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "4b91c16b971b8fe2847e0e161455d4393e84289fafe8d0d4954d80872d48d9ce",
+      "payload_sha256": "33f0483a7b42893104f6d9d7353a3dfa5ef9697a328292afea389cb23cee16a3",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4725,7 +4725,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4765,7 +4765,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "d15204d3457d94465b9c0b46199b368dede689b0f2f05ae2c0f775e359ec6e1a",
+      "payload_sha256": "58e7f0b3f67d87ab3ce3d62846e921831d5b57ee17f7287555ff0a9437cd97c3",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4825,7 +4825,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4864,7 +4864,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "5b35ffe2856acd81a3b7c3fb7b2a2a0b36c51c11e1aac7361c4ed8f2e6672890",
+      "payload_sha256": "c5f42cf0d4741985a5986837417722327cc8b29c3b9327835d98efa61065ba8f",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -4924,7 +4924,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -4963,7 +4963,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "6a2554442e8a5f530f493fa67392a6f17248cbe43516fed88e5d91f353780309",
+      "payload_sha256": "7b3b495d3dd8354f92ad1d17f04a2c9256779fb99dab2cd3993f6ad5e3bde132",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5023,7 +5023,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5062,7 +5062,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "0cf3c29293be8d461bc5ec210480659368d273cb71b1063888a37741a2d8c1b6",
+      "payload_sha256": "d3b1b73f4ad04c2feccc7e6f725373fd1d964e49f1df1405995f42cbb1f909e4",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5122,7 +5122,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5161,7 +5161,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "6f91461f7d81e3c3111d3558d51fda4d70468644f3e40af37f4e295942c47c6c",
+      "payload_sha256": "d69d4caa73f91c14b82b99bcffab6709f8c9b1c6bfd46a9f8ad25983565e359b",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5211,7 +5211,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5248,7 +5248,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "a2c369d5360eb3932d4607011753fdba206d9049192ebf2cd5b638e236fc7d23",
+      "payload_sha256": "9f6a94280a18b86e156536fda54660e52087a76f32bce8a3cc8fbada5efb548e",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5303,7 +5303,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5342,7 +5342,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "79d7083e1b925d574673ec610763ea5aaaeb00eec4fd3cc8aefb4ec63ded637f",
+      "payload_sha256": "5d8323ba0e9e3d8d8abd51de6298cfdc720b6024b9e2480ff65a1d912981bb70",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5402,7 +5402,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5442,7 +5442,7 @@
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
       "recipe_correction": "Keep the admitted scalar policy and verification input declaration. SQL CREATE and ACL identity use uuid[]. At AST traversal assert unsupported input array (or VARIADIC mode first) before later identity mismatches. An intake rejection is not this case passing.",
-      "payload_sha256": "a3de70e83beb86fc1b564539c655ace20d5022befc18b9be325e5e534dbe7e68",
+      "payload_sha256": "d4350c2e778c3b3fab2905df992aa032ed316812dce9edbda00d9d490be706fc",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5502,7 +5502,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -5542,7 +5542,7 @@
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
       "recipe_correction": "Keep the admitted scalar policy and verification input declaration. SQL CREATE and ACL identity use uuid[]. At AST traversal assert unsupported input array (or VARIADIC mode first) before later identity mismatches. An intake rejection is not this case passing.",
-      "payload_sha256": "18f83b6b6cbb3be35cf0cc70a7e471c5ed30b450bf3d683aa4f525ec7be181c4",
+      "payload_sha256": "92c693b68a4e59491cd972b83944523083fcb0726ac3988af53176e5a8056fa7",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5591,7 +5591,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -5641,7 +5641,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "f14495c556474cb216daa28a8a98eefe06b74d6f66ad3aeac35da1534d9c24d1",
+      "payload_sha256": "ee571c6d142abe2a22281b4472ee4c4252d615ba2abcfb75e6402ae351b5da5c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5690,7 +5690,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -5740,7 +5740,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "e044587f38c55c3a52e4d00c452ec487d45f768e88e01faf2291503006f610d6",
+      "payload_sha256": "a0ac493bcb68d1cb1d8c508a56696edead5d52fc0fbaf53c4db9c8163b91ad6b",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5789,7 +5789,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -5839,7 +5839,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "a101b958e6cc0a095093faee88738c098cfb51fc13a3d96d462a897b6bcbe21a",
+      "payload_sha256": "d8d52a3eca3eadcdd51645962d07025bb061f336d6834585a7a81b9716983c29",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5888,7 +5888,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -5938,7 +5938,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "09d43241e09d71b262aa929af3356f9af7deaad28b97cd226240a7ceaca6bb77",
+      "payload_sha256": "8e044408ceb909653037dcd5c82357a26fd9f6585e4805b8a2d7ecb4251f16ad",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -5987,7 +5987,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6037,7 +6037,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "c16ff223085214caef75be1415d541ff15ecf39638a7421d72850397a7401d46",
+      "payload_sha256": "4d2d0152b4577ca31b75fa494db3f2257a09737521b4c837c745703a067b15a7",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6086,7 +6086,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6136,7 +6136,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "01f6ed71cd8c4c9fa3f4727b6dced59af72a6fd9d59bf112d762ca71f4c2187b",
+      "payload_sha256": "c8c6a9e9b25d5e32dfb6da4e4acb22b164c5ce541af773a1fdd1a07074455394",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6185,7 +6185,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6235,7 +6235,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "ba4f895dcb986540862814ed8c8846f39b9aed1c12510f94abf8d14b3f76d8ad",
+      "payload_sha256": "d81426cb9ef190607e11f9deaeadd88510f6be3c5f3a4e016be69aa5d7426875",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6284,7 +6284,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6334,7 +6334,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "75030e6d10948806cdace99ea314dfadca7aee8798b1b976219d99c4dec391f9",
+      "payload_sha256": "0eb82fe16a24b10d609ef1945589b1a96b970289f7350582b310d0612dc46d6d",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6383,7 +6383,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6433,7 +6433,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "5b44f988a3afaeae468e5865f750f900f1994da17aa5104f837a2679664a861c",
+      "payload_sha256": "01bdf8993015b2dd1be4feabf010d3bb5a6624a5c86c9b57c150c5b99ec98be4",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6493,7 +6493,7 @@
           ],
           "grammar_major": 17,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "policy_format": 1,
           "semantic_version": 1
         },
@@ -6532,7 +6532,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "45bd75be2560bebdeee107425db9cf11d44080f71810d16bf591b947da86dc0c",
+      "payload_sha256": "066fc772060defc70cd0a928abf087e19a568163f20303dcaf9e69dfc5ba3a49",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6568,7 +6568,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6605,7 +6605,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "b00d39435b4ca4285be3da9e85380bb662d777f04f796b5f778b087fdd96171d",
+      "payload_sha256": "69dbfc506b1e74ac94c165327f7333c3d0d3191b5052f824e56a01f0a94ea84c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6654,7 +6654,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6704,7 +6704,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "be969ceba828c1aae46acb979e1d410cfea9dde12f4e65cb979ce479dde0108d",
+      "payload_sha256": "483cfe1a0c0346cfbdbbf3cd2f55affefa41fb407f7a0a7e1aab8baae0eea9f4",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6753,7 +6753,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6803,7 +6803,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "d772d1d7d014363c2ee3f6ff0c6ab4d0687c9ead005249130e7b7dea489db511",
+      "payload_sha256": "3fc2b87a9fbcd049a7c5411cfe7557de5a56196523ec83c6cf73ca6befa67d35",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6852,7 +6852,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -6902,7 +6902,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "fc87bc3611eba43353482ceaa6fa9f7ee24f95088d2c0549c3b93dcb521964af",
+      "payload_sha256": "e17dd6a3a9327ef5be5c565eec6b0aa02e4d053563c0f59e3165382a6e991039",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -6951,7 +6951,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -7001,7 +7001,7 @@
       },
       "parser_status": "NOT RUN for this complete fixture",
       "policy_status": "NOT RUN; validator not implemented",
-      "payload_sha256": "34bf42ec74785abd0b8f741527f0c7664ecab0098767547b1e6668d237498e19",
+      "payload_sha256": "366af496e9435083a6e1f40cb4badd0332beccd7c79157d6a82e64f9e7e3a82c",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only"
     },
     {
@@ -7050,7 +7050,7 @@
           "policy_format": 1,
           "semantic_version": 1,
           "parser_package": "pglast",
-          "parser_version": "7.17",
+          "parser_version": "7.21",
           "grammar_major": 17,
           "functions": [
             {
@@ -7100,7 +7100,7 @@
       },
       "parser_status": "SUPPLIED_BUT_UNMEASURED",
       "policy_status": "NOT RUN; parser refusal expected before policy",
-      "payload_sha256": "b18b7ecdc4ed411ac824fb2799c4cafe325d8c1ad1fd99684ba6c340ed2284e6",
+      "payload_sha256": "a8b149dc9e2e12b4326bb5a7fd4c8ee069b442c630c2bf2b5cd90bd1c3e029bc",
       "payload_hash_encoding": "UTF-8 JSON sort_keys=true indent=2 ensure_ascii=false plus LF; artifact fingerprint only",
       "rendered_sql_for_fixture_schema": "CREATE FUNCTION tenant_aaaaaaaa.m02_annex_probe(",
       "rendered_sql_sha256": "97a5ff15e03323aef2b2e97a058153766847e9e4bdd300dcf57db0beb834b213"

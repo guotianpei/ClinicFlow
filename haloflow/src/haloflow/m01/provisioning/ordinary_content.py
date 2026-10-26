@@ -25,7 +25,7 @@ ORDER (architecture v2 section 4)
 0. scope guard (internal misuse -> the CL-2 exception, below);
 1. NUL byte -> unparseable. Load-bearing: pglast stops reading at a NUL, so
    `CREATE TABLE ...;<NUL> DROP ...` would otherwise parse as one CreateStmt;
-2. load and pin the parser (pglast 7.17, PostgreSQL grammar 17);
+2. load and pin the parser (pglast 7.21, PostgreSQL grammar 17);
 3. exactly ONE `parse_sql` call (CG4-R9);
 4. zero statements -> prohibited (CG4-R1b);
 5. per statement: RawStmt required, prohibited set first, then the allowed list.
@@ -80,7 +80,7 @@ ALLOWED_TOPLEVEL_KINDS: Final = ("CreateStmt",)
 PROHIBITED_TOPLEVEL_KINDS: Final = ("CreateFunctionStmt", "DoStmt")
 """CG4-R1: refused whatever the allowed list says."""
 
-_PINNED_PGLAST_VERSION: Final = "7.17"
+_PINNED_PGLAST_VERSION: Final = "7.21"
 _PINNED_GRAMMAR_MAJOR: Final = 17
 
 
