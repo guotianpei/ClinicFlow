@@ -8,7 +8,8 @@ PGT-8: a tenant whose ledger records the OLD (7.17-era) T003 checksum is refused
        function body is the same in both declarations (only the policy version moved).
        ARRANGEMENT (labelled): the old ledger value is written by ADMIN, because the
        current code cannot install a 7.17 declaration.
-PGT-10: an unsupported parser at install time is refused before any statement.
+PGT-10: an unsupported parser at install time is refused in the whole-plan preflight with
+       INSTALL_PARSER_VERSION_MISMATCH: ledger rows and tenant-schema inventory unchanged.
 No upgrade path is claimed: PGT-8 records the limit for existing 7.17-era installs.
 """
 
@@ -34,6 +35,33 @@ def _ledger_checksum(ids: Any, tenant_id: str) -> tuple[Any, ...]:
         "SELECT state, checksum, attempt, completed_at IS NOT NULL"
         " FROM shared.schema_migrations WHERE tenant_id = %s AND migration_id = %s",
         (tenant_id, T003),
+    )
+
+
+def _ledger_rows(ids: Any, tenant_id: str) -> list[tuple[Any, ...]]:
+    """Every column of every ledger row for the tenant, actual values."""
+    return m02.admin_all(
+        ids,
+        "SELECT migration_id, checksum, state, attempt, started_at, completed_at,"
+        " sanitized_error_code FROM shared.schema_migrations WHERE tenant_id = %s"
+        " ORDER BY migration_id",
+        (tenant_id,),
+    )
+
+
+def _schema_inventory(ids: Any, schema: str) -> list[tuple[Any, ...]]:
+    """Every relation and routine in the tenant schema, with owner and ACL."""
+    return m02.admin_all(
+        ids,
+        "SELECT 'rel', c.relname, c.relkind::text, c.relowner::regrole::text,"
+        " c.relacl::text FROM pg_catalog.pg_class c"
+        " JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = %s"
+        " UNION ALL"
+        " SELECT 'proc', p.oid::regprocedure::text, p.prokind::text,"
+        " p.proowner::regrole::text, p.proacl::text FROM pg_catalog.pg_proc p"
+        " JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = %s"
+        " ORDER BY 1, 2",
+        (schema, schema),
     )
 
 
@@ -69,16 +97,17 @@ def test_pgt8_a_7_17_era_ledger_record_is_refused_as_drift_with_no_change(
             " WHERE tenant_id = %s AND migration_id = %s",
             (T003_OLD_CHECKSUM, tenant_id, T003),
         )
-    before_ledger = _ledger_checksum(m02_ids, tenant_id)
+    before_ledger = _ledger_rows(m02_ids, tenant_id)
     before_body = _function_def(m02_ids, schema)
     before_acl = gw.gateway_acl(m02_ids, schema)
-    assert before_ledger[:2] == ("applied", T003_OLD_CHECKSUM)
+    t003_row = [r for r in before_ledger if r[0] == T003]
+    assert len(t003_row) == 1 and t003_row[0][1:3] == (T003_OLD_CHECKSUM, "applied")
 
     with pytest.raises(TenantMigrationFailed) as caught:
         gw.run_migrations(m02_ids, m02.production_registry(), m02_tenant)
     assert caught.value.reason_code == "MIGRATION_CHECKSUM_DRIFT"
 
-    assert _ledger_checksum(m02_ids, tenant_id) == before_ledger
+    assert _ledger_rows(m02_ids, tenant_id) == before_ledger  # every column, actual values
     assert _function_def(m02_ids, schema) == before_body
     assert gw.gateway_acl(m02_ids, schema) == before_acl
 
@@ -92,9 +121,15 @@ def test_pgt10_an_unsupported_parser_at_install_is_refused_before_any_statement(
     real = importlib.metadata.version
     monkeypatch.setattr(importlib.metadata, "version",
                         lambda name: version if name == "pglast" else real(name))
+    tenant_id, schema = m02_tenant
     gw.prepare_bare_schema(m02_ids, m02_tenant)
-    with pytest.raises(TenantMigrationFailed):
+    before_ledger = _ledger_rows(m02_ids, tenant_id)
+    before_schema = _schema_inventory(m02_ids, schema)
+    with pytest.raises(TenantMigrationFailed) as caught:
         gw.run_migrations(m02_ids, m02.production_registry(), m02_tenant)
-    assert gw.gateway_absent(m02_ids, m02_tenant[1])
-    rows = m02.ledger(m02_ids, m02_tenant[0])
-    assert rows.get(T003, ("absent",))[0] != "applied"
+    assert caught.value.reason_code == "INSTALL_PARSER_VERSION_MISMATCH"
+    # Refused in the whole-plan preflight: no ledger row written or changed and no
+    # object created in the tenant schema, for any unit, not only T003.
+    assert _ledger_rows(m02_ids, tenant_id) == before_ledger
+    assert _schema_inventory(m02_ids, schema) == before_schema
+    assert gw.gateway_absent(m02_ids, schema)
