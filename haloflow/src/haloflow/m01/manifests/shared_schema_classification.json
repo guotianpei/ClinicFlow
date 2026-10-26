@@ -95,6 +95,53 @@
         "closed_at": "control-plane",
         "execution_id": "pseudonymous-id"
       }
+    },
+    "tenant_maintenance_operations": {
+      "classification": "control-plane",
+      "columns": {
+        "maintenance_operation_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "from_version": "control-plane",
+        "to_version": "control-plane",
+        "neutralization_generation": "control-plane",
+        "neutralizer_lock_ack": "control-plane",
+        "state": "control-plane",
+        "pre_entry_event_id": "pseudonymous-id",
+        "entry_event_id": "pseudonymous-id",
+        "resume_event_id": "pseudonymous-id",
+        "t003_baseline": "control-plane",
+        "current_attempt": "pseudonymous-id",
+        "migrator_ack_at": "control-plane",
+        "created_at": "control-plane",
+        "updated_at": "control-plane"
+      }
+    },
+    "tenant_maintenance_withheld": {
+      "classification": "control-plane",
+      "columns": {
+        "maintenance_operation_id": "pseudonymous-id",
+        "layer": "control-plane",
+        "object_kind": "control-plane",
+        "schema_name": "control-plane",
+        "object_name": "control-plane",
+        "column_name": "control-plane",
+        "grantee": "control-plane",
+        "privilege": "control-plane",
+        "grantable": "control-plane",
+        "grantor": "control-plane"
+      }
+    },
+    "tenant_maintenance_attempts": {
+      "classification": "control-plane",
+      "columns": {
+        "event_id": "pseudonymous-id",
+        "attempt_id": "pseudonymous-id",
+        "maintenance_operation_id": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "event": "control-plane",
+        "detail": "control-plane",
+        "occurred_at": "control-plane"
+      }
     }
   }
 }

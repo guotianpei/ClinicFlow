@@ -2,7 +2,9 @@
 
 The module reads PostgreSQL's catalogue into an immutable four-dimensional set,
 expands the validated manifest into the same type, and installs exactly the
-declared schema grants inside a caller-owned transaction. Stage 3, introduced
+declared schema grants inside a caller-owned transaction. A second installer,
+``install_schema_acl_entries`` (L-6 CP-2), issues GRANTs for caller-selected
+entries under the same transaction and vocabulary rules. Stage 3, introduced
 by CP-5c, owns comparison and failure handling; putting equality here would
 cross that review boundary.
 
@@ -19,7 +21,7 @@ entry it emits is a direct expansion of ``tenant_schema_role_privileges``
 (R-P1B.18, D22).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -143,10 +145,54 @@ async def install_schema_acl(
         await connection.execute(statement)  # type: ignore[attr-defined]
 
 
+async def install_schema_acl_entries(
+    connection: object,
+    schema_key: str,
+    entries: Iterable[SchemaAclEntry],
+) -> None:
+    """Issue GRANTs for exactly the caller-selected entries (L-6 CP-2, OD-C5).
+
+    A pure GRANT issuer. The caller chooses the tuples and owns the transaction:
+    this function opens no transaction or savepoint, issues no commit, rollback
+    or ``REVOKE``, never reads, and performs no comparison or repair.
+
+    Every privilege is checked against the closed vocabulary before the first
+    statement, so an unknown privilege raises ``KeyError`` (as
+    ``install_schema_acl`` does) with nothing granted. Entries are deduplicated
+    and grouped by ``(grantee, is_grantable)``: one ``GRANT`` per group, groups
+    in sorted order and privileges sorted within a group.
+
+    The ``grantor`` field is deliberately not replayed and no ``GRANTED BY`` is
+    issued: PostgreSQL records the grantor from the executing context, which the
+    caller establishes and then proves by exact readback.
+    """
+
+    groups: dict[tuple[str, bool], set[str]] = {}
+    for entry in entries:
+        groups.setdefault((entry.grantee, entry.is_grantable), set()).add(entry.privilege_type)
+
+    # Validate the whole input before any statement is issued.
+    fragments = {
+        group: [_SCHEMA_PRIVILEGE_SQL[privilege] for privilege in sorted(privileges)]
+        for group, privileges in groups.items()
+    }
+
+    for grantee, is_grantable in sorted(fragments):
+        grant_option = sql.SQL(" WITH GRANT OPTION") if is_grantable else sql.SQL("")
+        statement = sql.SQL("GRANT {} ON SCHEMA {} TO {}{}").format(
+            sql.SQL(", ").join(fragments[(grantee, is_grantable)]),
+            sql.Identifier(schema_key),
+            sql.Identifier(grantee),
+            grant_option,
+        )
+        await connection.execute(statement)  # type: ignore[attr-defined]
+
+
 __all__ = [
     "SchemaAclEntry",
     "build_expected_schema_acl",
     "entry_from_row",
     "install_schema_acl",
+    "install_schema_acl_entries",
     "read_schema_acl",
 ]

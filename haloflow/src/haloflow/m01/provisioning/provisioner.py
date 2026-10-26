@@ -267,72 +267,9 @@ class TenantProvisioner:
 
     # -- step 5 ------------------------------------------------------------
     async def _verify(self, connection: AsyncConnection, request: ProvisioningRequest) -> None:
-        """Read the outcome back from the catalogue rather than assuming it.
+        """Step 5; the checks live in ``verify_schema_postconditions`` (L-6 CP-2)."""
 
-        Every check is a catalogue question, not an inference from a statement
-        having succeeded: a GRANT that ran is not evidence that the privilege
-        landed the way the manifest says it should.
-        """
-
-        row = await (
-            await connection.execute(
-                """
-                SELECT
-                    (SELECT count(*) FROM pg_namespace WHERE nspname = %s),
-                    has_schema_privilege(%s, %s, 'USAGE'),
-                    has_schema_privilege(%s, %s, 'CREATE'),
-                    has_schema_privilege(%s, %s, 'USAGE'),
-                    to_regclass(%s) IS NOT NULL
-                """,
-                (
-                    request.schema_key,
-                    RUNTIME_ROLE,
-                    request.schema_key,
-                    RUNTIME_ROLE,
-                    request.schema_key,
-                    AUDIT_PROJECTOR_ROLE,
-                    request.schema_key,
-                    f"{request.schema_key}.access_audit_outbox",
-                ),
-            )
-        ).fetchone()
-
-        if row is None:
-            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
-        schema_count, runtime_usage, runtime_create, projector_usage, outbox_present = row
-        if not (
-            schema_count == 1
-            and runtime_usage
-            and not runtime_create  # the runtime role must never hold DDL
-            and projector_usage
-            and outbox_present
-        ):
-            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
-
-        await self._verify_cross_tenant_probe(connection, request)
-
-    async def _verify_cross_tenant_probe(
-        self, connection: AsyncConnection, request: ProvisioningRequest
-    ) -> None:
-        """A negative probe: the runtime role must not reach another tenant.
-
-        Asserted against every *other* provisioned schema, so the check has real
-        content on the second tenant onward rather than being vacuously true.
-        """
-
-        rows = await (
-            await connection.execute(
-                """
-                SELECT n.nspname, has_schema_privilege(%s, n.nspname, 'CREATE')
-                FROM pg_namespace AS n
-                JOIN shared.tenants AS t ON t.schema_key = n.nspname
-                WHERE n.nspname <> %s
-                """,
-                (RUNTIME_ROLE, request.schema_key),
-            )
-        ).fetchall()
-        if any(can_create for _, can_create in rows):
-            raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+        await verify_schema_postconditions(connection, request.schema_key)
 
     # -- step 6 ------------------------------------------------------------
     async def _activate(
@@ -370,6 +307,83 @@ class TenantProvisioner:
                 reason_code=SanitizedErrorCode.REGISTRY_WRITE_FAILED.value
             ) from _sanitize(error)
 
+
+# -- step 5, extracted (L-6 CP-2, decision D1(a)) ----------------------------
+# Exact extraction of the former ``TenantProvisioner._verify`` and
+# ``_verify_cross_tenant_probe`` bodies: byte-identical SQL string literals (their
+# original indentation is kept inside the strings), same parameters, order, error
+# type and reason code. Only ``request.schema_key`` became the ``schema_key``
+# parameter, so a later caller can run the same postconditions without a request.
+
+
+async def verify_schema_postconditions(connection: AsyncConnection, schema_key: str) -> None:
+    """Read the outcome back from the catalogue rather than assuming it.
+
+    Every check is a catalogue question, not an inference from a statement
+    having succeeded: a GRANT that ran is not evidence that the privilege
+    landed the way the manifest says it should.
+    """
+
+    row = await (
+        await connection.execute(
+            """
+                SELECT
+                    (SELECT count(*) FROM pg_namespace WHERE nspname = %s),
+                    has_schema_privilege(%s, %s, 'USAGE'),
+                    has_schema_privilege(%s, %s, 'CREATE'),
+                    has_schema_privilege(%s, %s, 'USAGE'),
+                    to_regclass(%s) IS NOT NULL
+                """,
+            (
+                schema_key,
+                RUNTIME_ROLE,
+                schema_key,
+                RUNTIME_ROLE,
+                schema_key,
+                AUDIT_PROJECTOR_ROLE,
+                schema_key,
+                f"{schema_key}.access_audit_outbox",
+            ),
+        )
+    ).fetchone()
+
+    if row is None:
+        raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+    schema_count, runtime_usage, runtime_create, projector_usage, outbox_present = row
+    if not (
+        schema_count == 1
+        and runtime_usage
+        and not runtime_create  # the runtime role must never hold DDL
+        and projector_usage
+        and outbox_present
+    ):
+        raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+
+    await verify_cross_tenant_probe(connection, schema_key)
+
+
+async def verify_cross_tenant_probe(connection: AsyncConnection, schema_key: str) -> None:
+    """A negative probe: the runtime role must not reach another tenant.
+
+    Asserted against every *other* provisioned schema, so the check has real
+    content on the second tenant onward rather than being vacuously true.
+    """
+
+    rows = await (
+        await connection.execute(
+            """
+                SELECT n.nspname, has_schema_privilege(%s, n.nspname, 'CREATE')
+                FROM pg_namespace AS n
+                JOIN shared.tenants AS t ON t.schema_key = n.nspname
+                WHERE n.nspname <> %s
+                """,
+            (RUNTIME_ROLE, schema_key),
+        )
+    ).fetchall()
+    if any(can_create for _, can_create in rows):
+        raise ProvisioningFailed(reason_code=SanitizedErrorCode.VERIFICATION_FAILED.value)
+
+
 async def _assume_provisioner(connection: AsyncConnection) -> None:
     # Same contract as the runner's, and enforced by the same function: the
     # provisioning sequence commits between steps so a partial tenant is
@@ -406,4 +420,6 @@ __all__ = [
     "ProvisioningOutcome",
     "ProvisioningRequest",
     "TenantProvisioner",
+    "verify_cross_tenant_probe",
+    "verify_schema_postconditions",
 ]
