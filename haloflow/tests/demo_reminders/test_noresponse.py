@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
@@ -437,17 +438,56 @@ async def test_nr_t15_restart_after_flag_adds_no_second_item(
     assert len(_nr_items(demo_db_url)) == 1
 
 
+async def test_nr_t15b_restart_with_pending_submitted_work_flags_original_once(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    env = _env(demo_env)
+    s, own = await _own(env)
+    try:
+        rid = await _send(own, s, 1, _start())
+        sent = _sent_at(demo_db_url, rid)
+    finally:
+        await own.close()
+    s2, own2 = await _own(env)  # new process: nothing flagged yet
+    try:
+        assert await _flag(own2, sent + H24 - US) == []
+        assert await _flag(own2, sent + H24) == [rid]
+        assert await _flag(own2, sent + H24 * 2) == []
+    finally:
+        await own2.close()
+    assert [r for r, _ in _nr_items(demo_db_url)] == [rid]
+    assert _state(demo_db_url, rid) == "NO_RESPONSE"
+
+
 # ── NR-T9 / NR-T10 / NR-T11: serialisation with reply receipt ────────────────
+
+
+async def _cleanup(tasks: list[asyncio.Task[Any]]) -> None:
+    """Cancel and await any spawned task still running, so a failed assertion
+    leaks neither a task nor its database lock."""
+    for t in tasks:
+        if not t.done():
+            t.cancel()
+    for t in tasks:
+        with contextlib.suppress(BaseException):
+            await t
+
+
+def _release(holder: psycopg.Connection[Any] | None) -> None:
+    if holder is not None and not holder.closed:
+        with contextlib.suppress(Exception):
+            holder.rollback()
+        holder.close()
 
 
 async def test_nr_t9_receipt_commits_first_then_no_flag(
     demo_env: dict[str, str], demo_db_url: str
 ) -> None:
     s, own = await _own(_env(demo_env))
+    scanner: list[asyncio.Task[Any]] = []
     try:
         rid = await _send(own, s, 1, _start())
         at = _sent_at(demo_db_url, rid) + H24
-        scanner: list[asyncio.Task[list[int]]] = []
 
         async def on_receipt(stage: str) -> None:
             if stage == "receipt_locked":
@@ -458,6 +498,7 @@ async def test_nr_t9_receipt_commits_first_then_no_flag(
         await _reply(own, s, "maybe", reply_id="rid-1", at=datetime.now(UTC), hook=on_receipt)
         assert await scanner[0] == []
     finally:
+        await _cleanup(scanner)
         await own.close()
     assert _state(demo_db_url, rid) == "SUBMITTED"
     assert _nr_items(demo_db_url) == []
@@ -469,10 +510,10 @@ async def test_nr_t10_scanner_commits_first_then_late_yes_is_staff_only(
     s, own = await _own(_env(demo_env))
     start = _start()
     ehr = _ehr(start)
+    receipt: list[asyncio.Task[Any]] = []
     try:
         rid = await _send(own, s, 1, start)
         at = _sent_at(demo_db_url, rid) + H24
-        receipt: list[asyncio.Task[Any]] = []
 
         async def on_locked(stage: str) -> None:
             if stage == "locked":
@@ -485,6 +526,7 @@ async def test_nr_t10_scanner_commits_first_then_late_yes_is_staff_only(
         await receipt[0]
         await _process(own, s, ehr, datetime.now(UTC))
     finally:
+        await _cleanup(receipt)
         await own.close()
     assert _state(demo_db_url, rid) == "NO_RESPONSE"
     rows = _q(demo_db_url, "SELECT kind, reminder_id FROM follow_up_items ORDER BY kind")
@@ -494,24 +536,31 @@ async def test_nr_t10_scanner_commits_first_then_late_yes_is_staff_only(
     assert ehr.write_attempts == 0
 
 
-async def test_nr_t11_closing_during_lock_wait_changes_nothing(
-    demo_env: dict[str, str], demo_db_url: str
+@pytest.mark.parametrize("loss", ["closing", "owner_lost"])
+async def test_nr_t11_closing_or_owner_lost_during_lock_wait_changes_nothing(
+    loss: str, demo_env: dict[str, str], demo_db_url: str
 ) -> None:
     s, own = await _own(_env(demo_env))
+    holder: psycopg.Connection[Any] | None = None
+    tasks: list[asyncio.Task[Any]] = []
     try:
         rid = await _send(own, s, 1, _start())
         at = _sent_at(demo_db_url, rid) + H24
         holder = psycopg.connect(demo_db_url)
         holder.execute("SELECT 1 FROM demo_match_lock WHERE id = 1 FOR UPDATE")
-        task = asyncio.create_task(_flag(own, at))
+        tasks.append(asyncio.create_task(_flag(own, at)))
         await _wait_for_blocked(demo_db_url, "match:noresponse",
                                 blocker_pid=holder.info.backend_pid)
-        own.begin_closing()
+        if loss == "closing":
+            own.begin_closing()
+        else:
+            own.lost.set()  # the watchdog's signal; public Event on Ownership
         holder.commit()
         holder.close()
-        result = await task
-        assert result == []
+        assert await tasks[0] == []
     finally:
+        _release(holder)
+        await _cleanup(tasks)
         await own.close()
     assert _state(demo_db_url, rid) == "SUBMITTED"
     assert _nr_items(demo_db_url) == []
@@ -638,3 +687,34 @@ async def test_nr_t14c_staff_button_runs_the_check(
     finally:
         await own.close()
     assert _state(demo_db_url, rid) == "NO_RESPONSE"
+
+
+async def test_nr_t14d_staff_check_requires_csrf(
+    demo_env: dict[str, str], demo_db_url: str
+) -> None:
+    """Pins the existing local staff boundary on the new route; no authentication claim."""
+    from haloflow_demo.service import DbStaffService
+    from haloflow_demo.web import CSRF_FIELD, build_staff_app
+
+    s, own = await _own(_env(demo_env))
+    try:
+        rid = await _send(own, s, 1, _start())
+        svc = DbStaffService(own, s, now=_clock(_sent_at(demo_db_url, rid) + H24))
+        app = build_staff_app(svc, csrf_secret=b"k" * 32, unavailable=lambda: own.owner_lost)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                                     base_url="http://127.0.0.1:8080") as c:
+            page = (await c.get("/demo/staff")).text
+            missing = await c.post("/demo/noresponse/check", data={})
+            assert missing.status_code == 403
+            invalid = await c.post("/demo/noresponse/check", data={CSRF_FIELD: "not-a-token"})
+            assert invalid.status_code == 403
+            assert _state(demo_db_url, rid) == "SUBMITTED"
+            assert _nr_items(demo_db_url) == []
+            m = re.search(rf'name="{CSRF_FIELD}" value="([^"]+)"', page)
+            assert m
+            ok = await c.post("/demo/noresponse/check", data={CSRF_FIELD: m.group(1)})
+            assert ok.status_code in (200, 303)
+    finally:
+        await own.close()
+    assert _state(demo_db_url, rid) == "NO_RESPONSE"
+    assert len(_nr_items(demo_db_url)) == 1
