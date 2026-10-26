@@ -109,8 +109,8 @@ def test_pgl06_installed_defelem_shape_is_exactly_the_pinned_shape() -> None:
 
 
 def test_pgl07_arg_location_is_position_metadata_only() -> None:
-    """Installed-source facts: slot type ParseLoc, ignored in comparisons like location;
-    parsed values are integers."""
+    """Installed-source facts: slot type ParseLoc (py_type int), ignored in comparisons like
+    location. Observed on C01: absent (None) for most options, an integer offset for AS."""
     info = pglast.ast.DefElem.__slots__["arg_location"]
     assert info.c_type == "ParseLoc" and info.py_type is int
     assert "arg_location" in pglast.ast.DefElem._ATTRS_TO_IGNORE_IN_COMPARISON
@@ -120,8 +120,9 @@ def test_pgl07_arg_location_is_position_metadata_only() -> None:
         stmt = raw.stmt
         for opt in getattr(stmt, "options", None) or ():
             if isinstance(opt, pglast.ast.DefElem):
-                assert isinstance(opt.arg_location, int)
-                seen += 1
+                assert opt.arg_location is None or (
+                    isinstance(opt.arg_location, int) and opt.arg_location >= 0)
+                seen += opt.arg_location is not None
     assert seen > 0
 
 
