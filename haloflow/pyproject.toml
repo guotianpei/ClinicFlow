@@ -37,7 +37,7 @@ dependencies = [
     # validates typed declarations on the provisioning path, so the parser is a
     # runtime dependency, not a development one. The version is the frozen CP1
     # contract and is asserted by the checker itself.
-    "pglast==7.17",
+    "pglast==7.21",
 
     # Utilities
     "python-dateutil>=2.9.0",
