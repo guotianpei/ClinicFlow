@@ -429,8 +429,9 @@ async def send_one(
     now: Callable[[], datetime],
     before_call: Callable[[], None] | None = None,
     dispatch_hook: DispatchHook | None = None,
+    slot_dedupe: bool = True,
 ) -> SendResult:
-    rid = await claim_reminder(own, tenant_id, appt)
+    rid = await claim_reminder(own, tenant_id, appt, slot_dedupe=slot_dedupe)
     if rid is None:
         return SendResult(None, "SKIPPED", "already_claimed")
     provenance = gateway_provenance(gateway)

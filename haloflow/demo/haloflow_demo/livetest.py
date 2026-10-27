@@ -142,7 +142,10 @@ async def _operation(own: Ownership, s: DemoSettings, token: str,
                               test_number=s.sms_test_number, transport=transport)
     gateway_out.append(gateway)
     try:
-        result = await send_one(own, s, appt, patient, gateway, tenant_id=TENANT_ID, now=now)
+        # Each explicit, owner-confirmed run is a distinct send by design (test_lt4),
+        # so the restart slot dedupe (F-R1-1) does not apply to this entry point.
+        result = await send_one(own, s, appt, patient, gateway, tenant_id=TENANT_ID, now=now,
+                                slot_dedupe=False)
     except Exception:
         return _Outcome(state="ERROR", reason="internal")
     present = "no"
