@@ -144,6 +144,19 @@ class DbStaffService:
             )).all()
         return {str(r[0]): (int(r[1]), str(r[2])) for r in rows}
 
+    async def _existing_ids(self, appts: list[Any]) -> set[str]:
+        """IDs to skip as ALREADY_HAS_REMINDER: an exact-ID reminder, or (F-R1-1) any
+        reminder for the same slot — synthetic patient and start instant — from any
+        epoch. Shared by preview, single send and batch so all three agree."""
+        async with self._own.engine.connect() as conn:
+            rows = (await conn.execute(
+                text("SELECT emr_appt_id, emr_patient_id, appt_start FROM reminder_records"
+                     " WHERE tenant_id = :t"), {"t": TENANT_ID},
+            )).all()
+        ids = {str(r[0]) for r in rows}
+        slots = {(str(r[1]), r[2]) for r in rows}
+        return ids | {a.emr_appt_id for a in appts if (a.emr_patient_id, a.start_utc) in slots}
+
     async def _paused(self) -> bool:
         async with self._own.engine.connect() as conn:
             value = (await conn.execute(
@@ -210,7 +223,7 @@ class DbStaffService:
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
         result = select_eligible(appts, ehr.patients, target, tz,
-                                 existing_appt_ids=set(await self._reminders()))
+                                 existing_appt_ids=await self._existing_ids(appts))
         decision: dict[str, str] = {e.appointment.emr_appt_id: "eligible" for e in result.eligible}
         decision.update({s.emr_appt_id: f"skip: {s.reason.value}" for s in result.skipped})
         return [{"emr_appt_id": a.emr_appt_id, "decision": decision[a.emr_appt_id]}
@@ -222,7 +235,7 @@ class DbStaffService:
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
         return select_eligible(appts, ehr.patients, target, tz,
-                               existing_appt_ids=set(await self._reminders())).eligible
+                               existing_appt_ids=await self._existing_ids(appts)).eligible
 
     async def send_batch(self) -> list[dict[str, Any]]:
         """Send to every eligible appointment on the target date (stub gateway)."""
