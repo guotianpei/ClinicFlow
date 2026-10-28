@@ -1,0 +1,437 @@
+diff --git a/haloflow/demo/haloflow_demo/athena_source.py b/haloflow/demo/haloflow_demo/athena_source.py
+index d908bf1..5614914 100644
+--- a/haloflow/demo/haloflow_demo/athena_source.py
++++ b/haloflow/demo/haloflow_demo/athena_source.py
+@@ -19,12 +19,15 @@ Times: ``date`` + ``starttime`` are read as local times in CLINIC_TZ;
+ nonexistent and ambiguous local times are excluded, never resolved.
+ 
+ N-TZ Step 2: before any booked page, the configured department's detail is read
+-(``GET /v1/195900/departments/{configured id}``) and its ``timezonename`` is
+-classified against CLINIC_TZ for the target date (``classify_tz``):
+-VERIFIED (exact recognized IANA name), MISMATCH (recognized IANA name with a
+-different UTC offset at some instant of the date — the fetch is rejected with
+-``SOURCE_TZ_MISMATCH``) or UNDETERMINED (everything else; the UNVERIFIED
+-assumption stays labelled).
++(``GET /v1/195900/departments/{configured id}``).
++
++N-TZ Step 3 (owner decisions OD-TZ1 "Convert and send", OD-TZ2 "Keep text, no
++label"): a recognized IANA department zone is the effective zone in which booked
++``date`` + ``starttime`` are read (VERIFIED when it equals CLINIC_TZ, else
++CONVERTED; basis DEPARTMENT). Anything else is UNDETERMINED and falls back to
++CLINIC_TZ (basis FALLBACK; the UNVERIFIED assumption stays labelled). The
++optional ``check_context`` callback runs after the department GET and before any
++booked GET (interpretation provenance, service layer).
+ """
+ 
+ from __future__ import annotations
+@@ -32,7 +35,7 @@ from __future__ import annotations
+ import asyncio
+ import re
+ import time as _time
+-from collections.abc import Mapping
++from collections.abc import Awaitable, Callable, Mapping
+ from dataclasses import dataclass, field
+ from datetime import UTC, date, datetime, time, timedelta
+ from typing import Any
+@@ -59,6 +62,8 @@ DEPARTMENT_PATH = f"/v1/{PRACTICE}/departments/{{}}"
+ TZ_NAME_RE = re.compile(r"^[A-Za-z0-9_/+\-. ]{1,64}$")
+ TZ_SAMPLE_STEP = timedelta(minutes=15)
+ VERIFIED, MISMATCH, UNDETERMINED = "VERIFIED", "MISMATCH", "UNDETERMINED"
++CONVERTED = "CONVERTED"
++DEPARTMENT, FALLBACK = "DEPARTMENT", "FALLBACK"
+ SCOPE = "athena/service/Athenanet.MDP.*"
+ PAGE_LIMIT = 100
+ MAX_PAGES = 5
+@@ -99,6 +104,8 @@ class Snapshot:
+     taken_at: datetime
+     tz_status: str = UNDETERMINED
+     dept_tz: str | None = None
++    eff_tz: str = ""
++    basis: str = FALLBACK
+ 
+ 
+ def check_athena_mode(s: DemoSettings, env: Mapping[str, str]) -> AthenaConfig | None:
+@@ -263,7 +270,8 @@ def _local_start(d: date, t: time, tz: str) -> tuple[datetime | None, str | None
+ 
+ 
+ def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
+-         epoch: int) -> tuple[SyntheticAppointment | None, str | None, str]:
++         epoch: int, display_tz: str | None = None,
++         ) -> tuple[SyntheticAppointment | None, str | None, str]:
+     aid, pid = str(r.get("appointmentid", "")), str(r.get("patientid", ""))
+     if not ID_RE.match(aid) or not ID_RE.match(pid):
+         return None, "INVALID_ID", pid
+@@ -290,16 +298,28 @@ def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
+     if start is None:
+         return None, why, pid
+     return SyntheticAppointment(f"ath-e{epoch}-{aid}", f"athp-{pid}", start,
+-                                STATUS_MAP[status], INITIAL_CONFIRMATION), None, pid
++                                STATUS_MAP[status], INITIAL_CONFIRMATION,
++                                display_tz), None, pid
++
++
++ContextCheck = Callable[[str, str], Awaitable[None]]
+ 
+ 
+ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
+-                         department_id: str, epoch: int) -> Snapshot:
++                         department_id: str, epoch: int,
++                         check_context: ContextCheck | None = None) -> Snapshot:
++    """``tz`` is CLINIC_TZ. ``check_context(eff_tz, basis)`` may raise
++    ``SourceInvalid``; it runs before any booked GET."""
+     token = await client.token()
+     dept_tz = extract_tz(await client.department(token), department_id)
+-    tz_status = classify_tz(dept_tz, tz, target)
+-    if tz_status == MISMATCH:
+-        raise SourceInvalid("SOURCE_TZ_MISMATCH", detail=dept_tz)
++    if dept_tz is None:
++        tz_status, eff_tz, basis = UNDETERMINED, tz, FALLBACK
++    else:
++        tz_status = VERIFIED if dept_tz == tz else CONVERTED
++        eff_tz, basis = dept_tz, DEPARTMENT
++    if check_context is not None:
++        await check_context(eff_tz, basis)
++    display_tz = eff_tz if eff_tz != tz else None
+     records: list[dict[str, Any]] = []
+     total: int | None = None
+     truncated = False
+@@ -338,7 +358,7 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
+     appointments: list[SyntheticAppointment] = []
+     patients: dict[str, SyntheticPatient] = {}
+     for r in records:
+-        appt, why, pid = _map(r, target, tz, department_id, epoch)
++        appt, why, pid = _map(r, target, eff_tz, department_id, epoch, display_tz)
+         if appt is None:
+             assert why is not None
+             counts[why] = counts.get(why, 0) + 1
+@@ -347,4 +367,4 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
+         patients.setdefault(appt.emr_patient_id, SyntheticPatient(
+             appt.emr_patient_id, f"Sandbox patient …{pid[-4:]}", "sandbox"))
+     return Snapshot(Fixtures(patients=patients, appointments=appointments), counts,
+-                    truncated, datetime.now(tz=UTC), tz_status, dept_tz)
++                    truncated, datetime.now(tz=UTC), tz_status, dept_tz, eff_tz, basis)
+diff --git a/haloflow/demo/haloflow_demo/provenance.py b/haloflow/demo/haloflow_demo/provenance.py
+new file mode 100644
+index 0000000..0b538b5
+--- /dev/null
++++ b/haloflow/demo/haloflow_demo/provenance.py
+@@ -0,0 +1,107 @@
++"""N-TZ Step 3 — interpretation provenance for sandbox (``ath-…``) reminders.
++
++Package claude_n-tz-step3-provenance-package-2026-10-28-v2.md (Codex ALIGN).
++
++Invariant: every retained sandbox reminder was claimed under the same
++interpretation context — (department id, effective zone, basis, clinic zone) —
++that every later snapshot of this database uses. The F-R1-1 slot dedupe key
++(tenant, patient, start instant) is stable exactly while that context is.
++
++The record is one ``demo_meta`` row (no schema change) with the exact value
++``v1;dept=<id>;zone=<IANA>;basis=<DEPARTMENT|FALLBACK>;clinic=<IANA>``. All reads
++and writes run in one fenced transaction under a transaction-scoped advisory
++lock. Nothing here ever deletes or rewrites reminders, timestamps or contact
++history. Synthetic mode never calls this module.
++"""
++
++from __future__ import annotations
++
++import re
++from typing import NamedTuple
++from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
++
++from sqlalchemy import text
++from sqlalchemy.ext.asyncio import AsyncConnection
++
++from haloflow_demo.ownership import Ownership
++
++KEY = "athena_tz_interpretation"
++PROVENANCE_LOCK_CLASS = 0x545A5056  # "TZPV"
++LEGACY = "LEGACY_ATHENA_REMINDERS"
++UNSUPPORTED = "TZ_PROVENANCE_UNSUPPORTED"
++CHANGED = "TZ_CONTEXT_CHANGED"
++_VALUE_RE = re.compile(
++    r"^v1;dept=([1-9][0-9]{0,11});zone=([A-Za-z0-9_/+\-]{1,64});"
++    r"basis=(DEPARTMENT|FALLBACK);clinic=([A-Za-z0-9_/+\-]{1,64})$")
++
++
++class Context(NamedTuple):
++    dept: str
++    zone: str
++    basis: str
++    clinic: str
++
++    def value(self) -> str:
++        return f"v1;dept={self.dept};zone={self.zone};basis={self.basis};clinic={self.clinic}"
++
++
++class Conflict(NamedTuple):
++    code: str
++    stored: Context | None
++
++
++def _iana(name: str) -> bool:
++    if name not in available_timezones():
++        return False
++    try:
++        ZoneInfo(name)
++    except (ZoneInfoNotFoundError, ValueError):
++        return False
++    return True
++
++
++def parse(value: str) -> Context | None:
++    """The stored context, or None when the value is not exactly supported."""
++    m = _VALUE_RE.match(value)
++    if m is None or not _iana(m.group(2)) or not _iana(m.group(4)):
++        return None
++    return Context(m.group(1), m.group(2), m.group(3), m.group(4))
++
++
++async def _locked(conn: AsyncConnection) -> tuple[str | None, bool]:
++    await conn.execute(text("SELECT pg_advisory_xact_lock(:c, 0)"),
++                       {"c": PROVENANCE_LOCK_CLASS})
++    stored = (await conn.execute(
++        text("SELECT value FROM demo_meta WHERE key = :k"), {"k": KEY})).scalar_one_or_none()
++    retained = (await conn.execute(text(
++        "SELECT 1 FROM reminder_records WHERE emr_appt_id LIKE 'ath-%' LIMIT 1"
++    ))).scalar_one_or_none() is not None
++    return stored, retained
++
++
++async def check_stored(own: Ownership) -> str | None:
++    """P0 (before any athena request): a fixed refusal code, or None."""
++    async with own.fenced() as conn:
++        stored, retained = await _locked(conn)
++    if stored is not None:
++        return None if parse(stored) is not None else UNSUPPORTED
++    return LEGACY if retained else None
++
++
++async def establish(own: Ownership, ctx: Context) -> Conflict | None:
++    """P1 (after the department GET, before any booked GET), at most once per
++    process: accept an equal record, write one where none is retained, else refuse."""
++    async with own.fenced() as conn:
++        stored, retained = await _locked(conn)
++        if stored == ctx.value():
++            return None
++        old = parse(stored) if stored is not None else None
++        if stored is not None and old is None:
++            return Conflict(UNSUPPORTED, None)
++        if retained:
++            return Conflict(CHANGED if old is not None else LEGACY, old)
++        await conn.execute(text(
++            "INSERT INTO demo_meta(key, value) VALUES (:k, :v) "
++            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
++        ), {"k": KEY, "v": ctx.value()})
++    return None
+diff --git a/haloflow/demo/haloflow_demo/selection.py b/haloflow/demo/haloflow_demo/selection.py
+index 89300e2..430406a 100644
+--- a/haloflow/demo/haloflow_demo/selection.py
++++ b/haloflow/demo/haloflow_demo/selection.py
+@@ -66,9 +66,9 @@ def select_eligible(
+     *,
+     existing_appt_ids: set[str],
+ ) -> Selection:
+-    zone = ZoneInfo(tz)
+     result = Selection(target_date=target_date)
+     for appt in appointments:
++        zone = ZoneInfo(appt.display_tz or tz)          # N-TZ Step 3: appointment's zone
+         if appt.start_utc.astimezone(zone).date() != target_date:
+             continue  # not this clinic day; adapters may over-return around midnight
+         skip: SkipReason | None = None
+diff --git a/haloflow/demo/haloflow_demo/sending.py b/haloflow/demo/haloflow_demo/sending.py
+index b2f5345..8805c14 100644
+--- a/haloflow/demo/haloflow_demo/sending.py
++++ b/haloflow/demo/haloflow_demo/sending.py
+@@ -506,7 +506,9 @@ async def send_one(
+     # 4. one guarded attempt
+     if before_call is not None:
+         before_call()
+-    body = reminder_text(first_name_of(patient), appt.start_utc, tz)
++    # N-TZ Step 3 (OD-TZ1/OD-TZ2): appointment-local time, exact Q-B4 wording;
++    # the quota day (``tz``) stays the clinic day.
++    body = reminder_text(first_name_of(patient), appt.start_utc, appt.display_tz or tz)
+ 
+     async def _call() -> SendOutcome:
+         return await _dispatch(own, gateway, to, body, day, tz, now, dispatch_hook)
+diff --git a/haloflow/demo/haloflow_demo/service.py b/haloflow/demo/haloflow_demo/service.py
+index e990e80..e1470e7 100644
+--- a/haloflow/demo/haloflow_demo/service.py
++++ b/haloflow/demo/haloflow_demo/service.py
+@@ -26,6 +26,7 @@ from typing import Any, NamedTuple
+ 
+ from sqlalchemy import text
+ 
++from haloflow_demo import provenance
+ from haloflow_demo.athena_source import (
+     EHR_LABEL,
+     AthenaConfig,
+@@ -153,6 +154,11 @@ class DbStaffService:
+         self._athena_client: AthenaPreviewClient | None = None
+         self._source_locks: dict[date, asyncio.Lock] = {}
+         self._source_meta: dict[date, dict[str, Any]] = {}
++        # N-TZ Step 3 provenance: P0 result (process-sticky) and the pinned context.
++        self._prov_lock = asyncio.Lock()
++        self._prov_checked = False
++        self._prov_error: str | None = None
++        self._pinned: provenance.Context | None = None
+ 
+     def _target(self) -> date:
+         return clinic_target_date(self._now(), self._settings.clinic_tz,
+@@ -180,17 +186,33 @@ class DbStaffService:
+             meta = self._source_meta.get(target)
+             if meta is not None and meta["error"] is not None:
+                 return None
++            refused = await self._provenance_p0()
++            if refused is not None:
++                self._source_meta[target] = self._failed(refused)
++                return None
+             if self._athena_client is None:
+                 self._athena_client = AthenaPreviewClient(self._athena,
+                                                           transport=self._athena_transport)
++            conflict: dict[str, Any] = {}
++
++            async def check_context(eff_tz: str, basis: str) -> None:
++                assert self._athena is not None
++                ctx = provenance.Context(self._athena.department_id, eff_tz, basis,
++                                         self._settings.clinic_tz)
++                found = await self._provenance_p1(ctx)
++                if found is not None:
++                    if found.stored is not None:
++                        conflict.update(zone=eff_tz, basis=basis, old_zone=found.stored.zone,
++                                        old_basis=found.stored.basis)
++                    raise SourceInvalid(found.code)
++
+             try:
+                 snap = await fetch_snapshot(self._athena_client, target,
+                                             self._settings.clinic_tz,
+-                                            self._athena.department_id, self._own.epoch)
++                                            self._athena.department_id, self._own.epoch,
++                                            check_context)
+             except SourceInvalid as exc:
+-                self._source_meta[target] = {"error": exc.code, "truncated": False,
+-                                             "counts": {}, "taken_at": None,
+-                                             "tz_status": None, "dept_tz": exc.detail}
++                self._source_meta[target] = self._failed(exc.code, conflict or None)
+                 return None
+             ehr = SyntheticEhr(snap.fixtures)
+             self.ehr.register(ehr)
+@@ -199,9 +221,35 @@ class DbStaffService:
+                                          "counts": dict(snap.counts),
+                                          "taken_at": snap.taken_at,
+                                          "tz_status": snap.tz_status,
+-                                         "dept_tz": snap.dept_tz}
++                                         "dept_tz": snap.dept_tz,
++                                         "eff_tz": snap.eff_tz, "conflict": None}
+             return ehr
+ 
++    @staticmethod
++    def _failed(code: str, conflict: dict[str, Any] | None = None) -> dict[str, Any]:
++        return {"error": code, "truncated": False, "counts": {}, "taken_at": None,
++                "tz_status": None, "dept_tz": None, "eff_tz": None, "conflict": conflict}
++
++    async def _provenance_p0(self) -> str | None:
++        """Once per process, before any athena request (process-sticky)."""
++        async with self._prov_lock:
++            if not self._prov_checked:
++                self._prov_error = await provenance.check_stored(self._own)
++                self._prov_checked = True
++            return self._prov_error
++
++    async def _provenance_p1(self, ctx: provenance.Context) -> provenance.Conflict | None:
++        """Every snapshot, before any booked GET. The first accepted context is
++        pinned for the process; a process never re-establishes."""
++        async with self._prov_lock:
++            if self._pinned is not None:
++                return None if ctx == self._pinned else provenance.Conflict(
++                    provenance.CHANGED, self._pinned)
++            found = await provenance.establish(self._own, ctx)
++            if found is None:
++                self._pinned = ctx
++            return found
++
+     async def aclose(self) -> None:
+         if self._athena_client is not None:
+             await self._athena_client.aclose()
+@@ -218,7 +266,8 @@ class DbStaffService:
+                 "snapshot_taken": format_local(taken, self._settings.clinic_tz)
+                 if taken is not None else None,
+                 "tz": self._settings.clinic_tz,
+-                "tz_status": meta.get("tz_status"), "dept_tz": meta.get("dept_tz")}
++                "tz_status": meta.get("tz_status"), "dept_tz": meta.get("dept_tz"),
++                "eff_tz": meta.get("eff_tz"), "conflict": meta.get("conflict")}
+ 
+     def ehr_for_date(self, target: date) -> SyntheticEhr:
+         """The synthetic EHR this process created for ``target`` (tests, inspection)."""
+@@ -345,7 +394,7 @@ class DbStaffService:
+                 "emr_appt_id": a.emr_appt_id,
+                 "reminder_id": exact.id if exact else None,
+                 "patient": patient.display_name if patient is not None else "(unknown)",
+-                "when": format_local(a.start_utc, tz),
++                "when": format_local(a.start_utc, a.display_tz or tz),
+                 "status": f"{a.status.value}; reminder: {label}"
+                           + (OPTED_OUT_SUFFIX if opted_out else ""),
+                 "eligible": a.emr_appt_id in eligible,
+diff --git a/haloflow/demo/haloflow_demo/synthetic_ehr.py b/haloflow/demo/haloflow_demo/synthetic_ehr.py
+index 4635b6d..6a695e3 100644
+--- a/haloflow/demo/haloflow_demo/synthetic_ehr.py
++++ b/haloflow/demo/haloflow_demo/synthetic_ehr.py
+@@ -38,6 +38,8 @@ class SyntheticAppointment:
+     start_utc: datetime
+     status: ApptStatus
+     confirmation: str | None = None
++    # N-TZ Step 3: zone the appointment's local date/time belong to; None = CLINIC_TZ.
++    display_tz: str | None = None
+ 
+ 
+ @dataclass(frozen=True)
+@@ -131,9 +133,8 @@ class SyntheticEhr:
+         return self.fixtures.patients
+ 
+     async def get_appointments_by_date(self, target: date, tz: str) -> list[SyntheticAppointment]:
+-        zone = ZoneInfo(tz)
+         return [a for a in self.fixtures.appointments
+-                if a.start_utc.astimezone(zone).date() == target]
++                if a.start_utc.astimezone(ZoneInfo(a.display_tz or tz)).date() == target]
+ 
+     # ── confirmation value ────────────────────────────────────────────────────
+ 
+diff --git a/haloflow/demo/haloflow_demo/web.py b/haloflow/demo/haloflow_demo/web.py
+index 5a31001..358947a 100644
+--- a/haloflow/demo/haloflow_demo/web.py
++++ b/haloflow/demo/haloflow_demo/web.py
+@@ -159,13 +159,29 @@ def _source_html(src: Any) -> str:
+         return ""
+     if src.get("error"):
+         out = f"<p><strong>athenahealth sandbox unavailable — {_e(src['error'])}</strong></p>"
+-        if src["error"] == "SOURCE_TZ_MISMATCH" and src.get("dept_tz"):
+-            out += (f"<p>Sandbox department timezone {_e(src['dept_tz'])} differs from"
+-                    f" clinic timezone {_e(src.get('tz'))}.</p>")
++        c = src.get("conflict")
++        if src["error"] == "TZ_CONTEXT_CHANGED" and isinstance(c, dict):
++            out += (f"<p>Sandbox appointment times would now be read in {_e(c['zone'])}"
++                    f" ({_e(c['basis'])}) but earlier sandbox reminders in this database"
++                    f" used {_e(c['old_zone'])} ({_e(c['old_basis'])}); use a fresh demo"
++                    " database.</p>")
++        elif src["error"] == "LEGACY_ATHENA_REMINDERS":
++            out += ("<p>This demo database holds sandbox reminders from before timezone"
++                    " conversion; use a fresh demo database.</p>")
++        elif src["error"] == "TZ_PROVENANCE_UNSUPPORTED":
++            out += ("<p>This demo database's timezone record is not recognized; use a"
++                    " fresh demo database.</p>")
+         return out
+-    tz_line = (f"Sandbox department timezone matches clinic timezone ({_e(src.get('tz'))})"
+-               " — VERIFIED." if src.get("tz_status") == "VERIFIED" else
+-               f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED.")
++    status = src.get("tz_status")
++    if status == "VERIFIED":
++        tz_line = (f"Sandbox department timezone matches clinic timezone ({_e(src.get('tz'))})"
++                   " — VERIFIED.")
++    elif status == "CONVERTED":
++        tz_line = (f"Sandbox department timezone {_e(src.get('eff_tz'))} differs from clinic"
++                   f" timezone {_e(src.get('tz'))} — appointment times are read and texted in"
++                   f" {_e(src.get('eff_tz'))}.")
++    else:
++        tz_line = f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED."
+     lines = [f"Sandbox snapshot taken {_e(src.get('snapshot_taken'))}.", tz_line]
+     counts = src.get("counts") or {}
+     if counts:

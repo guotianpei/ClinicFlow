@@ -1,0 +1,10 @@
+# N-TZ Step 3 PG16 evidence 2026-10-28T20:04:17Z HEAD 3b95d16
+16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+## ruff
+All checks passed!
+## mypy --strict
+Success: no issues found in 24 source files
+## N-TZ + athena suites
+152 passed in 15.54s
+## full demo suite
+683 passed, 1 warning in 159.70s (0:02:39)
