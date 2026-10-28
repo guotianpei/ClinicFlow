@@ -176,6 +176,9 @@ class DemoSettings:
     dispatcher: bool
     ehr_write: str
     reminder_days_before: int = 2
+    # N-ATH (OD-A1): "synthetic" (default) or "athena_preview" (read-only sandbox).
+    ehr_source: str = "synthetic"
+    athena_department_id: str = ""
 
     @property
     def sms_daily_cap(self) -> int:
@@ -206,6 +209,8 @@ class DemoSettings:
             callback_port=cb[1],
             dispatcher=g("DEMO_DISPATCHER", "") == "on",
             ehr_write="real" if g("DEMO_EHR_WRITE", "") == "real" else "simulated",
+            ehr_source=g("DEMO_EHR_SOURCE", "") or "synthetic",
+            athena_department_id=g("DEMO_ATHENA_DEPARTMENT_ID", ""),
         )
 
 
@@ -228,6 +233,8 @@ def validate_demo_database_url(s: DemoSettings) -> DemoDbTarget:
 
 def validate_startup(s: DemoSettings) -> DemoDbTarget:
     """Every start-up refusal that needs no socket. Returns the DB target."""
+    if s.ehr_source not in ("synthetic", "athena_preview"):
+        raise StartupRefused("ehr_source")
     cap = s.sms_daily_cap
     if not 1 <= cap <= 10:
         raise StartupRefused("sms_daily_cap", str(cap))

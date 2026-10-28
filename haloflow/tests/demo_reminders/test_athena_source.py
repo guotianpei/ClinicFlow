@@ -37,10 +37,14 @@ from haloflow_demo.athena_source import (
     check_athena_mode,
     fetch_snapshot,
 )
-from haloflow_demo.errors import StartupRefused
 from haloflow_demo.ownership import acquire_ownership
 from haloflow_demo.service import DbStaffService
-from haloflow_demo.settings import DemoSettings, validate_demo_database_url, validate_startup
+from haloflow_demo.settings import (
+    DemoSettings,
+    StartupRefused,
+    validate_demo_database_url,
+    validate_startup,
+)
 from haloflow_demo.web import build_staff_app
 
 NOW = datetime(2026, 10, 26, 13, 0, tzinfo=UTC)          # target clinic date 2026-10-28
