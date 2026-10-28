@@ -108,17 +108,13 @@ async def _status(svc: DbStaffService) -> dict[str, str]:
     return {a["emr_appt_id"]: a["status"] for a in (await svc.page_data())["appointments"]}
 
 
+_SNAPSHOT_TABLES = ("reminder_records", "writeback_tasks", "inbound_messages", "opt_outs",
+                    "contact_history", "send_quota")
+
+
 def _snapshot(url: str) -> dict[str, list[tuple[Any, ...]]]:
-    tables = {
-        "reminder_records": "SELECT id, emr_appt_id, state, reason, phone_key"
-                            " FROM reminder_records",
-        "writeback_tasks": "SELECT id, reminder_id, state, reason, attempts FROM writeback_tasks",
-        "inbound_messages": "SELECT id, cls, state, disposition FROM inbound_messages",
-        "opt_outs": "SELECT phone_key FROM opt_outs",
-        "contact_history": "SELECT contact_seq, phone_key, reminder_id FROM contact_history",
-        "send_quota": "SELECT clinic_day, used FROM send_quota",
-    }
-    return {k: sorted(_q(url, sql), key=repr) for k, sql in tables.items()}
+    """Every column of each table, rows in a deterministic order (Codex tests r1)."""
+    return {t: sorted(_q(url, f"SELECT * FROM {t}"), key=repr) for t in _SNAPSHOT_TABLES}
 
 
 # ── G-E3-1 / R-S1: Send visibility follows Preview ───────────────────────────
@@ -435,6 +431,8 @@ async def test_t_s3i_open_items_listed_first(demo_env: dict[str, str], demo_db_u
     own, svc = await _start(_env(demo_env))
     try:
         first, second = await _two_items(svc, demo_db_url)
+        # same status (both open): id ascending (Codex tests r1, optional point)
+        assert [i["id"] for i in (await svc.page_data())["items"]] == [first, second]
         await svc.mark_item_done(first)
         async with _aclient(_app(own, svc)) as c:
             items = _items(await _page(c))
