@@ -1,4 +1,4 @@
-# Integrated sandbox smoke — runner v2 (live check of main 425146d)
+# Integrated sandbox smoke — runner v2 r1 (live check of main 425146d)
 
 Claude, 2026-10-28. For Codex review before any operation.
 
@@ -21,9 +21,14 @@ Claude, 2026-10-28. For Codex review before any operation.
    - Every "when" cell has the form `<day>, <Mon> <dd> at <h:mm> <AM|PM> <ABBR>`, where ABBR is in effect for the effective zone on the target date.
    - The stub SMS body exactly matches the Q-B4 pattern with no zone label, and its time equals the "when" time of the appointment sent.
    - The `demo_meta` provenance record equals `v1;dept=<selected>;zone=<eff>;basis=<DEPARTMENT|FALLBACK>;clinic=<CLINIC_TZ>`. It is compared in memory, never written to evidence.
-5. **Evidence additions:** `tz_status`, `effective_zone` (an IANA name) and `provenance_basis`. The department id stays in memory only.
+5. **Added after Codex direction review** (codex_pr47-merged-smoke-direction.md):
+   - **Independent expectation.** The counting transport keeps the booked records' raw appointmentid → (date, starttime) in memory only, exact formats only, never written. `expected_local()` derives the expected "<Weekday>, <Mon> <dd> at <h:mm> <AM|PM>" text and the zone abbreviation with plain zoneinfo arithmetic, without the app's formatting helpers. Each "when" cell must equal that expectation, and so must the time in the stub SMS body.
+   - **Snapshot reuse.** The booked count is unchanged across all page loads, and the send/reply/write-back actions add no booked request.
+   - **Department identity.** Exactly one department-detail GET, and only for the selected id; the allowlist refuses any other.
+   - **Listeners qualified.** The summary records "listeners: not exercised (in-process ASGI; uvicorn listeners covered by the lifecycle tests)".
+6. **Evidence additions:** `tz_status`, `effective_zone` (an IANA name) and `provenance_basis`. The department id stays in memory only.
 
-**Offline checks:** `test_athena_sandbox_smoke.py`, 13 cases, all passed against main 425146d on PG16. They use a mocked athenahealth and a real local PG. They cover:
+**Offline checks:** `test_athena_sandbox_smoke.py`, 18 cases, all passed against main 425146d on PG16. They use a mocked athenahealth and a real local PG. They cover:
 - CONVERTED happy path, with exact request order token / departments / token / department / booked, and 5 requests;
 - VERIFIED and UNVERIFIED outcomes;
 - truncation at exactly 9 requests;
@@ -33,7 +38,9 @@ Claude, 2026-10-28. For Codex review before any operation.
 - the gate refused before any effect;
 - the allowlist, including selected-department-only;
 - vetting;
-- body and when patterns, including the DST-day abbreviation set.
+- body and when patterns, including the DST-day abbreviation set;
+- `expected_local` independence (4 cases, including midnight and noon);
+- raw times memory-only and the listeners qualifier.
 
 ruff and mypy --strict are clean.
 

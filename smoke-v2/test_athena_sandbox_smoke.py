@@ -107,7 +107,8 @@ async def test_happy_path_bounded_and_vetted(admin_url: str, db: str, tmp_path: 
     assert s["external_request_count"] == 5 <= s["external_request_bound"] == 9
     assert s["tz_status"] == "CONVERTED" and s["effective_zone"] == "America/Denver"
     assert s["provenance_basis"] == "DEPARTMENT"
-    for step in ("tz_line_converted_ok", "when_column_zone_ok",
+    for step in ("tz_line_converted_ok", "when_column_matches_independent_expectation",
+                 "single_snapshot_reused_ok", "department_detail_once_for_selected_id_ok",
                  "stub_body_qb4_no_zone_label_ok",
                  "provenance_record_ok (value kept in memory only)"):
         assert step in s["steps"], step
@@ -234,3 +235,21 @@ def test_body_and_when_patterns_exact() -> None:
     assert m is not None and m.group(2) == "MDT"
     assert sm._abbrevs("America/Denver", "2026-10-30") == {"MDT"}
     assert sm._abbrevs("America/Denver", "2026-11-01") == {"MDT", "MST"}
+
+
+@pytest.mark.parametrize("d,t,zone,text,abbr", [
+    ("10/30/2026", "09:00", "America/Denver", "Friday, Oct 30 at 9:00 AM", "MDT"),
+    ("12/01/2026", "13:05", "America/Denver", "Tuesday, Dec 01 at 1:05 PM", "MST"),
+    ("10/30/2026", "00:15", "America/New_York", "Friday, Oct 30 at 12:15 AM", "EDT"),
+    ("10/30/2026", "12:00", "America/New_York", "Friday, Oct 30 at 12:00 PM", "EDT"),
+])
+def test_expected_local_independent(d: str, t: str, zone: str, text: str, abbr: str) -> None:
+    assert sm.expected_local(d, t, zone) == (text, abbr)
+
+
+async def test_raw_times_memory_only(admin_url: str, db: str, tmp_path: Path) -> None:
+    rc, s = await run(Fake(n=2), admin_url, db, tmp_path)
+    assert rc == 0
+    blob = json.dumps(s) + "".join(p.read_text() for p in tmp_path.iterdir())
+    assert "7000" not in json.dumps(s) and "starttime" not in blob
+    assert s["listeners"].startswith("not exercised")

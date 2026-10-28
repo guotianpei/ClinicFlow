@@ -83,6 +83,8 @@ BODY_RE = re.compile(r"Hi Sandbox patient …\d{1,4}, this is HaloVox Demo Clini
                      r" appointment on ([A-Z][a-z]+day, [A-Z][a-z]{2} \d{2} at \d{1,2}:\d{2}"
                      r" [AP]M)\. Reply 1 to confirm, 2 to reschedule, or 3 to cancel\. Reply"
                      r" STOP to opt out\.")
+DATE_FMT = re.compile(r"\d{2}/\d{2}/\d{4}")
+TIME_FMT = re.compile(r"(?:[01]\d|2[0-3]):[0-5]\d")
 WHEN_RE = re.compile(r"([A-Z][a-z]+day, [A-Z][a-z]{2} \d{2} at \d{1,2}:\d{2} [AP]M) ([A-Z]{3,5})")
 MAX_PAGES = 3
 
@@ -97,9 +99,13 @@ class CountingTransport(httpx.AsyncBaseTransport):
     """Allowlist + budget + sanitised counters (method, category, status)."""
 
     def __init__(self, inner: httpx.AsyncBaseTransport, counters: list[dict[str, Any]],
-                 budget: dict[str, int], dept: dict[str, str] | None = None) -> None:
+                 budget: dict[str, int], dept: dict[str, str] | None = None,
+                 raw_times: dict[str, tuple[str, str]] | None = None) -> None:
         self._inner, self._counters, self._budget = inner, counters, budget
         self._dept = dept if dept is not None else {}
+        # Independent expectation source (memory only, never written): the booked
+        # records' raw appointmentid -> (date, starttime), exact formats only.
+        self._raw = raw_times if raw_times is not None else {}
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         cat = ALLOWED.get((request.method, request.url.path))
@@ -115,6 +121,20 @@ class CountingTransport(httpx.AsyncBaseTransport):
         resp = await self._inner.handle_async_request(request)
         self._counters.append({"method": request.method, "category": cat,
                                "status": resp.status_code})
+        if cat == "booked" and resp.status_code == 200:
+            await resp.aread()
+            try:
+                items = resp.json().get("appointments")
+            except Exception:  # noqa: BLE001 — the app reports its own fixed code
+                items = None
+            for r in items if isinstance(items, list) else []:
+                if not isinstance(r, dict):
+                    continue
+                aid, d, t = r.get("appointmentid"), r.get("date"), r.get("starttime")
+                if (isinstance(aid, str) and ID_RE.fullmatch(aid) and isinstance(d, str)
+                        and DATE_FMT.fullmatch(d) and isinstance(t, str)
+                        and TIME_FMT.fullmatch(t)):
+                    self._raw[aid] = (d, t)
         return resp
 
     async def aclose(self) -> None:
@@ -204,6 +224,23 @@ def _abbrevs(zone: str, day: str) -> set[str]:
     return {(start + timedelta(hours=h)).astimezone(z).tzname() or "" for h in range(26)}
 
 
+def expected_local(d: str, t: str, zone: str) -> tuple[str, str]:
+    """Independent of the app's formatting helpers: the expected
+    '<Weekday>, <Mon> <dd> at <h:mm> <AM|PM>' text and zone abbreviation for a
+    raw sandbox date + starttime read in ``zone``."""
+    from zoneinfo import ZoneInfo
+    mm, dd, yyyy = (int(x) for x in d.split("/"))
+    hh, mi = (int(x) for x in t.split(":"))
+    local = datetime(yyyy, mm, dd, hh, mi, tzinfo=ZoneInfo(zone))
+    days = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    months = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+              "Dec")
+    h12 = hh % 12 or 12
+    text = f"{days[local.weekday()]}, {months[mm - 1]} {dd:02d} at {h12}:{mi:02d} " \
+           f"{'AM' if hh < 12 else 'PM'}"
+    return text, local.tzname() or ""
+
+
 def _csrf(html: str) -> str:
     m = re.search(r'name="csrf_token" value="([^"]+)"', html)
     if not m:
@@ -224,14 +261,17 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
     counters: list[dict[str, Any]] = []
     budget = {"used": 0}
     dept_sel: dict[str, str] = {}
+    raw_times: dict[str, tuple[str, str]] = {}
     summary: dict[str, Any] = {"runner": "athena_sandbox_smoke v2", "steps": [],
                                "started_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                                "write_to_athena": "none (simulated store only)",
+                               "listeners": "not exercised (in-process ASGI; uvicorn "
+                                            "listeners covered by the lifecycle tests)",
                                "sms": "stub (nothing sent)"}
 
     def tr() -> httpx.AsyncBaseTransport:
         inner = transport_factory() if transport_factory else httpx.AsyncHTTPTransport()
-        return CountingTransport(inner, counters, budget, dept_sel)
+        return CountingTransport(inner, counters, budget, dept_sel, raw_times)
 
     forbidden = [env.get(k, "") for k in ("ATHENA_CLIENT_ID", "ATHENA_CLIENT_SECRET",
                                           "DEMO_SMS_TEST_NUMBER", "DEMO_CALLBACK_SECRET")]
@@ -312,18 +352,28 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
                 wm = WHEN_RE.fullmatch(r["when"])
                 if wm is None or wm.group(2) not in _abbrevs(eff, day):
                     raise Stop("WHEN_ZONE")
+                raw = raw_times.get(r["appt"].rsplit("-", 1)[1])
+                if raw is None:
+                    raise Stop("WHEN_NO_RAW_RECORD")
+                exp_text, exp_abbr = expected_local(raw[0], raw[1], eff)
+                if (wm.group(1), wm.group(2)) != (exp_text, exp_abbr):
+                    raise Stop("WHEN_NOT_INDEPENDENTLY_EXPECTED")
             if rows:
-                summary["steps"].append("when_column_zone_ok")
+                summary["steps"].append("when_column_matches_independent_expectation")
             summary["appointments_listed"] = len(rows)
             ex = re.search(r"Excluded records: ([^<]*)\.", html1)
             summary["excluded"] = ex.group(1) if ex else ""
             tok = _csrf(html1)
+            booked1 = sum(1 for x in counters if x["category"] == "booked")
             html2 = await page()
             vet_page(html2, forbidden)
             booked = sum(1 for x in counters if x["category"] == "booked")
-            if booked < 1 or booked > 5:
+            if booked < 1 or booked > 5 or booked != booked1:
                 raise Stop("BOOKED_COUNT")
-            summary["steps"].append("single_snapshot_ok")
+            if sum(1 for x in counters if x["category"] == "department") != 1:
+                raise Stop("DEPARTMENT_COUNT")
+            summary["steps"].append("single_snapshot_reused_ok")
+            summary["steps"].append("department_detail_once_for_selected_id_ok")
             send_rows = [r for r in ROW_RE.findall(html1)
                          if "Send to this appointment" in r[4]]
             if not send_rows:
@@ -353,9 +403,8 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
                 if not isinstance(calls, list) or len(calls) != 1:
                     raise Stop("STUB_CALLS")
                 bm = BODY_RE.fullmatch(calls[0][1])
-                sent_when = next(r["when"] for r in rows if r["appt"] == appt)
-                wm = WHEN_RE.fullmatch(sent_when)
-                if bm is None or wm is None or bm.group(1) != wm.group(1):
+                raw = raw_times[appt.rsplit("-", 1)[1]]
+                if bm is None or bm.group(1) != expected_local(raw[0], raw[1], eff)[0]:
                     raise Stop("STUB_BODY")
                 summary["steps"].append("stub_body_qb4_no_zone_label_ok")
                 html_final = await page()
@@ -373,6 +422,8 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
                 raise Stop("PROVENANCE_RECORD")
             summary["provenance_basis"] = basis
             summary["steps"].append("provenance_record_ok (value kept in memory only)")
+            if sum(1 for x in counters if x["category"] == "booked") != booked:
+                raise Stop("SNAPSHOT_NOT_REUSED")
             out.mkdir(parents=True, exist_ok=True)
             (out / "staff-page-vetted.html").write_text(html_final)
         summary["page_loads"] = pages
