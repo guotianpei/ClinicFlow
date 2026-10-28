@@ -119,7 +119,7 @@ def check_athena_mode(s: DemoSettings, env: Mapping[str, str]) -> AthenaConfig |
         raise StartupRefused("athena_requires_simulated_callback")
     if env.get("DEMO_LIVE_TEST", ""):
         raise StartupRefused("athena_live_test_forbidden")
-    if not ID_RE.match(s.athena_department_id):
+    if not ID_RE.fullmatch(s.athena_department_id):
         raise StartupRefused("athena_department")
     base = env.get("ATHENA_BASE_URL", "")
     try:
@@ -231,7 +231,7 @@ def extract_tz(body: Any, department_id: str) -> str | None:
         if isinstance(dep, bool) or not isinstance(dep, str | int) or str(dep) != department_id:
             raise SourceInvalid("SOURCE_INVALID")
     name = body.get("timezonename")
-    if not isinstance(name, str) or not TZ_NAME_RE.match(name):
+    if not isinstance(name, str) or not TZ_NAME_RE.fullmatch(name):
         return None
     return _iana(name)
 
@@ -273,11 +273,11 @@ def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
          epoch: int, display_tz: str | None = None,
          ) -> tuple[SyntheticAppointment | None, str | None, str]:
     aid, pid = str(r.get("appointmentid", "")), str(r.get("patientid", ""))
-    if not ID_RE.match(aid) or not ID_RE.match(pid):
+    if not ID_RE.fullmatch(aid) or not ID_RE.fullmatch(pid):
         return None, "INVALID_ID", pid
     d_raw, t_raw, dept = r.get("date"), r.get("starttime"), r.get("departmentid")
-    dm = DATE_RE.match(d_raw) if isinstance(d_raw, str) else None
-    tm = TIME_RE.match(t_raw) if isinstance(t_raw, str) else None
+    dm = DATE_RE.fullmatch(d_raw) if isinstance(d_raw, str) else None
+    tm = TIME_RE.fullmatch(t_raw) if isinstance(t_raw, str) else None
     dept_ok = (isinstance(dept, str) or (isinstance(dept, int) and not isinstance(dept, bool)))
     if dm is None or tm is None or not dept_ok:
         return None, "MALFORMED_RECORD", pid
