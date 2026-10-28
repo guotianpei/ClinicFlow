@@ -158,9 +158,15 @@ def _source_html(src: Any) -> str:
     if not isinstance(src, dict) or src.get("kind") != "athena_preview":
         return ""
     if src.get("error"):
-        return f"<p><strong>athenahealth sandbox unavailable — {_e(src['error'])}</strong></p>"
-    lines = [f"Sandbox snapshot taken {_e(src.get('snapshot_taken'))}.",
-             f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED."]
+        out = f"<p><strong>athenahealth sandbox unavailable — {_e(src['error'])}</strong></p>"
+        if src["error"] == "SOURCE_TZ_MISMATCH" and src.get("dept_tz"):
+            out += (f"<p>Sandbox department timezone {_e(src['dept_tz'])} differs from"
+                    f" clinic timezone {_e(src.get('tz'))}.</p>")
+        return out
+    tz_line = (f"Sandbox department timezone matches clinic timezone ({_e(src.get('tz'))})"
+               " — VERIFIED." if src.get("tz_status") == "VERIFIED" else
+               f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED.")
+    lines = [f"Sandbox snapshot taken {_e(src.get('snapshot_taken'))}.", tz_line]
     counts = src.get("counts") or {}
     if counts:
         lines.append("Excluded records: " + ", ".join(

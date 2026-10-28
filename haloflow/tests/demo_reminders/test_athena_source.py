@@ -90,6 +90,8 @@ class Api:
                 return resp(req) if callable(resp) else resp
         if req.url.path == "/oauth2/v1/token":
             return httpx.Response(200, json={"access_token": TOKEN, "expires_in": 3600})
+        if req.url.path == f"/v1/195900/departments/{DEPT}":      # N-TZ: matching IANA tz
+            return httpx.Response(200, json=[{"departmentid": DEPT, "timezonename": TZ}])
         if req.url.path == "/v1/195900/appointments/booked":
             off = int(req.url.params.get("offset", "0"))
             lim = int(req.url.params.get("limit", "100"))
@@ -102,7 +104,12 @@ class Api:
         return httpx.MockTransport(self)
 
     def gets(self) -> list[httpx.Request]:
-        return [r for r in self.requests if r.method == "GET"]
+        """Booked-page GETs (N-TZ: the department GET is counted by ``dept_gets``)."""
+        return [r for r in self.requests
+                if r.method == "GET" and r.url.path == "/v1/195900/appointments/booked"]
+
+    def dept_gets(self) -> int:
+        return sum(r.url.path == f"/v1/195900/departments/{DEPT}" for r in self.requests)
 
 
 def config() -> AthenaConfig:
@@ -193,7 +200,8 @@ async def test_a2_only_token_post_and_booked_get() -> None:
     api = Api()
     await snap(api)
     assert [(r.method, r.url.path) for r in api.requests] == [
-        ("POST", "/oauth2/v1/token"), ("GET", "/v1/195900/appointments/booked")]
+        ("POST", "/oauth2/v1/token"), ("GET", f"/v1/195900/departments/{DEPT}"),
+        ("GET", "/v1/195900/appointments/booked")]
     assert api.requests[0].url.host == "api.preview.platform.athenahealth.com"
 
 
@@ -216,7 +224,7 @@ async def test_a2_redirect_not_followed() -> None:
         302, headers={"Location": "https://evil.example/SENTINEL"})
     with pytest.raises(SourceInvalid) as exc:
         await snap(api)
-    assert exc.value.code == "REDIRECT" and len(api.requests) == 2
+    assert exc.value.code == "REDIRECT" and len(api.requests) == 3
 
 
 # ── AT-A3 paging and fail-closed validation ──────────────────────────────────
@@ -461,7 +469,8 @@ async def test_a9_page_lists_masked_sandbox_appointments(demo_env: dict[str, str
     assert data["labels"]["sms"] == "SIMULATED"
     src = data["source"]
     assert src["kind"] == "athena_preview" and src["error"] is None and src["truncated"] is False
-    assert "UNVERIFIED" in html and "Sandbox snapshot taken" in html
+    assert ("Sandbox department timezone matches clinic timezone (America/New_York)"
+            " — VERIFIED.") in html and "Sandbox snapshot taken" in html
     no_leak(json.dumps(data, default=str), html)
 
 
@@ -490,7 +499,7 @@ async def test_a8_one_snapshot_per_date_single_flight(demo_env: dict[str, str]) 
         await svc.page_data()
     finally:
         await own.close()
-    assert len(api.gets()) == 1
+    assert len(api.gets()) == 1 and api.dept_gets() == 1
     assert [r.method for r in api.requests].count("POST") == 1
 
 

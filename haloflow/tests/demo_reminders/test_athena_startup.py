@@ -180,6 +180,9 @@ async def test_i2_oversized_page_rejected(n: int) -> None:
         seen.append(req)
         if req.url.path == "/oauth2/v1/token":
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if req.url.path == "/v1/195900/departments/21":           # N-TZ: matching IANA tz
+            return httpx.Response(200, json=[{"departmentid": "21",
+                                              "timezonename": "America/New_York"}])
         return httpx.Response(200, json={"appointments": [_rec(i) for i in range(n)],
                                          "totalcount": n})
     s = DemoSettings.from_env({"DEMO_DATABASE_URL": "postgresql://u@localhost/x_demo",
@@ -193,7 +196,7 @@ async def test_i2_oversized_page_rejected(n: int) -> None:
     finally:
         await client.aclose()
     assert exc.value.code == "SOURCE_INVALID"
-    assert [r.method for r in seen].count("GET") == 1
+    assert [r.url.path for r in seen].count("/v1/195900/appointments/booked") == 1
 
 
 async def test_i2_exact_page_limit_still_accepted() -> None:
@@ -202,6 +205,9 @@ async def test_i2_exact_page_limit_still_accepted() -> None:
     def h(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/oauth2/v1/token":
             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
+        if req.url.path == "/v1/195900/departments/21":           # N-TZ: matching IANA tz
+            return httpx.Response(200, json=[{"departmentid": "21",
+                                              "timezonename": "America/New_York"}])
         return httpx.Response(200, json={"appointments": [_rec(i) for i in range(n)],
                                          "totalcount": n})
     s = DemoSettings.from_env({"DEMO_DATABASE_URL": "postgresql://u@localhost/x_demo",
