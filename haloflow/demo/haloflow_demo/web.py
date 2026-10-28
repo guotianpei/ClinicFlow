@@ -30,6 +30,65 @@ CSRF_FIELD = "csrf_token"
 ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 UNAVAILABLE_TEXT = "demo owner unavailable"
 
+# N-UX (package v1r1, Codex ALIGN): one result line after each staff POST. The 303
+# carries only a fixed code from this closed map; the line states only what the
+# returned value establishes, and any unlisted value gets a neutral "check" code.
+RESULT_TEXT: dict[str, str] = {
+    "send_submitted": "Reminder submitted (simulated).",
+    "send_skipped": "Not sent — this appointment already has a reminder or is not eligible.",
+    "send_not_sent": "Not sent — see the appointment's status.",
+    "send_rejected": "Rejected by the provider — see the appointment's status.",
+    "send_uncertain": "Send outcome uncertain — not re-sent.",
+    "send_check": "Send attempted — check the appointment's status.",
+    "batch_done": "Batch processed — check each appointment's status.",
+    "reply_recorded": "Simulated reply recorded — press Process replies.",
+    "reply_duplicate": "Duplicate reply — nothing new recorded.",
+    "reply_not_recorded": "Simulated reply not recorded — check settings and Replies.",
+    "replies_processed": "Reply processing run — see Replies and Follow-up items.",
+    "noreply_checked": "No-reply check run — see Follow-up items.",
+    "paused": "Sending paused.",
+    "resumed": "Sending resumed.",
+    "writeback_done": "Write-back done (simulated).",
+    "writeback_conflict": "Write-back stopped — the EHR value changed; staff follow-up created.",
+    "writeback_not_applied": "Write-back not applied — see the task.",
+    "writeback_uncertain": "Write-back outcome uncertain — use Reconcile.",
+    "writeback_busy": "Write-back already running.",
+    "writeback_unavailable": "Write-back not possible for this task — staff follow-up created.",
+    "writeback_check": "Write-back attempted — check the task's state.",
+    "reconcile_done": "Reconciled — see Write-back tasks.",
+    "reconcile_uncertain": ("Still uncertain — no new write attempted by this check;"
+                            " try again later."),
+    "item_done": "Follow-up item marked done.",
+    "item_unchanged": "Item was already done or not found.",
+}
+_SEND_CODES = {"SUBMITTED": "send_submitted", "SKIPPED": "send_skipped",
+               "NOT_SENT": "send_not_sent", "REJECTED": "send_rejected",
+               "CLAIMED": "send_uncertain", "UNCERTAIN": "send_uncertain"}
+_WRITEBACK_COMMON = {"writeback_conflict": "writeback_conflict",
+                     "no_baseline": "writeback_not_applied",
+                     "write_disabled": "writeback_not_applied",
+                     "NOT_APPLIED": "writeback_not_applied",
+                     "scenario_unavailable": "writeback_unavailable"}
+_RUN_CODES = {"DONE": "writeback_done", "DONE(reconciled)": "writeback_done",
+              "UNCERTAIN": "writeback_uncertain", "already_running": "writeback_busy",
+              **_WRITEBACK_COMMON}
+_RECONCILE_CODES = {"DONE": "reconcile_done", "DONE(reconciled)": "reconcile_done",
+                    "UNCERTAIN": "reconcile_uncertain", **_WRITEBACK_COMMON}
+
+
+def _send_code(result: Any) -> str:
+    state = result.get("state") if isinstance(result, dict) else None
+    return _SEND_CODES.get(state, "send_check") if isinstance(state, str) else "send_check"
+
+
+def _reply_code(result: Any) -> str:
+    status, reason = getattr(result, "status", None), getattr(result, "reason", None)
+    if status == 204 and reason is None:
+        return "reply_recorded"
+    if status == 204 and reason == "duplicate":
+        return "reply_duplicate"
+    return "reply_not_recorded"
+
 
 class StaffService(Protocol):
     async def page_data(self) -> dict[str, Any]: ...
@@ -111,7 +170,8 @@ def _source_html(src: Any) -> str:
     return "".join(f"<p>{line}</p>" for line in lines)
 
 
-def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | None) -> str:
+def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | None,
+            result: str | None = None) -> str:
     hidden = f'<input type="hidden" name="{CSRF_FIELD}" value="{_e(token)}">'
 
     def form(action: str, label: str, fields: dict[str, object] | None = None) -> str:
@@ -162,6 +222,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
     labels = data.get("labels", {})
     label_text = ", ".join(f"{_e(k)}={_e(v)}" for k, v in labels.items())
     source_html = _source_html(data.get("source"))
+    status_html = f'<p role="status">{_e(result)}</p>' if result is not None else ""
     preview_html = ""
     if preview is not None:
         preview_html = "<h2>Batch preview</h2><ul>" + "".join(
@@ -171,6 +232,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
     return (
         "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head>"
         f"<body><p><strong>{_e(STAFF_BANNER)}</strong></p>"
+        f"{status_html}"
         f"<p>Modes: {label_text}. Paused: {_e(data.get('paused'))}.</p>"
         f"{source_html}"
         f"{form('/demo/batch/preview', 'Preview batch')}"
@@ -242,12 +304,13 @@ def build_staff_app(
             return False
         return hmac.compare_digest(submitted, _token(csrf_secret, sid))
 
-    async def _page(request: Request, preview: list[dict[str, Any]] | None = None) -> Response:
+    async def _page(request: Request, preview: list[dict[str, Any]] | None = None,
+                    result: str | None = None) -> Response:
         sid = _session(request)
         new = sid is None
         if sid is None:
             sid = secrets.token_urlsafe(32)
-        body = _render(await service.page_data(), _token(csrf_secret, sid), preview)
+        body = _render(await service.page_data(), _token(csrf_secret, sid), preview, result)
         resp = HTMLResponse(body)
         if new:
             resp.set_cookie(CSRF_COOKIE, sid, httponly=True, samesite="strict", path="/")
@@ -256,40 +319,43 @@ def build_staff_app(
     def _forbidden() -> Response:
         return Response("CSRF check failed", status_code=403)
 
-    def _back() -> Response:
-        return RedirectResponse("/demo/staff", status_code=303)
+    def _back(code: str | None = None) -> Response:
+        # N-UX: only a code from the closed RESULT_TEXT map ever enters the URL.
+        suffix = f"?r={code}" if code in RESULT_TEXT else ""
+        return RedirectResponse("/demo/staff" + suffix, status_code=303)
 
     @app.get("/demo/staff")
     async def staff_page(request: Request) -> Response:
-        return await _page(request)
+        code = request.query_params.get("r")
+        return await _page(request, result=RESULT_TEXT.get(code) if code else None)
 
     @app.post("/demo/pause")
     async def pause(request: Request) -> Response:
         if not await _csrf_ok(request):
             return _forbidden()
         await service.set_paused(True)
-        return _back()
+        return _back("paused")
 
     @app.post("/demo/resume")
     async def resume(request: Request) -> Response:
         if not await _csrf_ok(request):
             return _forbidden()
         await service.set_paused(False)
-        return _back()
+        return _back("resumed")
 
     @app.post("/demo/batch/send")
     async def batch_send(request: Request) -> Response:
         if not await _csrf_ok(request):
             return _forbidden()
         await service.send_batch()
-        return _back()
+        return _back("batch_done")
 
     @app.post("/demo/noresponse/check")
     async def noresponse_check(request: Request) -> Response:
         if not await _csrf_ok(request):
             return _forbidden()
         await service.check_no_response()
-        return _back()
+        return _back("noreply_checked")
 
     @app.post("/demo/batch/preview")
     async def batch_preview(request: Request) -> Response:
@@ -312,8 +378,7 @@ def build_staff_app(
         appt = await _field(request, "emr_appt_id")
         if appt is None:
             return Response("bad request", status_code=400)
-        await service.send_to_appointment(appt)
-        return _back()
+        return _back(_send_code(await service.send_to_appointment(appt)))
 
     @app.post("/demo/reply/simulate")
     async def simulate_reply(request: Request) -> Response:
@@ -323,15 +388,14 @@ def build_staff_app(
         message = await _field(request, "text")
         if rid is None or message is None:
             return Response("bad request", status_code=400)
-        await service.simulate_reply(rid, message)
-        return _back()
+        return _back(_reply_code(await service.simulate_reply(rid, message)))
 
     @app.post("/demo/inbound/process")
     async def process_now(request: Request) -> Response:
         if not await _csrf_ok(request):
             return _forbidden()
         await service.process_now()
-        return _back()
+        return _back("replies_processed")
 
     @app.post("/demo/tasks/run")
     async def run_task(request: Request) -> Response:
@@ -341,10 +405,10 @@ def build_staff_app(
         if tid is None:
             return Response("bad request", status_code=400)
         try:
-            await service.run_writeback(tid)
+            outcome = await service.run_writeback(tid)
         except ValueError:
             return Response("not allowed in this state", status_code=409)
-        return _back()
+        return _back(_RUN_CODES.get(str(outcome), "writeback_check"))
 
     @app.post("/demo/tasks/reconcile")
     async def reconcile_task(request: Request) -> Response:
@@ -354,10 +418,10 @@ def build_staff_app(
         if tid is None:
             return Response("bad request", status_code=400)
         try:
-            await service.reconcile_writeback(tid)
+            outcome = await service.reconcile_writeback(tid)
         except ValueError:
             return Response("not allowed in this state", status_code=409)
-        return _back()
+        return _back(_RECONCILE_CODES.get(str(outcome), "writeback_check"))
 
     @app.post("/demo/items/done")
     async def mark_item_done(request: Request) -> Response:
@@ -366,8 +430,8 @@ def build_staff_app(
         item_id = await _int_field(request, "item_id")
         if item_id is None:
             return Response("bad request", status_code=400)
-        await service.mark_item_done(item_id)  # unknown or already done: no change
-        return _back()
+        changed = await service.mark_item_done(item_id)  # unknown or already done: no change
+        return _back("item_done" if changed is True else "item_unchanged")
 
     return app
 
