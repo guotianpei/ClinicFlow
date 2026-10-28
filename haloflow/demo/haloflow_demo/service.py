@@ -22,7 +22,7 @@ import logging
 import secrets
 from collections.abc import Callable
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy import text
 
@@ -30,7 +30,7 @@ from haloflow_demo.inbound import ReceiveResult, process_pending, receive
 from haloflow_demo.noresponse import flag_no_response
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
-from haloflow_demo.sending import SmsGateway, StubGateway, send_batch, send_one
+from haloflow_demo.sending import SmsGateway, StubGateway, phone_key, send_batch, send_one
 from haloflow_demo.settings import DemoSettings
 from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
 from haloflow_demo.tasks import reconcile_task, run_task
@@ -53,6 +53,22 @@ STATE_LABELS = {"CLAIMED": "Sending", "SUBMITTED": "Submitted", "NOT_SENT": "Not
 
 def _label(state: str | None) -> str:
     return "none" if state is None else STATE_LABELS.get(state, state)
+
+
+# Staff-screen package v1/v1r1 (G-E3-1/2/3, G-R1-1). Display only: every guard
+# stays server-side.
+REPLY_STATES = frozenset({"SUBMITTED", "NO_RESPONSE"})  # R-S2 (NO_RESPONSE: late reply)
+BEFORE_RESTART = " (before restart)"                   # R-S5
+OPTED_OUT_SUFFIX = "; Opted out — no texts"            # R-S4 (owner decision OD-S2)
+
+
+class _ReminderRow(NamedTuple):
+    id: int
+    emr_appt_id: str
+    emr_patient_id: str
+    appt_start: datetime
+    state: str
+    phone_key: str | None
 
 
 def _utcnow() -> datetime:
@@ -136,13 +152,39 @@ class DbStaffService:
         """The synthetic EHR this process created for ``target`` (tests, inspection)."""
         return self._ehr[target]
 
-    async def _reminders(self) -> dict[str, tuple[int, str]]:
+    async def _reminder_rows(self) -> list[_ReminderRow]:
+        """This tenant's reminders, ordered by id (tenant filter kept, Codex review)."""
         async with self._own.engine.connect() as conn:
             rows = (await conn.execute(
-                text("SELECT emr_appt_id, id, state FROM reminder_records WHERE tenant_id = :t"),
+                text("SELECT id, emr_appt_id, emr_patient_id, appt_start, state, phone_key"
+                     " FROM reminder_records WHERE tenant_id = :t ORDER BY id"),
                 {"t": TENANT_ID},
             )).all()
-        return {str(r[0]): (int(r[1]), str(r[2])) for r in rows}
+        return [_ReminderRow(int(r[0]), str(r[1]), str(r[2]), r[3], str(r[4]),
+                             None if r[5] is None else str(r[5])) for r in rows]
+
+    async def _opt_out_state(self) -> tuple[set[str], str | None]:
+        """R-S4: opted-out phone keys, and the key any send would use (the one
+        configured test number), or None when no test number is configured."""
+        async with self._own.engine.connect() as conn:
+            opted = {str(r[0]) for r in (await conn.execute(
+                text("SELECT phone_key FROM opt_outs"))).all()}
+            to = self._settings.sms_test_number
+            test_key = None
+            if to is not None:
+                secret = (await conn.execute(
+                    text("SELECT value FROM demo_meta WHERE key = 'phone_key_secret'")
+                )).scalar_one()
+                test_key = phone_key(str(secret), to)
+        return opted, test_key
+
+    async def mark_item_done(self, item_id: int) -> bool:
+        """R-S3: open -> done, fenced; False when the item is unknown or already done."""
+        async with self._own.fenced() as conn:
+            result = await conn.execute(
+                text("UPDATE follow_up_items SET status = 'done'"
+                     " WHERE id = :id AND status = 'open'"), {"id": item_id})
+        return bool(result.rowcount == 1)
 
     async def _existing_ids(self, appts: list[Any]) -> set[str]:
         """IDs to skip as ALREADY_HAS_REMINDER: an exact-ID reminder, or (F-R1-1) any
@@ -179,11 +221,13 @@ class DbStaffService:
                     " simulated_correlation FROM inbound_messages ORDER BY id DESC LIMIT 50"
                 ))).all()]
             items = [
-                {"kind": r.kind, "detail": r.detail, "appointment": r.emr_appt_id,
+                {"id": r.id, "kind": r.kind, "detail": r.detail, "appointment": r.emr_appt_id,
                  "status": r.status}
                 for r in (await conn.execute(text(
-                    "SELECT f.kind, f.detail, f.status, r.emr_appt_id FROM follow_up_items f"
-                    " LEFT JOIN reminder_records r ON r.id = f.reminder_id ORDER BY f.id"
+                    "SELECT f.id, f.kind, f.detail, f.status, r.emr_appt_id"
+                    " FROM follow_up_items f"
+                    " LEFT JOIN reminder_records r ON r.id = f.reminder_id"
+                    " ORDER BY (f.status <> 'open'), f.id"   # R-S3: open first
                 ))).all()]
             tasks = [
                 {"task_id": r.id, "appointment": r.emr_appt_id, "state": r.state,
@@ -199,17 +243,37 @@ class DbStaffService:
         ehr = self._ehr_for(target)
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
-        reminders = await self._reminders()
+        reminders = await self._reminder_rows()
+        by_id = {r.emr_appt_id: r for r in reminders}
+        by_slot: dict[tuple[str, datetime], _ReminderRow] = {}
+        for r in reminders:                       # ordered by id: the highest id wins
+            by_slot[(r.emr_patient_id, r.appt_start)] = r
+        eligible = {e.appointment.emr_appt_id for e in select_eligible(
+            appts, ehr.patients, target, tz,
+            existing_appt_ids=await self._existing_ids(appts)).eligible}  # R-S1 = Preview
+        opted, test_key = await self._opt_out_state()
         rows = []
         for a in appts:
-            rem = reminders.get(a.emr_appt_id)
+            exact = by_id.get(a.emr_appt_id)
+            rem = exact if exact is not None else by_slot.get((a.emr_patient_id, a.start_utc))
+            label = _label(rem.state if rem else None)
+            if rem is not None and exact is None:
+                label += BEFORE_RESTART                                    # R-S5
+            patient = ehr.patients.get(a.emr_patient_id)
+            key = (rem.phone_key if rem is not None and rem.phone_key is not None
+                   else test_key if patient is not None and patient.phone_alias is not None
+                   else None)
+            opted_out = key is not None and key in opted                   # R-S4
             rows.append({
                 "emr_appt_id": a.emr_appt_id,
-                "reminder_id": rem[0] if rem else None,
-                "patient": ehr.patients[a.emr_patient_id].display_name
-                if a.emr_patient_id in ehr.patients else "(unknown)",
+                "reminder_id": exact.id if exact else None,
+                "patient": patient.display_name if patient is not None else "(unknown)",
                 "when": format_local(a.start_utc, tz),
-                "status": f"{a.status.value}; reminder: {_label(rem[1] if rem else None)}",
+                "status": f"{a.status.value}; reminder: {label}"
+                          + (OPTED_OUT_SUFFIX if opted_out else ""),
+                "eligible": a.emr_appt_id in eligible,
+                "can_reply": exact is not None and exact.state in REPLY_STATES,  # R-S2
+                "opted_out": opted_out,
             })
         inbound, items, tasks = await self._lists()
         return {"paused": await self._paused(), "target_date": target.isoformat(),

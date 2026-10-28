@@ -42,6 +42,7 @@ class StaffService(Protocol):
     async def check_no_response(self) -> list[int]: ...
     async def run_writeback(self, task_id: int) -> str: ...
     async def reconcile_writeback(self, task_id: int) -> str: ...
+    async def mark_item_done(self, item_id: int) -> bool: ...
 
 
 Receiver = Callable[[bytes, list[str]], Awaitable[Any]]
@@ -81,6 +82,9 @@ class NullStaffService:
     async def reconcile_writeback(self, task_id: int) -> str:
         return "none"
 
+    async def mark_item_done(self, item_id: int) -> bool:
+        return False
+
 
 def _token(secret: bytes, session_id: str) -> str:
     return hmac.new(secret, session_id.encode(), hashlib.sha256).hexdigest()
@@ -101,9 +105,12 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
 
     rows: list[str] = []
     for a in data.get("appointments", []):
-        actions = form("/demo/appointments/send", "Send to this appointment (simulated)",
-                       {"emr_appt_id": a.get("emr_appt_id")})
-        if a.get("reminder_id") is not None:
+        # G-E3-1: controls only where they apply (R-S1, R-S2); the server still guards.
+        actions = ""
+        if a.get("eligible"):
+            actions += form("/demo/appointments/send", "Send to this appointment (simulated)",
+                            {"emr_appt_id": a.get("emr_appt_id")})
+        if a.get("can_reply") and a.get("reminder_id") is not None:
             actions += "".join(
                 form("/demo/reply/simulate", f"Simulate reply {r}",
                      {"reminder_id": a.get("reminder_id"), "text": r})
@@ -117,8 +124,12 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         f" ({_e(m.get('label'))})</li>"
         for m in data.get("inbound", [])
     )
-    items = "".join(
-        f"<li>{_e(i.get('kind'))} ({_e(i.get('appointment'))}): {_e(i.get('detail'))}</li>"
+    items = "".join(  # G-E3-2 (R-S3): status shown; open items can be marked done
+        f"<li>{_e(i.get('kind'))} ({_e(i.get('appointment'))}) [{_e(i.get('status'))}]:"
+        f" {_e(i.get('detail'))}"
+        + (form("/demo/items/done", "Mark done", {"item_id": i.get("id")})
+           if i.get("status") == "open" else "")
+        + "</li>"
         for i in data.get("items", [])
     )
     tasks = "".join(
@@ -327,6 +338,16 @@ def build_staff_app(
             await service.reconcile_writeback(tid)
         except ValueError:
             return Response("not allowed in this state", status_code=409)
+        return _back()
+
+    @app.post("/demo/items/done")
+    async def mark_item_done(request: Request) -> Response:
+        if not await _csrf_ok(request):
+            return _forbidden()
+        item_id = await _int_field(request, "item_id")
+        if item_id is None:
+            return Response("bad request", status_code=400)
+        await service.mark_item_done(item_id)  # unknown or already done: no change
         return _back()
 
     return app
