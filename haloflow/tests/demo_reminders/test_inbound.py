@@ -1817,7 +1817,13 @@ async def test_writeback_after_restart_fails_closed(
     assert result == "scenario_unavailable"
     assert regenerated.write_attempts == 0
     assert all(not a["emr_appt_id"].startswith("syn-e1-") for a in page["appointments"])
-    assert all(a["status"].endswith("reminder: none") for a in page["appointments"])
+    # G-R1-1 / R-S5 (staff-screen package v1r1): the confirmed slot shows its earlier
+    # reminder labelled "(before restart)"; every other row still shows none.
+    status = {a["emr_appt_id"]: a["status"] for a in page["appointments"]}
+    assert status["syn-e2-20261028-a-1"].endswith(
+        "reminder: Confirmed by patient (before restart)")
+    assert all(s.endswith("reminder: none") for k, s in status.items()
+               if k != "syn-e2-20261028-a-1")
     assert _q(demo_db_url, "SELECT state FROM writeback_tasks WHERE id = %s", (tid,)) == [
         ("PENDING",)]
     assert "writeback_scenario_unavailable" in [k for k, _ in _items(demo_db_url)]
