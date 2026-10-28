@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
 from enum import StrEnum
+from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -121,12 +122,24 @@ class SyntheticEhr:
     write_attempts: int = 0
     applied_writes: int = 0
     lost_updates: int = 0
+    # M-2: an optional durable store (sim_store.SimStore). When set, the confirmation
+    # value/version live in the demo DB keyed by slot, not in ``_conf``.
+    store: Any = field(default=None, repr=False)
     _conf: dict[str, _ConfState] = field(default_factory=dict, repr=False)
     _last_read_version: dict[str, int] = field(default_factory=dict, repr=False)
+    _appts: dict[str, SyntheticAppointment] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         for a in self.fixtures.appointments:
             self._conf[a.emr_appt_id] = _ConfState(a.confirmation)
+            self._appts[a.emr_appt_id] = a
+
+    def appointment(self, appt_id: str) -> SyntheticAppointment | None:
+        return self._appts.get(appt_id)
+
+    def _slot(self, appt_id: str) -> Any:
+        a = self._appts[appt_id]
+        return self.store.slot(a.emr_patient_id, a.start_utc)
 
     @property
     def patients(self) -> dict[str, SyntheticPatient]:
@@ -139,9 +152,12 @@ class SyntheticEhr:
     # ── confirmation value ────────────────────────────────────────────────────
 
     async def read_confirmation(self, appt_id: str) -> Observation:
-        st = self._conf[appt_id]
-        obs = Observation(st.value, st.version)
-        self._last_read_version[appt_id] = st.version
+        if self.store is not None:
+            obs: Observation = await self.store.read(self._slot(appt_id))
+        else:
+            st = self._conf[appt_id]
+            obs = Observation(st.value, st.version)
+        self._last_read_version[appt_id] = obs.version
         hook, self.on_after_read = self.on_after_read, None
         if hook is not None:
             hook()
@@ -166,6 +182,14 @@ class SyntheticEhr:
         mode = self._consume_failure()
         if mode == "connect":
             raise EhrConnectError("synthetic connect failure")
+        if self.store is not None:
+            res: WriteResult = await self.store.cas(self._slot(appt_id), target,
+                                                    expected_version)
+            if res.applied:
+                self.applied_writes += 1
+                if mode == "lost_response":
+                    raise EhrResponseLost("synthetic: applied, response lost")
+            return res
         st = self._conf[appt_id]
         if st.version != expected_version:
             return WriteResult(False, Observation(st.value, st.version))

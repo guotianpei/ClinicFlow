@@ -20,7 +20,7 @@ import hmac
 import json
 import logging
 import secrets
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
 
@@ -40,6 +40,7 @@ from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
 from haloflow_demo.sending import SmsGateway, StubGateway, phone_key, send_batch, send_one
 from haloflow_demo.settings import DemoSettings, StartupRefused
+from haloflow_demo.sim_store import SYNTHETIC_ID_RE, SimStore, Slot, SlotRefused
 from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
 from haloflow_demo.tasks import reconcile_task, run_task
 
@@ -102,6 +103,10 @@ class _EhrRouter:
 
     def __init__(self) -> None:
         self._index: dict[str, SyntheticEhr] = {}
+        # M-2: read-only fallback for ids not in this process (baseline reads of a
+        # reply processed after a restart). Tenant-scoped and validated; writes never
+        # use it (they go through a per-task view).
+        self.resolver: Callable[[str], Awaitable[Any]] | None = None
 
     def register(self, ehr: SyntheticEhr) -> None:
         for a in ehr.fixtures.appointments:
@@ -119,6 +124,12 @@ class _EhrRouter:
         return ehr
 
     async def read_confirmation(self, appt_id: str) -> Observation:
+        if appt_id not in self._index and self.resolver is not None:
+            target = await self.resolver(appt_id)
+            if target is None:
+                raise ScenarioUnavailable("appointment not resolvable for this tenant")
+            result: Observation = await target.read_confirmation(appt_id)
+            return result
         return await self._find(appt_id).read_confirmation(appt_id)
 
     async def write_confirmation_conditional(
@@ -126,6 +137,52 @@ class _EhrRouter:
     ) -> WriteResult:
         return await self._find(appt_id).write_confirmation_conditional(
             appt_id, target, expected_version)
+
+
+class _DurableSlotEhr:
+    """M-2: serves one durable slot (an appointment id from an earlier process)."""
+
+    def __init__(self, store: SimStore, slot: Slot) -> None:
+        self._store, self._slot = store, slot
+
+    async def read_confirmation(self, appt_id: str) -> Observation:
+        return await self._store.read(self._slot)
+
+    async def write_confirmation_conditional(
+        self, appt_id: str, target: str, expected_version: int
+    ) -> WriteResult:
+        return await self._store.cas(self._slot, target, expected_version)
+
+
+class _TaskView:
+    """M-2 task isolation (Codex m2-v1r1): a per-run EHR view that knows and serves
+    exactly one validated appointment id, or nothing. ``tasks.py`` treats an
+    unknown id as scenario_unavailable: no admission, no read, no write."""
+
+    supports_conditional_write = True
+    conditional_contract_verified = False  # synthetic: proves nothing about a real EHR
+
+    def __init__(self, appt_id: str | None = None, target: Any = None) -> None:
+        self._id, self._target = appt_id, target
+
+    def knows(self, appt_id: str) -> bool:
+        return self._id is not None and appt_id == self._id
+
+    def _serve(self, appt_id: str) -> Any:
+        if not self.knows(appt_id):
+            raise ScenarioUnavailable("appointment not validated for this task")
+        return self._target
+
+    async def read_confirmation(self, appt_id: str) -> Observation:
+        result: Observation = await self._serve(appt_id).read_confirmation(appt_id)
+        return result
+
+    async def write_confirmation_conditional(
+        self, appt_id: str, target: str, expected_version: int
+    ) -> WriteResult:
+        result: WriteResult = await self._serve(appt_id).write_confirmation_conditional(
+            appt_id, target, expected_version)
+        return result
 
 
 class DbStaffService:
@@ -145,11 +202,14 @@ class DbStaffService:
         self._gateway: SmsGateway = gateway or StubGateway(settings.sms_test_number)
         self._ehr: dict[date, SyntheticEhr] = {}
         self.ehr = _EhrRouter()
+        self._store = SimStore(own, TENANT_ID)  # M-2: synthetic mode only
         # N-ATH: read-only sandbox source (None = synthetic fixtures, unchanged).
         # F-ATH-I1: settings and config must agree; never silently synthetic.
         if (settings.ehr_source == "athena_preview") != (athena is not None):
             raise StartupRefused("athena_config_inconsistent")
         self._athena = athena
+        if athena is None:
+            self.ehr.resolver = self._resolve  # M-2 (synthetic mode only)
         self._athena_transport = athena_transport
         self._athena_client: AthenaPreviewClient | None = None
         self._source_locks: dict[date, asyncio.Lock] = {}
@@ -164,13 +224,61 @@ class DbStaffService:
         return clinic_target_date(self._now(), self._settings.clinic_tz,
                                   days_before=self._settings.reminder_days_before)
 
-    def _ehr_for(self, target: date) -> SyntheticEhr:
-        if target not in self._ehr:
-            scenario = f"e{self._own.epoch}-{target:%Y%m%d}"
-            ehr = SyntheticEhr(default_fixtures(target, self._settings.clinic_tz, scenario))
-            self.ehr.register(ehr)
-            self._ehr[target] = ehr
-        return self._ehr[target]
+    async def _synthetic_for(self, target: date) -> SyntheticEhr:
+        """M-2: under the per-date lock — fixtures, seed the durable store once,
+        construct, register, and only then publish."""
+        lock = self._source_locks.setdefault(target, asyncio.Lock())
+        async with lock:
+            if target not in self._ehr:
+                scenario = f"e{self._own.epoch}-{target:%Y%m%d}"
+                fixtures = default_fixtures(target, self._settings.clinic_tz, scenario)
+                await self._store.seed(fixtures)
+                ehr = SyntheticEhr(fixtures, store=self._store)
+                self.ehr.register(ehr)
+                self._ehr[target] = ehr
+            return self._ehr[target]
+
+    async def _bind(self, row: Any) -> Any:
+        """M-2: the EHR target for one reminder row, or None. Validates tenant,
+        synthetic id format and slot binding; never guesses."""
+        appt_id = str(row.emr_appt_id)
+        if row.tenant_id != TENANT_ID or not SYNTHETIC_ID_RE.fullmatch(appt_id):
+            return None
+        if self.ehr.knows(appt_id):
+            inst = self.ehr._find(appt_id)                                 # noqa: SLF001
+            appt = inst.appointment(appt_id)
+            if (appt is None or appt.emr_patient_id != row.emr_patient_id
+                    or appt.start_utc != row.appt_start):
+                return None
+            return inst
+        slot = self._store.slot(str(row.emr_patient_id), row.appt_start)
+        try:
+            if await self._store.count(slot) != 1:
+                return None
+        except SlotRefused:
+            return None
+        return _DurableSlotEhr(self._store, slot)
+
+    async def _resolve(self, appt_id: str) -> Any:
+        """Baseline reads: the reminder row for this id in the ACTIVE tenant only."""
+        async with self._own.engine.connect() as conn:
+            rows = (await conn.execute(text(
+                "SELECT tenant_id, emr_appt_id, emr_patient_id, appt_start"
+                " FROM reminder_records WHERE tenant_id = :t AND emr_appt_id = :a"),
+                {"t": TENANT_ID, "a": appt_id})).all()
+        return await self._bind(rows[0]) if len(rows) == 1 else None
+
+    async def _task_view(self, task_id: int) -> _TaskView:
+        """M-2: validate THIS task before any admission (every run/reconcile)."""
+        async with self._own.engine.connect() as conn:
+            row = (await conn.execute(text(
+                "SELECT r.tenant_id, r.emr_appt_id, r.emr_patient_id, r.appt_start"
+                " FROM writeback_tasks t JOIN reminder_records r ON r.id = t.reminder_id"
+                " WHERE t.id = :t"), {"t": task_id})).one_or_none()
+        if row is None:
+            return _TaskView()
+        target = await self._bind(row)
+        return _TaskView() if target is None else _TaskView(str(row.emr_appt_id), target)
 
     async def _source(self, target: date) -> SyntheticEhr | None:
         """The EHR for ``target``: synthetic fixtures, or (athena mode) one sandbox
@@ -178,7 +286,7 @@ class DbStaffService:
         fetch is remembered for the date (no synthetic fallback); None means
         "no appointments available"."""
         if self._athena is None:
-            return self._ehr_for(target)
+            return await self._synthetic_for(target)
         lock = self._source_locks.setdefault(target, asyncio.Lock())
         async with lock:
             if target in self._ehr:
@@ -489,10 +597,14 @@ class DbStaffService:
         return await flag_no_response(self._own, self._now)
 
     async def run_writeback(self, task_id: int) -> str:
-        return await run_task(self._own, self.ehr, task_id)
+        if self._athena is not None:
+            return await run_task(self._own, self.ehr, task_id)
+        return await run_task(self._own, await self._task_view(task_id), task_id)
 
     async def reconcile_writeback(self, task_id: int) -> str:
-        return await reconcile_task(self._own, self.ehr, task_id)
+        if self._athena is not None:
+            return await reconcile_task(self._own, self.ehr, task_id)
+        return await reconcile_task(self._own, await self._task_view(task_id), task_id)
 
     async def dispatcher_loop(self, interval: float = 2.0) -> None:
         """R-16: runs only after start-up; stops when closing or ownership is lost."""
