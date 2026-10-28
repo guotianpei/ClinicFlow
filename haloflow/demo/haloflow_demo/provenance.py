@@ -62,7 +62,7 @@ def _iana(name: str) -> bool:
 
 def parse(value: str) -> Context | None:
     """The stored context, or None when the value is not exactly supported."""
-    m = _VALUE_RE.match(value)
+    m = _VALUE_RE.fullmatch(value)          # F-TZ3-1: exact, no trailing newline
     if m is None or not _iana(m.group(2)) or not _iana(m.group(4)):
         return None
     return Context(m.group(1), m.group(2), m.group(3), m.group(4))

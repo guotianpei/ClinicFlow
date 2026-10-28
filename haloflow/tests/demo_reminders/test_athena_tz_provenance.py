@@ -168,6 +168,8 @@ T15 = datetime(2026, 10, 28, 15, 0, tzinfo=UTC)         # 09:00 read as Denver
     "v1;dept=21;zone=America/Denver;basis=OTHER;clinic=America/New_York",
     "v1;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York;x=1",
     "v1;dept=x;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York",
+    # F-TZ3-1 (Codex review of 3b95d16): a valid context plus a trailing newline.
+    "v1;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York\n",
 ])
 async def test_p1_unsupported_value_refused_before_requests(
     demo_env: dict[str, str], demo_db_url: str, bad: str,
