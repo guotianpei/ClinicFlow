@@ -1,0 +1,2 @@
+pytest tests/demo_reminders -p no:cacheprovider -q
+exit=0

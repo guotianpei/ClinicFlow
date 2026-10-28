@@ -1,0 +1,2 @@
+cd demo && mypy --strict haloflow_demo/service.py haloflow_demo/web.py
+exit=0
