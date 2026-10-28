@@ -1,0 +1,2 @@
+pytest tests/demo_reminders/test_athena_source.py -p no:cacheprovider -q
+exit=2
