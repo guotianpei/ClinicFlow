@@ -1,0 +1,12 @@
+date_utc=2026-10-28T15:21:50Z
+test_head=485309a0c609d7a7c978364952cf978fe7834c46
+code_under_test=e1da39c (demo package unchanged on this branch: none)
+Python 3.13.18
+Name: pytest	Version: 9.2.0
+Name: pytest-asyncio	Version: 1.4.1
+Name: SQLAlchemy	Version: 2.1.6
+Name: fastapi	Version: 0.162.0
+Name: psycopg	Version: 3.3.6
+Linux 6.18.44-fc-v180
+PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
+rerun_date_utc=2026-10-28T15:22:12Z (first attempt 15:21:50Z: PostgreSQL down, 33 connection errors, discarded)

@@ -1,0 +1,567 @@
+/home/claude/venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFF..FFFF.FFFFFFF.FFF.FFF.F.FF.F.                                        [100%]
+=================================== FAILURES ===================================
+_______________ test_t_s1a_s1c_send_shown_only_on_eligible_rows ________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t41c89c41_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s1a_s1c_send_shown_only_on_eligible_rows(demo_env: dict[str, str]) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+            for n in (1, 2, 3, 4, 5):
+                assert SEND in _row(html, E1 + str(n)), n
+>           assert SEND not in _row(html, E1 + "6")      # no phone
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           assert 'Send to thi... (simulated)' not in '<tr><td>syn...m></td></tr>'
+E             
+E             'Send to this appointment (simulated)' is contained here:
+E               "><button>Send to this appointment (simulated)</button></form></td></tr>
+
+tests/demo_reminders/test_staff_screen.py:130: AssertionError
+______________________ test_t_s1b_send_hidden_after_send _______________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t3f2fc80b_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s1b_send_hidden_after_send(demo_env: dict[str, str]) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            await _send(svc, 1)
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert SEND not in _row(html, E1 + "1")
+E           AssertionError: assert 'Send to thi... (simulated)' not in '<tr><td>syn...m></td></tr>'
+E             
+E             'Send to this appointment (simulated)' is contained here:
+E             ?           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^                                                                                                                                                                                                                                                                                                                                                                                                                                     ...
+E             
+E             ...Full output truncated, use '-vv' to show
+
+tests/demo_reminders/test_staff_screen.py:142: AssertionError
+_________ test_t_s1d_send_visibility_equals_preview_incl_after_restart _________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tddafabf9_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s1d_send_visibility_equals_preview_incl_after_restart(
+        demo_env: dict[str, str]
+    ) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _send(svc, 1)
+            await _send(svc, 4)
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+            for p in await svc.preview_batch():
+>               assert (SEND in _row(html, p["emr_appt_id"])) == (p["decision"] == "eligible"), p
+E               AssertionError: {'emr_appt_id': 'syn-e1-20261028-a-1', 'decision': 'skip: already_has_reminder'}
+E               assert ('Send to this appointment (simulated)' in '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>') == ('skip: already_has_reminder' == 'eligible'
+E                +  where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>", 'syn-e1-20261028-a-1')
+E                 
+E                 - eligible
+E                 + skip: already_has_reminder)
+
+tests/demo_reminders/test_staff_screen.py:159: AssertionError
+_________ test_t_s2b_answered_rows_have_no_reply_controls[1-CONFIRMED] _________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t030c9210_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t030c9210_demo'
+reply = '1', state = 'CONFIRMED'
+
+    @pytest.mark.parametrize("reply,state", [("1", "CONFIRMED"), ("2", "RESCHEDULE_REQUESTED"),
+                                             ("3", "CANCEL_REQUESTED")])
+    async def test_t_s2b_answered_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, reply: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            await _reply(svc, rid, reply)
+            assert _q(demo_db_url, "SELECT state FROM reminder_records WHERE id = %s",
+                      (rid,)) == [(state,)]
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row('<!doctype html><html><head><meta charset=\'utf-8\'><title>HaloFlow demo</title></head><body><p><strong>Local demonstr...nput type="hidden" name="task_id" value="1"><button>Run write-back (simulated)</button></form></li></ul></body></html>', ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:220: AssertionError
+___ test_t_s2b_answered_rows_have_no_reply_controls[2-RESCHEDULE_REQUESTED] ____
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_ted5b7e01_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_ted5b7e01_demo'
+reply = '2', state = 'RESCHEDULE_REQUESTED'
+
+    @pytest.mark.parametrize("reply,state", [("1", "CONFIRMED"), ("2", "RESCHEDULE_REQUESTED"),
+                                             ("3", "CANCEL_REQUESTED")])
+    async def test_t_s2b_answered_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, reply: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            await _reply(svc, rid, reply)
+            assert _q(demo_db_url, "SELECT state FROM reminder_records WHERE id = %s",
+                      (rid,)) == [(state,)]
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat...0261028-a-1): Patient asked to reschedule. Call the patient.</li></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:220: AssertionError
+_____ test_t_s2b_answered_rows_have_no_reply_controls[3-CANCEL_REQUESTED] ______
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t63fdbaf8_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t63fdbaf8_demo'
+reply = '3', state = 'CANCEL_REQUESTED'
+
+    @pytest.mark.parametrize("reply,state", [("1", "CONFIRMED"), ("2", "RESCHEDULE_REQUESTED"),
+                                             ("3", "CANCEL_REQUESTED")])
+    async def test_t_s2b_answered_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, reply: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            await _reply(svc, rid, reply)
+            assert _q(demo_db_url, "SELECT state FROM reminder_records WHERE id = %s",
+                      (rid,)) == [(state,)]
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat...el. Cancel the appointment in the EHR, then close this item.</li></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:220: AssertionError
+________________ test_t_s2c_not_sent_row_has_no_reply_controls _________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tfae9656e_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_tfae9656e_demo'
+
+    async def test_t_s2c_not_sent_row_has_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 4)
+            await _reply(svc, rid, "STOP")
+            sent = await svc.send_to_appointment(E1 + "5")
+            assert sent["state"] == "NOT_SENT", sent
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "5")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-5</td><td>Synthetic Patient D</td><td>Wednesday, Oct 28 at 3:00 PM EDT</td><td>scheduled; r...nder_id" value="2"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-5</td><td>Synthetic Patient D</td><td>Wednesday, Oct 28 at 3:00 PM EDT</td><td>scheduled; r...nder_id" value="2"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat...ed by the demo, not by SMS)</li></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '5'))
+
+tests/demo_reminders/test_staff_screen.py:237: AssertionError
+_____________ test_t_s2e_before_restart_row_has_no_reply_controls ______________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_te3773dbf_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s2e_before_restart_row_has_no_reply_controls(demo_env: dict[str, str]) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _send(svc, 1)
+        finally:
+            await own.close()
+        own, svc = await _start(env)
+        try:
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+            row = _row(html, E2 + "1")
+>           assert "reminder: Submitted" + BEFORE in row
+E           assert ('reminder: Submitted' + ' (before restart)') in '<tr><td>syn-e2-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r... name="emr_appt_id" value="syn-e2-20261028-a-1"><button>Send to this appointment (simulated)</button></form></td></tr>'
+
+tests/demo_reminders/test_staff_screen.py:268: AssertionError
+__ test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[CLAIMED] __
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t1d6017cc_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t1d6017cc_demo'
+state = 'CLAIMED'
+
+    @pytest.mark.parametrize("state", ["CLAIMED", "REJECTED", "UNCERTAIN"])
+    async def test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            _q(demo_db_url, "UPDATE reminder_records SET state = %s WHERE id = %s", (state, rid))
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:285: AssertionError
+_ test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[REJECTED] __
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_td1190e64_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_td1190e64_demo'
+state = 'REJECTED'
+
+    @pytest.mark.parametrize("state", ["CLAIMED", "REJECTED", "UNCERTAIN"])
+    async def test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            _q(demo_db_url, "UPDATE reminder_records SET state = %s WHERE id = %s", (state, rid))
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:285: AssertionError
+_ test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[UNCERTAIN] _
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t83f16acd_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t83f16acd_demo'
+state = 'UNCERTAIN'
+
+    @pytest.mark.parametrize("state", ["CLAIMED", "REJECTED", "UNCERTAIN"])
+    async def test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls(
+        demo_env: dict[str, str], demo_db_url: str, state: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 1)
+            await _send(svc, 2)
+            _q(demo_db_url, "UPDATE reminder_records SET state = %s WHERE id = %s", (state, rid))
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+>           assert _replies(_row(html, E1 + "1")) == 0
+E           assert 4 == 0
+E            +  where 4 = _replies('<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>')
+E            +    where '<tr><td>syn-e1-20261028-a-1</td><td>Synthetic Patient A</td><td>Wednesday, Oct 28 at 9:00 AM EDT</td><td>scheduled; r...nder_id" value="1"><input type="hidden" name="text" value="STOP"><button>Simulate reply STOP</button></form></td></tr>' = _row("<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>", ('syn-e1-20261028-a-' + '1'))
+
+tests/demo_reminders/test_staff_screen.py:285: AssertionError
+_______________ test_t_s3a_l_mark_done_one_item_other_stays_open _______________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t1c52bd37_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t1c52bd37_demo'
+
+    async def test_t_s3a_l_mark_done_one_item_other_stays_open(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, second = await _two_items(svc, demo_db_url)
+            async with _aclient(_app(own, svc)) as c:
+                html = await _page(c)
+                items = _items(html)
+>               assert all("[open]" in i and "Mark done" in i for i in items)
+E               assert False
+E                +  where False = all(<generator object test_t_s3a_l_mark_done_one_item_other_stays_open.<locals>.<genexpr> at 0x7f42e0386810>)
+
+tests/demo_reminders/test_staff_screen.py:317: AssertionError
+________________ test_t_s3b_c_repeat_unknown_and_malformed_ids _________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t44575b47_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t44575b47_demo'
+
+    async def test_t_s3b_c_repeat_unknown_and_malformed_ids(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, second = await _two_items(svc, demo_db_url)
+            async with _aclient(_app(own, svc)) as c:
+                tok = _token(await _page(c))
+>               assert (await c.post("/demo/items/done", data={CSRF_FIELD: tok,
+                        "item_id": str(first)})).status_code == 303
+E                       assert 404 == 303
+E                        +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/demo_reminders/test_staff_screen.py:341: AssertionError
+____________________ test_t_s3d_e_csrf_and_origin_enforced _____________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t37c94f17_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t37c94f17_demo'
+
+    async def test_t_s3d_e_csrf_and_origin_enforced(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, _ = await _two_items(svc, demo_db_url)
+            async with _aclient(_app(own, svc)) as c:
+                tok = _token(await _page(c))
+>               assert (await c.post("/demo/items/done",
+                                     data={"item_id": str(first)})).status_code == 403
+E                                    assert 404 == 403
+E                                     +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/demo_reminders/test_staff_screen.py:365: AssertionError
+___________________ test_t_s3g_owner_lost_503_and_unchanged ____________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t4ea582ba_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t4ea582ba_demo'
+
+    async def test_t_s3g_owner_lost_503_and_unchanged(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, _ = await _two_items(svc, demo_db_url)
+            async with _aclient(_app(own, svc)) as c:
+                tok = _token(await _page(c))
+                _q(demo_db_url, "UPDATE demo_settings SET owner_epoch = owner_epoch + 1")
+                r = await c.post("/demo/items/done", data={CSRF_FIELD: tok, "item_id": str(first)})
+>               assert r.status_code == 503
+E               assert 404 == 503
+E                +  where 404 = <Response [404 Not Found]>.status_code
+
+tests/demo_reminders/test_staff_screen.py:404: AssertionError
+________________ test_t_s3h_mark_done_changes_only_item_status _________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tfc994281_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_tfc994281_demo'
+
+    async def test_t_s3h_mark_done_changes_only_item_status(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, _ = await _two_items(svc, demo_db_url)
+            before = _snapshot(demo_db_url)
+            item_before = _q(demo_db_url, "SELECT id, source_key, kind, inbound_id, reminder_id,"
+                             " detail FROM follow_up_items ORDER BY id")
+>           assert await svc.mark_item_done(first) is True
+                         ^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'DbStaffService' object has no attribute 'mark_item_done'
+
+tests/demo_reminders/test_staff_screen.py:421: AttributeError
+______________________ test_t_s3i_open_items_listed_first ______________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t2e4173b1_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t2e4173b1_demo'
+
+    async def test_t_s3i_open_items_listed_first(demo_env: dict[str, str], demo_db_url: str) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            first, second = await _two_items(svc, demo_db_url)
+            # same status (both open): id ascending (Codex tests r1, optional point)
+>           assert [i["id"] for i in (await svc.page_data())["items"]] == [first, second]
+                    ^^^^^^^
+E           KeyError: 'id'
+
+tests/demo_reminders/test_staff_screen.py:435: KeyError
+___________________ test_t_s3k_done_persists_across_restart ____________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tf1f77203_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_tf1f77203_demo'
+
+    async def test_t_s3k_done_persists_across_restart(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            first, second = await _two_items(svc, demo_db_url)
+>           assert await svc.mark_item_done(first) is True
+                         ^^^^^^^^^^^^^^^^^^
+E           AttributeError: 'DbStaffService' object has no attribute 'mark_item_done'
+
+tests/demo_reminders/test_staff_screen.py:470: AttributeError
+____________ test_t_s4a_b_c_marker_after_stop_on_rows_with_a_phone _____________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tb520d144_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s4a_b_c_marker_after_stop_on_rows_with_a_phone(
+        demo_env: dict[str, str]
+    ) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            rid = await _send(svc, 4)
+            assert not any(OPTED in s for s in (await _status(svc)).values())   # T-S4a
+            await _reply(svc, rid, "STOP")
+            status = await _status(svc)
+>           assert status[E1 + "4"].endswith("reminder: Submitted" + OPTED)    # G-E3-3 row
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: assert False
+E            +  where False = <built-in method endswith of str object at 0x7f42dbe2e9c0>(('reminder: Submitted' + '; Opted out — no texts'))
+E            +    where <built-in method endswith of str object at 0x7f42dbe2e9c0> = 'scheduled; reminder: Submitted'.endswith
+
+tests/demo_reminders/test_staff_screen.py:496: AssertionError
+___________________ test_t_s4d_marker_persists_after_restart ___________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_tea7a88c9_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s4d_marker_persists_after_restart(demo_env: dict[str, str]) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _reply(svc, await _send(svc, 4), "STOP")
+        finally:
+            await own.close()
+        own, svc = await _start(env)
+        try:
+            status = await _status(svc)
+>           assert status[E2 + "4"].endswith("reminder: Submitted" + BEFORE + OPTED)
+E           AssertionError: assert False
+E            +  where False = <built-in method endswith of str object at 0x7f42dbee1b60>((('reminder: Submitted' + ' (before restart)') + '; Opted out — no texts'))
+E            +    where <built-in method endswith of str object at 0x7f42dbee1b60> = 'scheduled; reminder: none'.endswith
+
+tests/demo_reminders/test_staff_screen.py:514: AssertionError
+________________ test_t_s5a_restart_shows_before_restart_labels ________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t6f49d5e9_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s5a_restart_shows_before_restart_labels(demo_env: dict[str, str]) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _reply(svc, await _send(svc, 1), "1")
+            await _send(svc, 2)
+        finally:
+            await own.close()
+        own, svc = await _start(env)
+        try:
+            status = await _status(svc)
+>           assert status[E2 + "1"].endswith("reminder: Confirmed by patient" + BEFORE)
+E           AssertionError: assert False
+E            +  where False = <built-in method endswith of str object at 0x7f42dbee1ca0>(('reminder: Confirmed by patient' + ' (before restart)'))
+E            +    where <built-in method endswith of str object at 0x7f42dbee1ca0> = 'scheduled; reminder: none'.endswith
+
+tests/demo_reminders/test_staff_screen.py:547: AssertionError
+______________ test_t_s5c_fixture_d_rows_show_only_their_own_slot ______________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_te3ddd560_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+
+    async def test_t_s5c_fixture_d_rows_show_only_their_own_slot(demo_env: dict[str, str]) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _send(svc, 4)                       # patient D, 10:30; a-5 is D at 15:00
+        finally:
+            await own.close()
+        own, svc = await _start(env)
+        try:
+            status = await _status(svc)
+>           assert status[E2 + "4"].endswith("reminder: Submitted" + BEFORE)
+E           AssertionError: assert False
+E            +  where False = <built-in method endswith of str object at 0x7f42dbdcd660>(('reminder: Submitted' + ' (before restart)'))
+E            +    where <built-in method endswith of str object at 0x7f42dbdcd660> = 'scheduled; reminder: none'.endswith
+
+tests/demo_reminders/test_staff_screen.py:582: AssertionError
+__________________ test_t_s5d_highest_id_slot_reminder_chosen __________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t7c95c32f_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t7c95c32f_demo'
+
+    async def test_t_s5d_highest_id_slot_reminder_chosen(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        env = _env(demo_env)
+        own, svc = await _start(env)
+        try:
+            await _send(svc, 1)
+        finally:
+            await own.close()
+        # pre-F-R1-1 data: a second reminder for the same slot with a higher id
+        _q(demo_db_url, "INSERT INTO reminder_records(id, tenant_id, emr_appt_id, emr_patient_id,"
+           " appt_start, state) SELECT 1000, tenant_id, 'syn-e0-20261028-a-1x', emr_patient_id,"
+           " appt_start, 'CANCEL_REQUESTED' FROM reminder_records LIMIT 1")
+        own, svc = await _start(env)
+        try:
+            status = await _status(svc)
+>           assert status[E2 + "1"].endswith(
+                "reminder: Cancel requested — staff to cancel in EHR" + BEFORE)
+E               AssertionError: assert False
+E                +  where False = <built-in method endswith of str object at 0x7f42dbe89930>(('reminder: Cancel requested — staff to cancel in EHR' + ' (before restart)'))
+E                +    where <built-in method endswith of str object at 0x7f42dbe89930> = 'scheduled; reminder: none'.endswith
+
+tests/demo_reminders/test_staff_screen.py:604: AssertionError
+__________________ test_writeback_after_restart_fails_closed ___________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t4eb16e9e_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t4eb16e9e_demo'
+
+    async def test_writeback_after_restart_fails_closed(
+        demo_env: dict[str, str], demo_db_url: str
+    ) -> None:
+        from haloflow_demo.service import DbStaffService
+    
+        s, own = await _own(_env(demo_env))
+        svc = DbStaffService(own, s, now=_clock(NOW))
+        try:
+            appt, tid = await _confirmed_via_service(svc, own, s)
+        finally:
+            await own.close()
+        s, own = await _own(_env(demo_env))                # restart: epoch 2, empty cache
+        svc2 = DbStaffService(own, s, now=_clock(NOW))
+        try:
+            page = await svc2.page_data()                    # regenerates the SAME date
+            result = await svc2.run_writeback(tid)
+            regenerated = svc2.ehr_for_date(APPT_START.date())
+        finally:
+            await own.close()
+        assert result == "scenario_unavailable"
+        assert regenerated.write_attempts == 0
+        assert all(not a["emr_appt_id"].startswith("syn-e1-") for a in page["appointments"])
+        # G-R1-1 / R-S5 (staff-screen package v1r1): the confirmed slot shows its earlier
+        # reminder labelled "(before restart)"; every other row still shows none.
+        status = {a["emr_appt_id"]: a["status"] for a in page["appointments"]}
+>       assert status["syn-e2-20261028-a-1"].endswith(
+            "reminder: Confirmed by patient (before restart)")
+E       AssertionError: assert False
+E        +  where False = <built-in method endswith of str object at 0x7f42dbdf13e0>('reminder: Confirmed by patient (before restart)')
+E        +    where <built-in method endswith of str object at 0x7f42dbdf13e0> = 'scheduled; reminder: none'.endswith
+
+tests/demo_reminders/test_inbound.py:1823: AssertionError
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s1e_stale_send_post_still_skipped_server_side
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s2a_submitted_row_has_four_reply_controls
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s2d_no_response_row_keeps_reply_controls
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s3f_get_does_not_mutate_items
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s3j_item_detail_is_escaped
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s4e_no_test_number_no_marker_no_error
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s5b_exact_id_takes_precedence
+PASSED tests/demo_reminders/test_staff_screen.py::test_t_s5e_other_tenant_reminder_never_shown
+PASSED tests/demo_reminders/test_inbound.py::test_writeback_after_date_rollover_targets_the_original_appointment
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s1a_s1c_send_shown_only_on_eligible_rows
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s1b_send_hidden_after_send
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s1d_send_visibility_equals_preview_incl_after_restart
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2b_answered_rows_have_no_reply_controls[1-CONFIRMED]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2b_answered_rows_have_no_reply_controls[2-RESCHEDULE_REQUESTED]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2b_answered_rows_have_no_reply_controls[3-CANCEL_REQUESTED]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2c_not_sent_row_has_no_reply_controls
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2e_before_restart_row_has_no_reply_controls
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[CLAIMED]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[REJECTED]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s2f_claimed_rejected_uncertain_rows_have_no_reply_controls[UNCERTAIN]
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3a_l_mark_done_one_item_other_stays_open
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3b_c_repeat_unknown_and_malformed_ids
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3d_e_csrf_and_origin_enforced
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3g_owner_lost_503_and_unchanged
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3h_mark_done_changes_only_item_status
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3i_open_items_listed_first
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s3k_done_persists_across_restart
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s4a_b_c_marker_after_stop_on_rows_with_a_phone
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s4d_marker_persists_after_restart
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s5a_restart_shows_before_restart_labels
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s5c_fixture_d_rows_show_only_their_own_slot
+FAILED tests/demo_reminders/test_staff_screen.py::test_t_s5d_highest_id_slot_reminder_chosen
+FAILED tests/demo_reminders/test_inbound.py::test_writeback_after_restart_fails_closed
+24 failed, 9 passed in 9.43s
