@@ -264,3 +264,62 @@ def test_confirmation_and_reference_shapes(tmp_path: Path, capsys: Any) -> None:
     assert data["reference_statuses"] == {"returned_count": 1, "totalcount_type": "number"}
     assert data["write"].startswith("NOT TESTED")
     no_leak(blob)
+
+
+# Codex F-P1 / F-P2 regressions ------------------------------------------------
+@pytest.mark.parametrize("conf", [{"confirmationname": None, "shortname": "C"},
+                                  {"shortname": "C"}, {"confirmationname": "x", "shortname": None}])
+def test_fp1_missing_or_null_confirmation_not_verified(conf: dict[str, Any], tmp_path: Path,
+                                                        capsys: Any) -> None:
+    api = Api([appt(1)])
+    api.override["/confirmationstatus"] = httpx.Response(200, json=conf)
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 0
+    assert "CONFIRMATION_READ_SHAPE_VERIFIED" not in data["outcome_classes"]
+    assert any("confirmation read shape NOT verified" in x for x in data["limitations"])
+    no_leak(blob)
+
+
+@pytest.mark.parametrize("conf", [{"confirmationname": [], "shortname": "C"},
+                                  {"confirmationname": "x", "shortname": 3}, ["x"]])
+def test_fp1_wrong_type_confirmation_is_shape_failure(conf: Any, tmp_path: Path,
+                                                      capsys: Any) -> None:
+    api = Api([appt(1)])
+    api.override["/confirmationstatus"] = httpx.Response(200, json=conf)
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and data["result"] == "SHAPE"
+    assert "CONFIRMATION_READ_SHAPE_VERIFIED" not in data["outcome_classes"]
+    no_leak(blob)
+
+
+@pytest.mark.parametrize("entries", [["bad"], [appt(1), "bad"], [None], [[1]]])
+def test_fp1_malformed_booked_entries_are_shape_failure(entries: list[Any], tmp_path: Path,
+                                                        capsys: Any) -> None:
+    api = Api()
+    api.override["/appointments/booked"] = httpx.Response(
+        200, json={"appointments": entries, "totalcount": len(entries)})
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and data["result"] == "SHAPE"
+    assert "READ_SHAPE_VERIFIED" not in data["outcome_classes"]
+    assert not any("0 appointments returned" in x for x in data["limitations"])
+    no_leak(blob)
+
+
+@pytest.mark.parametrize("single", [[], ["bad"], [appt(1), 5], "SENTINEL-text", 7])
+def test_fp1_malformed_single_response_is_shape_failure(single: Any, tmp_path: Path,
+                                                        capsys: Any) -> None:
+    api = Api([appt(1)])
+    api.override["/appointments/1001"] = httpx.Response(200, json=single)
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and data["result"] == "SHAPE"
+    assert "single_appointment_fields" not in data
+    no_leak(blob)
+
+
+def test_fp2_refused_gate_never_claims_passed(tmp_path: Path, capsys: Any) -> None:
+    rc, data, blob = run(Api(), {**GOOD_ENV, "ATHENA_PRACTICE_ID": "195901"}, tmp_path, capsys)
+    assert rc == 2
+    assert data["practice"] == "identity gate REFUSED"
+    assert "passed" not in blob
+    rc, data, _ = run(Api(), tmp_path=tmp_path / "ok", capsys=capsys)
+    assert rc == 0 and data["practice"] == "published Preview sandbox (identity gate passed)"

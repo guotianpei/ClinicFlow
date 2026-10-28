@@ -200,7 +200,7 @@ def probe(env: Mapping[str, str], today: date,
     out: dict[str, Any] = {
         "probe": "athena_preview_read_probe v1 (N-EHR v1r1)",
         "generated_utc": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "practice": "published Preview sandbox (identity gate passed)",
+        "practice": "NOT CHECKED",
         "requests": [], "outcome_classes": [], "limitations": [],
         "write": "NOT TESTED (no write in this probe)",
     }
@@ -208,8 +208,10 @@ def probe(env: Mapping[str, str], today: date,
         cid, secret = gate(env)
     except GateRefused as exc:
         out["result"] = f"GATE_REFUSED:{exc.args[0]}"
+        out["practice"] = "identity gate REFUSED"
         out["requests"] = []
         return 2, out
+    out["practice"] = "published Preview sandbox (identity gate passed)"
     c = GuardedClient(transport)
     rc = 0
     try:
@@ -224,11 +226,12 @@ def probe(env: Mapping[str, str], today: date,
             **BOOKED_PARAMS_FIXED})
         if not isinstance(booked, dict) or not isinstance(booked.get("appointments"), list):
             raise Stop("SHAPE")
-        appts = [a for a in booked["appointments"] if isinstance(a, dict)]
+        if not all(isinstance(a, dict) for a in booked["appointments"]):
+            raise Stop("SHAPE")  # F-P1: malformed entries are never an empty success
+        appts: list[dict[str, Any]] = booked["appointments"]
         out["booked"] = {
             "totalcount_type": _jtype(booked.get("totalcount")),
             "returned_count": len(booked["appointments"]),
-            "non_object_entries": len(booked["appointments"]) - len(appts),
             "window_days": WINDOW_DAYS,
         }
         if not appts:
@@ -256,19 +259,33 @@ def probe(env: Mapping[str, str], today: date,
             single: list[dict[str, Any]] = []
             for i in ids:
                 d = c.get("single", f"/v1/{PRACTICE}/appointments/{i}", tok)
-                single.extend(x for x in (d if isinstance(d, list) else [d])
-                              if isinstance(x, dict))
+                entries = d if isinstance(d, list) else [d]
+                if not entries or not all(isinstance(x, dict) for x in entries):
+                    raise Stop("SHAPE")  # F-P1: invalid single-appointment response
+                single.extend(entries)
             if single:
                 out["single_appointment_fields"] = _fields(single, DOC_APPT_KEYS)
             if ids:
                 conf = c.get("confirmationstatus",
                              f"/v1/{PRACTICE}/appointments/{ids[0]}/confirmationstatus", tok)
-                if isinstance(conf, dict):
-                    out["confirmationstatus_fields"] = _fields([conf], DOC_CONFIRMATION_KEYS)
-                    if any(k in conf for k in DOC_CONFIRMATION_KEYS):
-                        out["outcome_classes"].append("CONFIRMATION_READ_SHAPE_VERIFIED")
+                if not isinstance(conf, dict):
+                    raise Stop("SHAPE")
+                out["confirmationstatus_fields"] = _fields([conf], DOC_CONFIRMATION_KEYS)
+                # F-P1: documented types (both strings). Present with a wrong type is a
+                # SHAPE failure; confirmationname missing/null or shortname null is a
+                # limitation and never a verified class. shortname may be absent ("if
+                # defined then the status is a positive confirmation").
+                for k in DOC_CONFIRMATION_KEYS:
+                    if k in conf and conf[k] is not None and not isinstance(conf[k], str):
+                        raise Stop("SHAPE")
+                name_ok = isinstance(conf.get("confirmationname"), str)
+                short_ok = "shortname" not in conf or isinstance(conf["shortname"], str)
+                if name_ok and short_ok:
+                    out["outcome_classes"].append("CONFIRMATION_READ_SHAPE_VERIFIED")
                 else:
-                    out["limitations"].append("confirmationstatus response not an object")
+                    out["limitations"].append(
+                        "confirmationstatus fields missing or null; confirmation read shape"
+                        " NOT verified")
             else:
                 out["limitations"].append(
                     "no valid appointment id; single/confirmation reads skipped")
