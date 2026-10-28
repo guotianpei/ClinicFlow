@@ -153,6 +153,23 @@ def _e(value: object) -> str:
     return html.escape("" if value is None else str(value), quote=True)
 
 
+def _source_html(src: Any) -> str:
+    """N-ATH banners. Fixed text plus fixed codes/counts only (never response data)."""
+    if not isinstance(src, dict) or src.get("kind") != "athena_preview":
+        return ""
+    if src.get("error"):
+        return f"<p><strong>athenahealth sandbox unavailable — {_e(src['error'])}</strong></p>"
+    lines = [f"Sandbox snapshot taken {_e(src.get('snapshot_taken'))}.",
+             f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED."]
+    counts = src.get("counts") or {}
+    if counts:
+        lines.append("Excluded records: " + ", ".join(
+            f"{_e(k)}={_e(v)}" for k, v in sorted(counts.items())) + ".")
+    if src.get("truncated"):
+        lines.append("TRUNCATED — more than 500 appointments; Send batch disabled.")
+    return "".join(f"<p>{line}</p>" for line in lines)
+
+
 def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | None,
             result: str | None = None) -> str:
     hidden = f'<input type="hidden" name="{CSRF_FIELD}" value="{_e(token)}">'
@@ -204,6 +221,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
     )
     labels = data.get("labels", {})
     label_text = ", ".join(f"{_e(k)}={_e(v)}" for k, v in labels.items())
+    source_html = _source_html(data.get("source"))
     status_html = f'<p role="status">{_e(result)}</p>' if result is not None else ""
     preview_html = ""
     if preview is not None:
@@ -216,6 +234,7 @@ def _render(data: dict[str, Any], token: str, preview: list[dict[str, Any]] | No
         f"<body><p><strong>{_e(STAFF_BANNER)}</strong></p>"
         f"{status_html}"
         f"<p>Modes: {label_text}. Paused: {_e(data.get('paused'))}.</p>"
+        f"{source_html}"
         f"{form('/demo/batch/preview', 'Preview batch')}"
         f"{form('/demo/batch/send', 'Send batch (simulated)')}"
         f"{form('/demo/inbound/process', 'Process replies now')}"

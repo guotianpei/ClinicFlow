@@ -167,6 +167,10 @@ async def live_sms_test(
     if env.get("DEMO_LIVE_TEST") != ARMED:
         _say(refused="live_test_not_armed")
         return EXIT_REFUSED
+    if env.get("DEMO_EHR_SOURCE", "") == "athena_preview":
+        # N-ATH A-1': the sandbox source runs with simulated sends only (OD-A3).
+        _say(refused="live_test_athena_mode")
+        return EXIT_REFUSED
     s = DemoSettings.from_env(env)
     bad = _local_inputs(env, s)
     if bad is not None:

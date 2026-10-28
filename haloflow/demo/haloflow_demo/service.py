@@ -26,12 +26,19 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import text
 
+from haloflow_demo.athena_source import (
+    EHR_LABEL,
+    AthenaConfig,
+    AthenaPreviewClient,
+    SourceInvalid,
+    fetch_snapshot,
+)
 from haloflow_demo.inbound import ReceiveResult, process_pending, receive
 from haloflow_demo.noresponse import flag_no_response
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
 from haloflow_demo.sending import SmsGateway, StubGateway, phone_key, send_batch, send_one
-from haloflow_demo.settings import DemoSettings
+from haloflow_demo.settings import DemoSettings, StartupRefused
 from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
 from haloflow_demo.tasks import reconcile_task, run_task
 
@@ -128,6 +135,8 @@ class DbStaffService:
         *,
         now: Callable[[], datetime] = _utcnow,
         gateway: SmsGateway | None = None,
+        athena: AthenaConfig | None = None,
+        athena_transport: Any = None,
     ) -> None:
         self._own = own
         self._settings = settings
@@ -135,6 +144,15 @@ class DbStaffService:
         self._gateway: SmsGateway = gateway or StubGateway(settings.sms_test_number)
         self._ehr: dict[date, SyntheticEhr] = {}
         self.ehr = _EhrRouter()
+        # N-ATH: read-only sandbox source (None = synthetic fixtures, unchanged).
+        # F-ATH-I1: settings and config must agree; never silently synthetic.
+        if (settings.ehr_source == "athena_preview") != (athena is not None):
+            raise StartupRefused("athena_config_inconsistent")
+        self._athena = athena
+        self._athena_transport = athena_transport
+        self._athena_client: AthenaPreviewClient | None = None
+        self._source_locks: dict[date, asyncio.Lock] = {}
+        self._source_meta: dict[date, dict[str, Any]] = {}
 
     def _target(self) -> date:
         return clinic_target_date(self._now(), self._settings.clinic_tz,
@@ -147,6 +165,56 @@ class DbStaffService:
             self.ehr.register(ehr)
             self._ehr[target] = ehr
         return self._ehr[target]
+
+    async def _source(self, target: date) -> SyntheticEhr | None:
+        """The EHR for ``target``: synthetic fixtures, or (athena mode) one sandbox
+        snapshot per (process, date), fetched once under a per-date lock. A failed
+        fetch is remembered for the date (no synthetic fallback); None means
+        "no appointments available"."""
+        if self._athena is None:
+            return self._ehr_for(target)
+        lock = self._source_locks.setdefault(target, asyncio.Lock())
+        async with lock:
+            if target in self._ehr:
+                return self._ehr[target]
+            meta = self._source_meta.get(target)
+            if meta is not None and meta["error"] is not None:
+                return None
+            if self._athena_client is None:
+                self._athena_client = AthenaPreviewClient(self._athena,
+                                                          transport=self._athena_transport)
+            try:
+                snap = await fetch_snapshot(self._athena_client, target,
+                                            self._settings.clinic_tz,
+                                            self._athena.department_id, self._own.epoch)
+            except SourceInvalid as exc:
+                self._source_meta[target] = {"error": exc.code, "truncated": False,
+                                             "counts": {}, "taken_at": None}
+                return None
+            ehr = SyntheticEhr(snap.fixtures)
+            self.ehr.register(ehr)
+            self._ehr[target] = ehr
+            self._source_meta[target] = {"error": None, "truncated": snap.truncated,
+                                         "counts": dict(snap.counts),
+                                         "taken_at": snap.taken_at}
+            return ehr
+
+    async def aclose(self) -> None:
+        if self._athena_client is not None:
+            await self._athena_client.aclose()
+            self._athena_client = None
+
+    def _source_block(self, target: date) -> dict[str, Any]:
+        if self._athena is None:
+            return {"kind": "synthetic"}
+        meta = self._source_meta.get(target, {})
+        taken = meta.get("taken_at")
+        return {"kind": "athena_preview", "error": meta.get("error"),
+                "truncated": bool(meta.get("truncated", False)),
+                "counts": dict(meta.get("counts", {})),
+                "snapshot_taken": format_local(taken, self._settings.clinic_tz)
+                if taken is not None else None,
+                "tz": self._settings.clinic_tz}
 
     def ehr_for_date(self, target: date) -> SyntheticEhr:
         """The synthetic EHR this process created for ``target`` (tests, inspection)."""
@@ -240,8 +308,13 @@ class DbStaffService:
 
     async def page_data(self) -> dict[str, Any]:
         target = self._target()
-        ehr = self._ehr_for(target)
+        ehr = await self._source(target)
         tz = self._settings.clinic_tz
+        if ehr is None:
+            inbound, items, tasks = await self._lists()
+            return {"paused": await self._paused(), "target_date": target.isoformat(),
+                    "appointments": [], "inbound": inbound, "items": items, "tasks": tasks,
+                    "labels": self._labels(), "source": self._source_block(target)}
         appts = await ehr.get_appointments_by_date(target, tz)
         reminders = await self._reminder_rows()
         by_id = {r.emr_appt_id: r for r in reminders}
@@ -278,12 +351,20 @@ class DbStaffService:
         inbound, items, tasks = await self._lists()
         return {"paused": await self._paused(), "target_date": target.isoformat(),
                 "appointments": rows, "inbound": inbound, "items": items, "tasks": tasks,
-                "labels": dict(LABELS)}
+                "labels": self._labels(), "source": self._source_block(target)}
+
+    def _labels(self) -> dict[str, str]:
+        labels = dict(LABELS)
+        if self._athena is not None:
+            labels["ehr"] = EHR_LABEL
+        return labels
 
     async def preview_batch(self) -> list[dict[str, Any]]:
-        """Read-only: no claim, no reservation, no external call."""
+        """Read-only: no claim, no reservation, no external send."""
         target = self._target()
-        ehr = self._ehr_for(target)
+        ehr = await self._source(target)
+        if ehr is None:
+            return []
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
         result = select_eligible(appts, ehr.patients, target, tz,
@@ -295,14 +376,22 @@ class DbStaffService:
 
     async def _eligible(self) -> list[Any]:
         target = self._target()
-        ehr = self._ehr_for(target)
+        ehr = await self._source(target)
+        if ehr is None:
+            return []
         tz = self._settings.clinic_tz
         appts = await ehr.get_appointments_by_date(target, tz)
         return select_eligible(appts, ehr.patients, target, tz,
                                existing_appt_ids=await self._existing_ids(appts)).eligible
 
     async def send_batch(self) -> list[dict[str, Any]]:
-        """Send to every eligible appointment on the target date (stub gateway)."""
+        """Send to every eligible appointment on the target date (stub gateway).
+        Refused (no send) while the sandbox snapshot is TRUNCATED (A-3c)."""
+        if self._athena is not None:
+            target = self._target()
+            await self._source(target)
+            if self._source_meta.get(target, {}).get("truncated"):
+                return []
         sent = await send_batch(self._own, self._settings, await self._eligible(),
                                 self._gateway, tenant_id=TENANT_ID, now=self._now)
         return [{"reminder_id": r.reminder_id, "state": r.state, "reason": r.reason}

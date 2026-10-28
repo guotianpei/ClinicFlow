@@ -33,14 +33,16 @@ import os
 import secrets
 import signal
 import sys
-from collections.abc import Awaitable, Callable
-from typing import NoReturn
+from collections.abc import Awaitable, Callable, Mapping
+from typing import Any, NoReturn
 
 import uvicorn
 
+from haloflow_demo.athena_source import AthenaConfig, check_athena_mode
 from haloflow_demo.ownership import Ownership, acquire_ownership
 from haloflow_demo.service import DbStaffService
 from haloflow_demo.settings import (
+    DemoDbTarget,
     DemoSettings,
     StartupRefused,
     build_server_configs,
@@ -67,9 +69,25 @@ class _EventSink(list[str]):
         self._emit(item)
 
 
+def prepare(settings: DemoSettings,
+            env: Mapping[str, str]) -> tuple[DemoDbTarget, AthenaConfig | None]:
+    """Every start-up refusal that needs no socket, the N-ATH guard included
+    (F-ATH-I1: the sandbox source is validated here, before any DB, listener or
+    provider effect). Raises StartupRefused."""
+    target = validate_startup(settings)
+    return target, check_athena_mode(settings, env)
+
+
+def build_service(own: Ownership, settings: DemoSettings, athena: AthenaConfig | None,
+                  *, athena_transport: Any = None) -> DbStaffService:
+    return DbStaffService(own, settings, athena=athena, athena_transport=athena_transport)
+
+
 async def run(
     settings: DemoSettings,
     *,
+    env: Mapping[str, str] | None = None,
+    athena_transport: Any = None,
     on_started: Callable[[Ownership], None] | None = None,
     on_event: Callable[[str], None] | None = None,
     watchdog_interval: float = 2.0,
@@ -78,7 +96,7 @@ async def run(
 ) -> int:
     events = _EventSink(on_event or (lambda _e: None))
     try:
-        target = validate_startup(settings)
+        target, athena = prepare(settings, dict(os.environ) if env is None else env)
         own = await acquire_ownership(settings, target, events=events)
     except StartupRefused as exc:
         logger.error("demo start-up refused: %s", exc.reason)
@@ -88,7 +106,7 @@ async def run(
     def gate() -> bool:
         return own.owner_lost or own.closing
 
-    service = DbStaffService(own, settings)
+    service = build_service(own, settings, athena, athena_transport=athena_transport)
     staff_app = build_staff_app(service, csrf_secret=secrets.token_bytes(32),
                                 unavailable=gate, staff_port=settings.staff_port)
     callback_app = build_callback_app(unavailable=gate, receiver=service.receive_http)
@@ -143,6 +161,7 @@ async def run(
         events.append("drain_incomplete")
         return EXIT_DRAIN_INCOMPLETE  # no lock release: the process must exit now
     events.append("drained")
+    await service.aclose()          # N-ATH: close the sandbox HTTP client, if any
     if own.owner_lost and code == EXIT_OK:
         code = EXIT_OWNER_LOST
     await own.close()
