@@ -270,7 +270,8 @@ async def test_tz10_request_bound_truncated_path() -> None:
 
 
 async def test_tz1_page_shows_verified(demo_env: dict[str, str]) -> None:
-    data, html, own, _svc = await _page(demo_env, Api())
+    data, html, own, svc = await _page(demo_env, Api())
+    await svc.aclose()
     await own.close()
     assert data["source"]["tz_status"] == "VERIFIED" and data["source"]["dept_tz"] == TZ
     assert ("Sandbox department timezone matches clinic timezone (America/New_York)"
@@ -290,6 +291,7 @@ async def test_tz2_tz3_page_mismatch_banner_sticky_and_no_send(
         preview = await svc.preview_batch()
         batch = await svc.send_batch()
     finally:
+        await svc.aclose()
         await own.close()
     assert data["appointments"] == [] and preview == [] and batch == []
     assert data["source"]["error"] == "SOURCE_TZ_MISMATCH"
@@ -305,7 +307,8 @@ async def test_tz2_tz3_page_mismatch_banner_sticky_and_no_send(
 @pytest.mark.parametrize("name", ["Eastern Standard Time", "SENTINEL<script>", None])
 async def test_tz5_page_undetermined_keeps_unverified(demo_env: dict[str, str],
                                                       name: str | None) -> None:
-    data, html, own, _svc = await _page(demo_env, Api(dept_body(timezonename=name)))
+    data, html, own, svc = await _page(demo_env, Api(dept_body(timezonename=name)))
+    await svc.aclose()
     await own.close()
     assert data["source"]["tz_status"] == "UNDETERMINED" and data["source"]["dept_tz"] is None
     assert "Times assume the sandbox department is in America/New_York — UNVERIFIED." in html
