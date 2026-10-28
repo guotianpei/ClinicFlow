@@ -26,6 +26,7 @@ from typing import Any, NamedTuple
 
 from sqlalchemy import text
 
+from haloflow_demo import provenance
 from haloflow_demo.athena_source import (
     EHR_LABEL,
     AthenaConfig,
@@ -153,6 +154,11 @@ class DbStaffService:
         self._athena_client: AthenaPreviewClient | None = None
         self._source_locks: dict[date, asyncio.Lock] = {}
         self._source_meta: dict[date, dict[str, Any]] = {}
+        # N-TZ Step 3 provenance: P0 result (process-sticky) and the pinned context.
+        self._prov_lock = asyncio.Lock()
+        self._prov_checked = False
+        self._prov_error: str | None = None
+        self._pinned: provenance.Context | None = None
 
     def _target(self) -> date:
         return clinic_target_date(self._now(), self._settings.clinic_tz,
@@ -180,17 +186,33 @@ class DbStaffService:
             meta = self._source_meta.get(target)
             if meta is not None and meta["error"] is not None:
                 return None
+            refused = await self._provenance_p0()
+            if refused is not None:
+                self._source_meta[target] = self._failed(refused)
+                return None
             if self._athena_client is None:
                 self._athena_client = AthenaPreviewClient(self._athena,
                                                           transport=self._athena_transport)
+            conflict: dict[str, Any] = {}
+
+            async def check_context(eff_tz: str, basis: str) -> None:
+                assert self._athena is not None
+                ctx = provenance.Context(self._athena.department_id, eff_tz, basis,
+                                         self._settings.clinic_tz)
+                found = await self._provenance_p1(ctx)
+                if found is not None:
+                    if found.stored is not None:
+                        conflict.update(zone=eff_tz, basis=basis, old_zone=found.stored.zone,
+                                        old_basis=found.stored.basis)
+                    raise SourceInvalid(found.code)
+
             try:
                 snap = await fetch_snapshot(self._athena_client, target,
                                             self._settings.clinic_tz,
-                                            self._athena.department_id, self._own.epoch)
+                                            self._athena.department_id, self._own.epoch,
+                                            check_context)
             except SourceInvalid as exc:
-                self._source_meta[target] = {"error": exc.code, "truncated": False,
-                                             "counts": {}, "taken_at": None,
-                                             "tz_status": None, "dept_tz": exc.detail}
+                self._source_meta[target] = self._failed(exc.code, conflict or None)
                 return None
             ehr = SyntheticEhr(snap.fixtures)
             self.ehr.register(ehr)
@@ -199,8 +221,34 @@ class DbStaffService:
                                          "counts": dict(snap.counts),
                                          "taken_at": snap.taken_at,
                                          "tz_status": snap.tz_status,
-                                         "dept_tz": snap.dept_tz}
+                                         "dept_tz": snap.dept_tz,
+                                         "eff_tz": snap.eff_tz, "conflict": None}
             return ehr
+
+    @staticmethod
+    def _failed(code: str, conflict: dict[str, Any] | None = None) -> dict[str, Any]:
+        return {"error": code, "truncated": False, "counts": {}, "taken_at": None,
+                "tz_status": None, "dept_tz": None, "eff_tz": None, "conflict": conflict}
+
+    async def _provenance_p0(self) -> str | None:
+        """Once per process, before any athena request (process-sticky)."""
+        async with self._prov_lock:
+            if not self._prov_checked:
+                self._prov_error = await provenance.check_stored(self._own)
+                self._prov_checked = True
+            return self._prov_error
+
+    async def _provenance_p1(self, ctx: provenance.Context) -> provenance.Conflict | None:
+        """Every snapshot, before any booked GET. The first accepted context is
+        pinned for the process; a process never re-establishes."""
+        async with self._prov_lock:
+            if self._pinned is not None:
+                return None if ctx == self._pinned else provenance.Conflict(
+                    provenance.CHANGED, self._pinned)
+            found = await provenance.establish(self._own, ctx)
+            if found is None:
+                self._pinned = ctx
+            return found
 
     async def aclose(self) -> None:
         if self._athena_client is not None:
@@ -218,7 +266,8 @@ class DbStaffService:
                 "snapshot_taken": format_local(taken, self._settings.clinic_tz)
                 if taken is not None else None,
                 "tz": self._settings.clinic_tz,
-                "tz_status": meta.get("tz_status"), "dept_tz": meta.get("dept_tz")}
+                "tz_status": meta.get("tz_status"), "dept_tz": meta.get("dept_tz"),
+                "eff_tz": meta.get("eff_tz"), "conflict": meta.get("conflict")}
 
     def ehr_for_date(self, target: date) -> SyntheticEhr:
         """The synthetic EHR this process created for ``target`` (tests, inspection)."""
@@ -345,7 +394,7 @@ class DbStaffService:
                 "emr_appt_id": a.emr_appt_id,
                 "reminder_id": exact.id if exact else None,
                 "patient": patient.display_name if patient is not None else "(unknown)",
-                "when": format_local(a.start_utc, tz),
+                "when": format_local(a.start_utc, a.display_tz or tz),
                 "status": f"{a.status.value}; reminder: {label}"
                           + (OPTED_OUT_SUFFIX if opted_out else ""),
                 "eligible": a.emr_appt_id in eligible,

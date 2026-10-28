@@ -19,12 +19,15 @@ Times: ``date`` + ``starttime`` are read as local times in CLINIC_TZ;
 nonexistent and ambiguous local times are excluded, never resolved.
 
 N-TZ Step 2: before any booked page, the configured department's detail is read
-(``GET /v1/195900/departments/{configured id}``) and its ``timezonename`` is
-classified against CLINIC_TZ for the target date (``classify_tz``):
-VERIFIED (exact recognized IANA name), MISMATCH (recognized IANA name with a
-different UTC offset at some instant of the date — the fetch is rejected with
-``SOURCE_TZ_MISMATCH``) or UNDETERMINED (everything else; the UNVERIFIED
-assumption stays labelled).
+(``GET /v1/195900/departments/{configured id}``).
+
+N-TZ Step 3 (owner decisions OD-TZ1 "Convert and send", OD-TZ2 "Keep text, no
+label"): a recognized IANA department zone is the effective zone in which booked
+``date`` + ``starttime`` are read (VERIFIED when it equals CLINIC_TZ, else
+CONVERTED; basis DEPARTMENT). Anything else is UNDETERMINED and falls back to
+CLINIC_TZ (basis FALLBACK; the UNVERIFIED assumption stays labelled). The
+optional ``check_context`` callback runs after the department GET and before any
+booked GET (interpretation provenance, service layer).
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ from __future__ import annotations
 import asyncio
 import re
 import time as _time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
@@ -59,6 +62,8 @@ DEPARTMENT_PATH = f"/v1/{PRACTICE}/departments/{{}}"
 TZ_NAME_RE = re.compile(r"^[A-Za-z0-9_/+\-. ]{1,64}$")
 TZ_SAMPLE_STEP = timedelta(minutes=15)
 VERIFIED, MISMATCH, UNDETERMINED = "VERIFIED", "MISMATCH", "UNDETERMINED"
+CONVERTED = "CONVERTED"
+DEPARTMENT, FALLBACK = "DEPARTMENT", "FALLBACK"
 SCOPE = "athena/service/Athenanet.MDP.*"
 PAGE_LIMIT = 100
 MAX_PAGES = 5
@@ -99,6 +104,8 @@ class Snapshot:
     taken_at: datetime
     tz_status: str = UNDETERMINED
     dept_tz: str | None = None
+    eff_tz: str = ""
+    basis: str = FALLBACK
 
 
 def check_athena_mode(s: DemoSettings, env: Mapping[str, str]) -> AthenaConfig | None:
@@ -112,7 +119,7 @@ def check_athena_mode(s: DemoSettings, env: Mapping[str, str]) -> AthenaConfig |
         raise StartupRefused("athena_requires_simulated_callback")
     if env.get("DEMO_LIVE_TEST", ""):
         raise StartupRefused("athena_live_test_forbidden")
-    if not ID_RE.match(s.athena_department_id):
+    if not ID_RE.fullmatch(s.athena_department_id):
         raise StartupRefused("athena_department")
     base = env.get("ATHENA_BASE_URL", "")
     try:
@@ -224,7 +231,7 @@ def extract_tz(body: Any, department_id: str) -> str | None:
         if isinstance(dep, bool) or not isinstance(dep, str | int) or str(dep) != department_id:
             raise SourceInvalid("SOURCE_INVALID")
     name = body.get("timezonename")
-    if not isinstance(name, str) or not TZ_NAME_RE.match(name):
+    if not isinstance(name, str) or not TZ_NAME_RE.fullmatch(name):
         return None
     return _iana(name)
 
@@ -263,13 +270,14 @@ def _local_start(d: date, t: time, tz: str) -> tuple[datetime | None, str | None
 
 
 def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
-         epoch: int) -> tuple[SyntheticAppointment | None, str | None, str]:
+         epoch: int, display_tz: str | None = None,
+         ) -> tuple[SyntheticAppointment | None, str | None, str]:
     aid, pid = str(r.get("appointmentid", "")), str(r.get("patientid", ""))
-    if not ID_RE.match(aid) or not ID_RE.match(pid):
+    if not ID_RE.fullmatch(aid) or not ID_RE.fullmatch(pid):
         return None, "INVALID_ID", pid
     d_raw, t_raw, dept = r.get("date"), r.get("starttime"), r.get("departmentid")
-    dm = DATE_RE.match(d_raw) if isinstance(d_raw, str) else None
-    tm = TIME_RE.match(t_raw) if isinstance(t_raw, str) else None
+    dm = DATE_RE.fullmatch(d_raw) if isinstance(d_raw, str) else None
+    tm = TIME_RE.fullmatch(t_raw) if isinstance(t_raw, str) else None
     dept_ok = (isinstance(dept, str) or (isinstance(dept, int) and not isinstance(dept, bool)))
     if dm is None or tm is None or not dept_ok:
         return None, "MALFORMED_RECORD", pid
@@ -290,16 +298,28 @@ def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
     if start is None:
         return None, why, pid
     return SyntheticAppointment(f"ath-e{epoch}-{aid}", f"athp-{pid}", start,
-                                STATUS_MAP[status], INITIAL_CONFIRMATION), None, pid
+                                STATUS_MAP[status], INITIAL_CONFIRMATION,
+                                display_tz), None, pid
+
+
+ContextCheck = Callable[[str, str], Awaitable[None]]
 
 
 async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
-                         department_id: str, epoch: int) -> Snapshot:
+                         department_id: str, epoch: int,
+                         check_context: ContextCheck | None = None) -> Snapshot:
+    """``tz`` is CLINIC_TZ. ``check_context(eff_tz, basis)`` may raise
+    ``SourceInvalid``; it runs before any booked GET."""
     token = await client.token()
     dept_tz = extract_tz(await client.department(token), department_id)
-    tz_status = classify_tz(dept_tz, tz, target)
-    if tz_status == MISMATCH:
-        raise SourceInvalid("SOURCE_TZ_MISMATCH", detail=dept_tz)
+    if dept_tz is None:
+        tz_status, eff_tz, basis = UNDETERMINED, tz, FALLBACK
+    else:
+        tz_status = VERIFIED if dept_tz == tz else CONVERTED
+        eff_tz, basis = dept_tz, DEPARTMENT
+    if check_context is not None:
+        await check_context(eff_tz, basis)
+    display_tz = eff_tz if eff_tz != tz else None
     records: list[dict[str, Any]] = []
     total: int | None = None
     truncated = False
@@ -338,7 +358,7 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
     appointments: list[SyntheticAppointment] = []
     patients: dict[str, SyntheticPatient] = {}
     for r in records:
-        appt, why, pid = _map(r, target, tz, department_id, epoch)
+        appt, why, pid = _map(r, target, eff_tz, department_id, epoch, display_tz)
         if appt is None:
             assert why is not None
             counts[why] = counts.get(why, 0) + 1
@@ -347,4 +367,4 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
         patients.setdefault(appt.emr_patient_id, SyntheticPatient(
             appt.emr_patient_id, f"Sandbox patient …{pid[-4:]}", "sandbox"))
     return Snapshot(Fixtures(patients=patients, appointments=appointments), counts,
-                    truncated, datetime.now(tz=UTC), tz_status, dept_tz)
+                    truncated, datetime.now(tz=UTC), tz_status, dept_tz, eff_tz, basis)

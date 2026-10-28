@@ -159,13 +159,29 @@ def _source_html(src: Any) -> str:
         return ""
     if src.get("error"):
         out = f"<p><strong>athenahealth sandbox unavailable — {_e(src['error'])}</strong></p>"
-        if src["error"] == "SOURCE_TZ_MISMATCH" and src.get("dept_tz"):
-            out += (f"<p>Sandbox department timezone {_e(src['dept_tz'])} differs from"
-                    f" clinic timezone {_e(src.get('tz'))}.</p>")
+        c = src.get("conflict")
+        if src["error"] == "TZ_CONTEXT_CHANGED" and isinstance(c, dict):
+            out += (f"<p>Sandbox appointment times would now be read in {_e(c['zone'])}"
+                    f" ({_e(c['basis'])}) but earlier sandbox reminders in this database"
+                    f" used {_e(c['old_zone'])} ({_e(c['old_basis'])}); use a fresh demo"
+                    " database.</p>")
+        elif src["error"] == "LEGACY_ATHENA_REMINDERS":
+            out += ("<p>This demo database holds sandbox reminders from before timezone"
+                    " conversion; use a fresh demo database.</p>")
+        elif src["error"] == "TZ_PROVENANCE_UNSUPPORTED":
+            out += ("<p>This demo database's timezone record is not recognized; use a"
+                    " fresh demo database.</p>")
         return out
-    tz_line = (f"Sandbox department timezone matches clinic timezone ({_e(src.get('tz'))})"
-               " — VERIFIED." if src.get("tz_status") == "VERIFIED" else
-               f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED.")
+    status = src.get("tz_status")
+    if status == "VERIFIED":
+        tz_line = (f"Sandbox department timezone matches clinic timezone ({_e(src.get('tz'))})"
+                   " — VERIFIED.")
+    elif status == "CONVERTED":
+        tz_line = (f"Sandbox department timezone {_e(src.get('eff_tz'))} differs from clinic"
+                   f" timezone {_e(src.get('tz'))} — appointment times are read and texted in"
+                   f" {_e(src.get('eff_tz'))}.")
+    else:
+        tz_line = f"Times assume the sandbox department is in {_e(src.get('tz'))} — UNVERIFIED."
     lines = [f"Sandbox snapshot taken {_e(src.get('snapshot_taken'))}.", tz_line]
     counts = src.get("counts") or {}
     if counts:

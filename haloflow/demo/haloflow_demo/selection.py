@@ -66,9 +66,9 @@ def select_eligible(
     *,
     existing_appt_ids: set[str],
 ) -> Selection:
-    zone = ZoneInfo(tz)
     result = Selection(target_date=target_date)
     for appt in appointments:
+        zone = ZoneInfo(appt.display_tz or tz)          # N-TZ Step 3: appointment's zone
         if appt.start_utc.astimezone(zone).date() != target_date:
             continue  # not this clinic day; adapters may over-return around midnight
         skip: SkipReason | None = None
