@@ -1,0 +1,10 @@
+# N-TZ Step 2 PG16 evidence 2026-10-28T19:00:23Z HEAD abd69f8 + uncommitted hygiene
+16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+## ruff
+All checks passed!
+## mypy --strict
+Success: no issues found in 23 source files
+## athena suites
+119 passed in 5.24s
+## full demo suite
+650 passed, 1 warning in 147.94s (0:02:27)

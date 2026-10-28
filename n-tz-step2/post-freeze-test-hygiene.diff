@@ -1,0 +1,56 @@
+diff --git a/haloflow/tests/demo_reminders/test_athena_startup.py b/haloflow/tests/demo_reminders/test_athena_startup.py
+index 2e9aee1..affb24c 100644
+--- a/haloflow/tests/demo_reminders/test_athena_startup.py
++++ b/haloflow/tests/demo_reminders/test_athena_startup.py
+@@ -180,6 +180,9 @@ async def test_i2_oversized_page_rejected(n: int) -> None:
+         seen.append(req)
+         if req.url.path == "/oauth2/v1/token":
+             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
++        if req.url.path == "/v1/195900/departments/21":           # N-TZ: matching IANA tz
++            return httpx.Response(200, json=[{"departmentid": "21",
++                                              "timezonename": "America/New_York"}])
+         return httpx.Response(200, json={"appointments": [_rec(i) for i in range(n)],
+                                          "totalcount": n})
+     s = DemoSettings.from_env({"DEMO_DATABASE_URL": "postgresql://u@localhost/x_demo",
+@@ -202,6 +205,9 @@ async def test_i2_exact_page_limit_still_accepted() -> None:
+     def h(req: httpx.Request) -> httpx.Response:
+         if req.url.path == "/oauth2/v1/token":
+             return httpx.Response(200, json={"access_token": "t", "expires_in": 3600})
++        if req.url.path == "/v1/195900/departments/21":           # N-TZ: matching IANA tz
++            return httpx.Response(200, json=[{"departmentid": "21",
++                                              "timezonename": "America/New_York"}])
+         return httpx.Response(200, json={"appointments": [_rec(i) for i in range(n)],
+                                          "totalcount": n})
+     s = DemoSettings.from_env({"DEMO_DATABASE_URL": "postgresql://u@localhost/x_demo",
+diff --git a/haloflow/tests/demo_reminders/test_athena_tz.py b/haloflow/tests/demo_reminders/test_athena_tz.py
+index 05606e3..704a813 100644
+--- a/haloflow/tests/demo_reminders/test_athena_tz.py
++++ b/haloflow/tests/demo_reminders/test_athena_tz.py
+@@ -270,7 +270,8 @@ async def test_tz10_request_bound_truncated_path() -> None:
+ 
+ 
+ async def test_tz1_page_shows_verified(demo_env: dict[str, str]) -> None:
+-    data, html, own, _svc = await _page(demo_env, Api())
++    data, html, own, svc = await _page(demo_env, Api())
++    await svc.aclose()
+     await own.close()
+     assert data["source"]["tz_status"] == "VERIFIED" and data["source"]["dept_tz"] == TZ
+     assert ("Sandbox department timezone matches clinic timezone (America/New_York)"
+@@ -290,6 +291,7 @@ async def test_tz2_tz3_page_mismatch_banner_sticky_and_no_send(
+         preview = await svc.preview_batch()
+         batch = await svc.send_batch()
+     finally:
++        await svc.aclose()
+         await own.close()
+     assert data["appointments"] == [] and preview == [] and batch == []
+     assert data["source"]["error"] == "SOURCE_TZ_MISMATCH"
+@@ -305,7 +307,8 @@ async def test_tz2_tz3_page_mismatch_banner_sticky_and_no_send(
+ @pytest.mark.parametrize("name", ["Eastern Standard Time", "SENTINEL<script>", None])
+ async def test_tz5_page_undetermined_keeps_unverified(demo_env: dict[str, str],
+                                                       name: str | None) -> None:
+-    data, html, own, _svc = await _page(demo_env, Api(dept_body(timezonename=name)))
++    data, html, own, svc = await _page(demo_env, Api(dept_body(timezonename=name)))
++    await svc.aclose()
+     await own.close()
+     assert data["source"]["tz_status"] == "UNDETERMINED" and data["source"]["dept_tz"] is None
+     assert "Times assume the sandbox department is in America/New_York — UNVERIFIED." in html
