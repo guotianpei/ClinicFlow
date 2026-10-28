@@ -108,6 +108,7 @@ async def test_happy_path_bounded_and_vetted(admin_url: str, db: str, tmp_path: 
     assert s["tz_status"] == "CONVERTED" and s["effective_zone"] == "America/Denver"
     assert s["provenance_basis"] == "DEPARTMENT"
     for step in ("tz_line_converted_ok", "when_column_matches_independent_expectation",
+                 "stored_instant_matches_independent_utc",
                  "single_snapshot_reused_ok", "department_detail_once_for_selected_id_ok",
                  "stub_body_qb4_no_zone_label_ok",
                  "provenance_record_ok (value kept in memory only)"):
@@ -253,3 +254,96 @@ async def test_raw_times_memory_only(admin_url: str, db: str, tmp_path: Path) ->
     blob = json.dumps(s) + "".join(p.read_text() for p in tmp_path.iterdir())
     assert "7000" not in json.dumps(s) and "starttime" not in blob
     assert s["listeners"].startswith("not exercised")
+
+
+# ── F-SM2-1: canonical raw path, scheme, port ────────────────────────────────
+
+
+@pytest.mark.parametrize("url", [
+    "https://api.preview.platform.athenahealth.com/v1/195900/departments/%32%31",
+    "https://api.preview.platform.athenahealth.com/v1/195900/departments%2F21",
+    "https://api.preview.platform.athenahealth.com/v1/195900/appointments%2Fbooked",
+    "http://api.preview.platform.athenahealth.com/v1/195900/departments/21",
+    "https://api.preview.platform.athenahealth.com:8443/v1/195900/departments/21",
+    "https://api.preview.platform.athenahealth.com/v1/195900/patients",
+])
+async def test_raw_path_scheme_port_refused_before_send(url: str) -> None:
+    sent: list[httpx.Request] = []
+
+    def inner(req: httpx.Request) -> httpx.Response:
+        sent.append(req)
+        return httpx.Response(200)
+    counters: list[dict[str, Any]] = []
+    t = sm.CountingTransport(httpx.MockTransport(inner), counters, {"used": 0}, {"id": "21"})
+    async with httpx.AsyncClient(transport=t) as c:
+        with pytest.raises(sm.Stop) as exc:
+            await c.get(url)
+    assert exc.value.code == "EXTERNAL_DISALLOWED" and sent == [] and counters == []
+
+
+async def test_explicit_default_port_and_query_allowed() -> None:
+    sent: list[httpx.Request] = []
+
+    def inner(req: httpx.Request) -> httpx.Response:
+        sent.append(req)
+        return httpx.Response(200)
+    t = sm.CountingTransport(httpx.MockTransport(inner), [], {"used": 0}, {"id": "21"})
+    async with httpx.AsyncClient(transport=t) as c:
+        await c.get("https://api.preview.platform.athenahealth.com:443/v1/195900/departments/21")
+        await c.get("https://api.preview.platform.athenahealth.com/v1/195900/appointments/booked",
+                    params={"startdate": "10/30/2026"})
+    assert len(sent) == 2
+
+
+# ── F-SM2-2: independent zone / instant; negative mutations ──────────────────
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("America/Denver", ("CONVERTED", "America/Denver", "DEPARTMENT")),
+    ("America/New_York", ("VERIFIED", "America/New_York", "DEPARTMENT")),
+    ("", ("UNVERIFIED", "America/New_York", "FALLBACK")),
+    ("Mountain Time", ("UNVERIFIED", "America/New_York", "FALLBACK")),
+    ("America/Denver\n", ("UNVERIFIED", "America/New_York", "FALLBACK")),
+])
+def test_independent_tz(raw: str, expected: tuple[str, str, str]) -> None:
+    assert sm.independent_tz(raw, "America/New_York") == expected
+
+
+def test_expected_utc() -> None:
+    from datetime import UTC, datetime
+    assert sm.expected_utc("10/30/2026", "09:00", "America/Denver") == \
+        datetime(2026, 10, 30, 15, 0, tzinfo=UTC)
+    assert sm.expected_utc("12/01/2026", "09:00", "America/Denver") == \
+        datetime(2026, 12, 1, 16, 0, tzinfo=UTC)
+
+
+async def test_wrong_page_zone_detected(admin_url: str, db: str, tmp_path: Path,
+                                        monkeypatch: pytest.MonkeyPatch) -> None:
+    from haloflow_demo import athena_source
+    monkeypatch.setattr(athena_source, "extract_tz", lambda body, dept: "America/Chicago")
+    rc, s = await run(Fake(n=2, tz="America/Denver"), admin_url, db, tmp_path)
+    assert rc == 1 and s["result"] == "TZ_NOT_INDEPENDENTLY_EXPECTED", s
+    assert not (tmp_path / "staff-page-vetted.html").exists()
+
+
+async def test_wrong_stored_instant_detected(admin_url: str, db: str, tmp_path: Path,
+                                             monkeypatch: pytest.MonkeyPatch) -> None:
+    import dataclasses
+    from datetime import timedelta
+
+    from haloflow_demo import sending
+    real = sending.claim_reminder
+
+    async def shifted(own: Any, tenant: str, appt: Any, **kw: Any) -> Any:
+        return await real(own, tenant, dataclasses.replace(
+            appt, start_utc=appt.start_utc + timedelta(hours=1)), **kw)
+    monkeypatch.setattr(sending, "claim_reminder", shifted)
+    rc, s = await run(Fake(n=2, tz="America/Denver"), admin_url, db, tmp_path)
+    assert rc == 1 and s["result"] == "STORED_INSTANT_NOT_INDEPENDENTLY_EXPECTED", s
+
+
+async def test_department_zone_memory_only(admin_url: str, db: str, tmp_path: Path) -> None:
+    rc, s = await run(Fake(n=2, tz="America/Denver"), admin_url, db, tmp_path)
+    assert rc == 0
+    assert "SENTINEL-dept" not in json.dumps(s)
+    assert "21" not in [str(v) for v in s.values()]

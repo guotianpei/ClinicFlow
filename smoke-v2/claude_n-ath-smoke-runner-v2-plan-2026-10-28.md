@@ -1,4 +1,4 @@
-# Integrated sandbox smoke — runner v2 r1 (live check of main 425146d)
+# Integrated sandbox smoke — runner v2 r2 (live check of main 425146d)
 
 Claude, 2026-10-28. For Codex review before any operation.
 
@@ -26,9 +26,16 @@ Claude, 2026-10-28. For Codex review before any operation.
    - **Snapshot reuse.** The booked count is unchanged across all page loads, and the send/reply/write-back actions add no booked request.
    - **Department identity.** Exactly one department-detail GET, and only for the selected id; the allowlist refuses any other.
    - **Listeners qualified.** The summary records "listeners: not exercised (in-process ASGI; uvicorn listeners covered by the lifecycle tests)".
-6. **Evidence additions:** `tz_status`, `effective_zone` (an IANA name) and `provenance_basis`. The department id stays in memory only.
+6. **r2: Codex review of r1** (codex_smoke-v2-r1-review.md):
+   - **F-SM2-1 (canonical raw path).** The allowlist compares `url.raw_path` with the query stripped, instead of the percent-decoded `url.path`. It also requires `https` and port None/443 alongside the host.
+     - `departments/%32%31`, `departments%2F21`, `appointments%2Fbooked`, `http://` and `:8443` are all refused, and the inner transport is never called.
+     - An explicit `:443` and query strings remain allowed.
+   - **F-SM2-2 (independent zone and instant).** The transport keeps the selected department's `timezonename` in memory only. `independent_tz()` derives the expected status, effective zone and basis from it, using the same rule as the contract but without the app's code. The page's timezone line and zone must equal that, before the "when", body and provenance checks run with the independent zone.
+     - `expected_utc()` derives the instant from the raw booked date and time in that zone. The sent reminder's stored `appt_start` must equal it (`STORED_INSTANT_NOT_INDEPENDENTLY_EXPECTED`).
+     - Negative mutations: the app made to report Chicago while the department says Denver stops with `TZ_NOT_INDEPENDENTLY_EXPECTED`; the claim made to store start + 1 h stops with `STORED_INSTANT_NOT_INDEPENDENTLY_EXPECTED`.
+7. **Evidence additions:** `tz_status`, `effective_zone` (an IANA name) and `provenance_basis`. The department id stays in memory only.
 
-**Offline checks:** `test_athena_sandbox_smoke.py`, 18 cases, all passed against main 425146d on PG16. They use a mocked athenahealth and a real local PG. They cover:
+**Offline checks:** `test_athena_sandbox_smoke.py`, 34 cases, all passed against main 425146d on PG16. They use a mocked athenahealth and a real local PG. They cover:
 - CONVERTED happy path, with exact request order token / departments / token / department / booked, and 5 requests;
 - VERIFIED and UNVERIFIED outcomes;
 - truncation at exactly 9 requests;
@@ -40,7 +47,11 @@ Claude, 2026-10-28. For Codex review before any operation.
 - vetting;
 - body and when patterns, including the DST-day abbreviation set;
 - `expected_local` independence (4 cases, including midnight and noon);
-- raw times memory-only and the listeners qualifier.
+- raw times memory-only and the listeners qualifier;
+- the F-SM2-1 raw-path, scheme and port refusals (6, plus 1 allowed);
+- `independent_tz` ×5 and `expected_utc`;
+- the wrong-page-zone and wrong-stored-instant mutations;
+- the department zone memory-only.
 
 ruff and mypy --strict are clean.
 

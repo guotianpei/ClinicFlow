@@ -108,12 +108,20 @@ class CountingTransport(httpx.AsyncBaseTransport):
         self._raw = raw_times if raw_times is not None else {}
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        cat = ALLOWED.get((request.method, request.url.path))
+        # F-SM2-1: compare the canonical RAW path (not the percent-decoded one), and
+        # require https on the default port, before anything is sent.
+        raw = request.url.raw_path.split(b"?", 1)[0]
+        try:
+            path = raw.decode("ascii")
+        except UnicodeDecodeError:
+            raise Stop("EXTERNAL_DISALLOWED") from None
+        cat = ALLOWED.get((request.method, path))
         sel = self._dept.get("id")
         if cat is None and sel and request.method == "GET" \
-                and request.url.path == f"/v1/195900/departments/{sel}":
+                and path == f"/v1/195900/departments/{sel}":
             cat = "department"
-        if request.url.host != HOST or cat is None:
+        if (request.url.scheme != "https" or request.url.host != HOST
+                or request.url.port not in (None, 443) or cat is None):
             raise Stop("EXTERNAL_DISALLOWED")
         if self._budget["used"] >= MAX_EXTERNAL:
             raise Stop("EXTERNAL_BUDGET")
@@ -121,6 +129,16 @@ class CountingTransport(httpx.AsyncBaseTransport):
         resp = await self._inner.handle_async_request(request)
         self._counters.append({"method": request.method, "category": cat,
                                "status": resp.status_code})
+        if cat == "department" and resp.status_code == 200:
+            await resp.aread()
+            try:
+                body = resp.json()
+            except Exception:  # noqa: BLE001 — the app reports its own fixed code
+                body = None
+            if isinstance(body, list) and len(body) == 1:
+                body = body[0]
+            name = body.get("timezonename") if isinstance(body, dict) else None
+            self._dept["tz"] = name if isinstance(name, str) else ""
         if cat == "booked" and resp.status_code == 200:
             await resp.aread()
             try:
@@ -241,6 +259,23 @@ def expected_local(d: str, t: str, zone: str) -> tuple[str, str]:
     return text, local.tzname() or ""
 
 
+def independent_tz(dept_tz: str, clinic: str) -> tuple[str, str, str]:
+    """Expected (status, effective zone, basis) from the department zone the runner
+    observed: exact recognized IANA name → VERIFIED (equal) or CONVERTED, basis
+    DEPARTMENT; anything else → UNVERIFIED, clinic zone, basis FALLBACK."""
+    if re.fullmatch(r"[A-Za-z0-9_/+\-. ]{1,64}", dept_tz) and _iana(dept_tz):
+        return ("VERIFIED" if dept_tz == clinic else "CONVERTED"), dept_tz, "DEPARTMENT"
+    return "UNVERIFIED", clinic, "FALLBACK"
+
+
+def expected_utc(d: str, t: str, zone: str) -> datetime:
+    """Independent expected instant for a raw sandbox date + starttime in ``zone``."""
+    from zoneinfo import ZoneInfo
+    mm, dd, yyyy = (int(x) for x in d.split("/"))
+    hh, mi = (int(x) for x in t.split(":"))
+    return datetime(yyyy, mm, dd, hh, mi, tzinfo=ZoneInfo(zone)).astimezone(UTC)
+
+
 def _csrf(html: str) -> str:
     m = re.search(r'name="csrf_token" value="([^"]+)"', html)
     if not m:
@@ -341,11 +376,13 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
             from haloflow_demo.selection import clinic_target_date
             day = clinic_target_date(datetime.now(UTC), clinic,
                                      days_before=settings.reminder_days_before).isoformat()
-            eff = shown if tz_status == "CONVERTED" else clinic
-            if tz_status != "CONVERTED" and shown != clinic:
-                raise Stop("TZ_LINE_ZONE")
-            if not _iana(eff):
-                raise Stop("TZ_ZONE_UNRECOGNIZED")
+            # F-SM2-2: the expected outcome comes from the department response the
+            # runner itself observed (memory only), not from the app's page.
+            exp_status, eff, exp_basis = independent_tz(dept_sel.get("tz", ""), clinic)
+            page_zone = shown if tz_status == "CONVERTED" else clinic
+            if tz_status != exp_status or page_zone != eff or (
+                    tz_status != "CONVERTED" and shown != clinic):
+                raise Stop("TZ_NOT_INDEPENDENTLY_EXPECTED")
             summary["tz_status"], summary["effective_zone"] = tz_status, eff
             summary["steps"].append(f"tz_line_{tz_status.lower()}_ok")
             for r in rows:
@@ -406,6 +443,14 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
                 raw = raw_times[appt.rsplit("-", 1)[1]]
                 if bm is None or bm.group(1) != expected_local(raw[0], raw[1], eff)[0]:
                     raise Stop("STUB_BODY")
+                async with own.engine.connect() as conn:
+                    from sqlalchemy import text
+                    stored = (await conn.execute(text(
+                        "SELECT appt_start FROM reminder_records WHERE id = :r"),
+                        {"r": rid})).scalar_one()
+                if stored != expected_utc(raw[0], raw[1], eff):
+                    raise Stop("STORED_INSTANT_NOT_INDEPENDENTLY_EXPECTED")
+                summary["steps"].append("stored_instant_matches_independent_utc")
                 summary["steps"].append("stub_body_qb4_no_zone_label_ok")
                 html_final = await page()
                 vet_page(html_final, forbidden)
@@ -417,7 +462,7 @@ async def smoke(env: Mapping[str, str], admin_url: str, db: str, out: Path,
                 rec_value = (await conn.execute(text(
                     "SELECT value FROM demo_meta WHERE key = 'athena_tz_interpretation'"
                 ))).scalar_one_or_none()
-            basis = "FALLBACK" if tz_status == "UNVERIFIED" else "DEPARTMENT"
+            basis = exp_basis
             if rec_value != f"v1;dept={dept};zone={eff};basis={basis};clinic={clinic}":
                 raise Stop("PROVENANCE_RECORD")
             summary["provenance_basis"] = basis
