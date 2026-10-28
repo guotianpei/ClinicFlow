@@ -15,9 +15,16 @@ total, a premature short page or a duplicate appointment id: a partial list is
 never presented as complete. Individual records that cannot be used are
 excluded and counted, never shown.
 
-Times: ``date`` + ``starttime`` are read as local times in CLINIC_TZ. That the
-sandbox department is in CLINIC_TZ is an UNVERIFIED assumption (O-A1);
+Times: ``date`` + ``starttime`` are read as local times in CLINIC_TZ;
 nonexistent and ambiguous local times are excluded, never resolved.
+
+N-TZ Step 2: before any booked page, the configured department's detail is read
+(``GET /v1/195900/departments/{configured id}``) and its ``timezonename`` is
+classified against CLINIC_TZ for the target date (``classify_tz``):
+VERIFIED (exact recognized IANA name), MISMATCH (recognized IANA name with a
+different UTC offset at some instant of the date — the fetch is rejected with
+``SOURCE_TZ_MISMATCH``) or UNDETERMINED (everything else; the UNVERIFIED
+assumption stays labelled).
 """
 
 from __future__ import annotations
@@ -27,10 +34,10 @@ import re
 import time as _time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 import httpx
 
@@ -48,6 +55,10 @@ ORIGIN = f"https://{HOST}"
 TOKEN_PATH = "/oauth2/v1/token"
 PRACTICE = "195900"  # published Preview sandbox (docs.athenahealth.com "Testing in Sandbox")
 BOOKED_PATH = f"/v1/{PRACTICE}/appointments/booked"
+DEPARTMENT_PATH = f"/v1/{PRACTICE}/departments/{{}}"
+TZ_NAME_RE = re.compile(r"^[A-Za-z0-9_/+\-. ]{1,64}$")
+TZ_SAMPLE_STEP = timedelta(minutes=15)
+VERIFIED, MISMATCH, UNDETERMINED = "VERIFIED", "MISMATCH", "UNDETERMINED"
 SCOPE = "athena/service/Athenanet.MDP.*"
 PAGE_LIMIT = 100
 MAX_PAGES = 5
@@ -67,9 +78,10 @@ EHR_LABEL = "SANDBOX READ / SIMULATED WRITE"
 class SourceInvalid(Exception):
     """A whole-fetch rejection or a refused request. Carries a fixed code only."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, detail: str | None = None) -> None:
         super().__init__(code)
         self.code = code
+        self.detail = detail          # only ever a recognized IANA zone name
 
 
 @dataclass(frozen=True)
@@ -85,6 +97,8 @@ class Snapshot:
     counts: dict[str, int]
     truncated: bool
     taken_at: datetime
+    tz_status: str = UNDETERMINED
+    dept_tz: str | None = None
 
 
 def check_athena_mode(s: DemoSettings, env: Mapping[str, str]) -> AthenaConfig | None:
@@ -136,7 +150,9 @@ class AthenaPreviewClient:
 
     async def _request(self, method: str, path: str, **kw: Any) -> Any:
         allowed = ((method == "POST" and path == TOKEN_PATH)
-                   or (method == "GET" and path == BOOKED_PATH))
+                   or (method == "GET" and path == BOOKED_PATH)
+                   or (method == "GET"
+                       and path == DEPARTMENT_PATH.format(self._cfg.department_id)))
         if not allowed:
             raise SourceInvalid("DISALLOWED")
         try:
@@ -167,6 +183,11 @@ class AthenaPreviewClient:
             self._token, self._token_expires = tok, _time.monotonic() + max(ttl - 60.0, 0.0)
             return tok
 
+    async def department(self, token: str) -> Any:
+        return await self._request(
+            "GET", DEPARTMENT_PATH.format(self._cfg.department_id),
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+
     async def booked_page(self, token: str, target: date, department_id: str,
                           offset: int) -> Any:
         day = target.strftime("%m/%d/%Y")
@@ -177,6 +198,55 @@ class AthenaPreviewClient:
                     "limit": str(PAGE_LIMIT), "offset": str(offset),
                     "showpatientdetail": "false", "showinsurance": "false",
                     "showcopay": "false", "showclaimdetail": "false"})
+
+
+def _iana(name: str | None) -> str | None:
+    if name is None or name not in available_timezones():
+        return None
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return None
+    return name
+
+
+def extract_tz(body: Any, department_id: str) -> str | None:
+    """The department's bounded ``timezonename`` if it is a recognized IANA zone,
+    else None. A malformed body or a conflicting ``departmentid`` rejects the fetch."""
+    if isinstance(body, list):
+        if len(body) != 1:
+            raise SourceInvalid("SOURCE_INVALID")
+        body = body[0]
+    if not isinstance(body, dict):
+        raise SourceInvalid("SOURCE_INVALID")
+    if "departmentid" in body:
+        dep = body["departmentid"]
+        if isinstance(dep, bool) or not isinstance(dep, str | int) or str(dep) != department_id:
+            raise SourceInvalid("SOURCE_INVALID")
+    name = body.get("timezonename")
+    if not isinstance(name, str) or not TZ_NAME_RE.match(name):
+        return None
+    return _iana(name)
+
+
+def classify_tz(name: str | None, clinic_tz: str, target: date) -> str:
+    """VERIFIED only on exact equality; MISMATCH when the offsets differ at some
+    sampled instant of the clinic date (a conservative detector: no observed
+    difference never upgrades a different name); otherwise UNDETERMINED."""
+    if _iana(name) is None:
+        return UNDETERMINED
+    assert name is not None
+    if name == clinic_tz:
+        return VERIFIED
+    clinic, dept = ZoneInfo(clinic_tz), ZoneInfo(name)
+    start = datetime.combine(target, time(0), tzinfo=clinic).astimezone(UTC)
+    end = datetime.combine(target + timedelta(days=1), time(0), tzinfo=clinic).astimezone(UTC)
+    t = start
+    while t <= end:
+        if t.astimezone(clinic).utcoffset() != t.astimezone(dept).utcoffset():
+            return MISMATCH
+        t += TZ_SAMPLE_STEP
+    return UNDETERMINED
 
 
 def _local_start(d: date, t: time, tz: str) -> tuple[datetime | None, str | None]:
@@ -226,6 +296,10 @@ def _map(r: dict[str, Any], target: date, tz: str, department_id: str,
 async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
                          department_id: str, epoch: int) -> Snapshot:
     token = await client.token()
+    dept_tz = extract_tz(await client.department(token), department_id)
+    tz_status = classify_tz(dept_tz, tz, target)
+    if tz_status == MISMATCH:
+        raise SourceInvalid("SOURCE_TZ_MISMATCH", detail=dept_tz)
     records: list[dict[str, Any]] = []
     total: int | None = None
     truncated = False
@@ -273,4 +347,4 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
         patients.setdefault(appt.emr_patient_id, SyntheticPatient(
             appt.emr_patient_id, f"Sandbox patient …{pid[-4:]}", "sandbox"))
     return Snapshot(Fixtures(patients=patients, appointments=appointments), counts,
-                    truncated, datetime.now(tz=UTC))
+                    truncated, datetime.now(tz=UTC), tz_status, dept_tz)

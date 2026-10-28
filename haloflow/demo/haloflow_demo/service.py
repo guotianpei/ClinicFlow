@@ -189,14 +189,17 @@ class DbStaffService:
                                             self._athena.department_id, self._own.epoch)
             except SourceInvalid as exc:
                 self._source_meta[target] = {"error": exc.code, "truncated": False,
-                                             "counts": {}, "taken_at": None}
+                                             "counts": {}, "taken_at": None,
+                                             "tz_status": None, "dept_tz": exc.detail}
                 return None
             ehr = SyntheticEhr(snap.fixtures)
             self.ehr.register(ehr)
             self._ehr[target] = ehr
             self._source_meta[target] = {"error": None, "truncated": snap.truncated,
                                          "counts": dict(snap.counts),
-                                         "taken_at": snap.taken_at}
+                                         "taken_at": snap.taken_at,
+                                         "tz_status": snap.tz_status,
+                                         "dept_tz": snap.dept_tz}
             return ehr
 
     async def aclose(self) -> None:
@@ -214,7 +217,8 @@ class DbStaffService:
                 "counts": dict(meta.get("counts", {})),
                 "snapshot_taken": format_local(taken, self._settings.clinic_tz)
                 if taken is not None else None,
-                "tz": self._settings.clinic_tz}
+                "tz": self._settings.clinic_tz,
+                "tz_status": meta.get("tz_status"), "dept_tz": meta.get("dept_tz")}
 
     def ehr_for_date(self, target: date) -> SyntheticEhr:
         """The synthetic EHR this process created for ``target`` (tests, inspection)."""
