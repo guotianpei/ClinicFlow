@@ -1,0 +1,2 @@
+mypy --strict 5 modules
+exit=0
