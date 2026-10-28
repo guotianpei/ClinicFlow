@@ -32,9 +32,10 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from haloflow_demo.db import check_identity, read_identity
 from haloflow_demo.settings import DemoDbTarget, StartupRefused
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # 2: reminder_records.reserved_day; demo_meta phone_key_secret
 # 3 (Day 5): contact history, receipt snapshot, match lock, inbound fields
+# 4 (M-2): sim_confirmations — durable simulated EHR confirmation state
 
 
 class DemoBase(DeclarativeBase):
@@ -187,6 +188,26 @@ class WritebackTask(DemoBase):
     updated_at: Mapped[datetime] = _ts()
 
 
+class SimConfirmation(DemoBase):
+    """M-2: durable SIMULATED EHR confirmation value + version per appointment slot.
+    The key never uses the epoch-qualified appointment id."""
+
+    __tablename__ = "sim_confirmations"
+    __table_args__ = (
+        PrimaryKeyConstraint("source", "tenant_id", "emr_patient_id", "appt_start",
+                             name="pk_sim_confirmations"),
+        CheckConstraint("version >= 1", name="ck_sim_confirmations_version"),
+    )
+
+    source: Mapped[str] = mapped_column(String(16), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    emr_patient_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    appt_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    value: Mapped[str | None] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = _ts()
+
+
 class DemoMeta(DemoBase):
     __tablename__ = "demo_meta"
 
@@ -198,7 +219,8 @@ DEMO_TABLES: tuple[str, ...] = tuple(DemoBase.metadata.tables)
 # Truncated by ``reset-synthetic``; everything else (quota, opt-outs, contact
 # history, settings, meta, match lock) is preserved.
 SYNTHETIC_TABLES: tuple[str, ...] = ("inbound_candidates", "inbound_messages",
-                                     "follow_up_items", "writeback_tasks", "reminder_records")
+                                     "follow_up_items", "writeback_tasks", "reminder_records",
+                                     "sim_confirmations")
 
 
 async def create_demo_tables(engine: AsyncEngine, target: DemoDbTarget) -> None:
