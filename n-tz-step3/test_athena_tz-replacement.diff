@@ -1,0 +1,92 @@
+diff --git a/haloflow/tests/demo_reminders/test_athena_tz.py b/haloflow/tests/demo_reminders/test_athena_tz.py
+index 704a813..405c08d 100644
+--- a/haloflow/tests/demo_reminders/test_athena_tz.py
++++ b/haloflow/tests/demo_reminders/test_athena_tz.py
+@@ -12,10 +12,13 @@ API under test (to be implemented in haloflow_demo/athena_source.py, service.py,
+   ``timezonename`` or None; raises ``SourceInvalid("SOURCE_INVALID")`` on a malformed
+   body or a conflicting ``departmentid``.
+ - ``fetch_snapshot`` reads ``GET /v1/195900/departments/{configured id}`` after the
+-  token and before any booked page; MISMATCH raises
+-  ``SourceInvalid("SOURCE_TZ_MISMATCH", detail=<IANA name>)``.
+-- ``Snapshot.tz_status`` / ``Snapshot.dept_tz``; ``page_data()["source"]`` gains
+-  ``tz_status`` and ``dept_tz``.
++  token and before any booked page.
++- N-TZ Step 3 (owner decision OD-TZ1 "Convert and send"; Codex-authorised narrow
++  replacement of the PR #46 mismatch/alias expectations): a recognized department
++  zone that differs from CLINIC_TZ is no longer refused; the snapshot is CONVERTED
++  and appointment times are read in the department zone (see test_athena_tz_convert.py).
++- ``Snapshot.tz_status`` (VERIFIED | CONVERTED | UNDETERMINED) / ``Snapshot.dept_tz``;
++  ``page_data()["source"]`` gains ``tz_status`` and ``dept_tz``.
+ 
+ No test touches the network: every transport is httpx.MockTransport.
+ """
+@@ -208,20 +211,23 @@ async def test_tz1_verified_snapshot_and_request_order() -> None:
+     assert len(s.fixtures.appointments) == 2
+ 
+ 
+-async def test_tz2_mismatch_rejects_before_any_booked_get() -> None:
++async def test_tz2_differing_zone_converts_department_before_booked() -> None:
++    # OD-TZ1: replaces the PR #46 fail-closed expectation.
+     api = Api(dept_body(timezonename="America/Denver"))
+-    with pytest.raises(SourceInvalid) as exc:
+-        await snap(api)
+-    assert exc.value.code == "SOURCE_TZ_MISMATCH" and exc.value.detail == "America/Denver"
+-    assert api.booked() == 0
+-    assert api.paths() == [("POST", "/oauth2/v1/token"), ("GET", DEPT_PATH)]
++    s = await snap(api)
++    assert s.tz_status == "CONVERTED" and s.dept_tz == "America/Denver"
++    assert api.paths() == [("POST", "/oauth2/v1/token"), ("GET", DEPT_PATH), ("GET", BOOKED)]
++    assert s.fixtures.appointments[0].start_utc == datetime(2026, 10, 28, 14, 0, tzinfo=UTC)
+ 
+ 
+-@pytest.mark.parametrize("name", ["US/Eastern", "Eastern Standard Time", None])
+-async def test_tz4_tz5_undetermined_proceeds(name: str | None) -> None:
++@pytest.mark.parametrize("name,status", [("US/Eastern", "CONVERTED"),      # OD-TZ1 alias
++                                         ("Eastern Standard Time", "UNDETERMINED"),
++                                         (None, "UNDETERMINED")])
++async def test_tz4_tz5_alias_converts_unknown_undetermined(name: str | None,
++                                                           status: str) -> None:
+     api = Api(dept_body(timezonename=name))
+     s = await snap(api)
+-    assert s.tz_status == "UNDETERMINED" and api.booked() == 1
++    assert s.tz_status == status and api.booked() == 1
+     assert s.dept_tz == ("US/Eastern" if name == "US/Eastern" else None)
+     assert s.fixtures.appointments[0].start_utc == datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
+ 
+@@ -280,26 +286,27 @@ async def test_tz1_page_shows_verified(demo_env: dict[str, str]) -> None:
+     no_leak(html, json.dumps(data, default=str))
+ 
+ 
+-async def test_tz2_tz3_page_mismatch_banner_sticky_and_no_send(
++async def test_tz2_tz3_page_differing_zone_converted_banner(
+     demo_env: dict[str, str],
+ ) -> None:
++    # OD-TZ1: replaces the PR #46 mismatch-unavailable page expectation.
+     api = Api(dept_body(timezonename="America/Denver"))
+     data, html, own, svc = await _page(demo_env, api)
+     try:
+         before = len(api.requests)
+         again = await svc.page_data()
+-        preview = await svc.preview_batch()
+-        batch = await svc.send_batch()
+     finally:
+         await svc.aclose()
+         await own.close()
+-    assert data["appointments"] == [] and preview == [] and batch == []
+-    assert data["source"]["error"] == "SOURCE_TZ_MISMATCH"
+-    assert again["source"]["error"] == "SOURCE_TZ_MISMATCH"
+-    assert len(api.requests) == before == 2 and api.booked() == 0          # sticky, no booked
+-    assert "athenahealth sandbox unavailable — SOURCE_TZ_MISMATCH" in html
++    assert data["source"]["error"] is None and again["source"]["error"] is None
++    assert data["source"]["tz_status"] == "CONVERTED"
++    assert data["source"]["dept_tz"] == "America/Denver"
++    assert [a["emr_appt_id"] for a in data["appointments"]] == ["ath-e1-1000", "ath-e1-1001"]
++    assert len(api.requests) == before == 3                     # snapshot reused (sticky)
+     assert ("Sandbox department timezone America/Denver differs from clinic timezone"
+-            " America/New_York.") in html
++            " America/New_York — appointment times are read and texted in"
++            " America/Denver.") in html
++    assert "UNVERIFIED" not in html and "SOURCE_TZ_MISMATCH" not in html
+     assert "Synthetic Patient" not in html and "syn-e" not in html
+     no_leak(html)
+ 

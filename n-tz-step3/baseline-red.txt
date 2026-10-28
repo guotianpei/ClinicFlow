@@ -1,0 +1,52 @@
+## test_athena_tz_convert (source = main 36c8c72)
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c1_denver_read_in_department_zone
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c5_dst_exclusions_computed_in_department_zone
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c7_matching_zone_verified_no_display_zone
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c8_alias_converts_with_identical_times
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c9_unknown_falls_back_to_clinic_zone[None]
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c9_unknown_falls_back_to_clinic_zone[Eastern Standard Time]
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c9_unknown_falls_back_to_clinic_zone[Not/AZone]
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c2_page_when_column_and_banner
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c3_reminder_text_in_department_time_exact_wording
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c4_late_department_slot_stays_on_department_date
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c6_quota_day_stays_clinic_day
+FAILED tests/demo_reminders/test_athena_tz_convert.py::test_c12_synthetic_reminder_text_unchanged
+12 failed, 1 passed in 2.07s
+## test_athena_tz_provenance (source = main 36c8c72)
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == again["source"]["error"] == "TZ_PROVENANCE_UNSUPPORTED"
+>       assert data["source"]["error"] == "LEGACY_ATHENA_REMINDERS"
+>       assert data["source"]["error"] is None and sent["state"] == "SUBMITTED"
+            errors = [svc._source_block(d)["error"] for d in (D1, D2)]        # noqa: SLF001
+>       assert data["source"]["error"] is None and api.count(BOOKED) == 1
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[department_tz_v1]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v2;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=DEPARTMENT]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=Mountain Time;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=OTHER;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York;x=1]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=x;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p2_unmarked_legacy_refused_untouched
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p3_marked_fallback_then_recognized_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p4_recognized_zone_change_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p5_stable_restart_dedupes_same_slot
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p6_clinic_zone_change_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p7_reestablish_only_without_retained_athena_reminders
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p8_in_process_change_refused_first_date_kept
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p9_concurrent_first_use_equal_context_converges
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p9b_concurrent_first_use_different_context_one_winner
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p11_synthetic_rows_are_not_legacy
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p12_banners_exact_and_no_leak
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p13_fallback_context_visible_and_sends
+19 failed, 1 passed in 5.58s
+## test_athena_tz (source = main 36c8c72)
+>       assert data["source"]["error"] is None and again["source"]["error"] is None
+FAILED tests/demo_reminders/test_athena_tz.py::test_tz2_differing_zone_converts_department_before_booked
+FAILED tests/demo_reminders/test_athena_tz.py::test_tz4_tz5_alias_converts_unknown_undetermined[US/Eastern-CONVERTED]
+FAILED tests/demo_reminders/test_athena_tz.py::test_tz2_tz3_page_differing_zone_converted_banner
+3 failed, 49 passed in 1.87s
