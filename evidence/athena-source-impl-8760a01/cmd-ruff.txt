@@ -1,0 +1,2 @@
+ruff check demo/haloflow_demo tests/demo_reminders/test_athena_source.py
+exit=0

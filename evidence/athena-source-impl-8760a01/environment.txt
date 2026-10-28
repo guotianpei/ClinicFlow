@@ -1,0 +1,5 @@
+date_utc=2026-10-28T17:33:09Z
+head=8760a01b369f8cc415252fc5cf0f78232171a089 (base main c41007f; PR #44 not merged)
+tests_frozen_at=8eab904; test diff since:  1 file changed, 6 insertions(+), 2 deletions(-) (import line only)
+Python 3.13.18
+PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit

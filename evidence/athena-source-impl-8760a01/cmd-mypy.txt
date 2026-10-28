@@ -1,0 +1,2 @@
+cd demo && mypy --strict athena_source.py service.py web.py settings.py livetest.py
+exit=0
