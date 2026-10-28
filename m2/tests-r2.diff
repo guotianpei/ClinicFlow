@@ -1,0 +1,179 @@
+diff --git a/haloflow/tests/demo_reminders/test_restart_recovery.py b/haloflow/tests/demo_reminders/test_restart_recovery.py
+index 5b96035..6065f03 100644
+--- a/haloflow/tests/demo_reminders/test_restart_recovery.py
++++ b/haloflow/tests/demo_reminders/test_restart_recovery.py
+@@ -38,6 +38,7 @@ from haloflow_demo.sending import StubGateway
+ from haloflow_demo.service import DbStaffService
+ from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
+ from haloflow_demo.sim_store import SimStore, Slot, SlotRefused
++from haloflow_demo.synthetic_ehr import SyntheticEhr
+ 
+ TEST_NUMBER = "+15550100199"
+ SENDER = "+15550100100"
+@@ -105,6 +106,38 @@ class Crash(Exception):
+     pass
+ 
+ 
++class Spy:
++    """Counts every confirmation read and write reaching the store or an instance."""
++
++    def __init__(self, mp: pytest.MonkeyPatch) -> None:
++        self.reads = self.writes = 0
++        r_store, c_store = SimStore.read, SimStore.cas
++        r_inst, w_inst = SyntheticEhr.read_confirmation, SyntheticEhr.write_confirmation_conditional
++
++        async def store_read(this: Any, *a: Any, **kw: Any) -> Any:
++            self.reads += 1
++            return await r_store(this, *a, **kw)
++
++        async def store_cas(this: Any, *a: Any, **kw: Any) -> Any:
++            self.writes += 1
++            return await c_store(this, *a, **kw)
++
++        async def inst_read(this: Any, *a: Any, **kw: Any) -> Any:
++            self.reads += 1
++            return await r_inst(this, *a, **kw)
++
++        async def inst_write(this: Any, *a: Any, **kw: Any) -> Any:
++            self.writes += 1
++            return await w_inst(this, *a, **kw)
++        mp.setattr(SimStore, "read", store_read)
++        mp.setattr(SimStore, "cas", store_cas)
++        mp.setattr(SyntheticEhr, "read_confirmation", inst_read)
++        mp.setattr(SyntheticEhr, "write_confirmation_conditional", inst_write)
++
++    def snapshot(self) -> tuple[int, int]:
++        return self.reads, self.writes
++
++
+ # ── recovery paths ───────────────────────────────────────────────────────────
+ 
+ 
+@@ -441,12 +474,16 @@ def _forge_task(url: str, appt_id: str, *, tenant: str = TENANT, patient: str =
+ ])
+ async def test_rr16a_known_current_id_collision_refused_valid_still_works(
+     demo_env: dict[str, str], demo_db_url: str, appt_id: str, forge: dict[str, Any],
++    monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     own, svc = await proc(_env(demo_env))
+     try:
+         tid = await confirmed(svc)                               # legit task for APPT_E1
+         forged = _forge_task(demo_db_url, appt_id, **forge)
++        spy = Spy(monkeypatch)
++        before = spy.snapshot()
+         bad = await svc.run_writeback(forged)
++        assert spy.snapshot() == before                          # no read, no write
+         good = await svc.run_writeback(tid)  # type: ignore[arg-type]
+     finally:
+         await own.close()
+@@ -458,7 +495,7 @@ async def test_rr16a_known_current_id_collision_refused_valid_still_works(
+ 
+ 
+ async def test_rr16b_prepared_old_id_collision_refused_valid_still_works(
+-    demo_env: dict[str, str], demo_db_url: str,
++    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
+     env = _env(demo_env)
+     own, svc = await proc(env)
+@@ -469,11 +506,14 @@ async def test_rr16b_prepared_old_id_collision_refused_valid_still_works(
+     own, svc = await proc(env)                                    # APPT_E1 is now an old id
+     try:
+         forged = _forge_task(demo_db_url, APPT_E1, tenant="other-clinic")
+-        first_bad = await svc.run_writeback(forged)               # before legit preparation
+-        good = await svc.run_writeback(tid)  # type: ignore[arg-type]  # prepares the old id
+-        q(demo_db_url, "UPDATE writeback_tasks SET state = 'PENDING' WHERE id = %s",
+-          (forged,))
+-        second_bad = await svc.run_writeback(forged)              # after legit preparation
++        spy = Spy(monkeypatch)
++        s0 = spy.snapshot()
++        first_bad = await svc.run_writeback(forged)               # before legit resolution
++        assert spy.snapshot() == s0
++        good = await svc.run_writeback(tid)  # type: ignore[arg-type]  # resolves the old id
++        s1 = spy.snapshot()
++        second_bad = await svc.run_writeback(forged)              # after legit resolution
++        assert spy.snapshot() == s1
+     finally:
+         await own.close()
+     assert first_bad == second_bad == "scenario_unavailable"
+@@ -481,6 +521,46 @@ async def test_rr16b_prepared_old_id_collision_refused_valid_still_works(
+     assert good == "DONE" and store_row(demo_db_url) == ("2", 2)
+ 
+ 
++@pytest.mark.parametrize("old", [False, True])
++async def test_rr16d_uncertain_reconcile_collisions_refused_without_read(
++    demo_env: dict[str, str], demo_db_url: str, old: bool, monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """Reconcile path: a forged cross-tenant UNCERTAIN task using the legit task's
++    appointment id (current id, or an old id after a restart) is refused before AND
++    after the legitimate task's resolution, with no confirmation read or write and no
++    state transition; the legitimate reconcile still recovers."""
++    env = _env(demo_env)
++    own, svc = await proc(env)
++    try:
++        tid = await confirmed(svc)
++        if old:
++            await own.close()
++            own, svc = await proc(env)                            # APPT_E1 is an old id now
++        forged = _forge_task(demo_db_url, APPT_E1, tenant="other-clinic")
++        # legit task: committed simulated write, then left UNCERTAIN (crash point 2)
++        q(demo_db_url, "UPDATE sim_confirmations SET value = '2', version = 2 WHERE"
++                       " source = 'synthetic' AND tenant_id = %s AND emr_patient_id = %s"
++                       " AND appt_start = %s", (TENANT, PATIENT, APPT_START))
++        q(demo_db_url, "UPDATE writeback_tasks SET state = 'UNCERTAIN', reason = 'restart'"
++                       " WHERE id IN (%s, %s)", (tid, forged))
++        spy = Spy(monkeypatch)
++        s0 = spy.snapshot()
++        first_bad = await svc.reconcile_writeback(forged)
++        assert spy.snapshot() == s0
++        good = await svc.reconcile_writeback(tid)  # type: ignore[arg-type]
++        assert spy.snapshot()[0] > s0[0] and spy.snapshot()[1] == s0[1]   # read, no write
++        s1 = spy.snapshot()
++        second_bad = await svc.reconcile_writeback(forged)
++        assert spy.snapshot() == s1
++    finally:
++        await own.close()
++    assert first_bad == second_bad == "scenario_unavailable"
++    assert task(demo_db_url, forged)[:2] == ("UNCERTAIN", "restart")   # no transition
++    assert good == "DONE(reconciled)"
++    assert task(demo_db_url, tid)[:2] == ("DONE", "reconciled")  # type: ignore[arg-type]
++    assert store_row(demo_db_url) == ("2", 2)
++
++
+ @pytest.mark.parametrize("appt_id", ["ath-e1-1001", "syn-a-1", "syn-e1-20261028-a-1x"])
+ async def test_rr16c_non_synthetic_or_bad_format_refused(
+     demo_env: dict[str, str], demo_db_url: str, appt_id: str,
+@@ -515,17 +595,28 @@ async def test_rr17_store_refuses_foreign_slot(
+ 
+ 
+ async def test_rr18_concurrent_first_load_one_seed_one_instance(
+-    demo_env: dict[str, str], demo_db_url: str,
++    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+ ) -> None:
++    seeds: list[int] = []
++    real_seed = SimStore.seed
++
++    async def slow_seed(this: Any, *a: Any, **kw: Any) -> Any:
++        seeds.append(1)
++        for _ in range(5):                                       # let the other caller in
++            await asyncio.sleep(0)
++        return await real_seed(this, *a, **kw)
++    monkeypatch.setattr(SimStore, "seed", slow_seed)
+     own, svc = await proc(_env(demo_env))
+     try:
+-        a, b = await asyncio.gather(svc.page_data(), svc.page_data())
+-        inst = svc.ehr_for_date(APPT_START.date())
+-        assert svc.ehr_for_date(APPT_START.date()) is inst
++        d = APPT_START.date()
++        a, b = await asyncio.gather(svc._source(d), svc._source(d))   # noqa: SLF001
++        pa, pb = await asyncio.gather(svc.page_data(), svc.page_data())
+     finally:
+         await own.close()
+-    assert [x["emr_appt_id"] for x in a["appointments"]] == \
+-        [x["emr_appt_id"] for x in b["appointments"]]
++    assert a is not None and a is b                              # both callers share it
++    assert len(seeds) == 1                                       # one initialization
++    assert [x["emr_appt_id"] for x in pa["appointments"]] == \
++        [x["emr_appt_id"] for x in pb["appointments"]]
+     assert q(demo_db_url, "SELECT count(*), min(version), max(version), min(value),"
+                           " max(value) FROM sim_confirmations") == [(7, 1, 1, "1", "1")]
+ 

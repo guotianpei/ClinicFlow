@@ -1,3 +1,5 @@
+223a03c2eef1b2f3d5ed0943936ec488ed31a0889950a5dee3625e9f5ddb82ac  baseline-r2.txt
 f784534c7e515e259e4cfa5f11b51483d7c6307064cfa7ff2db0c473a6b98c2d  baseline-red.txt
 16cbe032732aa44cca8c9bcb163b08bcc481bb4b06ef1eaec1a20bd9c5f42053  claude_m2-tests-packet-2026-10-28-v1.md
 69283eb9e8cc3720beb1f277f0ccb01f2939b3e860d6e76e3f2173baacfab330  replacements.diff
+3554cbb0ed5f44ce6e8141ae60b1e6cb41fcb1f02524a253c1b8e118bee00551  tests-r2.diff

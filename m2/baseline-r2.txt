@@ -1,0 +1,5 @@
+## r2 baseline on main e1bea32 source
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.20s
+## r2 file against the uncommitted-to-feat draft (wip/m2-impl 2f59661 + r2 test file), informational
+26 passed (run in a temporary worktree, removed)
