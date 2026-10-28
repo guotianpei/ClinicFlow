@@ -1,0 +1,5 @@
+date_utc=2026-10-28T17:53:47Z
+head=dea6157c97d32cd731c6ae2e959b115f0667d85b (3daeff2 + fix commit)
+frozen test files changed since 3daeff2: none
+Python 3.13.18
+PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0, 64-bit
