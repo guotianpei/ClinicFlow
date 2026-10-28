@@ -1,0 +1,14 @@
+    from haloflow_demo.athena_source import (
+E   ImportError: cannot import name 'classify_tz' from 'haloflow_demo.athena_source' (/home/claude/clinicflow/haloflow/demo/haloflow_demo/athena_source.py)
+=========================== short test summary info ============================
+ERROR tests/demo_reminders/test_athena_tz.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.16s
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+598 passed, 1 warning in 126.41s (0:02:06)
+FAILED tests/demo_reminders/test_athena_source.py::test_a2_only_token_post_and_booked_get
+FAILED tests/demo_reminders/test_athena_source.py::test_a2_redirect_not_followed
+FAILED tests/demo_reminders/test_athena_source.py::test_a9_page_lists_masked_sandbox_appointments
+FAILED tests/demo_reminders/test_athena_source.py::test_a8_one_snapshot_per_date_single_flight
+4 failed, 63 passed in 4.73s
