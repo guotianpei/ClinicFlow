@@ -1,0 +1,2 @@
+ruff check demo/haloflow_demo/web.py tests/demo_reminders/test_staff_feedback.py
+exit=0
