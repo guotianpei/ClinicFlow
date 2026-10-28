@@ -1,0 +1,7 @@
+## F-TZ3-1 regression on 3b95d16 source (expect 1 fail)
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York\n]
+1 failed, 7 passed, 13 deselected in 2.92s
+## with fullmatch fix
+86 passed in 8.38s
+All checks passed!
+Success: no issues found in 24 source files
