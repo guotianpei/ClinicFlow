@@ -38,6 +38,8 @@ class SyntheticAppointment:
     start_utc: datetime
     status: ApptStatus
     confirmation: str | None = None
+    # N-TZ Step 3: zone the appointment's local date/time belong to; None = CLINIC_TZ.
+    display_tz: str | None = None
 
 
 @dataclass(frozen=True)
@@ -131,9 +133,8 @@ class SyntheticEhr:
         return self.fixtures.patients
 
     async def get_appointments_by_date(self, target: date, tz: str) -> list[SyntheticAppointment]:
-        zone = ZoneInfo(tz)
         return [a for a in self.fixtures.appointments
-                if a.start_utc.astimezone(zone).date() == target]
+                if a.start_utc.astimezone(ZoneInfo(a.display_tz or tz)).date() == target]
 
     # ── confirmation value ────────────────────────────────────────────────────
 
