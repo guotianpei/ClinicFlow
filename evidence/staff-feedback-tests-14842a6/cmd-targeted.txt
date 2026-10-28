@@ -1,0 +1,2 @@
+pytest tests/demo_reminders/test_staff_feedback.py -p no:cacheprovider -rA -q
+exit=1

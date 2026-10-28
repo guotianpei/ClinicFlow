@@ -1,0 +1,1327 @@
+/home/claude/venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF..... [ 93%]
+..FF.                                                                    [100%]
+=================================== FAILURES ===================================
+_______________ test_t_u6_send_mapping[SUBMITTED-send_submitted] _______________
+
+state = 'SUBMITTED', code = 'send_submitted'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_submitted'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97568c20>, '47b2e727a05c6eee24faa35a6dbb668dc6e52753bef6fa761a9c903926cc6501', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+_________________ test_t_u6_send_mapping[SKIPPED-send_skipped] _________________
+
+state = 'SKIPPED', code = 'send_skipped'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_skipped'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed9757e990>, '53b4863342879257805ccb01687211ecd1fd283d7c4201c20cd7b40878355818', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+________________ test_t_u6_send_mapping[NOT_SENT-send_not_sent] ________________
+
+state = 'NOT_SENT', code = 'send_not_sent'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_not_sent'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975dd1d0>, '435a250ba03bfc555cbf0ec3fce35384b43ef4eec146597b6bbdd7228cc50f9a', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+________________ test_t_u6_send_mapping[REJECTED-send_rejected] ________________
+
+state = 'REJECTED', code = 'send_rejected'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_rejected'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97503ce0>, '7162269e3c354b6860985a8a280163770e81232bb444cc2c9b3d510a36b27ba0', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+________________ test_t_u6_send_mapping[CLAIMED-send_uncertain] ________________
+
+state = 'CLAIMED', code = 'send_uncertain'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_uncertain'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975ec8a0>, 'd728105be866a8bd8fd72ba8fb69e72a00bcfe186263a2f54616df674d401bfb', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+_______________ test_t_u6_send_mapping[UNCERTAIN-send_uncertain] _______________
+
+state = 'UNCERTAIN', code = 'send_uncertain'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_uncertain'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975fc3b0>, '15f08313dd3abd828b384d9b95cec89ba6820a922b199dd2ecc7881e6d4d049d', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+_______________ test_t_u6_send_mapping[SOMETHING_NEW-send_check] _______________
+
+state = 'SOMETHING_NEW', code = 'send_check'
+
+    @pytest.mark.parametrize("state,code", [
+        ("SUBMITTED", "send_submitted"), ("SKIPPED", "send_skipped"),
+        ("NOT_SENT", "send_not_sent"), ("REJECTED", "send_rejected"),
+        ("CLAIMED", "send_uncertain"), ("UNCERTAIN", "send_uncertain"),
+        ("SOMETHING_NEW", "send_check")])
+    def test_t_u6_send_mapping(state: str, code: str) -> None:
+        svc = Scripted()
+        svc.send = {"reminder_id": 1, "state": state, "reason": "x"}
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/appointments/send", emr_appt_id="a")) == code
+E       AssertionError: assert None == 'send_check'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed9752f020>, 'eaec3e82972e76b8ff126c8663ab8d53b66982e3f5c1f7bbe6d73b2b03012c29', '/demo/appointments/send', emr_appt_id='a')
+
+tests/demo_reminders/test_staff_feedback.py:120: AssertionError
+_______________ test_t_u7_reply_mapping[result0-reply_recorded] ________________
+
+result = ReceiveResult(status=204, reason=None, inbound_id=1)
+code = 'reply_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c307c0>, '569d1ba269a7677f2bdc4245b81ff11618b4104e04003666f68a2f79a377bef6', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_______________ test_t_u7_reply_mapping[result1-reply_duplicate] _______________
+
+result = ReceiveResult(status=204, reason='duplicate', inbound_id=1)
+code = 'reply_duplicate'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_duplicate'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975e8f50>, '04d67a70548ce4e9e7a99d1385c68ada98febd6a399e5ac6ff067e49156a042f', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result2-reply_not_recorded] ______________
+
+result = ReceiveResult(status=204, reason='ignored_event', inbound_id=None)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975ea650>, 'cb796a976d2615b4a623fac0bf42b5c9c0996556074ae3bbc3ddb5bcdc5257f0', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result3-reply_not_recorded] ______________
+
+result = ReceiveResult(status=400, reason='numbers_unset', inbound_id=None)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed9758b3e0>, '41106ad3b0cc0e5ef1620b05a2c49563b84f20f91cc1a3c548686f742d383199', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result4-reply_not_recorded] ______________
+
+result = ReceiveResult(status=401, reason='signature', inbound_id=None)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c072f0>, '92444b8f367f57d676833d9cf04617ab33ca6e0b2dc668e5e4c21d7b6d1bbd70', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result5-reply_not_recorded] ______________
+
+result = ReceiveResult(status=409, reason='replay_conflict', inbound_id=1)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c71c50>, 'db82c62ddb17fbafeef51077f6d281b00f4edd69a1b4791b726ec19e9b7dce5a', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result6-reply_not_recorded] ______________
+
+result = ReceiveResult(status=413, reason='too_large', inbound_id=None)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c70130>, '77dc74e4b284c4c1d1f3767eef4936e6b6c9d7a7e15158b32c93ebdc9ecd98f1', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u7_reply_mapping[result7-reply_not_recorded] ______________
+
+result = ReceiveResult(status=503, reason='owner_unavailable', inbound_id=None)
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c926d0>, '4a7a1ae6e293c848638d381a7a4b4e57a0cc200975e985b195c0d1edf93cf552', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_______________ test_t_u7_reply_mapping[None-reply_not_recorded] _______________
+
+result = None, code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("result,code", [
+        (ReceiveResult(204, None, 1), "reply_recorded"),
+        (ReceiveResult(204, "duplicate", 1), "reply_duplicate"),
+        (ReceiveResult(204, "ignored_event", None), "reply_not_recorded"),
+        (ReceiveResult(400, "numbers_unset", None), "reply_not_recorded"),
+        (ReceiveResult(401, "signature", None), "reply_not_recorded"),
+        (ReceiveResult(409, "replay_conflict", 1), "reply_not_recorded"),
+        (ReceiveResult(413, "too_large", None), "reply_not_recorded"),
+        (ReceiveResult(503, "owner_unavailable", None), "reply_not_recorded"),
+        (None, "reply_not_recorded")])
+    def test_t_u7_reply_mapping(result: Any, code: str) -> None:
+        svc = Scripted()
+        svc.reply = result
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/reply/simulate", reminder_id="1", text="1")) == code
+E       AssertionError: assert None == 'reply_not_recorded'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c903d0>, 'b4763ca65776c7966c16df6a5cc48d1752804adac557399c62a338038eed17f4', '/demo/reply/simulate', reminder_id='1', text='1')
+
+tests/demo_reminders/test_staff_feedback.py:138: AssertionError
+_____________ test_t_u9_run_writeback_mapping[DONE-writeback_done] _____________
+
+value = 'DONE', code = 'writeback_done'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c919b0>, '2b76f4134930073328f79d61bb8eb1ad02be574b1c9b8bedfed649da02b921f2', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+_______ test_t_u9_run_writeback_mapping[DONE(reconciled)-writeback_done] _______
+
+value = 'DONE(reconciled)', code = 'writeback_done'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c92890>, '3cd86e399a0dd5413646d58555268d6a5d44415a24fcee8674cde3e335161e3f', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+____ test_t_u9_run_writeback_mapping[writeback_conflict-writeback_conflict] ____
+
+value = 'writeback_conflict', code = 'writeback_conflict'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_conflict'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed98beb850>, 'c84e55fbc534a5d7b5fac927a4f4629bd6c5df6a07ac421e0aebe8e77714c604', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+______ test_t_u9_run_writeback_mapping[no_baseline-writeback_not_applied] ______
+
+value = 'no_baseline', code = 'writeback_not_applied'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_not_applied'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c72f90>, '33d071d71ea050b37e20c3b368da8fed6f7ee8fbcf9ed123891105dac9ef41b1', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+____ test_t_u9_run_writeback_mapping[write_disabled-writeback_not_applied] _____
+
+value = 'write_disabled', code = 'writeback_not_applied'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_not_applied'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c73af0>, '33d4573b798b3e837a5540abd07ba009b7c40f8c29d95ec22cf36514189d8124', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+______ test_t_u9_run_writeback_mapping[NOT_APPLIED-writeback_not_applied] ______
+
+value = 'NOT_APPLIED', code = 'writeback_not_applied'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_not_applied'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975fab30>, '4d9dc20ae68b1d550c0c08c4be5d6dbe326d862de19cc2332ea0f7ce7a1f84f2', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+________ test_t_u9_run_writeback_mapping[UNCERTAIN-writeback_uncertain] ________
+
+value = 'UNCERTAIN', code = 'writeback_uncertain'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_uncertain'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975f89f0>, '85ade737d4bf1366f960952efb70d2afb8beb04ce47a99929e032fa4f3e91ea1', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+_______ test_t_u9_run_writeback_mapping[already_running-writeback_busy] ________
+
+value = 'already_running', code = 'writeback_busy'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_busy'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975fb930>, '83d675a24acdb9f1fa240cd89012ed5f906612084a7908dea2de1c48803f385a', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+_ test_t_u9_run_writeback_mapping[scenario_unavailable-writeback_unavailable] __
+
+value = 'scenario_unavailable', code = 'writeback_unavailable'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_unavailable'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97562c10>, 'd1c0e0cc3dbb7847aa23565b14a10174e4b9d28dd3f57b9f4b8c68cf848d848b', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+______ test_t_u9_run_writeback_mapping[owner_unavailable-writeback_check] ______
+
+value = 'owner_unavailable', code = 'writeback_check'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_check'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975610f0>, 'c23ef5bf393a0577d427ad76732144b3cc4f661d0ae9c4deef306201328e8171', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+__________ test_t_u9_run_writeback_mapping[brand_new-writeback_check] __________
+
+value = 'brand_new', code = 'writeback_check'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "writeback_done"), ("DONE(reconciled)", "writeback_done"),
+        ("writeback_conflict", "writeback_conflict"), ("no_baseline", "writeback_not_applied"),
+        ("write_disabled", "writeback_not_applied"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "writeback_uncertain"), ("already_running", "writeback_busy"),
+        ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_run_writeback_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.run = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/run", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_check'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97591ef0>, '49c3173d5a45de61762b324b2fb76e6b18abf31ea12251e36ddaafad96a59571', '/demo/tasks/run', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:153: AssertionError
+_______________ test_t_u9_reconcile_mapping[DONE-reconcile_done] _______________
+
+value = 'DONE', code = 'reconcile_done'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'reconcile_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97592c10>, '0ef2e96813b2ebcb60e6993d0a53cfc4ae54a6d86ad477daf22fba44ca22bd98', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+_________ test_t_u9_reconcile_mapping[DONE(reconciled)-reconcile_done] _________
+
+value = 'DONE(reconciled)', code = 'reconcile_done'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'reconcile_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97592190>, '42d31113598bf7e2a657d1fec13beb09e9f6ab56fd624e4e2b5958834967b097', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+______ test_t_u9_reconcile_mapping[writeback_conflict-writeback_conflict] ______
+
+value = 'writeback_conflict', code = 'writeback_conflict'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_conflict'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed97562430>, '47d137a55d4867b84167fc1953083d42cf207671cda72da59ec7478a68365bc0', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+________ test_t_u9_reconcile_mapping[NOT_APPLIED-writeback_not_applied] ________
+
+value = 'NOT_APPLIED', code = 'writeback_not_applied'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_not_applied'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975620b0>, 'c4d04d956ace25058f700a1f46bc2cf816befa5161c5652943ccbe552a34a1ed', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+__________ test_t_u9_reconcile_mapping[UNCERTAIN-reconcile_uncertain] __________
+
+value = 'UNCERTAIN', code = 'reconcile_uncertain'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'reconcile_uncertain'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975fb230>, 'eaac257b718e0d21ce68b2a19843aa10d57fabcb335f919b9f1eaad842a6a7d3', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+___ test_t_u9_reconcile_mapping[scenario_unavailable-writeback_unavailable] ____
+
+value = 'scenario_unavailable', code = 'writeback_unavailable'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_unavailable'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975fb770>, '953e412d5e9ec54dfc125a1658542aa393394815d4480496996448257761789c', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+________ test_t_u9_reconcile_mapping[owner_unavailable-writeback_check] ________
+
+value = 'owner_unavailable', code = 'writeback_check'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_check'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed975f8590>, 'b4b556bd84310c6a6130ca913075e049c6c464f353fbd92a4af9280e83289ad6', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+____________ test_t_u9_reconcile_mapping[brand_new-writeback_check] ____________
+
+value = 'brand_new', code = 'writeback_check'
+
+    @pytest.mark.parametrize("value,code", [
+        ("DONE", "reconcile_done"), ("DONE(reconciled)", "reconcile_done"),
+        ("writeback_conflict", "writeback_conflict"), ("NOT_APPLIED", "writeback_not_applied"),
+        ("UNCERTAIN", "reconcile_uncertain"), ("scenario_unavailable", "writeback_unavailable"),
+        ("owner_unavailable", "writeback_check"), ("brand_new", "writeback_check")])
+    def test_t_u9_reconcile_mapping(value: str, code: str) -> None:
+        svc = Scripted()
+        svc.reconcile = value
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/tasks/reconcile", task_id="1")) == code
+E       AssertionError: assert None == 'writeback_check'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c71550>, 'ea58dee2204195dd6f3ecaf95dcd9b34d7f22a2d3d5f939cbc443431962278ee', '/demo/tasks/reconcile', task_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:165: AssertionError
+_________________ test_t_u6_mark_done_mapping[True-item_done] __________________
+
+done = True, code = 'item_done'
+
+    @pytest.mark.parametrize("done,code", [(True, "item_done"), (False, "item_unchanged")])
+    def test_t_u6_mark_done_mapping(done: bool, code: str) -> None:
+        svc = Scripted()
+        svc.done = done
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/items/done", item_id="1")) == code
+E       AssertionError: assert None == 'item_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c71710>, '59540ecdd2155330c64a6e859e8fd42f3a0cf813b79d30f63fae87b8bc892a0e', '/demo/items/done', item_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:173: AssertionError
+______________ test_t_u6_mark_done_mapping[False-item_unchanged] _______________
+
+done = False, code = 'item_unchanged'
+
+    @pytest.mark.parametrize("done,code", [(True, "item_done"), (False, "item_unchanged")])
+    def test_t_u6_mark_done_mapping(done: bool, code: str) -> None:
+        svc = Scripted()
+        svc.done = done
+        c, tok = _client(svc)
+>       assert _code(_post(c, tok, "/demo/items/done", item_id="1")) == code
+E       AssertionError: assert None == 'item_unchanged'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed98beb230>, '645ec56b594721a3ee02ae7eecebe854a966a006698d4c0c32d2db7fb7dc9b1a', '/demo/items/done', item_id='1')
+
+tests/demo_reminders/test_staff_feedback.py:173: AssertionError
+______________ test_t_u1_fixed_codes[/demo/batch/send-batch_done] ______________
+
+path = '/demo/batch/send', code = 'batch_done'
+
+    @pytest.mark.parametrize("path,code", [
+        ("/demo/batch/send", "batch_done"), ("/demo/inbound/process", "replies_processed"),
+        ("/demo/noresponse/check", "noreply_checked"), ("/demo/pause", "paused"),
+        ("/demo/resume", "resumed")])
+    def test_t_u1_fixed_codes(path: str, code: str) -> None:
+        c, tok = _client(Scripted())
+>       assert _code(_post(c, tok, path)) == code
+E       AssertionError: assert None == 'batch_done'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c90d70>, 'b775c205f933e13a30dc202d94d4d181210d21f50a5d1cb27e2f340873bd2be9', '/demo/batch/send')
+
+tests/demo_reminders/test_staff_feedback.py:182: AssertionError
+________ test_t_u1_fixed_codes[/demo/inbound/process-replies_processed] ________
+
+path = '/demo/inbound/process', code = 'replies_processed'
+
+    @pytest.mark.parametrize("path,code", [
+        ("/demo/batch/send", "batch_done"), ("/demo/inbound/process", "replies_processed"),
+        ("/demo/noresponse/check", "noreply_checked"), ("/demo/pause", "paused"),
+        ("/demo/resume", "resumed")])
+    def test_t_u1_fixed_codes(path: str, code: str) -> None:
+        c, tok = _client(Scripted())
+>       assert _code(_post(c, tok, path)) == code
+E       AssertionError: assert None == 'replies_processed'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96c92510>, '0fb272e03118b665a65c32c64fd1eb977b3b93bd68283298534adf6cde5747bf', '/demo/inbound/process')
+
+tests/demo_reminders/test_staff_feedback.py:182: AssertionError
+________ test_t_u1_fixed_codes[/demo/noresponse/check-noreply_checked] _________
+
+path = '/demo/noresponse/check', code = 'noreply_checked'
+
+    @pytest.mark.parametrize("path,code", [
+        ("/demo/batch/send", "batch_done"), ("/demo/inbound/process", "replies_processed"),
+        ("/demo/noresponse/check", "noreply_checked"), ("/demo/pause", "paused"),
+        ("/demo/resume", "resumed")])
+    def test_t_u1_fixed_codes(path: str, code: str) -> None:
+        c, tok = _client(Scripted())
+>       assert _code(_post(c, tok, path)) == code
+E       AssertionError: assert None == 'noreply_checked'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96b511d0>, '161cf6db54dc776e8750c4f277eae92184fa55c8b844d3cc16c6814972d22eb5', '/demo/noresponse/check')
+
+tests/demo_reminders/test_staff_feedback.py:182: AssertionError
+__________________ test_t_u1_fixed_codes[/demo/pause-paused] ___________________
+
+path = '/demo/pause', code = 'paused'
+
+    @pytest.mark.parametrize("path,code", [
+        ("/demo/batch/send", "batch_done"), ("/demo/inbound/process", "replies_processed"),
+        ("/demo/noresponse/check", "noreply_checked"), ("/demo/pause", "paused"),
+        ("/demo/resume", "resumed")])
+    def test_t_u1_fixed_codes(path: str, code: str) -> None:
+        c, tok = _client(Scripted())
+>       assert _code(_post(c, tok, path)) == code
+E       AssertionError: assert None == 'paused'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96b51a90>, 'f934df3d8fe8c4d7eb2467aff4f4e642eb7a18ffc2a2621129c7b07f478552c2', '/demo/pause')
+
+tests/demo_reminders/test_staff_feedback.py:182: AssertionError
+_________________ test_t_u1_fixed_codes[/demo/resume-resumed] __________________
+
+path = '/demo/resume', code = 'resumed'
+
+    @pytest.mark.parametrize("path,code", [
+        ("/demo/batch/send", "batch_done"), ("/demo/inbound/process", "replies_processed"),
+        ("/demo/noresponse/check", "noreply_checked"), ("/demo/pause", "paused"),
+        ("/demo/resume", "resumed")])
+    def test_t_u1_fixed_codes(path: str, code: str) -> None:
+        c, tok = _client(Scripted())
+>       assert _code(_post(c, tok, path)) == code
+E       AssertionError: assert None == 'resumed'
+E        +  where None = _code(<Response [303 See Other]>)
+E        +    where <Response [303 See Other]> = _post(<starlette.testclient.TestClient object at 0x7fed96b50830>, '1d0f2be72c32d6ea6c115b687a2fdd627b5d338b46b4f4d95e0c9e1438ad827f', '/demo/resume')
+
+tests/demo_reminders/test_staff_feedback.py:182: AssertionError
+_____________ test_t_u2_each_code_shows_its_text_once[batch_done] ______________
+
+code = 'batch_done'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x38086710>('role="status"')
+E        +    where <built-in method count of str object at 0x38086710> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+______________ test_t_u2_each_code_shows_its_text_once[item_done] ______________
+
+code = 'item_done'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380ad2d0>('role="status"')
+E        +    where <built-in method count of str object at 0x380ad2d0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[item_unchanged] ____________
+
+code = 'item_unchanged'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380911f0>('role="status"')
+E        +    where <built-in method count of str object at 0x380911f0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[noreply_checked] ___________
+
+code = 'noreply_checked'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380a2030>('role="status"')
+E        +    where <built-in method count of str object at 0x380a2030> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_______________ test_t_u2_each_code_shows_its_text_once[paused] ________________
+
+code = 'paused'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380a92a0>('role="status"')
+E        +    where <built-in method count of str object at 0x380a92a0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[reconcile_done] ____________
+
+code = 'reconcile_done'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x38089330>('role="status"')
+E        +    where <built-in method count of str object at 0x38089330> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_________ test_t_u2_each_code_shows_its_text_once[reconcile_uncertain] _________
+
+code = 'reconcile_uncertain'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380cd4f0>('role="status"')
+E        +    where <built-in method count of str object at 0x380cd4f0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+__________ test_t_u2_each_code_shows_its_text_once[replies_processed] __________
+
+code = 'replies_processed'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380d33d0>('role="status"')
+E        +    where <built-in method count of str object at 0x380d33d0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[reply_duplicate] ___________
+
+code = 'reply_duplicate'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380d92b0>('role="status"')
+E        +    where <built-in method count of str object at 0x380d92b0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_________ test_t_u2_each_code_shows_its_text_once[reply_not_recorded] __________
+
+code = 'reply_not_recorded'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380dfef0>('role="status"')
+E        +    where <built-in method count of str object at 0x380dfef0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[reply_recorded] ____________
+
+code = 'reply_recorded'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380abeb0>('role="status"')
+E        +    where <built-in method count of str object at 0x380abeb0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_______________ test_t_u2_each_code_shows_its_text_once[resumed] _______________
+
+code = 'resumed'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380de430>('role="status"')
+E        +    where <built-in method count of str object at 0x380de430> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_____________ test_t_u2_each_code_shows_its_text_once[send_check] ______________
+
+code = 'send_check'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380b6110>('role="status"')
+E        +    where <built-in method count of str object at 0x380b6110> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+____________ test_t_u2_each_code_shows_its_text_once[send_not_sent] ____________
+
+code = 'send_not_sent'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x38097700>('role="status"')
+E        +    where <built-in method count of str object at 0x38097700> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+____________ test_t_u2_each_code_shows_its_text_once[send_rejected] ____________
+
+code = 'send_rejected'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380a3450>('role="status"')
+E        +    where <built-in method count of str object at 0x380a3450> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+____________ test_t_u2_each_code_shows_its_text_once[send_skipped] _____________
+
+code = 'send_skipped'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380c3b70>('role="status"')
+E        +    where <built-in method count of str object at 0x380c3b70> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[send_submitted] ____________
+
+code = 'send_submitted'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380b10f0>('role="status"')
+E        +    where <built-in method count of str object at 0x380b10f0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[send_uncertain] ____________
+
+code = 'send_uncertain'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x3806a0f0>('role="status"')
+E        +    where <built-in method count of str object at 0x3806a0f0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[writeback_busy] ____________
+
+code = 'writeback_busy'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x38079500>('role="status"')
+E        +    where <built-in method count of str object at 0x38079500> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[writeback_check] ___________
+
+code = 'writeback_check'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380d2670>('role="status"')
+E        +    where <built-in method count of str object at 0x380d2670> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_________ test_t_u2_each_code_shows_its_text_once[writeback_conflict] __________
+
+code = 'writeback_conflict'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380cdbb0>('role="status"')
+E        +    where <built-in method count of str object at 0x380cdbb0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+___________ test_t_u2_each_code_shows_its_text_once[writeback_done] ____________
+
+code = 'writeback_done'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380899f0>('role="status"')
+E        +    where <built-in method count of str object at 0x380899f0> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+________ test_t_u2_each_code_shows_its_text_once[writeback_not_applied] ________
+
+code = 'writeback_not_applied'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380d1310>('role="status"')
+E        +    where <built-in method count of str object at 0x380d1310> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+________ test_t_u2_each_code_shows_its_text_once[writeback_unavailable] ________
+
+code = 'writeback_unavailable'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380de430>('role="status"')
+E        +    where <built-in method count of str object at 0x380de430> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_________ test_t_u2_each_code_shows_its_text_once[writeback_uncertain] _________
+
+code = 'writeback_uncertain'
+
+    @pytest.mark.parametrize("code", sorted(TEXT))
+    def test_t_u2_each_code_shows_its_text_once(code: str) -> None:
+        c, _ = _client(Scripted())
+        html = c.get(f"/demo/staff?r={code}").text
+>       assert html.count('role="status"') == 1
+E       assert 0 == 1
+E        +  where 0 = <built-in method count of str object at 0x380a8b40>('role="status"')
+E        +    where <built-in method count of str object at 0x380a8b40> = "<!doctype html><html><head><meta charset='utf-8'><title>HaloFlow demo</title></head><body><p><strong>Local demonstrat.../tr></table><h2>Replies</h2><ul></ul><h2>Follow-up items</h2><ul></ul><h2>Write-back tasks</h2><ul></ul></body></html>".count
+
+tests/demo_reminders/test_staff_feedback.py:190: AssertionError
+_________________________ test_t_u1_end_to_end_over_db _________________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t076c6baf_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t076c6baf_demo'
+
+    async def test_t_u1_end_to_end_over_db(demo_env: dict[str, str], demo_db_url: str) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            async with _aclient(own, svc) as c:
+                tok = await _tok(c)
+>               assert await _apost(c, tok, "/demo/appointments/send",
+                                    emr_appt_id=E1 + "4") == "send_submitted"
+E                                   AssertionError: assert None == 'send_submitted'
+
+tests/demo_reminders/test_staff_feedback.py:268: AssertionError
+______________________ test_t_u1_mark_done_twice_over_db _______________________
+
+demo_env = {'DEMO_DATABASE_URL': 'postgresql://demoadmin:***@localhost:5432/haloflow_t8bf691e6_demo', 'DATABASE_URL': 'postgresql+asyncpg://legacy@127.0.0.1:5433/haloflow_dev', 'CLINIC_TZ': 'America/New_York'}
+demo_db_url = 'postgresql://demoadmin:***@localhost:5432/haloflow_t8bf691e6_demo'
+
+    async def test_t_u1_mark_done_twice_over_db(demo_env: dict[str, str], demo_db_url: str) -> None:
+        own, svc = await _start(_env(demo_env))
+        try:
+            sent = await svc.send_to_appointment(E1 + "1")
+            await svc.simulate_reply(int(sent["reminder_id"]), "2")
+            await svc.process_now()
+            with psycopg.connect(demo_db_url) as conn:
+                item = conn.execute("SELECT id FROM follow_up_items").fetchone()[0]
+            async with _aclient(own, svc) as c:
+                tok = await _tok(c)
+>               assert await _apost(c, tok, "/demo/items/done", item_id=str(item)) == "item_done"
+E               AssertionError: assert None == 'item_done'
+
+tests/demo_reminders/test_staff_feedback.py:295: AssertionError
+=============================== warnings summary ===============================
+../../venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  /home/claude/venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+==================================== PASSES ====================================
+=========================== short test summary info ============================
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[?r=unknown]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[?r=<script>alert(1)</script>]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[?r=]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[?r=send_submitted%20x]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[?x=send_submitted]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u2_unknown_or_absent_code_shows_nothing[]
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u5_error_responses_carry_no_code
+PASSED tests/demo_reminders/test_staff_feedback.py::test_t_u4_get_with_code_does_not_mutate
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[SUBMITTED-send_submitted]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[SKIPPED-send_skipped]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[NOT_SENT-send_not_sent]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[REJECTED-send_rejected]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[CLAIMED-send_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[UNCERTAIN-send_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_send_mapping[SOMETHING_NEW-send_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result0-reply_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result1-reply_duplicate]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result2-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result3-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result4-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result5-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result6-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[result7-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u7_reply_mapping[None-reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[DONE-writeback_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[DONE(reconciled)-writeback_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[writeback_conflict-writeback_conflict]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[no_baseline-writeback_not_applied]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[write_disabled-writeback_not_applied]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[NOT_APPLIED-writeback_not_applied]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[UNCERTAIN-writeback_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[already_running-writeback_busy]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[scenario_unavailable-writeback_unavailable]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[owner_unavailable-writeback_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_run_writeback_mapping[brand_new-writeback_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[DONE-reconcile_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[DONE(reconciled)-reconcile_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[writeback_conflict-writeback_conflict]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[NOT_APPLIED-writeback_not_applied]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[UNCERTAIN-reconcile_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[scenario_unavailable-writeback_unavailable]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[owner_unavailable-writeback_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u9_reconcile_mapping[brand_new-writeback_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_mark_done_mapping[True-item_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u6_mark_done_mapping[False-item_unchanged]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_fixed_codes[/demo/batch/send-batch_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_fixed_codes[/demo/inbound/process-replies_processed]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_fixed_codes[/demo/noresponse/check-noreply_checked]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_fixed_codes[/demo/pause-paused]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_fixed_codes[/demo/resume-resumed]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[batch_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[item_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[item_unchanged]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[noreply_checked]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[paused]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[reconcile_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[reconcile_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[replies_processed]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[reply_duplicate]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[reply_not_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[reply_recorded]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[resumed]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_not_sent]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_rejected]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_skipped]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_submitted]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[send_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_busy]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_check]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_conflict]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_done]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_not_applied]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_unavailable]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u2_each_code_shows_its_text_once[writeback_uncertain]
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_end_to_end_over_db
+FAILED tests/demo_reminders/test_staff_feedback.py::test_t_u1_mark_done_twice_over_db
+69 failed, 8 passed, 1 warning in 2.55s
