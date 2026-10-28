@@ -53,7 +53,9 @@ def ctx(zone: str, basis: str, clinic: str = NY) -> str:
 
 class Api:
     """Department zones served in order (the last repeats); ``None`` → field absent.
-    Booked: one 09:00 record (patient 60178) on whatever date is requested."""
+    Booked: one 09:00 record (patient 60178) on whatever date is requested;
+    appointment id 1001 on 10/28/2026 and 2001 on any other date (ids are unique
+    across a process's snapshots)."""
 
     def __init__(self, *zones: str | None) -> None:
         self.zones = list(zones)
@@ -72,7 +74,8 @@ class Api:
             return httpx.Response(200, json=[body])
         if req.url.path == BOOKED:
             d = req.url.params["startdate"]
-            recs = [{"appointmentid": "1001", "patientid": "60178", "date": d,
+            aid = "1001" if d == "10/28/2026" else "2001"
+            recs = [{"appointmentid": aid, "patientid": "60178", "date": d,
                      "starttime": "09:00", "appointmentstatus": "f", "departmentid": DEPT,
                      "patient": {"firstname": "SENTINEL-Donna"}}]
             return httpx.Response(200, json={"appointments": recs, "totalcount": 1})
