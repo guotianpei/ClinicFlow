@@ -1,0 +1,21 @@
+## test_athena_tz_provenance (source = main 36c8c72), r2 after P-9 fixture fix
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[department_tz_v1]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v2;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=DEPARTMENT]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=Mountain Time;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=OTHER;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=21;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York;x=1]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p1_unsupported_value_refused_before_requests[v1;dept=x;zone=America/Denver;basis=DEPARTMENT;clinic=America/New_York]
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p2_unmarked_legacy_refused_untouched
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p3_marked_fallback_then_recognized_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p4_recognized_zone_change_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p5_stable_restart_dedupes_same_slot
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p6_clinic_zone_change_refused
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p7_reestablish_only_without_retained_athena_reminders
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p8_in_process_change_refused_first_date_kept
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p9_concurrent_first_use_equal_context_converges
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p9b_concurrent_first_use_different_context_one_winner
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p11_synthetic_rows_are_not_legacy
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p12_banners_exact_and_no_leak
+FAILED tests/demo_reminders/test_athena_tz_provenance.py::test_p13_fallback_context_visible_and_sends
+19 failed, 1 passed in 5.64s
