@@ -193,7 +193,7 @@ async def test_i2_oversized_page_rejected(n: int) -> None:
     finally:
         await client.aclose()
     assert exc.value.code == "SOURCE_INVALID"
-    assert [r.method for r in seen].count("GET") == 1
+    assert [r.url.path for r in seen].count("/v1/195900/appointments/booked") == 1
 
 
 async def test_i2_exact_page_limit_still_accepted() -> None:
