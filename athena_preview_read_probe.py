@@ -48,6 +48,11 @@ ALLOWED_GET = tuple(re.compile(p) for p in (
 ))
 BOOKED_PARAMS_FIXED = {"limit": "50", "showpatientdetail": "false", "showinsurance": "false",
                        "showcopay": "false", "showclaimdetail": "false"}
+# r2 diagnostic: on a non-200 the body is never kept; only which of these OUR OWN
+# parameter names it mentions is reported (fixed strings, never response text).
+DIAG_PARAM_NAMES = ("departmentid", "providerid", "startdate", "enddate", "limit",
+                    "showpatientdetail", "showinsurance", "showcopay", "showclaimdetail",
+                    "practiceid", "appointmentid")
 STATUS_CODES = ("x", "f", "o", "2", "3", "4")  # documented appointmentstatus values
 # Documented top-level output fields of GET /v1/{practiceid}/appointments/{appointmentid}
 # (docs.athenahealth.com/api/api-ref/appointment, read 2026-10-28). Other keys are
@@ -152,7 +157,15 @@ class GuardedClient:
             raise Stop("REDIRECT")
         if r.status_code != 200:
             code = f"HTTP_{r.status_code}"
-            self.log.append({"name": name, "http_status": r.status_code, "outcome": code})
+            entry: dict[str, Any] = {"name": name, "http_status": r.status_code, "outcome": code}
+            if 400 <= r.status_code < 500:
+                try:
+                    low = r.text.lower()
+                except Exception:  # noqa: BLE001
+                    low = ""
+                entry["error_mentions"] = [n for n in DIAG_PARAM_NAMES
+                                           if re.search(rf"\b{n}\b", low)]
+            self.log.append(entry)
             raise Stop(code)
         self.log.append({"name": name, "http_status": 200, "outcome": "OK"})
         return r
@@ -198,7 +211,7 @@ def _fields(objs: list[dict[str, Any]], documented: frozenset[str]) -> dict[str,
 def probe(env: Mapping[str, str], today: date,
           transport: httpx.BaseTransport | None = None) -> tuple[int, dict[str, Any]]:
     out: dict[str, Any] = {
-        "probe": "athena_preview_read_probe v1 (N-EHR v1r1)",
+        "probe": "athena_preview_read_probe r2 (N-EHR v1r1)",
         "generated_utc": datetime.now(tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "practice": "NOT CHECKED",
         "requests": [], "outcome_classes": [], "limitations": [],
@@ -220,10 +233,14 @@ def probe(env: Mapping[str, str], today: date,
         if not isinstance(deps, dict) or not isinstance(deps.get("departments"), list):
             raise Stop("SHAPE")
         out["outcome_classes"].append("ACCESS_VERIFIED")
+        dep_ids = [str(d.get("departmentid")) for d in deps["departments"]
+                   if isinstance(d, dict) and ID_RE.match(str(d.get("departmentid", "")))]
+        if not dep_ids:
+            raise Stop("NO_DEPARTMENT")
         start, end = today, today + timedelta(days=WINDOW_DAYS - 1)
         booked = c.get("booked", f"/v1/{PRACTICE}/appointments/booked", tok, {
             "startdate": start.strftime("%m/%d/%Y"), "enddate": end.strftime("%m/%d/%Y"),
-            **BOOKED_PARAMS_FIXED})
+            "departmentid": dep_ids[0], **BOOKED_PARAMS_FIXED})
         if not isinstance(booked, dict) or not isinstance(booked.get("appointments"), list):
             raise Stop("SHAPE")
         if not all(isinstance(a, dict) for a in booked["appointments"]):

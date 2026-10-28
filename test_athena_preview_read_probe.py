@@ -174,7 +174,8 @@ def test_at5_bounds_and_params(tmp_path: Path, capsys: Any) -> None:
     assert all(m == "GET" for m, _ in methods[1:])
     booked = next(r for r in api.requests if r.url.path.endswith("/appointments/booked"))
     q = dict(booked.url.params)
-    assert q == {"startdate": "10/28/2026", "enddate": "11/10/2026", "limit": "50",
+    assert q == {"startdate": "10/28/2026", "enddate": "11/10/2026", "departmentid": "1",
+                 "limit": "50",
                  "showpatientdetail": "false", "showinsurance": "false",
                  "showcopay": "false", "showclaimdetail": "false"}
     singles = [r for r in api.requests if r.url.path.count("/") == 4
@@ -323,3 +324,46 @@ def test_fp2_refused_gate_never_claims_passed(tmp_path: Path, capsys: Any) -> No
     assert "passed" not in blob
     rc, data, _ = run(Api(), tmp_path=tmp_path / "ok", capsys=capsys)
     assert rc == 0 and data["practice"] == "published Preview sandbox (identity gate passed)"
+
+
+
+# r2: departmentid from the departments response + safe 4xx diagnostic -----------
+@pytest.mark.parametrize("deps", [[], [{"departmentid": "x1"}], ["1"], [{"name": "SENTINEL-d"}]])
+def test_r2_no_valid_department_stops_before_booked(deps: list[Any], tmp_path: Path,
+                                                    capsys: Any) -> None:
+    api = Api()
+    api.override["/departments"] = httpx.Response(200, json={"departments": deps})
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and data["result"] == "NO_DEPARTMENT"
+    assert not any(r.url.path.endswith("/booked") for r in api.requests)
+    no_leak(blob)
+
+
+def test_r2_first_valid_department_used(tmp_path: Path, capsys: Any) -> None:
+    api = Api([appt(1)])
+    api.override["/departments"] = httpx.Response(
+        200, json={"departments": [{"departmentid": "0"}, {"departmentid": "21"},
+                                   {"departmentid": "22"}]})
+    rc, _, _ = run(api, tmp_path=tmp_path, capsys=capsys)
+    booked = next(r for r in api.requests if r.url.path.endswith("/booked"))
+    assert rc == 0 and booked.url.params["departmentid"] == "21"
+
+
+def test_r2_400_reports_only_allowlisted_parameter_names(tmp_path: Path, capsys: Any) -> None:
+    api = Api()
+    api.override["/appointments/booked"] = httpx.Response(
+        400, json={"error": "Additional fields are required: DepartmentID. SENTINEL-body",
+                   "detailedmessage": "startdate format SENTINEL-x; departmentidx"})
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and data["result"] == "HTTP_400"
+    entry = data["requests"][-1]
+    assert entry["name"] == "booked" and entry["error_mentions"] == ["departmentid", "startdate"]
+    no_leak(blob)
+
+
+def test_r2_non_4xx_has_no_diagnostic(tmp_path: Path, capsys: Any) -> None:
+    api = Api()
+    api.override["/appointments/booked"] = httpx.Response(503, text="departmentid SENTINEL")
+    rc, data, blob = run(api, tmp_path=tmp_path, capsys=capsys)
+    assert rc == 1 and "error_mentions" not in data["requests"][-1]
+    no_leak(blob)
