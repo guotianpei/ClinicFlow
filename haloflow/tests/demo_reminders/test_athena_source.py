@@ -257,13 +257,16 @@ async def test_a3_later_page_failure_rejects_whole_fetch() -> None:
     api = Api(_many(230))
 
     def page(req: httpx.Request) -> httpx.Response:
-        if req.url.params.get("offset") == "100":
+        off = int(req.url.params["offset"])
+        if off == 100:
             return httpx.Response(500, text="SENTINEL-body")
-        return Api.__call__(api, req)
+        return httpx.Response(200, json={"appointments": api.records[off:off + 100],
+                                         "totalcount": 230})
     api.override["/appointments/booked"] = page
     with pytest.raises(SourceInvalid) as exc:
         await snap(api)
     assert exc.value.code == "HTTP_500"
+    assert [r.url.params["offset"] for r in api.gets()] == ["0", "100"]
 
 
 async def test_a3_changing_totalcount_rejected() -> None:
@@ -408,12 +411,23 @@ def _env(demo_env: dict[str, str]) -> dict[str, str]:
             "DEMO_SMS_SENDER": SENDER, "DEMO_CALLBACK_SECRET": "test-callback-secret-0123456789"}
 
 
-async def _start(env: dict[str, str], api: Api) -> tuple[Any, DbStaffService]:
+async def _start(env: dict[str, str], api: Api,
+                 now: Any = None) -> tuple[Any, DbStaffService]:
     s = DemoSettings.from_env(env)
     cfg = check_athena_mode(s, env)
     own = await acquire_ownership(s, validate_demo_database_url(s))
-    return own, DbStaffService(own, s, now=lambda: NOW, athena=cfg,
+    return own, DbStaffService(own, s, now=now or (lambda: NOW), athena=cfg,
                                athena_transport=api.transport())
+
+
+def _dated(api: Api) -> None:
+    """Serve the default two records on whatever date was requested."""
+    def page(req: httpx.Request) -> httpx.Response:
+        d = req.url.params["startdate"]
+        recs = [rec("1001", d=d), rec("1002", "60179", d=d, t="10:30")] \
+            if d == "10/28/2026" else [rec("3001", "60180", d=d)]
+        return httpx.Response(200, json={"appointments": recs, "totalcount": len(recs)})
+    api.override["/appointments/booked"] = page
 
 
 def _q(url: str, sql: str, params: tuple[object, ...] = ()) -> list[tuple[Any, ...]]:
@@ -512,8 +526,13 @@ async def test_a9_restart_prior_tasks_fail_closed_and_no_resend(
     _q(demo_db_url, "UPDATE writeback_tasks SET state = 'UNCERTAIN' WHERE id = %s", (tids[1],))
     own, svc = await _start(env, Api())                        # restart: epoch 2
     try:
+        await svc.page_data()                                  # epoch-2 snapshot registered first
+        assert svc.ehr.knows("ath-e2-1001") and not svc.ehr.knows("ath-e1-1001")
+        before = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
         assert await svc.run_writeback(tids[0]) == "scenario_unavailable"
         assert await svc.reconcile_writeback(tids[1]) == "scenario_unavailable"
+        after = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
+        assert after == before                                 # new run's store untouched
         page = await svc.page_data()
         again = await svc.send_to_appointment("ath-e2-1001")
     finally:
@@ -579,3 +598,32 @@ async def test_synthetic_mode_unchanged(demo_env: dict[str, str]) -> None:
     assert data["appointments"][0]["emr_appt_id"] == "syn-e1-20261028-a-1"
     assert data["labels"]["ehr"] == "SIMULATED"
     assert data.get("source", {}).get("kind", "synthetic") == "synthetic"
+
+
+async def test_a8_second_date_keeps_first_date_state(demo_env: dict[str, str],
+                                                     demo_db_url: str) -> None:
+    clock = {"now": NOW}
+    api = Api()
+    _dated(api)
+    own, svc = await _start(_env(demo_env), api, now=lambda: clock["now"])
+    try:
+        sent = await svc.send_to_appointment("ath-e1-1001")
+        await svc.simulate_reply(int(sent["reminder_id"]), "1")
+        await svc.process_now()
+        tid = int(_q(demo_db_url, "SELECT id FROM writeback_tasks")[0][0])
+        assert await svc.run_writeback(tid) == "DONE"
+        written = await svc.ehr.read_confirmation("ath-e1-1001")
+        clock["now"] = NOW + (datetime(2026, 10, 27, tzinfo=UTC) - datetime(2026, 10, 26,
+                                                                            tzinfo=UTC))
+        second = await svc.page_data()                         # target 2026-10-29
+        assert [a["emr_appt_id"] for a in second["appointments"]] == ["ath-e1-3001"]
+        clock["now"] = NOW
+        first = await svc.page_data()                          # back to 2026-10-28
+        assert [a["emr_appt_id"] for a in first["appointments"]] == ["ath-e1-1001",
+                                                                     "ath-e1-1002"]
+        assert await svc.ehr.read_confirmation("ath-e1-1001") == written
+        assert svc.ehr.knows("ath-e1-1001") and svc.ehr.knows("ath-e1-3001")
+    finally:
+        await own.close()
+    starts = [r.url.params["startdate"] for r in api.gets()]
+    assert starts == ["10/28/2026", "10/29/2026"]                # no refetch of the first date
