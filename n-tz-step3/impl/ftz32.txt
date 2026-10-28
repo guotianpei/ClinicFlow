@@ -1,0 +1,26 @@
+# F-TZ3-2 evidence (r2: test fixture fixed — patient-id case had reused appointment id 1002, a duplicate-id SOURCE_INVALID; r1 output discarded)
+## regressions on 4adf08c source (red expected)
+FAILED tests/demo_reminders/test_athena_exact_formats.py::test_configured_department_id_with_newline_refused
+FAILED tests/demo_reminders/test_athena_exact_formats.py::test_ids_with_newline_excluded[over0]
+FAILED tests/demo_reminders/test_athena_exact_formats.py::test_ids_with_newline_excluded[over1]
+FAILED tests/demo_reminders/test_athena_exact_formats.py::test_date_time_with_newline_excluded[over0]
+FAILED tests/demo_reminders/test_athena_exact_formats.py::test_date_time_with_newline_excluded[over1]
+5 failed, 2 passed in 0.09s
+## with fullmatch
+7 passed in 0.05s
+## ruff
+All checks passed!
+## mypy --strict
+Success: no issues found in 24 source files
+## full demo suite
+691 passed, 1 warning, 1 error in 154.57s (0:02:34)
+
+## Disclosure: intermittent error in an untouched test (not reproduced)
+- In two full-suite runs at this working state, one setup ERROR occurred in
+  tests/demo_reminders/test_staff_screen.py::test_t_s5b_exact_id_takes_precedence
+  (a "raise TypeError(" frame was visible; full traceback not retained).
+- Not reproduced afterwards: three more full runs gave 691 passed, 0 errors
+  (full-rerun.txt, full-x-1.txt, full-x-2.txt), and test_staff_screen.py alone
+  passed 8 of 8 runs (31 passed each).
+- That test file is unchanged since PR #43, and this change does not touch the
+  synthetic staff-screen path. The cause is not established.
