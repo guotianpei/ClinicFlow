@@ -506,7 +506,9 @@ async def send_one(
     # 4. one guarded attempt
     if before_call is not None:
         before_call()
-    body = reminder_text(first_name_of(patient), appt.start_utc, tz)
+    # N-TZ Step 3 (OD-TZ1/OD-TZ2): appointment-local time, exact Q-B4 wording;
+    # the quota day (``tz``) stays the clinic day.
+    body = reminder_text(first_name_of(patient), appt.start_utc, appt.display_tz or tz)
 
     async def _call() -> SendOutcome:
         return await _dispatch(own, gateway, to, body, day, tz, now, dispatch_hook)
