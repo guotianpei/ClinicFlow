@@ -1,0 +1,11 @@
+## baselines on main e1bea32 source
+### new test_restart_recovery.py
+ERROR tests/demo_reminders/test_restart_recovery.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.51s
+### changed tests
+FAILED tests/demo_reminders/test_db.py::test_t13_create_twice_exactly_eight_tables_no_destructive_sql
+FAILED tests/demo_reminders/test_inbound.py::test_writeback_after_restart_recovers_from_durable_store
+2 failed, 115 passed in 12.88s
+### full suite excluding new file
+2 failed, 689 passed, 1 warning in 109.99s (0:01:49)
