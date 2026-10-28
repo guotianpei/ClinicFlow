@@ -241,6 +241,8 @@ async def fetch_snapshot(client: AthenaPreviewClient, target: date, tz: str,
         elif tc != total:
             raise SourceInvalid("SOURCE_INVALID")     # count changed between pages
         items = body["appointments"]
+        if len(items) > PAGE_LIMIT:
+            raise SourceInvalid("SOURCE_INVALID")     # F-ATH-I2: oversized page
         if not all(isinstance(x, dict) for x in items):
             raise SourceInvalid("SOURCE_INVALID")
         records.extend(items)

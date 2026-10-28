@@ -23,7 +23,8 @@ from haloflow_demo.settings import DemoSettings, StartupRefused
 
 async def _main() -> int:
     logging.basicConfig(level=logging.INFO)
-    return await run(DemoSettings.from_env(dict(os.environ)))
+    env = dict(os.environ)
+    return await run(DemoSettings.from_env(env), env=env)
 
 
 async def _reset() -> int:

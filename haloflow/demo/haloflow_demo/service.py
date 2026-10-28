@@ -38,7 +38,7 @@ from haloflow_demo.noresponse import flag_no_response
 from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
 from haloflow_demo.sending import SmsGateway, StubGateway, phone_key, send_batch, send_one
-from haloflow_demo.settings import DemoSettings
+from haloflow_demo.settings import DemoSettings, StartupRefused
 from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
 from haloflow_demo.tasks import reconcile_task, run_task
 
@@ -145,6 +145,9 @@ class DbStaffService:
         self._ehr: dict[date, SyntheticEhr] = {}
         self.ehr = _EhrRouter()
         # N-ATH: read-only sandbox source (None = synthetic fixtures, unchanged).
+        # F-ATH-I1: settings and config must agree; never silently synthetic.
+        if (settings.ehr_source == "athena_preview") != (athena is not None):
+            raise StartupRefused("athena_config_inconsistent")
         self._athena = athena
         self._athena_transport = athena_transport
         self._athena_client: AthenaPreviewClient | None = None
@@ -195,6 +198,11 @@ class DbStaffService:
                                          "counts": dict(snap.counts),
                                          "taken_at": snap.taken_at}
             return ehr
+
+    async def aclose(self) -> None:
+        if self._athena_client is not None:
+            await self._athena_client.aclose()
+            self._athena_client = None
 
     def _source_block(self, target: date) -> dict[str, Any]:
         if self._athena is None:
