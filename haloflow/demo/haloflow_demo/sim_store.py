@@ -94,6 +94,19 @@ class SimStore:
             raise SlotRefused("no durable row for this slot")
         return WriteResult(False, Observation(cur.value, int(cur.version)))
 
+    async def bump(self, slot: Slot, value: str | None) -> Observation:
+        """Another clinic actor's edit (test/demo hook): one fenced UPDATE that sets
+        the value and increments the version; refused for an absent or foreign slot."""
+        self._check(slot)
+        async with self._own.fenced() as conn:
+            row = (await conn.execute(text(
+                "UPDATE sim_confirmations SET value = :v, version = version + 1,"
+                f" updated_at = now() WHERE {_KEY} RETURNING value, version"),
+                {**_params(slot), "v": value})).one_or_none()
+        if row is None:
+            raise SlotRefused("no durable row for this slot")
+        return Observation(row.value, int(row.version))
+
     async def count(self, slot: Slot) -> int:
         self._check(slot)
         async with self._own.fenced() as conn:

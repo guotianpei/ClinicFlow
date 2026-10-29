@@ -664,3 +664,54 @@ async def test_rr20_store_reads_and_writes_refused_after_close(
     with pytest.raises(OwnerLost):
         await store.cas(slot, "2", 1)
     assert store_row(demo_db_url) == ("1", 1)
+
+
+# ── RR-21 (Codex review of 790aa81, F-M2-I1): durable clinic-change hook ──────
+
+
+async def test_rr21_store_backed_clinic_change_after_read_conflicts_no_overwrite(
+    demo_env: dict[str, str], demo_db_url: str,
+) -> None:
+    """A clinic edit between our read and our CAS (store-backed instance) bumps the
+    DURABLE version; our conditional write then conflicts and overwrites nothing."""
+    own, svc = await proc(_env(demo_env))
+    try:
+        tid = await confirmed(svc)
+        ehr = svc.ehr_for_date(APPT_START.date())
+        ehr.on_after_read = lambda: ehr.clinic_change_async(APPT_E1, "3")
+        result = await svc.run_writeback(tid)  # type: ignore[arg-type]
+    finally:
+        await own.close()
+    assert result == "writeback_conflict"
+    assert store_row(demo_db_url) == ("3", 2)                   # clinic edit kept, v2
+    assert ehr.applied_writes == 0
+    assert "writeback_conflict" in items(demo_db_url)
+
+
+async def test_rr21b_clinic_change_durable_mode_bumps_and_sync_refused(
+    demo_env: dict[str, str], demo_db_url: str,
+) -> None:
+    own, svc = await proc(_env(demo_env))
+    try:
+        await svc.page_data()
+        ehr = svc.ehr_for_date(APPT_START.date())
+        with pytest.raises(RuntimeError):
+            ehr.clinic_change(APPT_E1, "3")                     # never silently ignored
+        assert store_row(demo_db_url) == ("1", 1)
+        await ehr.clinic_change_async(APPT_E1, "3")
+        assert (await ehr.read_confirmation(APPT_E1)) == \
+            (await SimStore(own, TENANT).read(Slot("synthetic", TENANT, PATIENT, APPT_START)))
+    finally:
+        await own.close()
+    assert store_row(demo_db_url) == ("3", 2)
+
+
+async def test_rr21c_memory_only_clinic_change_unchanged() -> None:
+    from datetime import date
+
+    from haloflow_demo.synthetic_ehr import default_fixtures
+    ehr = SyntheticEhr(default_fixtures(date(2026, 10, 28), scenario="e1-20261028"))
+    ehr.clinic_change(APPT_E1, "3")
+    await ehr.clinic_change_async(APPT_E1, "4")
+    obs = await ehr.read_confirmation(APPT_E1)
+    assert (obs.value, obs.version) == ("4", 3)

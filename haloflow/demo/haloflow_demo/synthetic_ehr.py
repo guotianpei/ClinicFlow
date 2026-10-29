@@ -8,6 +8,7 @@ Patients carry a ``phone_alias`` label, never a dialable number: R-9 makes
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
@@ -118,7 +119,8 @@ class SyntheticEhr:
     supports_conditional_write: bool = True
     conditional_contract_verified: bool = False  # synthetic: proves nothing about a real EHR
     fail_next_write: str | None = None  # "connect" | "lost_response"
-    on_after_read: Callable[[], None] | None = None  # one-shot
+    # one-shot; may return an awaitable (awaited), e.g. clinic_change_async in durable mode
+    on_after_read: Callable[[], Any] | None = None
     write_attempts: int = 0
     applied_writes: int = 0
     lost_updates: int = 0
@@ -160,14 +162,26 @@ class SyntheticEhr:
         self._last_read_version[appt_id] = obs.version
         hook, self.on_after_read = self.on_after_read, None
         if hook is not None:
-            hook()
+            res = hook()
+            if inspect.isawaitable(res):
+                await res
         return obs
 
     def clinic_change(self, appt_id: str, value: str | None) -> None:
-        """Another clinic actor edits the value (bumps the version)."""
+        """Another clinic actor edits the value (bumps the version). In-memory only:
+        refused in durable mode (F-M2-I1) — use ``clinic_change_async``."""
+        if self.store is not None:
+            raise RuntimeError("durable store: use clinic_change_async")
         st = self._conf[appt_id]
         st.value = value
         st.version += 1
+
+    async def clinic_change_async(self, appt_id: str, value: str | None) -> None:
+        """M-2: the clinic edit in either mode; durable mode is one fenced bump."""
+        if self.store is None:
+            self.clinic_change(appt_id, value)
+            return
+        await self.store.bump(self._slot(appt_id), value)
 
     def _consume_failure(self) -> str | None:
         mode, self.fail_next_write = self.fail_next_write, None
