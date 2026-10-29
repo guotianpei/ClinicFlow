@@ -42,6 +42,7 @@ API under test (to be implemented):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -55,6 +56,7 @@ from haloflow_demo.sending import StubGateway
 from haloflow_demo.service import DbStaffService
 from haloflow_demo.settings import DemoSettings, StartupRefused, validate_demo_database_url
 from haloflow_demo.sim_store import SimStore
+from haloflow_demo.synthetic_ehr import SyntheticEhr
 
 NY, DENVER = "America/New_York", "America/Denver"
 DEPT = "21"
@@ -85,8 +87,10 @@ class Api:
     ``fail`` holds dates whose booked GET returns 500 (whole fetch rejected)."""
 
     def __init__(self, zone: str | None = NY, by_date: dict[str, list[dict[str, str]]]
-                 | None = None, fail: set[str] | None = None) -> None:
+                 | None = None, fail: set[str] | None = None,
+                 total: dict[str, int] | None = None) -> None:
         self.zone, self.by_date, self.fail = zone, by_date or {}, fail or set()
+        self.total = total or {}            # per date: a totalcount above the records
         self.requests: list[httpx.Request] = []
 
     def __call__(self, req: httpx.Request) -> httpx.Response:
@@ -103,10 +107,12 @@ class Api:
             d = req.url.params["startdate"]
             if d in self.fail:
                 return httpx.Response(500)
-            recs = [{**r, "date": d, "departmentid": DEPT,
-                     "patient": {"firstname": "SENTINEL-Donna"}}
-                    for r in self.by_date.get(d, [])]
-            return httpx.Response(200, json={"appointments": recs, "totalcount": len(recs)})
+            every = [{**r, "date": d, "departmentid": DEPT,
+                      "patient": {"firstname": "SENTINEL-Donna"}}
+                     for r in self.by_date.get(d, [])]
+            off, lim = int(req.url.params.get("offset", "0")), int(req.url.params["limit"])
+            return httpx.Response(200, json={"appointments": every[off:off + lim],
+                                             "totalcount": self.total.get(d, len(every))})
         return httpx.Response(404)
 
 
@@ -178,6 +184,48 @@ def appt_ids(data: dict[str, Any]) -> list[str]:
     return [a["emr_appt_id"] for a in data["appointments"]]
 
 
+class Spy:
+    """Counts confirmation reads and conditional writes reaching the durable store or
+    any in-memory EHR instance. Slot lookups used to validate identity (``count``)
+    are not confirmation reads and are not counted."""
+
+    def __init__(self, mp: pytest.MonkeyPatch) -> None:
+        self.reads = self.writes = 0
+        r_store, c_store = SimStore.read, SimStore.cas
+        r_inst, w_inst = (SyntheticEhr.read_confirmation,
+                          SyntheticEhr.write_confirmation_conditional)
+
+        async def store_read(this: Any, *a: Any, **kw: Any) -> Any:
+            self.reads += 1
+            return await r_store(this, *a, **kw)
+
+        async def store_cas(this: Any, *a: Any, **kw: Any) -> Any:
+            self.writes += 1
+            return await c_store(this, *a, **kw)
+
+        async def inst_read(this: Any, *a: Any, **kw: Any) -> Any:
+            self.reads += 1
+            return await r_inst(this, *a, **kw)
+
+        async def inst_write(this: Any, *a: Any, **kw: Any) -> Any:
+            self.writes += 1
+            return await w_inst(this, *a, **kw)
+        mp.setattr(SimStore, "read", store_read)
+        mp.setattr(SimStore, "cas", store_cas)
+        mp.setattr(SyntheticEhr, "read_confirmation", inst_read)
+        mp.setattr(SyntheticEhr, "write_confirmation_conditional", inst_write)
+
+
+def full_task(url: str, tid: int) -> tuple[Any, ...]:
+    return sql(url, "SELECT state, reason, attempts, target_value, observed_before"
+                    " FROM writeback_tasks WHERE id = %s", (tid,))[0]
+
+
+def all_store(url: str) -> list[tuple[Any, ...]]:
+    return sql(url, "SELECT source, tenant_id, emr_patient_id, appt_start, value, version,"
+                    " provider_appt_id FROM sim_confirmations ORDER BY 1, 3, 4")
+
+
 T0900 = datetime(2026, 10, 28, 13, 0, tzinfo=UTC)        # 09:00 New York
 MDY = "10/28/2026"
 
@@ -238,17 +286,31 @@ async def test_t_ms_29_constraints_reject_bad_rows(demo_env: dict[str, str],
     sql(demo_db_url, ins, ("synthetic", "syn-p-c", T0900, None))   # NULLs distinct
 
 
-async def test_t_ms_30b_schema4_database_refused_untouched(demo_env: dict[str, str],
-                                                           demo_db_url: str) -> None:
+@pytest.mark.parametrize("old", ["3", "4"])
+async def test_t_ms_30b_older_schema_refused_untouched(demo_env: dict[str, str],
+                                                      demo_db_url: str, old: str) -> None:
     env = _env(demo_env)
     await tables(env)
-    sql(demo_db_url, "UPDATE demo_meta SET value = '4' WHERE key = 'schema_version'")
-    before = sql(demo_db_url, "SELECT key, value FROM demo_meta ORDER BY key")
-    s = DemoSettings.from_env(env)
+    sql(demo_db_url, "INSERT INTO reminder_records (tenant_id, emr_appt_id, emr_patient_id,"
+                     " appt_start, state, mode) VALUES ('demo-clinic', 'ath-e1-1001',"
+                     " 'athp-60178', %s, 'SUBMITTED', 'stub')", (T0900,))
+    sql(demo_db_url, "UPDATE demo_meta SET value = %s WHERE key = 'schema_version'", (old,))
+
+    def state() -> list[Any]:
+        tables_ = [r[0] for r in sql(demo_db_url, "SELECT tablename FROM pg_tables WHERE"
+                                                   " schemaname = 'public' ORDER BY 1")]
+        cols = sql(demo_db_url, "SELECT table_name, column_name, data_type FROM"
+                                " information_schema.columns WHERE table_schema = 'public'"
+                                " ORDER BY 1, 2")
+        data = {t: sql(demo_db_url, f'SELECT * FROM "{t}" ORDER BY 1') for t in tables_}
+        return [tables_, cols, data]
+
+    before = state()
+    s_ = DemoSettings.from_env(env)
     with pytest.raises(StartupRefused):
-        own = await acquire_ownership(s, validate_demo_database_url(s))
+        own = await acquire_ownership(s_, validate_demo_database_url(s_))
         await own.close()
-    assert sql(demo_db_url, "SELECT key, value FROM demo_meta ORDER BY key") == before
+    assert state() == before
 
 
 # ── store (T-MS-19, T-MS-1) ──────────────────────────────────────────────────
@@ -396,11 +458,9 @@ async def test_t_ms_7_loaded_snapshot_disagrees(demo_env: dict[str, str], demo_d
     try:
         await svc.page_data()
         out = await svc.run_writeback(tid)
-        again = await svc.reconcile_writeback(tid) if task(demo_db_url, tid)[0] in (
-            "UNCERTAIN",) else None
     finally:
         await stop(own, svc)
-    assert out == "source_changed" and again is None
+    assert out == "source_changed"
     assert task(demo_db_url, tid)[:3] == ("PENDING", None, 0)
     assert "writeback_source_changed" in kinds(demo_db_url)
     assert sql(demo_db_url, "SELECT detail FROM follow_up_items WHERE kind ="
@@ -505,6 +565,52 @@ async def test_t_ms_18_26_duplicate_slot_in_snapshot(demo_env: dict[str, str],
     assert rows(demo_db_url) == []
 
 
+FILLER = [rec(str(3000 + n), pid=str(70000 + n), start="08:00") for n in range(499)]
+
+
+@pytest.mark.parametrize("snap", [
+    pytest.param({"by_date": {MDY: []}}, id="paid-absent"),
+    pytest.param({"by_date": {MDY: [rec("1002")]}}, id="replacement-same-slot"),
+    pytest.param({"by_date": {MDY: [rec("1001", start="10:00")]}}, id="moved"),
+    pytest.param({"by_date": {MDY: [rec("1001", status="x")]}}, id="cancelled"),
+    pytest.param({"fail": {MDY}}, id="failed"),
+    pytest.param({"by_date": {MDY: [rec("1001"), *FILLER]}, "total": {MDY: 501}},
+                 id="truncated"),
+])
+@pytest.mark.parametrize("action", ["reconcile_uncertain", "run_pending"])
+async def test_t_ms_8b_refusal_zero_io_no_mutation(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+    snap: dict[str, Any], action: str,
+) -> None:
+    """F-MST-2: a loaded snapshot that disagrees, a failed fetch, or a TRUNCATED
+    snapshot refuses both reconcile (genuine UNCERTAIN task) and run: no confirmation
+    read or CAS, no attempt, state or version change; truncated data is not seeded."""
+    env, tid = await fresh(demo_env, demo_db_url)
+    if action == "reconcile_uncertain":
+        sql(demo_db_url, "UPDATE writeback_tasks SET state = 'IN_FLIGHT', attempts = 1"
+                         " WHERE id = %s", (tid,))
+    store_before = all_store(demo_db_url)
+    own, svc = await proc(env, Api(**snap))
+    try:
+        if action == "reconcile_uncertain":
+            assert task(demo_db_url, tid)[:2] == ("UNCERTAIN", "restart")
+        before = full_task(demo_db_url, tid)
+        data = await svc.page_data()
+        if "total" in snap:
+            assert data["source"]["truncated"] is True
+        spy = Spy(monkeypatch)
+        if action == "reconcile_uncertain":
+            out = await svc.reconcile_writeback(tid)
+        else:
+            out = await svc.run_writeback(tid)
+    finally:
+        await stop(own, svc)
+    assert out in ("source_changed", "scenario_unavailable")
+    assert (spy.reads, spy.writes) == (0, 0)
+    assert full_task(demo_db_url, tid) == before
+    assert all_store(demo_db_url) == store_before          # nothing seeded or written
+
+
 # ── binding gates (T-MS-10/11/14/15/31) ──────────────────────────────────────
 
 
@@ -552,7 +658,8 @@ async def test_t_ms_31_scope_pin_written_once_and_enforced(demo_env: dict[str, s
                                                           demo_db_url: str) -> None:
     env, tid = await fresh(demo_env, demo_db_url)
     assert meta(demo_db_url, SCOPE_KEY) == "v1;practice=195900;dept=21"
-    for bad in ("v1;practice=195901;dept=21", "v1;practice=195900;dept=21\n", "v0"):
+    for bad in ("v1;practice=195901;dept=21", "v1;practice=195900;dept=22",
+                "v1;practice=195900;dept=21\n", "v0"):
         sql(demo_db_url, "UPDATE demo_meta SET value = %s WHERE key = %s", (bad, SCOPE_KEY))
         api = Api(by_date={MDY: [rec("1001")]})
         own, svc = await proc(env, api)
@@ -567,40 +674,113 @@ async def test_t_ms_31_scope_pin_written_once_and_enforced(demo_env: dict[str, s
     assert rows(demo_db_url)[0][3:] == ("1", 1)
 
 
-async def test_t_ms_11_malformed_bindings_refused(demo_env: dict[str, str],
-                                                  demo_db_url: str) -> None:
+async def test_t_ms_31b_scope_pin_absent_with_athena_rows_refused(
+    demo_env: dict[str, str], demo_db_url: str,
+) -> None:
+    """A missing pin is re-established only on a database with no athena_preview
+    store rows; otherwise it refuses (never re-pinned under a possibly different
+    configuration)."""
     env, tid = await fresh(demo_env, demo_db_url)
+    sql(demo_db_url, "DELETE FROM demo_meta WHERE key = %s", (SCOPE_KEY,))
+    api = Api(by_date={MDY: [rec("1001")]})
+    own, svc = await proc(env, api)
+    try:
+        out = await svc.run_writeback(tid)
+        data = await svc.page_data()
+    finally:
+        await stop(own, svc)
+    assert out == "scenario_unavailable" and appt_ids(data) == []
+    assert meta(demo_db_url, SCOPE_KEY) is None
+    assert rows(demo_db_url)[0][3:] == ("1", 1)
+
+
+async def test_t_ms_11_malformed_bindings_refused(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, tid = await fresh(demo_env, demo_db_url)
+    store_before = all_store(demo_db_url)
     for appt, pid in (("ath-e2-01001", "athp-60178"), ("ath-e2-1001", "syn-p-a"),
                       ("ath-e2-1003", "athp-60178")):        # last: no durable row
         sql(demo_db_url, "UPDATE reminder_records SET emr_appt_id = %s, emr_patient_id = %s",
             (appt, pid))
+        before = full_task(demo_db_url, tid)
         own, svc = await proc(env, Api())
+        spy = Spy(monkeypatch)
         try:
             assert await svc.run_writeback(tid) == "scenario_unavailable"
         finally:
             await stop(own, svc)
-    assert rows(demo_db_url)[0][3:] == ("1", 1)
+        assert (spy.reads, spy.writes) == (0, 0)
+        assert full_task(demo_db_url, tid) == before
+        monkeypatch.undo()
+    assert all_store(demo_db_url) == store_before
 
 
-async def test_t_ms_10_sources_never_cross(demo_env: dict[str, str],
-                                           demo_db_url: str) -> None:
-    env, tid = await fresh(demo_env, demo_db_url)
-    syn_env = {k: v for k, v in env.items() if not k.startswith(
+def _synthetic_env(env: dict[str, str]) -> dict[str, str]:
+    return {k: v for k, v in env.items() if not k.startswith(
         ("DEMO_EHR_SOURCE", "DEMO_ATHENA", "ATHENA_"))}
-    s = DemoSettings.from_env(syn_env)
-    own = await acquire_ownership(s, validate_demo_database_url(s))
-    svc = DbStaffService(own, s, now=lambda: NOW, gateway=StubGateway(TEST_NUMBER))
+
+
+async def _synthetic_proc(env: dict[str, str]) -> tuple[Any, DbStaffService]:
+    s_ = DemoSettings.from_env(_synthetic_env(env))
+    own = await acquire_ownership(s_, validate_demo_database_url(s_))
+    return own, DbStaffService(own, s_, now=lambda: NOW, gateway=StubGateway(TEST_NUMBER))
+
+
+async def test_t_ms_10a_athena_task_in_synthetic_mode_refused(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, tid = await fresh(demo_env, demo_db_url)
+    before, store_before = full_task(demo_db_url, tid), all_store(demo_db_url)
+    own, svc = await _synthetic_proc(env)
+    spy = Spy(monkeypatch)
     try:
         assert await svc.run_writeback(tid) == "scenario_unavailable"
     finally:
         await stop(own, svc)
+    assert (spy.reads, spy.writes) == (0, 0)
+    assert full_task(demo_db_url, tid) == before and all_store(demo_db_url) == store_before
+
+
+async def test_t_ms_10b_synthetic_task_in_athena_mode_refused(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reverse crossing: a synthetic task with its matching durable synthetic slot."""
+    env = _env(demo_env)
+    own, svc = await _synthetic_proc(env)
+    try:
+        appt = (await svc.page_data())["appointments"][0]["emr_appt_id"]
+        tid = await confirm(svc, demo_db_url, appt)
+    finally:
+        await stop(own, svc)
+    assert sql(demo_db_url, "SELECT count(*) FROM sim_confirmations WHERE source ="
+                            " 'synthetic'")[0][0] >= 1
+    before, store_before = full_task(demo_db_url, tid), all_store(demo_db_url)
+    api = Api(by_date={MDY: [rec("1001")]})
+    own, svc = await proc(env, api)
+    spy = Spy(monkeypatch)
+    try:
+        assert await svc.run_writeback(tid) == "scenario_unavailable"
+    finally:
+        await stop(own, svc)
+    assert (spy.reads, spy.writes) == (0, 0) and api.requests == []
+    assert full_task(demo_db_url, tid) == before and all_store(demo_db_url) == store_before
+
+
+async def test_t_ms_10c_foreign_tenant_refused(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    env, tid = await fresh(demo_env, demo_db_url)
     sql(demo_db_url, "UPDATE reminder_records SET tenant_id = 'other-clinic'")
+    before, store_before = full_task(demo_db_url, tid), all_store(demo_db_url)
     own, svc = await proc(env, Api())
+    spy = Spy(monkeypatch)
     try:
         assert await svc.run_writeback(tid) == "scenario_unavailable"
     finally:
         await stop(own, svc)
-    assert rows(demo_db_url)[0][3:] == ("1", 1)
+    assert (spy.reads, spy.writes) == (0, 0)
+    assert full_task(demo_db_url, tid) == before and all_store(demo_db_url) == store_before
 
 
 # ── stored-zone snapshot date (T-MS-16/17) ───────────────────────────────────
@@ -678,51 +858,87 @@ async def test_t_ms_13_repeats_across_restart(demo_env: dict[str, str],
     assert gw.calls == []
     assert len(sql(demo_db_url, "SELECT 1 FROM reminder_records")) == 1
     assert len(sql(demo_db_url, "SELECT 1 FROM contact_history")) == 1
+    assert len(sql(demo_db_url, "SELECT 1 FROM writeback_tasks")) == 1
+    assert sql(demo_db_url, "SELECT sum(used) FROM send_quota")[0][0] == 1
+    assert rows(demo_db_url) == [("1001", "athp-60178", T0900, "2", 2)]
+    own, svc = await proc(env, Api())
+    try:
+        with pytest.raises(ValueError):
+            await svc.reconcile_writeback(tid)               # DONE: reconcile refused
+        with pytest.raises(ValueError):
+            await svc.run_writeback(tid)
+    finally:
+        await stop(own, svc)
+    assert task(demo_db_url, tid)[:3] == ("DONE", None, 1)
     assert rows(demo_db_url) == [("1001", "athp-60178", T0900, "2", 2)]
 
 
-class Barrier:
-    """Two hooks that must both be inside their seed transactions (observed overlap)
-    before either commits; bounded by a timeout."""
+async def _lock_waiters(url: str) -> int:
+    def q() -> int:
+        return int(sql(url, "SELECT count(*) FROM pg_stat_activity WHERE datname ="
+                            " current_database() AND wait_event_type = 'Lock'")[0][0])
+    return await asyncio.to_thread(q)
 
-    def __init__(self, n: int = 2) -> None:
-        self.n, self.inside, self.go = n, 0, asyncio.Event()
-        self.overlap = False
 
-    async def __call__(self, stage: str) -> None:
-        if stage != "inserted":
-            return
-        self.inside += 1
-        if self.inside == self.n:
-            self.overlap = True
-            self.go.set()
-        await asyncio.wait_for(self.go.wait(), timeout=10)
+async def _until(pred: Any, timeout: float = 10.0) -> None:
+    async def loop() -> None:
+        while not await pred():
+            await asyncio.sleep(0.05)
+    await asyncio.wait_for(loop(), timeout=timeout)
 
 
 async def test_t_ms_27_concurrent_two_date_seed_one_bound(demo_env: dict[str, str],
                                                          demo_db_url: str) -> None:
+    """F-MST-1: the first seed transaction to finish its inserts is HELD before
+    commit; the other date's INSERT of the same PAID is observed blocked on a lock
+    (pg_stat_activity), then the winner is released. Unique enforcement stays on.
+    Exactly one BOUND row; the other date publishes without that record."""
     env = _env(demo_env)
     await tables(env)
-    D2s = "10/29/2026"
+    d2, D2s = date(2026, 10, 29), "10/29/2026"
     api = Api(by_date={MDY: [rec("1001")], D2s: [rec("1001", pid="60179")]})
     clock = Clock()
     own, svc = await proc(env, api, clock)
-    svc.seed_hook = Barrier()
+    held, release = asyncio.Event(), asyncio.Event()
+    first: list[bool] = []
+
+    async def hold_first(stage: str) -> None:
+        if stage == "inserted" and not first:
+            first.append(True)
+            held.set()
+            await asyncio.wait_for(release.wait(), timeout=15)
+
+    svc.seed_hook = hold_first
+    t1 = asyncio.create_task(svc._source(D1))                 # noqa: SLF001
+    t2: asyncio.Task[Any] | None = None
     try:
-        await asyncio.gather(svc._source(D1), svc._source(date(2026, 10, 29)))  # noqa: SLF001
-        assert svc.seed_hook.overlap
+        await asyncio.wait_for(held.wait(), timeout=10)        # winner inside its txn
+        t2 = asyncio.create_task(svc._source(d2))             # noqa: SLF001
+        await _until(lambda: _lock_wait_positive(demo_db_url))  # loser blocked
+        release.set()
+        await asyncio.wait_for(asyncio.gather(t1, t2), timeout=15)
+        svc.seed_hook = None
         clock.for_target(D1)
-        d1 = await svc.page_data()
-        clock.for_target(date(2026, 10, 29))
-        d2 = await svc.page_data()
+        p1 = await svc.page_data()
+        clock.for_target(d2)
+        p2 = await svc.page_data()
     finally:
+        release.set()
+        for t in (t1, t2):
+            if t is not None and not t.done():
+                t.cancel()
+            if t is not None:
+                with contextlib.suppress(BaseException):
+                    await t
         await stop(own, svc)
-    bound = rows(demo_db_url)
-    assert [r[0] for r in bound] == ["1001"]               # exactly one binding
-    published = appt_ids(d1) + appt_ids(d2)
-    assert len(published) == 1
-    loser = d2 if appt_ids(d1) else d1
-    assert loser["source"]["counts"].get("PAID_ELSEWHERE") == 1
+    assert [r[0] for r in rows(demo_db_url)] == ["1001"]    # exactly one binding
+    assert appt_ids(p1) == ["ath-e2-1001"] and appt_ids(p2) == []
+    assert p2["source"]["counts"].get("PAID_ELSEWHERE") == 1
+    assert meta(demo_db_url, SCOPE_KEY) == "v1;practice=195900;dept=21"   # one pin
+
+
+async def _lock_wait_positive(url: str) -> bool:
+    return await _lock_waiters(url) > 0
 
 
 async def test_t_ms_28_seed_failure_rolls_back_nothing_published(
@@ -745,6 +961,7 @@ async def test_t_ms_28_seed_failure_rolls_back_nothing_published(
             await asyncio.wait_for(release.wait(), timeout=10)
             raise RuntimeError("injected seed failure")
 
+    d2_page: asyncio.Task[Any] | None = None
     try:
         await svc.page_data()                              # D1 published normally
         svc.seed_hook = held_then_fail
@@ -754,11 +971,18 @@ async def test_t_ms_28_seed_failure_rolls_back_nothing_published(
         clock.for_target(D1)
         sent = await svc.send_to_appointment("ath-e2-1001")  # overlaps the D2 seed
         release.set()
-        res = await asyncio.gather(d2_page, return_exceptions=True)
+        res = await asyncio.wait_for(asyncio.gather(d2_page, return_exceptions=True),
+                                     timeout=15)
         clock.for_target(d2)
         svc.seed_hook = None
         after = await svc.page_data()
     finally:
+        release.set()
+        if d2_page is not None:
+            if not d2_page.done():
+                d2_page.cancel()
+            with contextlib.suppress(BaseException):
+                await d2_page
         await stop(own, svc)
     assert sent["state"] == "SUBMITTED"
     assert isinstance(res[0], BaseException) or appt_ids(res[0]) == []
