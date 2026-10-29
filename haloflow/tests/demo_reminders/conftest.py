@@ -13,8 +13,10 @@ establish PostgreSQL 17 behaviour (package v2 §4).
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from collections.abc import Iterator
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
@@ -55,18 +57,46 @@ def _with_dbname(url: str, dbname: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, "/" + dbname, parts.query, ""))
 
 
+def _new_fixture_db_name() -> str:
+    """The name ``demo_db_url`` gives each throwaway database."""
+    return f"haloflow_t{secrets.token_hex(4)}_demo"
+
+
+_FIXTURE_DB_NAME = re.compile(r"haloflow_t[0-9a-f]{8}_demo")
+
+
+def _drop_fixture_db(conn: psycopg.Connection[Any], name: str) -> None:
+    """Teardown of ``demo_db_url``: drop the fixture's database on ``conn``
+    (an autocommit admin connection).
+
+    PG16 teardown package (Codex ALIGN): ``WITH (FORCE)`` fails with
+    InsufficientPrivilege for a non-superuser role without ``pg_signal_backend``
+    whenever an autovacuum worker is connected. Instead: end only this role's own
+    sessions on that database, then a plain DROP, which stops autovacuum itself.
+    Another role's session is never terminated; its ObjectInUse error surfaces.
+    """
+    if not _FIXTURE_DB_NAME.fullmatch(name):  # TD-R3: unconditional, before any SQL
+        raise ValueError("not a demo_db_url fixture database name")
+    conn.execute(
+        "SELECT pg_terminate_backend(pid, 5000) FROM pg_stat_activity"
+        " WHERE datname = %s AND usename = current_user AND pid <> pg_backend_pid()",
+        (name,),
+    )
+    conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
+
+
 @pytest.fixture
 def demo_db_url() -> Iterator[str]:
     """A fresh, empty ``*_demo`` database; yields its ``postgresql://`` URL."""
     admin = _admin_url()
-    name = f"haloflow_t{secrets.token_hex(4)}_demo"
+    name = _new_fixture_db_name()
     with psycopg.connect(admin, autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{name}"')
     try:
         yield _with_dbname(admin, name)
     finally:
         with psycopg.connect(admin, autocommit=True) as conn:
-            conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+            _drop_fixture_db(conn, name)
 
 
 @pytest.fixture
