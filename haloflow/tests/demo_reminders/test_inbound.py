@@ -1785,11 +1785,13 @@ async def test_writeback_after_date_rollover_targets_the_original_appointment(
         result = await svc.run_writeback(tid)
         old_ehr = svc.ehr_for_date(APPT_START.date())
         new_ehr = svc.ehr_for_date((APPT_START + timedelta(days=1)).date())
+        # M-2 (Codex freeze ee09206, D-a): observed before close — store reads are fenced.
+        observed = await old_ehr.read_confirmation(appt)
     finally:
         await own.close()
     assert appt == "syn-e1-20261028-a-1"
     assert result == "DONE"
-    assert (await old_ehr.read_confirmation(appt)).value == "2"
+    assert observed.value == "2"
     assert old_ehr.applied_writes == 1 and new_ehr.applied_writes == 0
     assert new_first["emr_appt_id"] == "syn-e1-20261029-a-1"
     assert new_first["status"].endswith("reminder: none"), "no old-state overlay"

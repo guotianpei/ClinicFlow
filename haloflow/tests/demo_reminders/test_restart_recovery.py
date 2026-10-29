@@ -639,3 +639,28 @@ async def test_rr19_direct_task_runner_bypass_fails_closed(
     assert result == "scenario_unavailable"
     assert task(demo_db_url, tid) == ("PENDING", None, 0)  # type: ignore[arg-type]
     assert store_row(demo_db_url) == ("1", 1)
+
+
+# ── RR-20 (Codex freeze ee09206, D-a): fenced store reads ─────────────────────
+
+
+async def test_rr20_store_reads_and_writes_refused_after_close(
+    demo_env: dict[str, str], demo_db_url: str,
+) -> None:
+    """Store reads are fenced (R-M2-3): once ownership is closed, read, instance read
+    and CAS are all refused (OwnerLost) and nothing changes."""
+    from haloflow_demo.errors import OwnerLost
+    own, svc = await proc(_env(demo_env))
+    await svc.page_data()
+    ehr = svc.ehr_for_date(APPT_START.date())
+    store = SimStore(own, TENANT)
+    slot = Slot("synthetic", TENANT, PATIENT, APPT_START)
+    assert (await store.read(slot)).value == "1"
+    await own.close()
+    with pytest.raises(OwnerLost):
+        await store.read(slot)
+    with pytest.raises(OwnerLost):
+        await ehr.read_confirmation(APPT_E1)
+    with pytest.raises(OwnerLost):
+        await store.cas(slot, "2", 1)
+    assert store_row(demo_db_url) == ("1", 1)
