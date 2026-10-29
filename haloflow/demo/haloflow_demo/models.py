@@ -32,10 +32,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from haloflow_demo.db import check_identity, read_identity
 from haloflow_demo.settings import DemoDbTarget, StartupRefused
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 # 2: reminder_records.reserved_day; demo_meta phone_key_secret
 # 3 (Day 5): contact history, receipt snapshot, match lock, inbound fields
 # 4 (M-2): sim_confirmations — durable simulated EHR confirmation state
+# 5 (M-2S): sim_confirmations.provider_appt_id — immutable sandbox appointment binding
 
 
 class DemoBase(DeclarativeBase):
@@ -197,6 +198,16 @@ class SimConfirmation(DemoBase):
         PrimaryKeyConstraint("source", "tenant_id", "emr_patient_id", "appt_start",
                              name="pk_sim_confirmations"),
         CheckConstraint("version >= 1", name="ck_sim_confirmations_version"),
+        # M-2S (package v1r2 §5): a synthetic row never carries a provider id; a
+        # sandbox row always carries exactly one. IS NOT NULL is explicit because a
+        # regex test on NULL is UNKNOWN, which a CHECK accepts.
+        CheckConstraint(
+            "(source = 'synthetic' AND provider_appt_id IS NULL) OR"
+            " (source = 'athena_preview' AND provider_appt_id IS NOT NULL"
+            " AND provider_appt_id ~ '^[1-9][0-9]{0,11}$')",
+            name="ck_sim_confirmations_provider_appt"),
+        UniqueConstraint("source", "tenant_id", "provider_appt_id",
+                         name="uq_sim_confirmations_paid"),
     )
 
     source: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -205,6 +216,7 @@ class SimConfirmation(DemoBase):
     appt_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     value: Mapped[str | None] = mapped_column(String(32))
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_appt_id: Mapped[str | None] = mapped_column(String(16))
     updated_at: Mapped[datetime] = _ts()
 
 

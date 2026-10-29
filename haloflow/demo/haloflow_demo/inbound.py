@@ -118,6 +118,10 @@ INSTRUCTIONS = {
                           "Check the appointment.",
     "writeback_scenario_unavailable": "This confirmation belongs to an earlier demo run. "
                                       "Nothing was written. Update the EHR manually.",
+    # M-2S (Codex wording, technical; codex_m2s-v1-package-review.md).
+    "writeback_source_changed": "The saved appointment could not be validated against the"
+                                " loaded sandbox snapshot. Review it before continuing."
+                                " No real EHR update was made.",
 }
 
 

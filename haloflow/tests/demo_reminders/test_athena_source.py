@@ -520,7 +520,7 @@ async def test_a6_writeback_never_calls_athena(demo_env: dict[str, str],
     assert not any("confirmationstatus" in r.url.path for r in api.requests)
 
 
-async def test_a9_restart_prior_tasks_fail_closed_and_no_resend(
+async def test_a9_restart_prior_tasks_recover_durably_and_no_resend(
     demo_env: dict[str, str], demo_db_url: str
 ) -> None:
     env = _env(demo_env)
@@ -542,10 +542,13 @@ async def test_a9_restart_prior_tasks_fail_closed_and_no_resend(
         await svc.page_data()                                  # epoch-2 snapshot registered first
         assert svc.ehr.knows("ath-e2-1001") and not svc.ehr.knows("ath-e1-1001")
         before = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
-        assert await svc.run_writeback(tids[0]) == "scenario_unavailable"
-        assert await svc.reconcile_writeback(tids[1]) == "scenario_unavailable"
+        # M-2S (package v1r2): prior-epoch tasks bind their durable sandbox slot by
+        # provider appointment id; this was "scenario_unavailable" (LIMITED) before.
+        assert await svc.run_writeback(tids[0]) == "DONE"
+        assert await svc.reconcile_writeback(tids[1]) == "UNCERTAIN"   # nothing written
         after = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
-        assert after == before                                 # new run's store untouched
+        assert (after[0].value, after[0].version) == ("2", before[0].version + 1)
+        assert after[1] == before[1]                           # no write for task 2
         page = await svc.page_data()
         again = await svc.send_to_appointment("ath-e2-1001")
     finally:
@@ -555,7 +558,7 @@ async def test_a9_restart_prior_tasks_fail_closed_and_no_resend(
     assert status["ath-e2-1001"].endswith("reminder: Confirmed by patient (before restart)")
     assert _q(demo_db_url, "SELECT count(*) FROM reminder_records") == [(2,)]
     kinds = {r[0] for r in _q(demo_db_url, "SELECT kind FROM follow_up_items")}
-    assert "writeback_scenario_unavailable" in kinds
+    assert "writeback_scenario_unavailable" not in kinds
 
 
 async def test_a10_shared_number_uncorrelated_reply_staff_only(

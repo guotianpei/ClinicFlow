@@ -439,17 +439,21 @@ async def test_rr15_tenant_and_source_separation(
         tid = await confirmed(svc)
     finally:
         await own.close()
-    for src, ten in (("athena", TENANT), ("synthetic", "other-clinic")):
+    # M-2S (schema 5): a sandbox row must carry a provider id, so the foreign-source
+    # row is a valid athena_preview row; "athena" is no longer a storable source.
+    for src, ten, paid in (("athena_preview", TENANT, "1001"),
+                           ("synthetic", "other-clinic", None)):
         q(demo_db_url, "INSERT INTO sim_confirmations(source, tenant_id, emr_patient_id,"
-                       " appt_start, value, version) VALUES (%s, %s, %s, %s, '1', 1)",
-          (src, ten, PATIENT, APPT_START))
+                       " appt_start, value, version, provider_appt_id)"
+                       " VALUES (%s, %s, %s, %s, '1', 1, %s)",
+          (src, ten, PATIENT, APPT_START, paid))
     own, svc = await proc(env)
     try:
         assert await svc.run_writeback(tid) == "DONE"  # type: ignore[arg-type]
     finally:
         await own.close()
     assert store_row(demo_db_url) == ("2", 2)
-    assert store_row(demo_db_url, source="athena") == ("1", 1)
+    assert store_row(demo_db_url, source="athena_preview") == ("1", 1)
     assert store_row(demo_db_url, tenant="other-clinic") == ("1", 1)
 
 

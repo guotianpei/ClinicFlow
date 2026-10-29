@@ -407,8 +407,8 @@ async def test_t_ms_5_before_write_crash_stays_uncertain(demo_env: dict[str, str
 async def test_t_ms_6_clinic_edit_conflict(demo_env: dict[str, str],
                                            demo_db_url: str) -> None:
     env, tid = await fresh(demo_env, demo_db_url)
-    sql(demo_db_url, "UPDATE sim_confirmations SET value = '1', version = 2"
-                     " WHERE source = 'athena_preview'")
+    sql(demo_db_url, "UPDATE sim_confirmations SET value = '3', version = 2"
+                     " WHERE source = 'athena_preview'")    # another actor's edit
     own, svc = await proc(env, Api())
     try:
         assert await svc.run_writeback(tid) == "writeback_conflict"
