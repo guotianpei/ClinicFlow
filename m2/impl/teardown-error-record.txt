@@ -1,0 +1,74 @@
+# Intermittent teardown ERROR — retained per Codex (traceback, role, version)
+## run: full-run-2.txt (M-2 F-M2-I1 working state, 2026-10-29 ~00:27Z)
+_______ ERROR at teardown of test_t19_counter_unavailable_sends_nothing ________
+
+    @pytest.fixture
+    def demo_db_url() -> Iterator[str]:
+        """A fresh, empty ``*_demo`` database; yields its ``postgresql://`` URL."""
+        admin = _admin_url()
+        name = f"haloflow_t{secrets.token_hex(4)}_demo"
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(f'CREATE DATABASE "{name}"')
+        try:
+            yield _with_dbname(admin, name)
+        finally:
+            with psycopg.connect(admin, autocommit=True) as conn:
+>               conn.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+
+tests/demo_reminders/conftest.py:69: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <psycopg.Connection [BAD] at 0x7f61edb1ee40>
+query = 'DROP DATABASE IF EXISTS "haloflow_t7cb31408_demo" WITH (FORCE)'
+params = None, prepare = None, binary = False
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool = False,
+    ) -> Cursor[Row]:
+        """Execute a query and return a cursor to read its results."""
+        try:
+            cur = self.cursor()
+            if binary:
+                cur.format = BINARY
+    
+            if isinstance(query, Template):
+                if params is not None:
+                    raise TypeError(
+                        "'execute()' with string template query doesn't support parameters"
+                    )
+                return cur.execute(query, prepare=prepare)
+            else:
+                return cur.execute(query, params, prepare=prepare)
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.InsufficientPrivilege: permission denied to terminate process
+E           DETAIL:  Only roles with privileges of the role whose process is being terminated or with privileges of the "pg_signal_backend" role may terminate this process.
+
+../../venv/lib/python3.13/site-packages/psycopg/connection.py:304: InsufficientPrivilege
+=============================== warnings summary ===============================
+../../venv/lib/python3.13/site-packages/fastapi/testclient.py:1
+  /home/claude/venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+ERROR tests/demo_reminders/test_send.py::test_t19_counter_unavailable_sends_nothing
+721 passed, 1 warning, 1 error in 129.61s (0:02:09)
+
+## role/version
+admin role demoadmin: rolsuper=f, rolcreaterole=f, member of pg_signal_backend=f; server PostgreSQL 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1); autovacuum=on
+
+## server log (postgresql-16-main.log)
+2026-10-29 00:26:58.455 UTC [9506] demoadmin@haloflow_t7cb31408_demo ERROR:  relation "send_quota" does not exist at character 13
+2026-10-29 00:26:58.455 UTC [9506] demoadmin@haloflow_t7cb31408_demo STATEMENT:  INSERT INTO send_quota(clinic_day, used) VALUES ($1, 1) ON CONFLICT (clinic_day) DO UPDATE SET used = send_quota.used + 1 WHERE send_quota.used < $2 RETURNING used
+2026-10-29 00:26:58.470 UTC [9510] demoadmin@postgres ERROR:  permission denied to terminate process
+2026-10-29 00:26:58.470 UTC [9510] demoadmin@postgres DETAIL:  Only roles with privileges of the role whose process is being terminated or with privileges of the "pg_signal_backend" role may terminate this process.
+2026-10-29 00:26:58.470 UTC [9510] demoadmin@postgres STATEMENT:  DROP DATABASE IF EXISTS "haloflow_t7cb31408_demo" WITH (FORCE)
+
+## assessment
+Fails in the conftest demo_db_url fixture teardown: DROP DATABASE … WITH (FORCE) must terminate every backend on the test DB; demoadmin may terminate only its own role's backends. The backend it could not terminate is not named in the log. Hypothesis (unproven): a background worker owned by another role (e.g. autovacuum) connected to the just-used test DB. Test body passed. Same signature as the earlier test_i38 occurrence; not reproduced in run 1. No permission changed.

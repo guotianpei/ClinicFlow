@@ -1,0 +1,12 @@
+## RR-21 on 790aa81 source (red expected)
+FAILED tests/demo_reminders/test_restart_recovery.py::test_rr21_store_backed_clinic_change_after_read_conflicts_no_overwrite
+FAILED tests/demo_reminders/test_restart_recovery.py::test_rr21b_clinic_change_durable_mode_bumps_and_sync_refused
+FAILED tests/demo_reminders/test_restart_recovery.py::test_rr21c_memory_only_clinic_change_unchanged
+3 failed, 27 deselected in 0.59s
+## with fix
+3 passed, 27 deselected in 0.44s
+## ruff / mypy
+All checks passed!
+Success: no issues found in 25 source files
+## full demo suite
+721 passed, 1 warning, 1 error in 117.40s (0:01:57)
