@@ -4,7 +4,7 @@ Last updated: 2026-10-29 evening (**HaloFlow reminder demonstrator** — PR #52 
 
 ## Current position — read this first
 
-**HaloFlow demonstrator — status as of 2026-10-29 evening. `main` is at `68f8296d3548254a8da3f21089c974fcc6a95998` (PR #53). Its tree equals the Codex-accepted head `d1379ff`; the PR head's CI run 40961567139 (verify-m01) succeeded; the main CI run 40969334908 (M01 tenant isolation) on `68f8296` was in progress when this was written.** Same plan, roles and claim limits as below. Since the 2026-10-29 paragraph below (times ET):
+**HaloFlow demonstrator — status as of 2026-10-29 evening. `main` is at `68f8296d3548254a8da3f21089c974fcc6a95998` (PR #53). Its tree equals the Codex-accepted head `d1379ff`; the PR head's CI run 40961567139 (verify-m01) succeeded; the main CI run 40969334908 (M01 tenant isolation) on `68f8296` succeeded.** Same plan, roles and claim limits as below. Since the 2026-10-29 paragraph below (times ET):
 - PR #52 (merged 15:08): a characterization test showing that a new single send under a truncated sandbox snapshot fails closed (demonstrator only).
 - PR #53 (merged by Rachel 18:54): the PG16 demo-suite teardown fix, in the test harness only (two files under `tests/demo_reminders/`).
   - Cause, reproduced on container PG16: `DROP DATABASE … WITH (FORCE)` by a non-superuser role without `pg_signal_backend` fails while an autovacuum worker is connected.
