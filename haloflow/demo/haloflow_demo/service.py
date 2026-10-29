@@ -19,16 +19,19 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from typing import Any, NamedTuple
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 
-from haloflow_demo import provenance
+from haloflow_demo import m2s_scope, provenance
 from haloflow_demo.athena_source import (
     EHR_LABEL,
+    PRACTICE,
     AthenaConfig,
     AthenaPreviewClient,
     SourceInvalid,
@@ -40,13 +43,32 @@ from haloflow_demo.ownership import Ownership
 from haloflow_demo.selection import clinic_target_date, format_local, select_eligible
 from haloflow_demo.sending import SmsGateway, StubGateway, phone_key, send_batch, send_one
 from haloflow_demo.settings import DemoSettings, StartupRefused
-from haloflow_demo.sim_store import SYNTHETIC_ID_RE, SimStore, Slot, SlotRefused
-from haloflow_demo.synthetic_ehr import Observation, SyntheticEhr, WriteResult, default_fixtures
+from haloflow_demo.sim_store import (
+    ATHENA,
+    BOUND,
+    SYNTHETIC_ID_RE,
+    SimStore,
+    Slot,
+    SlotRefused,
+)
+from haloflow_demo.synthetic_ehr import (
+    ApptStatus,
+    Fixtures,
+    Observation,
+    SyntheticEhr,
+    WriteResult,
+    default_fixtures,
+)
 from haloflow_demo.tasks import reconcile_task, run_task
 
 logger = logging.getLogger(__name__)
 
 TENANT_ID = "demo-clinic"
+# M-2S: exact sandbox reminder identities (epoch-qualified id; masked patient id).
+ATH_TASK_ID_RE = re.compile(r"ath-e[1-9][0-9]*-([1-9][0-9]{0,11})")
+ATH_PATIENT_RE = re.compile(r"athp-[1-9][0-9]{0,11}")
+ADMITTING_STATUSES = frozenset({ApptStatus.SCHEDULED, ApptStatus.CONFIRMED})
+SEED_FAILED = "M2S_SEED_FAILED"
 LABELS = {"sms": "SIMULATED", "ehr": "SIMULATED", "callback": "SIMULATED"}
 SIMULATED_CORRELATION_LABEL = "SIMULATED — correlated by the demo, not by SMS"
 
@@ -107,6 +129,10 @@ class _EhrRouter:
         # reply processed after a restart). Tenant-scoped and validated; writes never
         # use it (they go through a per-task view).
         self.resolver: Callable[[str], Awaitable[Any]] | None = None
+        # M-2S (Codex F-MSI-1 A): in sandbox mode every baseline read, including one
+        # for an id indexed in this process, goes through the validated resolver
+        # (local gate → binding → snapshot check); the index is never trusted alone.
+        self.always_resolve = False
 
     def register(self, ehr: SyntheticEhr) -> None:
         for a in ehr.fixtures.appointments:
@@ -124,6 +150,14 @@ class _EhrRouter:
         return ehr
 
     async def read_confirmation(self, appt_id: str) -> Observation:
+        if self.always_resolve:
+            if self.resolver is None:
+                raise ScenarioUnavailable("no validated resolver")
+            bound = await self.resolver(appt_id)
+            if bound is None:
+                raise ScenarioUnavailable("appointment not resolvable for this tenant")
+            obs: Observation = await bound.read_confirmation(appt_id)
+            return obs
         if appt_id not in self._index and self.resolver is not None:
             target = await self.resolver(appt_id)
             if target is None:
@@ -162,8 +196,11 @@ class _TaskView:
     supports_conditional_write = True
     conditional_contract_verified = False  # synthetic: proves nothing about a real EHR
 
-    def __init__(self, appt_id: str | None = None, target: Any = None) -> None:
+    def __init__(self, appt_id: str | None = None, target: Any = None, *,
+                 source_changed: bool = False) -> None:
         self._id, self._target = appt_id, target
+        # M-2S R-MS-4: the loaded sandbox snapshot disagrees, failed or is truncated.
+        self.source_changed = source_changed
 
     def knows(self, appt_id: str) -> bool:
         return self._id is not None and appt_id == self._id
@@ -202,14 +239,17 @@ class DbStaffService:
         self._gateway: SmsGateway = gateway or StubGateway(settings.sms_test_number)
         self._ehr: dict[date, SyntheticEhr] = {}
         self.ehr = _EhrRouter()
-        self._store = SimStore(own, TENANT_ID)  # M-2: synthetic mode only
+        self._store = SimStore(own, TENANT_ID)  # M-2: synthetic mode
         # N-ATH: read-only sandbox source (None = synthetic fixtures, unchanged).
         # F-ATH-I1: settings and config must agree; never silently synthetic.
         if (settings.ehr_source == "athena_preview") != (athena is not None):
             raise StartupRefused("athena_config_inconsistent")
         self._athena = athena
-        if athena is None:
-            self.ehr.resolver = self._resolve  # M-2 (synthetic mode only)
+        # M-2S: the sandbox store (athena mode only) and its test seam.
+        self._athena_store = SimStore(own, TENANT_ID, ATHENA) if athena is not None else None
+        self.seed_hook: Callable[[str], Awaitable[None]] | None = None
+        self.ehr.resolver = self._resolve  # M-2 / M-2S: validated baseline reads
+        self.ehr.always_resolve = athena is not None
         self._athena_transport = athena_transport
         self._athena_client: AthenaPreviewClient | None = None
         self._source_locks: dict[date, asyncio.Lock] = {}
@@ -240,7 +280,11 @@ class DbStaffService:
 
     async def _bind(self, row: Any) -> Any:
         """M-2: the EHR target for one reminder row, or None. Validates tenant,
-        synthetic id format and slot binding; never guesses."""
+        synthetic id format and slot binding; never guesses. In athena mode
+        (M-2S) only sandbox rows can bind; a refusal of either kind is None here."""
+        if self._athena is not None:
+            status, target = await self._bind_athena(row)
+            return target if status == "ok" else None
         appt_id = str(row.emr_appt_id)
         if row.tenant_id != TENANT_ID or not SYNTHETIC_ID_RE.fullmatch(appt_id):
             return None
@@ -258,6 +302,43 @@ class DbStaffService:
         except SlotRefused:
             return None
         return _DurableSlotEhr(self._store, slot)
+
+    async def _bind_athena(self, row: Any) -> tuple[str, Any]:
+        """M-2S binding, with no network request: ("ok", target) | ("unavailable",
+        None) | ("changed", None). Order (package v1r2 §3.4): local provenance gate
+        → tenant and exact formats → PAID → one durable row with slot AND PAID →
+        R-MS-4 against this process's snapshot for the stored-zone date."""
+        assert self._athena is not None and self._athena_store is not None
+        g = await m2s_scope.gate(self._own, practice=PRACTICE,
+                                 department_id=self._athena.department_id,
+                                 clinic_tz=self._settings.clinic_tz)
+        if not g.ok or g.zone is None:
+            return "unavailable", None
+        appt_id, patient = str(row.emr_appt_id), str(row.emr_patient_id)
+        m = ATH_TASK_ID_RE.fullmatch(appt_id)
+        if row.tenant_id != TENANT_ID or m is None or not ATH_PATIENT_RE.fullmatch(patient):
+            return "unavailable", None
+        paid = m.group(1)
+        slot = self._athena_store.slot(patient, row.appt_start)
+        try:
+            if not await self._athena_store.bound(slot, paid):
+                return "unavailable", None
+        except SlotRefused:
+            return "unavailable", None
+        day = row.appt_start.astimezone(ZoneInfo(g.zone)).date()      # R-MS-11
+        meta = self._source_meta.get(day)
+        if meta is not None:                                           # R-MS-4
+            if meta["error"] is not None or meta["truncated"]:
+                return "changed", None
+            loaded = self._ehr.get(day)
+            same = [] if loaded is None else [
+                a for a in loaded.fixtures.appointments
+                if a.emr_appt_id.rsplit("-", 1)[-1] == paid]
+            if (len(same) != 1 or same[0].emr_patient_id != patient
+                    or same[0].start_utc != row.appt_start
+                    or same[0].status not in ADMITTING_STATUSES):
+                return "changed", None
+        return "ok", _DurableSlotEhr(self._athena_store, slot)
 
     async def _resolve(self, appt_id: str) -> Any:
         """Baseline reads: the reminder row for this id in the ACTIVE tenant only."""
@@ -277,6 +358,11 @@ class DbStaffService:
                 " WHERE t.id = :t"), {"t": task_id})).one_or_none()
         if row is None:
             return _TaskView()
+        if self._athena is not None:
+            status, target = await self._bind_athena(row)
+            if status == "changed":
+                return _TaskView(source_changed=True)
+            return _TaskView() if target is None else _TaskView(str(row.emr_appt_id), target)
         target = await self._bind(row)
         return _TaskView() if target is None else _TaskView(str(row.emr_appt_id), target)
 
@@ -322,16 +408,68 @@ class DbStaffService:
             except SourceInvalid as exc:
                 self._source_meta[target] = self._failed(exc.code, conflict or None)
                 return None
-            ehr = SyntheticEhr(snap.fixtures)
+            counts = dict(snap.counts)
+            if snap.truncated:
+                # A-3c: shown, never sent; M-2S: never seeded and never bound.
+                ehr = SyntheticEhr(snap.fixtures)
+            else:
+                try:
+                    bound = await self._seed_athena(snap.fixtures, counts)
+                except Exception as exc:   # rollback; nothing published for the date
+                    logger.error("sandbox seed failed: %s", type(exc).__name__)
+                    self._source_meta[target] = self._failed(SEED_FAILED)
+                    return None
+                if isinstance(bound, str):
+                    self._source_meta[target] = self._failed(bound)
+                    return None
+                ehr = SyntheticEhr(bound, store=self._athena_store)
             self.ehr.register(ehr)
             self._ehr[target] = ehr
             self._source_meta[target] = {"error": None, "truncated": snap.truncated,
-                                         "counts": dict(snap.counts),
+                                         "counts": counts,
                                          "taken_at": snap.taken_at,
                                          "tz_status": snap.tz_status,
                                          "dept_tz": snap.dept_tz,
                                          "eff_tz": snap.eff_tz, "conflict": None}
             return ehr
+
+    async def _seed_athena(self, fx: Fixtures, counts: dict[str, int]) -> Fixtures | str:
+        """M-2S: scope pin, then one seed-and-classify transaction; returns the
+        fixtures to publish (BOUND records only) or a fixed refusal code. In-snapshot
+        slot collisions are excluded before seeding (DUPLICATE_SLOT)."""
+        assert self._athena is not None and self._athena_store is not None
+        refused = await m2s_scope.establish(self._own, practice=PRACTICE,
+                                            department_id=self._athena.department_id)
+        if refused is not None:
+            return refused
+        # Codex F-MSI-1 B: the full local gate before every seed, not only the pin;
+        # the process-cached provenance checks do not cover a later change.
+        g = await m2s_scope.gate(self._own, practice=PRACTICE,
+                                 department_id=self._athena.department_id,
+                                 clinic_tz=self._settings.clinic_tz)
+        if not g.ok:
+            return g.code or m2s_scope.SCOPE_CHANGED
+        by_slot: dict[tuple[str, datetime], int] = {}
+        for a in fx.appointments:
+            k = (a.emr_patient_id, a.start_utc)
+            by_slot[k] = by_slot.get(k, 0) + 1
+        keep, entries = [], []
+        for a in fx.appointments:
+            if by_slot[(a.emr_patient_id, a.start_utc)] > 1:
+                counts["DUPLICATE_SLOT"] = counts.get("DUPLICATE_SLOT", 0) + 1
+                continue
+            keep.append(a)
+            entries.append((a.emr_appt_id.rsplit("-", 1)[-1], a.emr_patient_id, a.start_utc))
+        result = await self._athena_store.seed_bound(entries, hook=self.seed_hook) \
+            if entries else {}
+        published = []
+        for a in keep:
+            cls = result[a.emr_appt_id.rsplit("-", 1)[-1]]
+            if cls == BOUND:
+                published.append(a)
+            else:
+                counts[cls] = counts.get(cls, 0) + 1
+        return Fixtures(patients=fx.patients, appointments=published)
 
     @staticmethod
     def _failed(code: str, conflict: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -597,13 +735,9 @@ class DbStaffService:
         return await flag_no_response(self._own, self._now)
 
     async def run_writeback(self, task_id: int) -> str:
-        if self._athena is not None:
-            return await run_task(self._own, self.ehr, task_id)
         return await run_task(self._own, await self._task_view(task_id), task_id)
 
     async def reconcile_writeback(self, task_id: int) -> str:
-        if self._athena is not None:
-            return await reconcile_task(self._own, self.ehr, task_id)
         return await reconcile_task(self._own, await self._task_view(task_id), task_id)
 
     async def dispatcher_loop(self, interval: float = 2.0) -> None:

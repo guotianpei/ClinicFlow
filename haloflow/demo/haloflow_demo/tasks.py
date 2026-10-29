@@ -81,6 +81,22 @@ async def _scenario_unavailable(own: Ownership, ehr: object, row: Any) -> bool:
     return True
 
 
+async def _source_changed(own: Ownership, ehr: object, row: Any) -> bool:
+    """M-2S R-MS-4: True (and a staff item) when the task's view says the loaded
+    sandbox snapshot disagrees, failed or was truncated: nothing is admitted, read
+    or written, and the task row is left as it is."""
+    if not getattr(ehr, "source_changed", False):
+        return False
+    async with own.fenced() as conn:
+        await conn.execute(text(
+            "INSERT INTO follow_up_items(source_key, kind, reminder_id, detail)"
+            " VALUES (:s, 'writeback_source_changed', :r, :d)"
+            " ON CONFLICT ON CONSTRAINT uq_follow_up_source_kind DO NOTHING"
+        ), {"s": f"task:{row.id}", "r": row.reminder_id,
+            "d": INSTRUCTIONS["writeback_source_changed"]})
+    return True
+
+
 async def run_task(own: Ownership, ehr: ConditionalEhr, task_id: int, *,
                    mode: Literal["simulated", "real"] = "simulated") -> str:
     row = await _load(own, task_id)
@@ -88,6 +104,8 @@ async def run_task(own: Ownership, ehr: ConditionalEhr, task_id: int, *,
         return "already_running"
     if row.state not in ("PENDING", "NOT_APPLIED"):
         raise ValueError(f"write-back not allowed from state {row.state}")
+    if await _source_changed(own, ehr, row):
+        return "source_changed"
     if await _scenario_unavailable(own, ehr, row):
         return "scenario_unavailable"
     async with own.fenced() as conn:
@@ -115,6 +133,8 @@ async def reconcile_task(own: Ownership, ehr: ConditionalEhr, task_id: int) -> s
     row = await _load(own, task_id)
     if row.state != "UNCERTAIN":
         raise ValueError(f"reconcile not allowed from state {row.state}")
+    if await _source_changed(own, ehr, row):
+        return "source_changed"
     if await _scenario_unavailable(own, ehr, row):
         return "scenario_unavailable"
     task = WritebackTask(task_id=int(row.id), emr_appt_id=str(row.emr_appt_id),
