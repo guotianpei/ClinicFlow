@@ -129,6 +129,10 @@ class _EhrRouter:
         # reply processed after a restart). Tenant-scoped and validated; writes never
         # use it (they go through a per-task view).
         self.resolver: Callable[[str], Awaitable[Any]] | None = None
+        # M-2S (Codex F-MSI-1 A): in sandbox mode every baseline read, including one
+        # for an id indexed in this process, goes through the validated resolver
+        # (local gate → binding → snapshot check); the index is never trusted alone.
+        self.always_resolve = False
 
     def register(self, ehr: SyntheticEhr) -> None:
         for a in ehr.fixtures.appointments:
@@ -146,6 +150,14 @@ class _EhrRouter:
         return ehr
 
     async def read_confirmation(self, appt_id: str) -> Observation:
+        if self.always_resolve:
+            if self.resolver is None:
+                raise ScenarioUnavailable("no validated resolver")
+            bound = await self.resolver(appt_id)
+            if bound is None:
+                raise ScenarioUnavailable("appointment not resolvable for this tenant")
+            obs: Observation = await bound.read_confirmation(appt_id)
+            return obs
         if appt_id not in self._index and self.resolver is not None:
             target = await self.resolver(appt_id)
             if target is None:
@@ -237,6 +249,7 @@ class DbStaffService:
         self._athena_store = SimStore(own, TENANT_ID, ATHENA) if athena is not None else None
         self.seed_hook: Callable[[str], Awaitable[None]] | None = None
         self.ehr.resolver = self._resolve  # M-2 / M-2S: validated baseline reads
+        self.ehr.always_resolve = athena is not None
         self._athena_transport = athena_transport
         self._athena_client: AthenaPreviewClient | None = None
         self._source_locks: dict[date, asyncio.Lock] = {}
@@ -429,6 +442,13 @@ class DbStaffService:
                                             department_id=self._athena.department_id)
         if refused is not None:
             return refused
+        # Codex F-MSI-1 B: the full local gate before every seed, not only the pin;
+        # the process-cached provenance checks do not cover a later change.
+        g = await m2s_scope.gate(self._own, practice=PRACTICE,
+                                 department_id=self._athena.department_id,
+                                 clinic_tz=self._settings.clinic_tz)
+        if not g.ok:
+            return g.code or m2s_scope.SCOPE_CHANGED
         by_slot: dict[tuple[str, datetime], int] = {}
         for a in fx.appointments:
             k = (a.emr_patient_id, a.start_utc)

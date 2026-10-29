@@ -541,12 +541,17 @@ async def test_a9_restart_prior_tasks_recover_durably_and_no_resend(
     try:
         await svc.page_data()                                  # epoch-2 snapshot registered first
         assert svc.ehr.knows("ath-e2-1001") and not svc.ehr.knows("ath-e1-1001")
-        before = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
+        # Inspection reads go to this process's loaded instance: since M-2S the router
+        # resolves every sandbox read through a reminder row and the local gate, and
+        # these epoch-2 ids have no reminder rows (Codex F-MSI-1 A).
+        def inst(i: int) -> Any:
+            return svc.ehr._find(f"ath-e2-100{i}")                    # noqa: SLF001
+        before = [await inst(i).read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
         # M-2S (package v1r2): prior-epoch tasks bind their durable sandbox slot by
         # provider appointment id; this was "scenario_unavailable" (LIMITED) before.
         assert await svc.run_writeback(tids[0]) == "DONE"
         assert await svc.reconcile_writeback(tids[1]) == "UNCERTAIN"   # nothing written
-        after = [await svc.ehr.read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
+        after = [await inst(i).read_confirmation(f"ath-e2-100{i}") for i in (1, 2)]
         assert (after[0].value, after[0].version) == ("2", before[0].version + 1)
         assert after[1] == before[1]                           # no write for task 2
         page = await svc.page_data()

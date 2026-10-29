@@ -990,3 +990,52 @@ async def test_t_ms_28_seed_failure_rolls_back_nothing_published(
     assert [r[0] for r in rows(demo_db_url)] == ["1001"]   # D2 seed rolled back
     assert [r[0] for r in sql(demo_db_url, "SELECT emr_appt_id FROM reminder_records")] == [
         "ath-e2-1001"]
+
+
+# ── gate consistency regressions (Codex F-MSI-1, probes codex_m2s-1d6c062-gate-probes) ─
+
+
+async def test_t_ms_32_loaded_reply_baseline_obeys_gate(
+    demo_env: dict[str, str], demo_db_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A: an indexed current-process id must not bypass the local gate."""
+    from haloflow_demo import m2s_scope
+    env = _env(demo_env)
+    await tables(env)
+    own, svc = await proc(env, Api(by_date={MDY: [rec("1001")]}))
+    try:
+        await svc.page_data()
+        sent = await svc.send_to_appointment("ath-e2-1001")
+        await svc.simulate_reply(int(sent["reminder_id"]), "1")
+        sql(demo_db_url, "DELETE FROM demo_meta WHERE key = %s", (SCOPE_KEY,))
+        assert not (await m2s_scope.gate(own, practice="195900", department_id=DEPT,
+                                         clinic_tz=NY)).ok
+        spy = Spy(monkeypatch)
+        await svc.process_now()
+    finally:
+        await stop(own, svc)
+    assert (spy.reads, spy.writes) == (0, 0)
+    assert rows(demo_db_url)[0][3:] == ("1", 1)
+
+
+async def test_t_ms_33_later_date_seed_obeys_current_gate(demo_env: dict[str, str],
+                                                         demo_db_url: str) -> None:
+    """B: a seed after initialization re-checks the full gate (cached P0/P1 do not)."""
+    from haloflow_demo import m2s_scope
+    env = _env(demo_env)
+    await tables(env)
+    clock = Clock()
+    own, svc = await proc(env, Api(by_date={MDY: [rec("1001")],
+                                            "10/29/2026": [rec("2001", pid="60180")]}), clock)
+    try:
+        await svc.page_data()
+        before = rows(demo_db_url)
+        sql(demo_db_url, "UPDATE demo_meta SET value = %s WHERE key = %s", ("malformed", TZ_KEY))
+        assert not (await m2s_scope.gate(own, practice="195900", department_id=DEPT,
+                                         clinic_tz=NY)).ok
+        clock.for_target(date(2026, 10, 29))
+        data = await svc.page_data()
+    finally:
+        await stop(own, svc)
+    assert rows(demo_db_url) == before
+    assert appt_ids(data) == [] and data["source"]["error"] is not None
