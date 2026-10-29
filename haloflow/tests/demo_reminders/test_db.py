@@ -27,6 +27,8 @@ EXPECTED_TABLES = {
     "contact_history",
     "inbound_candidates",
     "demo_match_lock",
+    # M-2 (package v1r1): durable simulated EHR confirmation state
+    "sim_confirmations",
 }
 
 

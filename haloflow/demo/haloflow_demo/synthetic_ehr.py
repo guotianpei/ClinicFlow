@@ -8,10 +8,12 @@ Patients carry a ``phone_alias`` label, never a dialable number: R-9 makes
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time
 from enum import StrEnum
+from typing import Any
 from zoneinfo import ZoneInfo
 
 
@@ -117,16 +119,29 @@ class SyntheticEhr:
     supports_conditional_write: bool = True
     conditional_contract_verified: bool = False  # synthetic: proves nothing about a real EHR
     fail_next_write: str | None = None  # "connect" | "lost_response"
-    on_after_read: Callable[[], None] | None = None  # one-shot
+    # one-shot; may return an awaitable (awaited), e.g. clinic_change_async in durable mode
+    on_after_read: Callable[[], Any] | None = None
     write_attempts: int = 0
     applied_writes: int = 0
     lost_updates: int = 0
+    # M-2: an optional durable store (sim_store.SimStore). When set, the confirmation
+    # value/version live in the demo DB keyed by slot, not in ``_conf``.
+    store: Any = field(default=None, repr=False)
     _conf: dict[str, _ConfState] = field(default_factory=dict, repr=False)
     _last_read_version: dict[str, int] = field(default_factory=dict, repr=False)
+    _appts: dict[str, SyntheticAppointment] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         for a in self.fixtures.appointments:
             self._conf[a.emr_appt_id] = _ConfState(a.confirmation)
+            self._appts[a.emr_appt_id] = a
+
+    def appointment(self, appt_id: str) -> SyntheticAppointment | None:
+        return self._appts.get(appt_id)
+
+    def _slot(self, appt_id: str) -> Any:
+        a = self._appts[appt_id]
+        return self.store.slot(a.emr_patient_id, a.start_utc)
 
     @property
     def patients(self) -> dict[str, SyntheticPatient]:
@@ -139,19 +154,34 @@ class SyntheticEhr:
     # ── confirmation value ────────────────────────────────────────────────────
 
     async def read_confirmation(self, appt_id: str) -> Observation:
-        st = self._conf[appt_id]
-        obs = Observation(st.value, st.version)
-        self._last_read_version[appt_id] = st.version
+        if self.store is not None:
+            obs: Observation = await self.store.read(self._slot(appt_id))
+        else:
+            st = self._conf[appt_id]
+            obs = Observation(st.value, st.version)
+        self._last_read_version[appt_id] = obs.version
         hook, self.on_after_read = self.on_after_read, None
         if hook is not None:
-            hook()
+            res = hook()
+            if inspect.isawaitable(res):
+                await res
         return obs
 
     def clinic_change(self, appt_id: str, value: str | None) -> None:
-        """Another clinic actor edits the value (bumps the version)."""
+        """Another clinic actor edits the value (bumps the version). In-memory only:
+        refused in durable mode (F-M2-I1) — use ``clinic_change_async``."""
+        if self.store is not None:
+            raise RuntimeError("durable store: use clinic_change_async")
         st = self._conf[appt_id]
         st.value = value
         st.version += 1
+
+    async def clinic_change_async(self, appt_id: str, value: str | None) -> None:
+        """M-2: the clinic edit in either mode; durable mode is one fenced bump."""
+        if self.store is None:
+            self.clinic_change(appt_id, value)
+            return
+        await self.store.bump(self._slot(appt_id), value)
 
     def _consume_failure(self) -> str | None:
         mode, self.fail_next_write = self.fail_next_write, None
@@ -166,6 +196,14 @@ class SyntheticEhr:
         mode = self._consume_failure()
         if mode == "connect":
             raise EhrConnectError("synthetic connect failure")
+        if self.store is not None:
+            res: WriteResult = await self.store.cas(self._slot(appt_id), target,
+                                                    expected_version)
+            if res.applied:
+                self.applied_writes += 1
+                if mode == "lost_response":
+                    raise EhrResponseLost("synthetic: applied, response lost")
+            return res
         st = self._conf[appt_id]
         if st.version != expected_version:
             return WriteResult(False, Observation(st.value, st.version))

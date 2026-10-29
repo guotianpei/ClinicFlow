@@ -1785,19 +1785,25 @@ async def test_writeback_after_date_rollover_targets_the_original_appointment(
         result = await svc.run_writeback(tid)
         old_ehr = svc.ehr_for_date(APPT_START.date())
         new_ehr = svc.ehr_for_date((APPT_START + timedelta(days=1)).date())
+        # M-2 (Codex freeze ee09206, D-a): observed before close — store reads are fenced.
+        observed = await old_ehr.read_confirmation(appt)
     finally:
         await own.close()
     assert appt == "syn-e1-20261028-a-1"
     assert result == "DONE"
-    assert (await old_ehr.read_confirmation(appt)).value == "2"
+    assert observed.value == "2"
     assert old_ehr.applied_writes == 1 and new_ehr.applied_writes == 0
     assert new_first["emr_appt_id"] == "syn-e1-20261029-a-1"
     assert new_first["status"].endswith("reminder: none"), "no old-state overlay"
 
 
-async def test_writeback_after_restart_fails_closed(
+async def test_writeback_after_restart_recovers_from_durable_store(
     demo_env: dict[str, str], demo_db_url: str
 ) -> None:
+    # M-2 (package v1r1, Codex ALIGN): replaces the LIMITED expectation of
+    # test_writeback_after_restart_fails_closed. A synthetic task now completes after a
+    # restart against the durable simulated store; the regenerated fixture is not
+    # written and the "(before restart)" labels are unchanged.
     from haloflow_demo.service import DbStaffService
 
     s, own = await _own(_env(demo_env))
@@ -1814,8 +1820,11 @@ async def test_writeback_after_restart_fails_closed(
         regenerated = svc2.ehr_for_date(APPT_START.date())
     finally:
         await own.close()
-    assert result == "scenario_unavailable"
+    assert result == "DONE"
     assert regenerated.write_attempts == 0
+    assert _q(demo_db_url, "SELECT value, version FROM sim_confirmations WHERE"
+                           " emr_patient_id = 'syn-p-a' AND appt_start = %s",
+              (APPT_START,)) == [("2", 2)]
     assert all(not a["emr_appt_id"].startswith("syn-e1-") for a in page["appointments"])
     # G-R1-1 / R-S5 (staff-screen package v1r1): the confirmed slot shows its earlier
     # reminder labelled "(before restart)"; every other row still shows none.
@@ -1825,8 +1834,8 @@ async def test_writeback_after_restart_fails_closed(
     assert all(s.endswith("reminder: none") for k, s in status.items()
                if k != "syn-e2-20261028-a-1")
     assert _q(demo_db_url, "SELECT state FROM writeback_tasks WHERE id = %s", (tid,)) == [
-        ("PENDING",)]
-    assert "writeback_scenario_unavailable" in [k for k, _ in _items(demo_db_url)]
+        ("DONE",)]
+    assert "writeback_scenario_unavailable" not in [k for k, _ in _items(demo_db_url)]
 
 
 # ── Codex 175423Z P2: InvalidToNumbers must name the intended recipient ───────
