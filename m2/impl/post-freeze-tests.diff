@@ -1,0 +1,52 @@
+diff --git a/haloflow/tests/demo_reminders/test_inbound.py b/haloflow/tests/demo_reminders/test_inbound.py
+index 285b37b..2c80eb1 100644
+--- a/haloflow/tests/demo_reminders/test_inbound.py
++++ b/haloflow/tests/demo_reminders/test_inbound.py
+@@ -1785,11 +1785,13 @@ async def test_writeback_after_date_rollover_targets_the_original_appointment(
+         result = await svc.run_writeback(tid)
+         old_ehr = svc.ehr_for_date(APPT_START.date())
+         new_ehr = svc.ehr_for_date((APPT_START + timedelta(days=1)).date())
++        # M-2 (Codex freeze ee09206, D-a): observed before close — store reads are fenced.
++        observed = await old_ehr.read_confirmation(appt)
+     finally:
+         await own.close()
+     assert appt == "syn-e1-20261028-a-1"
+     assert result == "DONE"
+-    assert (await old_ehr.read_confirmation(appt)).value == "2"
++    assert observed.value == "2"
+     assert old_ehr.applied_writes == 1 and new_ehr.applied_writes == 0
+     assert new_first["emr_appt_id"] == "syn-e1-20261029-a-1"
+     assert new_first["status"].endswith("reminder: none"), "no old-state overlay"
+diff --git a/haloflow/tests/demo_reminders/test_restart_recovery.py b/haloflow/tests/demo_reminders/test_restart_recovery.py
+index 6065f03..01e7236 100644
+--- a/haloflow/tests/demo_reminders/test_restart_recovery.py
++++ b/haloflow/tests/demo_reminders/test_restart_recovery.py
+@@ -639,3 +639,28 @@ async def test_rr19_direct_task_runner_bypass_fails_closed(
+     assert result == "scenario_unavailable"
+     assert task(demo_db_url, tid) == ("PENDING", None, 0)  # type: ignore[arg-type]
+     assert store_row(demo_db_url) == ("1", 1)
++
++
++# ── RR-20 (Codex freeze ee09206, D-a): fenced store reads ─────────────────────
++
++
++async def test_rr20_store_reads_and_writes_refused_after_close(
++    demo_env: dict[str, str], demo_db_url: str,
++) -> None:
++    """Store reads are fenced (R-M2-3): once ownership is closed, read, instance read
++    and CAS are all refused (OwnerLost) and nothing changes."""
++    from haloflow_demo.errors import OwnerLost
++    own, svc = await proc(_env(demo_env))
++    await svc.page_data()
++    ehr = svc.ehr_for_date(APPT_START.date())
++    store = SimStore(own, TENANT)
++    slot = Slot("synthetic", TENANT, PATIENT, APPT_START)
++    assert (await store.read(slot)).value == "1"
++    await own.close()
++    with pytest.raises(OwnerLost):
++        await store.read(slot)
++    with pytest.raises(OwnerLost):
++        await ehr.read_confirmation(APPT_E1)
++    with pytest.raises(OwnerLost):
++        await store.cas(slot, "2", 1)
++    assert store_row(demo_db_url) == ("1", 1)
