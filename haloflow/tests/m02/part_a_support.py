@@ -595,6 +595,7 @@ REFUSALS: Final = (
     "LINK_UNSUPPORTED",
     "DEDUPE_CONFLICT",
     "ENVELOPE_UNSUPPORTED",
+    "HANDOFF_KEY_COLLISION",
     MSG_BINDING_ABSENT,
     MSG_BINDING_INACTIVE,
     MSG_BINDING_MISMATCH,
@@ -610,6 +611,9 @@ INACTIVE_RESOLVERS: Final = (
     "m02_test_case_v1",
 )
 TEST_PRODUCER: Final = "m02_test_producer"
+TEST_PRODUCER_B: Final = "m02_test_producer_b"
+# Allowlist primary key (frozen): all four columns.
+ALLOWLIST_PRIMARY_KEY: Final = ALLOWLIST_COLUMNS
 SYNTHETIC_SUBJECT_KIND: Final = "patient"
 SYNTHETIC_SOURCE_CLASS: Final = "synthetic_inbound"
 
@@ -629,9 +633,13 @@ CREATE TABLE {schema}.m02_test_link_targets (
 ALTER TABLE {schema}.m02_test_link_targets OWNER TO haloflow_migrator;
 GRANT SELECT (resolver_id, link_id, subject_kind, authorized_principal, source_class)
     ON {schema}.m02_test_link_targets TO haloflow_m02_append_owner;
-UPDATE {schema}.event_types SET is_active = true WHERE event_type LIKE 'm02\\_test\\_%';
-UPDATE {schema}.event_contracts SET authorized_producers = ARRAY['m02_test_producer']
-    WHERE event_type LIKE 'm02\\_test\\_%';
+-- Codex 36155328 point 4: activate ONLY the scoped observation type; every other
+-- m02_test_ type stays inactive (D3 excluded routes).
+UPDATE {schema}.event_types SET is_active = true
+    WHERE event_type = 'm02_test_observation_received';
+UPDATE {schema}.event_contracts
+    SET authorized_producers = ARRAY['m02_test_producer', 'm02_test_producer_b']
+    WHERE event_type = 'm02_test_observation_received';
 UPDATE {schema}.m02_link_resolvers SET is_active = true
     WHERE resolver_id IN ('m02_test_subject_v1', 'm02_test_source_v1');
 """

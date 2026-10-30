@@ -273,7 +273,9 @@ def test_pa22_retry_with_fresh_event_id_and_transport_fields_is_existing(
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
-@pytest.mark.parametrize("change", ["metadata", "subject_link", "principal"])
+@pytest.mark.parametrize(
+    "change", ["metadata", "subject_link", "principal", "patient", "causation"]
+)
 def test_pa08_pa24_same_key_changed_content_conflicts(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], change: str
 ) -> None:
@@ -291,8 +293,14 @@ def test_pa08_pa24_same_key_changed_content_conflicts(
             {"link_type": part_a.SUBJECT_RESOLVER, "link_id": other, "relationship": "subject"},
             command["links"][1],
         ]
-    else:
+    elif change == "principal":
         changed["attribution"] = {**command["attribution"], "principal_id": _uuid()}
+    elif change == "patient":
+        changed["patient_id"] = _uuid()
+    else:
+        prior = _command(part_a, m02_ids, tenant[1])
+        _append(m02_ids, tenant, prior)
+        changed["causation_event_id"] = prior["event_id"]
     _refused(m02_ids, tenant, changed, "DEDUPE_CONFLICT")
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
@@ -305,35 +313,87 @@ def test_pa25_unauthorized_producer_refused_before_dedupe(
     _refused(m02_ids, tenant, command, "PRODUCER_NOT_AUTHORIZED")
 
 
-# --- PA-23: concurrent identical appends ----------------------------------------
-
-
-def test_pa23_concurrent_identical_appends_converge(
+def test_pa25_second_authorized_producer_same_key_is_independent(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
-    before = _counts(part_a, m02_ids, tenant[1])
-    barrier = threading.Barrier(2)
-    results: list[Any] = []
+    _append(m02_ids, tenant, command)
+    other = {**command, "event_id": _uuid(), "producer_service": part_a.TEST_PRODUCER_B}
+    result = _append(m02_ids, tenant, other)
+    assert result["appended_or_existing"] == "appended"
+    assert result["event_id"] == other["event_id"]
 
-    def worker() -> None:
-        try:
-            barrier.wait(timeout=10)
-            results.append(_append(m02_ids, tenant, command))
-        except Exception as error:  # noqa: BLE001 - recorded and asserted below
-            results.append(error)
 
-    threads = [threading.Thread(target=worker) for _ in range(2)]
-    for thread in threads:
+# --- PA-23: concurrent same-key appends (Codex 36155328 point 1) ---------------
+
+
+def test_pa23_second_attempt_blocks_on_first_then_converges_by_dedupe_key(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
+    """Two attempts with DISTINCT event ids and ONE logical key. The first holds its
+    insert transaction open; the second is observed waiting on a lock; after the
+    first commits, the second returns `existing` with the first id."""
+
+    tenant_id, schema = tenant
+    _ready(part_a, m02_ids, schema)
+    first = _command(part_a, m02_ids, schema)
+    second = {**first, "event_id": _uuid()}
+    before = _counts(part_a, m02_ids, schema)
+    ident = sql.Identifier(schema)
+    call = sql.SQL("SELECT {}.m02_append_observation(%s)").format(ident)
+    outcome: list[Any] = []
+    holder = psycopg.connect(m02_ids.logins["haloflow_runtime"])
+    waiter = psycopg.connect(m02_ids.logins["haloflow_runtime"])
+    thread: threading.Thread | None = None
+    try:
+        for conn in (holder, waiter):
+            conn.execute("SET ROLE haloflow_runtime")
+            conn.execute("SET statement_timeout = '20s'")
+            conn.execute("SET lock_timeout = '15s'")
+            conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+        holder.execute(call, (Jsonb(first),))  # open transaction, not committed
+        waiter_pid = waiter.execute("SELECT pg_backend_pid()").fetchone()[0]  # type: ignore[index]
+
+        def run() -> None:
+            try:
+                row = waiter.execute(call, (Jsonb(second),)).fetchone()
+                waiter.commit()
+                outcome.append(row[0] if row else None)
+            except Exception as error:  # noqa: BLE001 - asserted below
+                outcome.append(error)
+
+        thread = threading.Thread(target=run, daemon=True)
         thread.start()
-    for thread in threads:
-        thread.join(timeout=30)
-    assert all(isinstance(r, dict) for r in results), results
-    assert sorted(r["appended_or_existing"] for r in results) == ["appended", "existing"]
-    assert {r["event_id"] for r in results} == {command["event_id"]}
-    after = _counts(part_a, m02_ids, tenant[1])
-    assert tuple(a - b for a, b in zip(after, before, strict=True)) == (1, 2, 1)
+        blocked = False
+        for _ in range(100):
+            row = _admin_one(
+                m02_ids,
+                sql.SQL("SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s"),
+                (waiter_pid,),
+            )
+            if row == ("Lock",):
+                blocked = True
+                break
+            threading.Event().wait(0.05)
+        assert blocked, "second attempt was not observed waiting on the first"
+        assert outcome == [], "second attempt finished before the first committed"
+        holder.commit()
+        thread.join(timeout=20)
+        assert not thread.is_alive()
+        assert len(outcome) == 1 and isinstance(outcome[0], dict), outcome
+        assert outcome[0]["appended_or_existing"] == "existing"
+        assert outcome[0]["event_id"] == first["event_id"]
+        after = _counts(part_a, m02_ids, schema)
+        assert tuple(a - b for a, b in zip(after, before, strict=True)) == (1, 2, 1)
+    finally:
+        for conn in (holder, waiter):
+            try:
+                conn.rollback()
+            finally:
+                conn.close()
+        if thread is not None:
+            thread.join(timeout=5)
 
 
 # --- PA-09 / PA-11: input validation --------------------------------------------
@@ -609,6 +669,76 @@ def test_xb1_existing_branch_retry_is_binding_checked(
         _refused(m02_ids, tenant, command, part_a.MSG_BINDING_INACTIVE)
 
 
+def test_xb1_existing_branch_retry_with_mismatched_setting_refused(
+    part_a: ModuleType,
+    m02: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    m02_tenant: tuple[str, str],
+) -> None:
+    _ready(part_a, m02_ids, tenant[1])
+    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    command = _command(part_a, m02_ids, tenant[1])
+    _append(m02_ids, tenant, command)
+    _refused(m02_ids, tenant, command, part_a.MSG_BINDING_MISMATCH, setting=m02_tenant[0])
+
+
+def test_pa35_absent_registry_row_for_rendered_schema(
+    part_a: ModuleType, m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str]
+) -> None:
+    """The registry row's schema_key is moved off this schema (ADMIN, replica role,
+    restored), so the function's rendered literal matches no row."""
+
+    _fresh(part_a, m02, m02_ids, m02_tenant)
+    command = _command(part_a, m02_ids, m02_tenant[1])
+    moved = "tenant_" + uuid.uuid4().hex[:16]
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        conn.execute("SET session_replication_role = replica")
+        conn.execute(
+            "UPDATE shared.tenants SET schema_key = %s WHERE tenant_id = %s",
+            (moved, m02_tenant[0]),
+        )
+    try:
+        _refused(m02_ids, m02_tenant, command, part_a.MSG_BINDING_ABSENT)
+    finally:
+        with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+            conn.execute("SET session_replication_role = replica")
+            conn.execute(
+                "UPDATE shared.tenants SET schema_key = %s WHERE tenant_id = %s",
+                (m02_tenant[1], m02_tenant[0]),
+            )
+
+
+def test_pa37_temp_shadow_does_not_affect_binding(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
+    """With the real registry row suspended, a runtime-session temp table named
+    `tenants` claiming active does not change the outcome."""
+
+    _ready(part_a, m02_ids, tenant[1])
+    command = _command(part_a, m02_ids, tenant[1])
+    with (
+        _registry_state(m02_ids, tenant[0], "suspended"),
+        psycopg.connect(m02_ids.logins["haloflow_runtime"], autocommit=True) as conn,
+    ):
+        conn.execute("SET ROLE haloflow_runtime")
+        conn.execute(
+            "CREATE TEMP TABLE tenants (tenant_id text, schema_key text,"
+            " lifecycle_state text, schema_version int)"
+        )
+        conn.execute(
+            "INSERT INTO pg_temp.tenants VALUES (%s, %s, 'active', 1)", (tenant[0], tenant[1])
+        )
+        with pytest.raises(psycopg.Error) as caught, conn.transaction():
+            conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant[0],))
+            conn.execute(
+                sql.SQL("SELECT {}.m02_append_observation(%s)").format(sql.Identifier(tenant[1])),
+                (Jsonb(command),),
+            )
+        assert caught.value.sqlstate == "P0001"
+        assert caught.value.diag.message_primary == part_a.MSG_BINDING_INACTIVE
+
+
 def test_pa38_direct_enqueue_and_canon_denied_to_runtime(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
@@ -628,104 +758,172 @@ def test_pa38_direct_enqueue_and_canon_denied_to_runtime(
                 conn.execute(statement, params)
 
 
-# --- PA-20: outbox logical-collision guard ------------------------------------------
+# --- PA-20: outbox logical-collision guard (Codex 36155328 point 3) -------------
 
 
-def test_pa20_incompatible_logical_collision_is_integrity_error(
+def _outbox_row(m02_ids: Any, schema: str, source_event_id: str) -> tuple[Any, ...] | None:
+    return _admin_one(
+        m02_ids,
+        sql.SQL(
+            "SELECT handoff_id, dedupe_key, tenant_id, source_event_id, handoff_kind, payload,"
+            " state, attempts, created_at FROM {}.event_handoff_outbox WHERE source_event_id = %s"
+        ).format(sql.Identifier(schema)),
+        (source_event_id,),
+    )
+
+
+def test_pa20_incompatible_logical_collision_refused_seed_unchanged(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
     key = part_a.m11_key(tenant[0], command["event_id"], "event_signal", "m02.event.appended")
-    # Seed an incompatible row under the key this append will derive: it names a
-    # different (pre-existing) source event.
     seed = _command(part_a, m02_ids, tenant[1])
     _append(m02_ids, tenant, seed)
-    ident = sql.Identifier(tenant[1])
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
         conn.execute(
             sql.SQL(
                 "UPDATE {}.event_handoff_outbox SET dedupe_key = %s WHERE source_event_id = %s"
-            ).format(ident),
+            ).format(sql.Identifier(tenant[1])),
             (key, seed["event_id"]),
         )
+    seeded = _outbox_row(m02_ids, tenant[1], seed["event_id"])
     before = _counts(part_a, m02_ids, tenant[1])
-    with pytest.raises(psycopg.Error):
-        _append(m02_ids, tenant, command)
+    _refused(m02_ids, tenant, command, "HANDOFF_KEY_COLLISION")
     assert _counts(part_a, m02_ids, tenant[1]) == before
+    assert _outbox_row(m02_ids, tenant[1], seed["event_id"]) == seeded
 
 
-# --- PA-16 / PA-17 / PA-45 / AL-H: envelope -------------------------------------------
-
-
-def test_pa16_envelope_closed_keys_no_metadata_leak(
+def test_pa20_equivalent_collision_returns_existing_row_unchanged(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
     _append(m02_ids, tenant, command)
-    ident = sql.Identifier(tenant[1])
+    first = _outbox_row(m02_ids, tenant[1], command["event_id"])
+    assert first is not None
+    assert _append(m02_ids, tenant, command)["appended_or_existing"] == "existing"
+    assert _outbox_row(m02_ids, tenant[1], command["event_id"]) == first
+
+
+# --- PA-16 / PA-17 / PA-45 / AL-H: envelope (Codex 36155328 point 2) ------------
+# These rows use a fresh per-test tenant (m02_tenant) so each controls its own
+# allowlist rows exactly; the stored metadata is the closed synthetic contract.
+
+
+def _fresh(part_a: ModuleType, m02: ModuleType, m02_ids: Any, fresh: tuple[str, str]) -> None:
+    m02.provision_sync(m02_ids, m02.production_registry(), fresh)
+    _ready(part_a, m02_ids, fresh[1])
+
+
+def _allow(m02_ids: Any, schema: str, path: str, event_type: str) -> None:
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
         conn.execute(
             sql.SQL(
-                "INSERT INTO {}.m02_envelope_path_allowlist VALUES ('m05', %s, 1, 'label_code')"
-                " ON CONFLICT DO NOTHING"
-            ).format(ident),
-            (part_a.OBSERVATION_TYPE,),
+                "INSERT INTO {}.m02_envelope_path_allowlist"
+                " (consumer_module, event_type, contract_version, json_path)"
+                " VALUES ('m05', %s, 1, %s)"
+            ).format(sql.Identifier(schema)),
+            (event_type, path),
         )
-    with _as_m05_owner(m02_ids, tenant[0]) as conn:
-        row = conn.execute(
-            sql.SQL("SELECT {}.m02_get_observation_envelope(%s)").format(ident),
-            (command["event_id"],),
-        ).fetchone()
-    assert row is not None
-    envelope = row[0]
-    assert set(envelope) == {
-        "schema_version",
-        "event_id",
-        "event_type",
-        "contract_version",
-        "event_level",
-        "status",
-        "operation_id",
-        "patient_id",
-        "actor_id",
-        "workload_id",
-        "causation_event_id",
-        "producer_dedupe_key",
-        "links",
-        "metadata_paths",
-    }
-    assert envelope["event_level"] == "observation"
-    assert envelope["status"] == "completed"
-    assert envelope["operation_id"] is None
-    assert envelope["metadata_paths"] == {"label_code": "reviewed"}
 
 
-def test_pa17_envelope_unknown_id_is_null(
-    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
-) -> None:
-    _ready(part_a, m02_ids, tenant[1])
+def _envelope(m02_ids: Any, tenant: tuple[str, str], event_id: str) -> Any:
     with _as_m05_owner(m02_ids, tenant[0]) as conn:
         row = conn.execute(
             sql.SQL("SELECT {}.m02_get_observation_envelope(%s)").format(sql.Identifier(tenant[1])),
-            (_uuid(),),
+            (event_id,),
         ).fetchone()
-    assert row == (None,)
+    assert row is not None
+    return row[0]
+
+
+ENVELOPE_KEYS = {
+    "schema_version",
+    "event_id",
+    "event_type",
+    "contract_version",
+    "event_level",
+    "status",
+    "operation_id",
+    "patient_id",
+    "actor_id",
+    "workload_id",
+    "causation_event_id",
+    "producer_dedupe_key",
+    "links",
+    "metadata_paths",
+}
+
+
+def test_pa16_non_allowlisted_stored_field_is_absent(
+    part_a: ModuleType, m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str]
+) -> None:
+    """The stored label_code (canary value 'unreviewed') is NOT allowlisted; only an
+    unrelated path is. The envelope must not contain the field or its value."""
+
+    _fresh(part_a, m02, m02_ids, m02_tenant)
+    _allow(m02_ids, m02_tenant[1], "some_other_path", part_a.OBSERVATION_TYPE)
+    command = _command(part_a, m02_ids, m02_tenant[1], metadata={"label_code": "unreviewed"})
+    _append(m02_ids, m02_tenant, command)
+    envelope = _envelope(m02_ids, m02_tenant, command["event_id"])
+    assert set(envelope) == ENVELOPE_KEYS
+    assert envelope["metadata_paths"] == {}
+    import json
+
+    assert "unreviewed" not in json.dumps(envelope)
+    assert "label_code" not in json.dumps(envelope)
+
+
+def test_pa16_allowlisted_path_is_returned(
+    part_a: ModuleType, m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str]
+) -> None:
+    _fresh(part_a, m02, m02_ids, m02_tenant)
+    _allow(m02_ids, m02_tenant[1], "label_code", part_a.OBSERVATION_TYPE)
+    command = _command(part_a, m02_ids, m02_tenant[1])
+    _append(m02_ids, m02_tenant, command)
+    envelope = _envelope(m02_ids, m02_tenant, command["event_id"])
+    assert set(envelope) == ENVELOPE_KEYS
+    assert (envelope["event_level"], envelope["status"], envelope["operation_id"]) == (
+        "observation",
+        "completed",
+        None,
+    )
+    assert envelope["metadata_paths"] == {"label_code": "reviewed"}
+
+
+def test_pa17_unknown_and_foreign_tenant_ids_are_null(
+    part_a: ModuleType,
+    m02: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    m02_tenant: tuple[str, str],
+) -> None:
+    _ready(part_a, m02_ids, tenant[1])
+    _fresh(part_a, m02, m02_ids, m02_tenant)
+    foreign = _command(part_a, m02_ids, m02_tenant[1])
+    _append(m02_ids, m02_tenant, foreign)
+    assert _envelope(m02_ids, tenant, _uuid()) is None
+    assert _envelope(m02_ids, tenant, foreign["event_id"]) is None  # schema A, id of B
 
 
 def test_pa17_pa45_alh_inactive_type_unsupported_history_untouched(
-    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+    part_a: ModuleType, m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
-    """AL: a type not active in the loaded generation is ENVELOPE_UNSUPPORTED, and the
-    stored event and its fingerprint are unchanged (no rewrite or deletion)."""
+    """A successful allowlisted read first; then the type is deactivated, the read is
+    ENVELOPE_UNSUPPORTED, and the stored row is byte-identical (no rewrite)."""
 
-    _ready(part_a, m02_ids, tenant[1])
-    command = _command(part_a, m02_ids, tenant[1])
-    _append(m02_ids, tenant, command)
-    ident = sql.Identifier(tenant[1])
+    _fresh(part_a, m02, m02_ids, m02_tenant)
+    _allow(m02_ids, m02_tenant[1], "label_code", part_a.OBSERVATION_TYPE)
+    command = _command(part_a, m02_ids, m02_tenant[1])
+    _append(m02_ids, m02_tenant, command)
+    assert _envelope(m02_ids, m02_tenant, command["event_id"])["metadata_paths"] == {
+        "label_code": "reviewed"
+    }
+    ident = sql.Identifier(m02_tenant[1])
     stored = sql.SQL(
-        "SELECT event_id, content_fingerprint, metadata FROM {}.patient_events WHERE event_id = %s"
+        "SELECT event_id, event_type, contract_version, content_fingerprint, metadata"
+        " FROM {}.patient_events WHERE event_id = %s"
     ).format(ident)
     before = _admin_one(m02_ids, stored, (command["event_id"],))
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
@@ -735,22 +933,8 @@ def test_pa17_pa45_alh_inactive_type_unsupported_history_untouched(
             ),
             (part_a.OBSERVATION_TYPE,),
         )
-    try:
-        with _as_m05_owner(m02_ids, tenant[0]) as conn:
-            row = conn.execute(
-                sql.SQL("SELECT {}.m02_get_observation_envelope(%s)").format(ident),
-                (command["event_id"],),
-            ).fetchone()
-        assert row == ({"error": "ENVELOPE_UNSUPPORTED"},)
-        assert _admin_one(m02_ids, stored, (command["event_id"],)) == before
-    finally:
-        with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
-            conn.execute(
-                sql.SQL("UPDATE {}.event_types SET is_active = true WHERE event_type = %s").format(
-                    ident
-                ),
-                (part_a.OBSERVATION_TYPE,),
-            )
+    assert _envelope(m02_ids, m02_tenant, command["event_id"]) == {"error": "ENVELOPE_UNSUPPORTED"}
+    assert _admin_one(m02_ids, stored, (command["event_id"],)) == before
 
 
 # --- PA-12: tenant separation --------------------------------------------------------
