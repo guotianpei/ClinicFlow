@@ -201,7 +201,8 @@ VALUE_CONSTRAINT_SHAPE: Final[Mapping[str, tuple[str, ...]]] = {
     "operation_id": ("must_be_null",),
     "synthetic_intent": ("forbidden",),
 }
-EXTENSION_COLUMN_TYPES: Final = {
+FROZEN_CONTRACT_COLUMN_TYPES: Final = {
+    "authorized_producers": ("character varying(64)[]", True),
     "signal_rule": ("jsonb", False),
     "value_constraints": ("jsonb", True),
 }
@@ -574,3 +575,126 @@ def function_acl_problems(
     if seen != expected:
         problems.append(f"non-owner grantees {sorted(seen)} != {sorted(expected)}")
     return problems
+
+
+# ---------------------------------------------------------------------------
+# Tranche 2: frozen refusal contract, test profile and command builder.
+# ---------------------------------------------------------------------------
+
+# Every part-A gateway refusal is SQLSTATE P0001 with MESSAGE exactly the code
+# (the t003 fixed-message pattern); 22023 is reserved for the tenant setting.
+REFUSAL_SQLSTATE: Final = "P0001"
+TENANT_SETTING_SQLSTATE: Final = "22023"
+REFUSALS: Final = (
+    "COMMAND_MALFORMED",
+    "CONTRACT_UNSUPPORTED",
+    "PRODUCER_NOT_AUTHORIZED",
+    "ATTRIBUTION_INVALID",
+    "REQUIRED_LINK_MISSING",
+    "LINK_INVALID",
+    "LINK_UNSUPPORTED",
+    "DEDUPE_CONFLICT",
+    "ENVELOPE_UNSUPPORTED",
+    MSG_BINDING_ABSENT,
+    MSG_BINDING_INACTIVE,
+    MSG_BINDING_MISMATCH,
+)
+
+OBSERVATION_TYPE: Final = "m02_test_observation_received"
+SUBJECT_RESOLVER: Final = "m02_test_subject_v1"
+SOURCE_RESOLVER: Final = "m02_test_source_v1"
+INACTIVE_RESOLVERS: Final = (
+    "m02_test_provider_v1",
+    "m02_test_business_v1",
+    "m02_test_evidence_v1",
+    "m02_test_case_v1",
+)
+TEST_PRODUCER: Final = "m02_test_producer"
+SYNTHETIC_SUBJECT_KIND: Final = "patient"
+SYNTHETIC_SOURCE_CLASS: Final = "synthetic_inbound"
+
+# Test-owned non-production profile (G1): applied by ADMIN after production
+# provisioning; never part of src. Rendered with the tenant schema.
+TEST_PROFILE_SQL: Final = """
+CREATE TABLE {schema}.m02_test_link_targets (
+    resolver_id varchar(64) NOT NULL,
+    link_id uuid NOT NULL,
+    subject_kind varchar(32),
+    authorized_principal uuid,
+    source_class varchar(32),
+    PRIMARY KEY (resolver_id, link_id),
+    CHECK ((subject_kind IS NOT NULL AND source_class IS NULL)
+        OR (subject_kind IS NULL AND source_class IS NOT NULL))
+);
+ALTER TABLE {schema}.m02_test_link_targets OWNER TO haloflow_migrator;
+GRANT SELECT (resolver_id, link_id, subject_kind, authorized_principal, source_class)
+    ON {schema}.m02_test_link_targets TO haloflow_m02_append_owner;
+UPDATE {schema}.event_types SET is_active = true WHERE event_type LIKE 'm02\\_test\\_%';
+UPDATE {schema}.event_contracts SET authorized_producers = ARRAY['m02_test_producer']
+    WHERE event_type LIKE 'm02\\_test\\_%';
+UPDATE {schema}.m02_link_resolvers SET is_active = true
+    WHERE resolver_id IN ('m02_test_subject_v1', 'm02_test_source_v1');
+"""
+
+
+def subject_target(
+    link_id: str, *, kind: str = SYNTHETIC_SUBJECT_KIND, principal: str | None = None
+) -> tuple[str, str, str, str | None, None]:
+    return (SUBJECT_RESOLVER, link_id, kind, principal, None)
+
+
+def source_target(
+    link_id: str, *, source_class: str = SYNTHETIC_SOURCE_CLASS
+) -> tuple[str, str, None, None, str]:
+    return (SOURCE_RESOLVER, link_id, None, None, source_class)
+
+
+def attribution(principal_id: str, *, kind: str = "workload") -> dict[str, Any]:
+    return {
+        "principal_kind": kind,
+        "principal_id": principal_id,
+        "auth_method": "test",
+        "execution_id": "00000000-0000-4000-8000-00000000e001",
+        "request_id": None,
+        "purpose_code": "operations",
+    }
+
+
+def observation_command(
+    *,
+    event_id: str,
+    dedupe_key: str,
+    subject_id: str,
+    source_id: str,
+    principal_id: str,
+    metadata: dict[str, Any] | None = None,
+    **overrides: Any,
+) -> dict[str, Any]:
+    """Package v1 section 1.1 input for the synthetic observation contract."""
+
+    command: dict[str, Any] = {
+        "schema_version": 1,
+        "event_id": event_id,
+        "event_type": OBSERVATION_TYPE,
+        "contract_version": 1,
+        "operation_id": None,
+        "patient_id": None,
+        "correlation_id": "00000000-0000-4000-8000-00000000c001",
+        "causation_event_id": None,
+        "producer_dedupe_key": dedupe_key,
+        # Service-derived from the producer route, never caller payload (Delta2).
+        "producer_service": TEST_PRODUCER,
+        "occurred_at": None,
+        "source_time_quality": "absent",
+        "links": [
+            {"link_type": SUBJECT_RESOLVER, "link_id": subject_id, "relationship": "subject"},
+            {"link_type": SOURCE_RESOLVER, "link_id": source_id, "relationship": "source"},
+        ],
+        "metadata": metadata if metadata is not None else {"label_code": "reviewed"},
+        "attribution": attribution(principal_id),
+    }
+    command.update(overrides)
+    return command
+
+
+COUNTED_TABLES: Final = ("patient_events", "patient_event_links", "event_handoff_outbox")

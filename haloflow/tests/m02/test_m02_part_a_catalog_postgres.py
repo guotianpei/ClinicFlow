@@ -469,5 +469,5 @@ def test_event_contracts_columns_and_extensions_are_frozen(
             ).fetchall()
         }
         assert set(rows) == set(part_a.EVENT_CONTRACT_COLUMNS)
-        for column, expected in part_a.EXTENSION_COLUMN_TYPES.items():
+        for column, expected in part_a.FROZEN_CONTRACT_COLUMN_TYPES.items():
             assert rows[column] == expected, column
