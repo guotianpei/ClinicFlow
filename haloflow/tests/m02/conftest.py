@@ -14,12 +14,20 @@ from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
 
 import m02_support
+import part_a_support
 import pytest
 
 
 @pytest.fixture
 def m02() -> ModuleType:
     return m02_support
+
+
+@pytest.fixture
+def part_a() -> ModuleType:
+    """UC1 part A frozen manifest and oracles (tests/m02/part_a_support.py)."""
+
+    return part_a_support
 
 
 @pytest.fixture(scope="session")
