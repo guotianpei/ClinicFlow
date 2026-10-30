@@ -444,6 +444,11 @@ RAW_INPUT_REJECTS: Final = (
     ("exponent", '{"x":1e2}'),
     ("fraction", '{"x":1.5}'),
     ("duplicate_key", '{"a":1,"a":2}'),
+    # Codex 2a872210 point 4: raw-layer forms of the value rejects.
+    ("integral_fraction", '{"x":1.0}'),
+    ("surrogate_escape", '{"x":"' + chr(92) + 'ud800"}'),
+    ("nul_escape", '{"x":"' + chr(92) + 'u0000"}'),
+    ("duplicate_nested_key", '{"o":{"k":1,"k":1}}'),
 )
 
 # ---------------------------------------------------------------------------
@@ -531,3 +536,41 @@ def column_privilege(conn: Any, role: str, table: str, column: str, privilege: s
 def regclass_exists(conn: Any, qualified: str) -> bool:
     row = conn.execute("SELECT pg_catalog.to_regclass(%s) IS NOT NULL", (qualified,)).fetchone()
     return bool(row[0])
+
+
+# ---------------------------------------------------------------------------
+# Pure ACL oracle (Codex 2a872210 point 1). Positive and negative controls in
+# test_m02_part_a_canon_units.py exercise it on constructed ACL lists.
+# ---------------------------------------------------------------------------
+
+
+def function_acl_problems(
+    acl: list[str] | None, owner: str, executors: frozenset[str]
+) -> list[str]:
+    """Problems with a pg_proc.proacl text[] against the intended EXECUTE set.
+
+    `executors` may include `owner` (the manifest lists every role that must be
+    able to execute). The non-owner entries must be exactly `executors - {owner}`,
+    each `X` with no grant option; PUBLIC (empty grantee) must be absent; a NULL
+    ACL (default PUBLIC EXECUTE) is a problem.
+    """
+
+    if acl is None:
+        return ["NULL ACL grants PUBLIC EXECUTE by default"]
+    problems: list[str] = []
+    seen: set[str] = set()
+    for entry in acl:
+        grantee, _, rest = entry.partition("=")
+        privileges = rest.split("/", 1)[0]
+        if grantee == "":
+            problems.append("PUBLIC holds a privilege")
+            continue
+        if grantee == owner:
+            continue
+        seen.add(grantee)
+        if privileges != "X":
+            problems.append(f"{grantee} has {privileges!r}, expected 'X'")
+    expected = set(executors) - {owner}
+    if seen != expected:
+        problems.append(f"non-owner grantees {sorted(seen)} != {sorted(expected)}")
+    return problems

@@ -96,7 +96,18 @@ def test_pa43_service_canon_rejects(part_a: ModuleType, label: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "label", ["negative_zero", "negative_zero_fraction", "exponent", "fraction", "duplicate_key"]
+    "label",
+    [
+        "negative_zero",
+        "negative_zero_fraction",
+        "exponent",
+        "fraction",
+        "duplicate_key",
+        "integral_fraction",
+        "surrogate_escape",
+        "nul_escape",
+        "duplicate_nested_key",
+    ],
 )
 def test_pa43_service_raw_input_rejects(part_a: ModuleType, label: str) -> None:
     service = _service()
@@ -121,3 +132,33 @@ def test_pa21_service_m11_key_rejects_bad_tenant(part_a: ModuleType) -> None:
     for tenant in ('pilot"clinic', "pilot-clinic-\u00e9", "Pilot-Clinic", "a"):
         with pytest.raises(service.RawInputRejected):
             service.m11_dedupe_key(tenant, *part_a.M11_V1_PREIMAGE[3:])
+
+
+# --- PA-14 ACL oracle controls (class G; Codex 2a872210 point 1) -----------
+
+_OWNER = "haloflow_m02_append_owner"
+_EXEC = frozenset({"haloflow_m02_append_owner", "haloflow_m02_projection_owner"})
+
+
+def test_pa14_acl_oracle_positive_control(part_a: ModuleType) -> None:
+    acl = [f"{_OWNER}=X/{_OWNER}", f"haloflow_m02_projection_owner=X/{_OWNER}"]
+    assert part_a.function_acl_problems(acl, _OWNER, _EXEC) == []
+
+
+@pytest.mark.parametrize(
+    "acl",
+    [
+        None,
+        [f"{_OWNER}=X/{_OWNER}", f"haloflow_m02_projection_owner=X/{_OWNER}", f"=X/{_OWNER}"],
+        [
+            f"{_OWNER}=X/{_OWNER}",
+            f"haloflow_m02_projection_owner=X/{_OWNER}",
+            f"haloflow_runtime=X/{_OWNER}",
+        ],
+        [f"{_OWNER}=X/{_OWNER}", f"haloflow_m02_projection_owner=X*/{_OWNER}"],
+        [f"{_OWNER}=X/{_OWNER}"],
+    ],
+    ids=["null_acl", "public", "extra_role", "grant_option", "missing_executor"],
+)
+def test_pa14_acl_oracle_negative_controls(part_a: ModuleType, acl: list[str] | None) -> None:
+    assert part_a.function_acl_problems(acl, _OWNER, _EXEC) != []

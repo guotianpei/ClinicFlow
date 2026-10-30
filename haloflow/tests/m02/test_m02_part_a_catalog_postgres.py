@@ -135,8 +135,31 @@ def test_pa39_other_part_a_roles_have_no_shared_access(
         assert row == (False, False)
 
 
-def test_pa41_shared_grants_come_from_revision_005(part_a: ModuleType) -> None:
-    """The revision file issues the two shared grants; no tenant unit does."""
+def test_pa41_shared_grants_grantor_is_registry_owner(part_a: ModuleType, m02_ids: Any) -> None:
+    """Catalogue proof of origin: the shared.tenants column grants to the
+    projection owner were made by the table's owner (the owner-run Alembic
+    identity), not by the migrator that runs tenant units."""
+
+    with _admin(m02_ids) as conn:
+        assert part_a.role_exists(conn, part_a.PROJECTION_OWNER), "projection owner missing"
+        rows = conn.execute(
+            "SELECT a.attname, g.rolname, o.rolname"
+            " FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid"
+            " JOIN pg_roles o ON o.oid = c.relowner,"
+            " LATERAL aclexplode(a.attacl) x JOIN pg_roles g ON g.oid = x.grantor"
+            " JOIN pg_roles e ON e.oid = x.grantee"
+            " WHERE c.oid = 'shared.tenants'::regclass AND e.rolname = %s",
+            (part_a.PROJECTION_OWNER,),
+        ).fetchall()
+        assert sorted(r[0] for r in rows) == sorted(part_a.SHARED_TENANTS_GRANTED)
+        for column, grantor, table_owner in rows:
+            assert grantor == table_owner, (column, grantor)
+            assert grantor != part_a.MIGRATOR, column
+
+
+def test_pa41_supplementary_revision_text(part_a: ModuleType) -> None:
+    """Supplementary only (Codex 2a872210 point 4): the revision text names the
+    grants and no M02 unit source does. Not proof of runtime origin."""
 
     from pathlib import Path
 
@@ -157,13 +180,13 @@ def test_pa41_shared_grants_come_from_revision_005(part_a: ModuleType) -> None:
 
 
 def _function_row(conn: Any, schema: str, name: str, args: str) -> tuple[Any, ...] | None:
+    """Resolve by type identity (to_regprocedure), never by argument-name text."""
+
     row = conn.execute(
         "SELECT r.rolname, p.prosecdef, p.proconfig, p.proacl::text[]"
-        " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-        " JOIN pg_roles r ON r.oid = p.proowner"
-        " WHERE n.nspname = %s AND p.proname = %s"
-        " AND pg_get_function_identity_arguments(p.oid) = %s",
-        (schema, name, args),
+        " FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner"
+        " WHERE p.oid = to_regprocedure(%s)",
+        (f"{schema}.{name}({args})",),
     ).fetchone()
     return None if row is None else tuple(row)
 
@@ -189,14 +212,18 @@ def test_pa14_function_owner_definer_path_acl(
         assert owner == spec.owner
         assert secdef is spec.security_definer
         assert config == [part_a.SEARCH_PATH_CONFIG.format(schema=schema)]
-        grantees = {entry.split("=", 1)[0] for entry in acl or []}
-        assert "" not in grantees, "PUBLIC holds EXECUTE"
-        assert grantees - {spec.owner} == set(spec.executors)
-        for entry in acl or []:
-            grantee, rest = entry.split("=", 1)
-            privileges = rest.split("/", 1)[0]
-            if grantee != spec.owner:
-                assert privileges == "X", entry  # EXECUTE only, no grant option
+        assert part_a.function_acl_problems(acl, spec.owner, spec.executors) == []
+        signature = f"{schema}.{spec.name}({spec.args})"
+        # Effective permissions, owner and executors positive; others negative.
+        for role in (spec.owner, *sorted(spec.executors)):
+            assert conn.execute(
+                "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, signature)
+            ).fetchone() == (True,), role
+        others = set(part_a.PART_A_ROLES) | {part_a.RUNTIME, part_a.MIGRATOR}
+        for role in sorted(others - set(spec.executors) - {spec.owner}):
+            assert conn.execute(
+                "SELECT has_function_privilege(%s, %s, 'EXECUTE')", (role, signature)
+            ).fetchone() == (False,), role
 
 
 @pytest.mark.parametrize("role", ["haloflow_runtime", "haloflow_m05_owner"])
@@ -255,6 +282,37 @@ def test_pa15_pa28_pa47_exact_select_grants(
             _assert_exact_select(part_a, conn, role, f"{schema}.{table}", granted)
 
 
+def _assert_exact_column_privilege(
+    part_a: ModuleType, conn: Any, role: str, table: str, granted: tuple[str, ...], privilege: str
+) -> None:
+    assert part_a.regclass_exists(conn, table), f"{table} is not installed"
+    columns = [
+        r[0]
+        for r in conn.execute(
+            "SELECT attname FROM pg_attribute WHERE attrelid = %s::regclass"
+            " AND attnum > 0 AND NOT attisdropped ORDER BY attnum",
+            (table,),
+        ).fetchall()
+    ]
+    assert not set(granted) - set(columns), (table, set(granted) - set(columns))
+    for column in columns:
+        assert part_a.column_privilege(conn, role, table, column, privilege) is (
+            column in granted
+        ), (role, table, column, privilege)
+
+
+def _assert_no_table_privileges(
+    conn: Any, role: str, table: str, privileges: tuple[str, ...]
+) -> None:
+    for privilege in privileges:
+        assert conn.execute(
+            "SELECT has_table_privilege(%s, %s, %s)", (role, table, privilege)
+        ).fetchone() == (False,), (role, table, privilege)
+
+
+PROTECTED_TABLE_PRIVILEGES = ("UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
+
+
 def test_pa15_append_owner_insert_sets_and_no_mutation(
     part_a: ModuleType, m02_ids: Any, production_tenant: tuple[str, str]
 ) -> None:
@@ -265,20 +323,10 @@ def test_pa15_append_owner_insert_sets_and_no_mutation(
             (f"{schema}.patient_events", part_a.EVENT_INSERT_SET_E),
             (f"{schema}.patient_event_links", part_a.LINK_COLUMNS),
         ):
-            assert part_a.regclass_exists(conn, table), f"{table} is not installed"
-            for column in inserts:
-                assert part_a.column_privilege(conn, role, table, column, "INSERT"), (
-                    table,
-                    column,
-                )
-            row = conn.execute(
-                "SELECT has_table_privilege(%s, %s, 'UPDATE'),"
-                " has_table_privilege(%s, %s, 'DELETE'),"
-                " has_table_privilege(%s, %s, 'TRUNCATE'),"
-                " has_any_column_privilege(%s, %s, 'UPDATE')",
-                (role, table) * 4,
-            ).fetchone()
-            assert row == (False, False, False, False), table
+            _assert_exact_column_privilege(part_a, conn, role, table, inserts, "INSERT")
+            for privilege in ("UPDATE", "REFERENCES"):
+                _assert_exact_column_privilege(part_a, conn, role, table, (), privilege)
+            _assert_no_table_privileges(conn, role, table, PROTECTED_TABLE_PRIVILEGES)
 
 
 def test_pa15_projection_owner_outbox_grants(
@@ -289,14 +337,16 @@ def test_pa15_projection_owner_outbox_grants(
     role = part_a.PROJECTION_OWNER
     with _admin(m02_ids) as conn:
         _assert_exact_select(part_a, conn, role, table, part_a.PROJECTION_OWNER_OUTBOX_SELECT)
-        for column in part_a.OUTBOX_INSERT_SET:
-            assert part_a.column_privilege(conn, role, table, column, "INSERT"), column
-        row = conn.execute(
-            "SELECT has_any_column_privilege(%s, %s, 'UPDATE'),"
-            " has_table_privilege(%s, %s, 'DELETE')",
-            (role, table, role, table),
-        ).fetchone()
-        assert row == (False, False)
+        _assert_exact_column_privilege(
+            part_a, conn, role, table, part_a.OUTBOX_INSERT_SET, "INSERT"
+        )
+        for privilege in ("UPDATE", "REFERENCES"):
+            _assert_exact_column_privilege(part_a, conn, role, table, (), privilege)
+        _assert_no_table_privileges(conn, role, table, PROTECTED_TABLE_PRIVILEGES)
+        # The append owner reaches the outbox only through enqueue.
+        _assert_no_table_privileges(
+            conn, part_a.APPEND_OWNER, table, ("SELECT", "INSERT", *PROTECTED_TABLE_PRIVILEGES)
+        )
 
 
 @pytest.mark.parametrize(
