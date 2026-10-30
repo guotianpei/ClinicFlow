@@ -1,6 +1,6 @@
 # E2 schema evidence (sanitized fragment)
 
-Captured 2026-10-30 at about 12:37 ET by Claude. Source: the docs portal JSON entry behind https://docs.athenahealth.com/api/api-ref/appointment-confirmation-status, URL https://docs.athenahealth.com/v1/api/entries/exploreDocs?urlAlias=%2Fapi-ref%2Fappointment-confirmation-status&include=5. It was fetched by in-page JavaScript in the Claude desktop browser pane, logged out.
+Captured 2026-10-30 at about 12:35 ET by Claude (corrected from "12:37" in commit b292a2e, which was later than the clock reading). Source: the docs portal JSON entry behind https://docs.athenahealth.com/api/api-ref/appointment-confirmation-status, URL https://docs.athenahealth.com/v1/api/entries/exploreDocs?urlAlias=%2Fapi-ref%2Fappointment-confirmation-status&include=5. It was fetched by in-page JavaScript in the Claude desktop browser pane, logged out.
 
 The portal JSON is the only source for these element fields; the rendered page shows `status` only as an array. Below is the fragment as extracted: for each endpoint object, its method, endpointUrl, operationId, apiCatalog, the 200 `application/json` schema and the request body. Nothing else from the portal payload is reproduced.
 
