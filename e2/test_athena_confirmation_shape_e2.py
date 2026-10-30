@@ -396,6 +396,20 @@ def test_t8_q5_cardinality(name: str, expected: str, tmp_path: Path, capsys: Any
     no_leak(blob)
 
 
+def test_t8c_zero_total_complete_but_element_shape_not_verified(tmp_path: Path,
+                                                                 capsys: Any) -> None:
+    # Codex qualification: a zero total may establish count completeness, but zero
+    # samples cannot verify the element schema.
+    api = Api(pages={0: {"status": [], "totalcount": 0}})
+    rc, data, blob = run(api, tmp_path, capsys)
+    v = data["vocabulary"]
+    assert rc == 0 and v["total_reached"] is True and v["complete"] is True
+    assert v["entries_seen"] == 0
+    assert "VOCABULARY_ELEMENT_SHAPE_VERIFIED" not in data["outcome_classes"]
+    assert "vocabulary empty; element schema NOT verified (0 samples)" in data["limitations"]
+    no_leak(blob)
+
+
 def test_t8b_shortname_on_element_is_undocumented(tmp_path: Path, capsys: Any) -> None:
     pages = {0: {"status": [{"statusid": 7000, "name": "CANARY-a", "shortname": "CANARY-s"}],
                  "totalcount": 1}}

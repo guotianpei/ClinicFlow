@@ -375,7 +375,11 @@ def probe(env: Mapping[str, str], today: date,
             out["outcome_classes"].append("TOTAL_REACHED")
         if vocab["complete"]:
             out["outcome_classes"].append("VOCABULARY_COMPLETE")
-            if vocab["undocumented_element_key_count"] == 0:
+            if vocab["entries_seen"] == 0:
+                # zero samples cannot verify the element schema (Codex qualification)
+                out["limitations"].append(
+                    "vocabulary empty; element schema NOT verified (0 samples)")
+            elif vocab["undocumented_element_key_count"] == 0:
                 out["outcome_classes"].append("VOCABULARY_ELEMENT_SHAPE_VERIFIED")
         else:
             out["outcome_classes"].append("VOCABULARY_INCOMPLETE")
