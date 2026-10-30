@@ -282,6 +282,12 @@ def test_pa08_pa24_same_key_changed_content_conflicts(
     _ready(part_a, m02_ids, tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
     _append(m02_ids, tenant, command)
+    # Codex 2673e73d pt 1: every prerequisite event is committed BEFORE the baseline,
+    # so only the refused attempt is measured.
+    prior: dict[str, Any] | None = None
+    if change == "causation":
+        prior = _command(part_a, m02_ids, tenant[1])
+        _append(m02_ids, tenant, prior)
     before = _counts(part_a, m02_ids, tenant[1])
     changed = {**command, "event_id": _uuid()}
     if change == "metadata":
@@ -298,8 +304,7 @@ def test_pa08_pa24_same_key_changed_content_conflicts(
     elif change == "patient":
         changed["patient_id"] = _uuid()
     else:
-        prior = _command(part_a, m02_ids, tenant[1])
-        _append(m02_ids, tenant, prior)
+        assert prior is not None
         changed["causation_event_id"] = prior["event_id"]
     _refused(m02_ids, tenant, changed, "DEDUPE_CONFLICT")
     assert _counts(part_a, m02_ids, tenant[1]) == before
