@@ -1,49 +1,43 @@
 """UC1 part A tranche 2b — EventFoundation service layer (G2), PostgreSQL 17.
 
-Rows: S-01 (standalone record_observation), PA-02 / PA-06d (callback domain
-exception propagates unchanged), PA-06e (callback-provoked database error
-propagates unchanged), PA-03 (NestedTenantTransaction unchanged), PA-06a/b
-(AppendCommitUnknown on commit-phase faults, conservative), PA-06c (AppendFailed
-sanitized), MK (body-complete marker: post-body path-check failure is unknown,
-not definite), EX (existing branch does not invoke the callback), PA-50 (binding
-used after its transaction ended), BND (binding cannot be constructed or
-re-paired by a caller), PRD (caller cannot supply or override producer_service;
-stored producer is the EventFoundation route's), ATT (attribution derived from
-the context only), PA-30 (inactive tenant refused by M01 before any SQL),
-PA-18 (log canary).
+Revised per Codex 1ee91aa6. Rows: S-01 (event + test-owned domain state commit
+together), ATOM (domain write then exception: neither commits), EX (existing branch
+skips callback), PRD/ATT (producer from the foundation route; attribution from the
+bound context), PA-06e (the callback's own database exception object propagates),
+PA-03 (NestedTenantTransaction unchanged), PA-06a/b (one-shot commit-phase seam,
+restored; AppendCommitUnknown; retry converges on the real transaction manager),
+MK (post-body path-check failure is unknown), MK-NEG (callback exception before the
+marker is the callback's exception, never unknown), PA-06c (AppendFailed policy:
+fixed message, no cause/context, no driver canary), PA-50 (binding after its
+transaction: M01 RepositoryHandleExpired, zero append dispatch), BND (no caller
+construction, no attribute reassignment, cross-foundation refusal, one-boundary
+composition with a domain write rolls back), PA-30 (M01 refuses a suspended tenant;
+zero append/callback dispatch -- the resolver's own control reads are not counted),
+PA-18 (log canary), PA-05b (callback-omission mutant is detected by the domain
+oracle).
 
-Frozen interface (`haloflow.m02.observation`), G2 decision v1 (e4c4915c) as
-amended here for the handle/context binding (Codex ee98edee):
-- `Link(link_type: str, link_id: UUID, relationship: str)`
-- `Observation(event_id, event_type, contract_version, correlation_id,
-  producer_dedupe_key, links, metadata, patient_id=None, causation_event_id=None,
-  occurred_at=None, source_time_quality="absent")` -- frozen dataclass; no
-  producer or attribution field.
-- `AppendResult(event_id: UUID, appended_or_existing: str, handoff_state: str)`
-- `AppendFailed(reason_code)`, `AppendCommitUnknown(event_id)`
-- `EventFoundation(gateway, *, producer_service: str)`
-  - `record_observation(context, observation, apply_state_change)`
-  - `run_in_transaction(context, body)` -- the ONE gateway boundary for composed
-    flows (M05 part B); `body(binding)` receives a `TransactionBinding` pairing
-    the handle with the context it was opened for.
-  - `append_observation_in(binding, observation)` -- no separate context
-    argument, so handle and context cannot be mismatched by the caller.
-- `TransactionBinding` cannot be constructed outside EventFoundation.
-- Statement key and capability: `m02.observation.append` (WRITE).
+Frozen interface (`haloflow.m02.observation`), amending G2 decision v1:
+- `Link`, `Observation`, `AppendResult`, `AppendFailed(reason_code)`,
+  `AppendCommitUnknown(event_id)`, `BindingForeign` (binding from another
+  EventFoundation instance), `TransactionBinding` (frozen; not caller-constructible).
+- `EventFoundation(gateway, *, producer_service)` with `record_observation(context,
+  observation, apply_state_change)`, `run_in_transaction(context, body)`,
+  `append_observation_in(binding, observation)`, and the mutation seam method
+  `_apply(apply_state_change, handle, result)` (part_a.CALLBACK_SEAM).
 
-The commit-phase seams are TEST doubles of the M01 pool/gateway (private
-`_connection_for_gateway` / `_verify_effective_path`); M01 code is not modified.
-Each row imports `haloflow.m02.observation` in its body (class S at baseline).
+The gateway is composed with the PRODUCTION migration registry and a TEST statement
+catalogue = production module statements + the test-owned domain statement
+(`m02_test.` prefix). Commit-phase seams are test doubles; M01 code is not modified.
 """
 
 import importlib
 import inspect
 import logging
+import traceback
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import fields
-from datetime import timedelta
+from dataclasses import FrozenInstanceError, fields
 from types import ModuleType
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -68,43 +62,61 @@ def _factory(conninfo: str) -> Callable[[], Awaitable[AsyncConnection[Any]]]:
     return _connect
 
 
+def _test_catalog(part_a: ModuleType) -> Any:
+    from haloflow.composition import APPROVED_MODULE_STATEMENTS
+    from haloflow.m01.statements import StatementMode, build_statement_catalog
+
+    domain = {
+        key: (StatementMode(mode), capability, query)
+        for key, (mode, capability, query) in part_a.DOMAIN_STATEMENTS_SPEC.items()
+    }
+    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS, domain)
+
+
 @asynccontextmanager
-async def _runtime(m02_ids: Any, pool_class: Any = None) -> AsyncIterator[Any]:
-    from haloflow.composition import build_production_tenant_runtime
+async def _runtime(part_a: ModuleType, m02_ids: Any, pool_class: Any = None) -> AsyncIterator[Any]:
+    from haloflow.composition import (
+        APPROVED_SUPPORTED_SCHEMA_VERSIONS,
+        build_production_tenant_migrations,
+    )
     from haloflow.m01.control_store import PsycopgControlStore
     from haloflow.m01.pool import TenantPool
-    from haloflow.m01.runtime import TenantRuntimeDependencies
+    from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
 
     cls = pool_class or TenantPool
     pool = cls(m02_ids.logins["haloflow_runtime"], min_size=1, max_size=1)
     await pool.open()
     try:
-        yield build_production_tenant_runtime(
+        yield compose_tenant_runtime(
             TenantRuntimeDependencies(
                 pool=pool,
                 control_store=PsycopgControlStore(pool),
                 migrator_connect=_factory(m02_ids.logins["haloflow_migrator"]),
                 provisioner_connect=_factory(m02_ids.logins["haloflow_provisioner"]),
-            )
+            ),
+            registry=build_production_tenant_migrations(),
+            catalog=_test_catalog(part_a),
+            supported_schema_versions=APPROVED_SUPPORTED_SCHEMA_VERSIONS,
         )
     finally:
         await pool.close()
 
 
-async def _context(runtime: Any, tenant_id: str, principal_id: str) -> Any:
+async def _context(part_a: ModuleType, runtime: Any, tenant_id: str, principal_id: str) -> Any:
     from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
 
+    capabilities = frozenset({APPEND, part_a.DOMAIN_CAPABILITY})
     return await runtime.resolver.resolve(
         principal=Principal(
             kind=PrincipalKind.WORKLOAD,
             id=principal_id,
             auth_method="test",
             authorized_tenant_ids=frozenset({tenant_id}),
-            capabilities=frozenset({APPEND}),
+            capabilities=capabilities,
         ),
         tenant_hint=tenant_id,
         purpose="operations",
-        capabilities=frozenset({APPEND}),
+        capabilities=capabilities,
         source=TrustedSource.WORKER,
         execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:pa-svc:{uuid.uuid4()}"),
         correlation_id=uuid.uuid4(),
@@ -119,6 +131,8 @@ def _ready(part_a: ModuleType, m02_ids: Any, schema: str) -> tuple[str, str]:
         )
         if not part_a.regclass_exists(conn, f"{schema}.m02_test_link_targets"):
             conn.execute(part_a.TEST_PROFILE_SQL.format(schema=schema))
+        if not part_a.regclass_exists(conn, f"{schema}.m02_test_domain_state"):
+            conn.execute(part_a.TEST_DOMAIN_SQL.format(schema=schema))
         subject, source = str(uuid.uuid4()), str(uuid.uuid4())
         for row in (part_a.subject_target(subject), part_a.source_target(source)):
             conn.execute(
@@ -148,21 +162,64 @@ def _observation(obs: Any, part_a: ModuleType, subject: str, source: str, **kw: 
 
 
 def _counts(part_a: ModuleType, m02_ids: Any, schema: str) -> tuple[int, ...]:
+    tables = (*part_a.COUNTED_TABLES, "m02_test_domain_state")
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
-        return tuple(
-            int(
-                conn.execute(  # type: ignore[index]
-                    sql.SQL("SELECT count(*) FROM {}.{}").format(
-                        sql.Identifier(schema), sql.Identifier(t)
-                    )
-                ).fetchone()[0]
-            )
-            for t in part_a.COUNTED_TABLES
-        )
+        out = []
+        for table in tables:
+            row = conn.execute(
+                sql.SQL("SELECT count(*) FROM {}.{}").format(
+                    sql.Identifier(schema), sql.Identifier(table)
+                )
+            ).fetchone()
+            assert row is not None
+            out.append(int(row[0]))
+    return tuple(out)
 
 
 def _delta(after: tuple[int, ...], before: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(a - b for a, b in zip(after, before, strict=True))
+
+
+def _domain_writer(part_a: ModuleType, value: str = "applied") -> Callable[..., Awaitable[None]]:
+    async def apply(handle: Any, result: Any) -> None:
+        await handle.execute(
+            part_a.DOMAIN_INSERT_KEY, {"event_id": result.event_id, "value": value}
+        )
+
+    return apply
+
+
+def _domain_row(m02_ids: Any, schema: str, event_id: UUID) -> tuple[Any, ...] | None:
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        row = conn.execute(
+            sql.SQL("SELECT value FROM {}.m02_test_domain_state WHERE event_id = %s").format(
+                sql.Identifier(schema)
+            ),
+            (event_id,),
+        ).fetchone()
+    return None if row is None else tuple(row)
+
+
+class _Spy:
+    """Counts append-statement dispatches through any M01 repository handle."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from haloflow.m01.gateway import TenantRepositoryHandle
+
+        self.appends = 0
+        original = TenantRepositoryHandle.fetch_one
+        spy = self
+
+        async def fetch_one(handle: Any, key: str, params: Any = None) -> Any:
+            if key == APPEND:
+                spy.appends += 1
+            return await original(handle, key, params)
+
+        monkeypatch.setattr(TenantRepositoryHandle, "fetch_one", fetch_one)
+
+
+class _DomainError(Exception):
+    pass
 
 
 @pytest.fixture
@@ -170,30 +227,24 @@ def tenant(production_tenant: tuple[str, str]) -> tuple[str, str]:
     return production_tenant
 
 
-# --- S-01 / EX / ATT / PRD: standalone wrapper ----------------------------------------
+# --- S-01 / ATOM / EX / PRD / ATT -----------------------------------------------------
 
 
-async def test_s01_record_observation_appends_and_runs_callback_once(
+async def test_s01_event_and_domain_state_commit_together(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     principal = str(uuid.uuid4())
-    calls: list[Any] = []
-
-    async def apply(handle: Any, result: Any) -> None:
-        calls.append((handle, result))
-
     before = _counts(part_a, m02_ids, tenant[1])
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], principal)
+        context = await _context(part_a, runtime, tenant[0], principal)
         observation = _observation(obs, part_a, subject, source)
-        result = await foundation.record_observation(context, observation, apply)
-    assert result.event_id == observation.event_id
-    assert result.appended_or_existing == "appended"
-    assert len(calls) == 1 and calls[0][1] == result
-    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1)
+        result = await foundation.record_observation(context, observation, _domain_writer(part_a))
+    assert (result.event_id, result.appended_or_existing) == (observation.event_id, "appended")
+    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1, 1)
+    assert _domain_row(m02_ids, tenant[1], observation.event_id) == ("applied",)
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
         row = conn.execute(
             sql.SQL(
@@ -202,7 +253,31 @@ async def test_s01_record_observation_appends_and_runs_callback_once(
             ).format(sql.Identifier(tenant[1])),
             (observation.event_id,),
         ).fetchone()
-    assert row == (part_a.TEST_PRODUCER, principal, None)  # PRD + ATT
+    assert row == (part_a.TEST_PRODUCER, principal, None)  # PRD + ATT from bound context
+
+
+async def test_atom_domain_write_then_exception_neither_commits(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    raised = _DomainError("after domain write")
+    writer = _domain_writer(part_a)
+
+    async def apply(handle: Any, result: Any) -> None:
+        await writer(handle, result)
+        raise raised
+
+    before = _counts(part_a, m02_ids, tenant[1])
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        with pytest.raises(_DomainError) as caught:
+            await foundation.record_observation(
+                context, _observation(obs, part_a, subject, source), apply
+            )
+    assert caught.value is raised  # PA-02 / PA-06d: same object
+    assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
 async def test_ex_existing_branch_does_not_invoke_callback(
@@ -211,13 +286,15 @@ async def test_ex_existing_branch_does_not_invoke_callback(
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     calls: list[Any] = []
+    writer = _domain_writer(part_a)
 
     async def apply(handle: Any, result: Any) -> None:
         calls.append(result)
+        await writer(handle, result)
 
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
         observation = _observation(obs, part_a, subject, source)
         await foundation.record_observation(context, observation, apply)
         again = await foundation.record_observation(context, observation, apply)
@@ -245,54 +322,34 @@ def test_prd_observation_has_no_producer_or_attribution_field() -> None:
     assert list(params) == ["self", "binding", "observation"]
 
 
-# --- PA-02 / PA-06d / PA-06e / PA-03: callback behaviour -----------------------------------
+# --- PA-06e / PA-03 -------------------------------------------------------------------
 
 
-class _DomainError(Exception):
-    pass
-
-
-async def test_pa02_pa06d_callback_exception_propagates_unchanged_and_rolls_back(
+async def test_pa06e_callback_database_exception_object_propagates(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
-    raised = _DomainError("domain")
+    captured: list[BaseException] = []
 
     async def apply(handle: Any, result: Any) -> None:
-        raise raised
+        params = {"event_id": result.event_id, "value": "first"}
+        await handle.execute(part_a.DOMAIN_INSERT_KEY, params)
+        try:
+            await handle.execute(part_a.DOMAIN_INSERT_KEY, params)  # duplicate PK
+        except BaseException as error:
+            captured.append(error)
+            raise
 
     before = _counts(part_a, m02_ids, tenant[1])
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
-        with pytest.raises(_DomainError) as caught:
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        with pytest.raises(psycopg.errors.UniqueViolation) as caught:
             await foundation.record_observation(
                 context, _observation(obs, part_a, subject, source), apply
             )
-    assert caught.value is raised
-    assert _counts(part_a, m02_ids, tenant[1]) == before
-
-
-async def test_pa06e_callback_database_error_propagates_unchanged(
-    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
-) -> None:
-    subject, source = _ready(part_a, m02_ids, tenant[1])
-    obs = _obs_module()
-
-    async def apply(handle: Any, result: Any) -> None:
-        # The callback itself provokes a database error through the handle.
-        await handle.fetch_one(APPEND, {"command": "not-json"})
-
-    before = _counts(part_a, m02_ids, tenant[1])
-    async with _runtime(m02_ids) as runtime:
-        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
-        with pytest.raises(Exception) as caught:
-            await foundation.record_observation(
-                context, _observation(obs, part_a, subject, source), apply
-            )
-    assert not isinstance(caught.value, obs.AppendFailed | obs.AppendCommitUnknown)
+    assert len(captured) == 1 and caught.value is captured[0]
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
@@ -304,9 +361,9 @@ async def test_pa03_nested_gateway_in_callback_unchanged_type(
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     before = _counts(part_a, m02_ids, tenant[1])
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
 
         async def apply(handle: Any, result: Any) -> None:
             await runtime.gateway.with_tenant_transaction(context, _noop)
@@ -322,33 +379,39 @@ async def _noop(handle: Any) -> None:
     return None
 
 
-# --- PA-06a / PA-06b / MK: commit-phase classification -----------------------------------
+# --- PA-06a / PA-06b / MK / MK-NEG: commit-phase classification -------------------------
 
 
-def _faulting_pool(mode: str) -> Any:
-    """A TenantPool double whose gateway connection's transaction exit faults.
+class _Rollback(Exception):
+    pass
 
-    mode "commit_then_raise": the real COMMIT runs, then OperationalError.
-    mode "raise_no_commit":   the transaction is rolled back, then OperationalError.
-    Applies to the first transaction only.
+
+def _faulting_pool(mode: str, fired: list[str]) -> Any:
+    """One-shot TenantPool double (Codex 1ee91aa6 pt 1).
+
+    The first gateway connection's `transaction` is replaced for exactly one use and
+    RESTORED in `finally` before the connection returns to the pool, so a retry on
+    the same pooled connection uses the real transaction manager. `fired` records
+    each activation.
     """
 
     from haloflow.m01.pool import TenantPool
 
     class _Pool(TenantPool):
-        faulted = False
+        armed = True
 
         @asynccontextmanager
         async def _connection_for_gateway(self) -> AsyncIterator[Any]:
             async with super()._connection_for_gateway() as connection:
-                if type(self).faulted:
+                if not type(self).armed:
                     yield connection
                     return
-                type(self).faulted = True
+                type(self).armed = False
                 real = connection.transaction
 
                 @asynccontextmanager
                 async def transaction(*args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+                    fired.append(mode)
                     if mode == "commit_then_raise":
                         async with real(*args, **kwargs) as tx:
                             yield tx
@@ -362,120 +425,145 @@ def _faulting_pool(mode: str) -> Any:
                     raise psycopg.OperationalError("simulated loss before COMMIT")
 
                 connection.transaction = transaction  # type: ignore[method-assign]
-                yield connection
+                try:
+                    yield connection
+                finally:
+                    del connection.transaction  # restore the class method
+                    assert connection.transaction.__func__ is type(connection).transaction
 
     return _Pool
 
 
-class _Rollback(Exception):
-    pass
-
-
 @pytest.mark.parametrize(
-    ("mode", "retry_outcome", "committed"),
+    ("mode", "retry_outcome", "committed_after_fault"),
     [("commit_then_raise", "existing", 1), ("raise_no_commit", "appended", 0)],
 )
-async def test_pa06ab_commit_phase_fault_is_unknown_then_retry_converges(
+async def test_pa06ab_one_shot_commit_phase_fault_then_real_retry(
     part_a: ModuleType,
     m02_ids: Any,
     tenant: tuple[str, str],
     mode: str,
     retry_outcome: str,
-    committed: int,
+    committed_after_fault: int,
 ) -> None:
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
-    principal = str(uuid.uuid4())
-    observation = None
+    fired: list[str] = []
     before = _counts(part_a, m02_ids, tenant[1])
-
-    async def apply(handle: Any, result: Any) -> None:
-        return None
-
-    async with _runtime(m02_ids, _faulting_pool(mode)) as runtime:
+    async with _runtime(part_a, m02_ids, _faulting_pool(mode, fired)) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], principal)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
         observation = _observation(obs, part_a, subject, source)
         with pytest.raises(obs.AppendCommitUnknown) as caught:
-            await foundation.record_observation(context, observation, apply)
+            await foundation.record_observation(context, observation, _domain_writer(part_a))
         assert caught.value.event_id == observation.event_id
         assert caught.value.__cause__ is None
-        assert _delta(_counts(part_a, m02_ids, tenant[1]), before)[0] == committed
-        retry = await foundation.record_observation(context, observation, apply)
-    assert retry.appended_or_existing == retry_outcome
-    assert retry.event_id == observation.event_id
-    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1)
+        assert fired == [mode]
+        assert _delta(_counts(part_a, m02_ids, tenant[1]), before)[0] == committed_after_fault
+        retry = await foundation.record_observation(context, observation, _domain_writer(part_a))
+        assert fired == [mode]  # the seam fired exactly once; the retry was real
+    assert (retry.appended_or_existing, retry.event_id) == (retry_outcome, observation.event_id)
+    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1, 1)
 
 
 async def test_mk_post_body_path_check_failure_is_unknown_not_definite(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The marker is set after the callback returns, before the gateway exits: a
-    failure in M01's post-body path check is classified unknown (conservative)."""
-
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     before = _counts(part_a, m02_ids, tenant[1])
     callback_done: list[bool] = []
+    writer = _domain_writer(part_a)
 
     async def apply(handle: Any, result: Any) -> None:
+        await writer(handle, result)
         callback_done.append(True)
 
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         gateway = runtime.gateway
         original = gateway._verify_effective_path
         calls = {"n": 0}
 
         async def verify(connection: Any, schema_key: str) -> None:
             calls["n"] += 1
-            if calls["n"] == 2:  # the post-body check
+            if calls["n"] == 2:  # M01's post-body check, after the callback returned
                 raise RuntimeError("simulated post-body path check failure")
             await original(connection, schema_key)
 
         monkeypatch.setattr(gateway, "_verify_effective_path", verify)
         foundation = obs.EventFoundation(gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
-        observation = _observation(obs, part_a, subject, source)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
         with pytest.raises(obs.AppendCommitUnknown):
-            await foundation.record_observation(context, observation, apply)
+            await foundation.record_observation(
+                context, _observation(obs, part_a, subject, source), apply
+            )
     assert callback_done == [True]
-    assert _counts(part_a, m02_ids, tenant[1]) == before  # rolled back; reported unknown
+    assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
-async def test_pa06c_append_failure_is_definite_and_sanitized(
+async def test_mk_neg_callback_exception_before_marker_is_not_unknown(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
+
+    async def apply(handle: Any, result: Any) -> None:
+        raise _DomainError("before marker")
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        with pytest.raises(_DomainError) as caught:
+            await foundation.record_observation(
+                context, _observation(obs, part_a, subject, source), apply
+            )
+    assert not isinstance(caught.value, obs.AppendCommitUnknown)
+
+
+async def test_pa06c_append_failure_policy(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
+    """Policy, not source spelling (Codex 1ee91aa6 pt 4): fixed message, reason code,
+    no cause or unsuppressed context, no driver exception anywhere in the chain, and
+    an injected canary value never rendered."""
+
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    canary = "CANARY-7f3a91"
     before = _counts(part_a, m02_ids, tenant[1])
 
     async def apply(handle: Any, result: Any) -> None:
         raise AssertionError("callback must not run after a failed append")
 
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
-        bad = _observation(obs, part_a, subject, source, event_type="m02_test_unknown")
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        bad = _observation(obs, part_a, subject, source, metadata={"label_code": canary})
         with pytest.raises(obs.AppendFailed) as caught:
             await foundation.record_observation(context, bad, apply)
     error = caught.value
-    assert error.reason_code == "CONTRACT_UNSUPPORTED"
+    assert error.reason_code == "COMMAND_MALFORMED"
     assert error.__cause__ is None
-    assert error.__suppress_context__ or error.__context__ is None
-    import traceback
-
-    rendered = "".join(traceback.format_exception(error))
-    for leak in ("psycopg", "P0001", "SELECT", "m02_append_observation("):
-        assert leak not in rendered, leak
+    assert error.__context__ is None or error.__suppress_context__
+    chain: list[BaseException] = []
+    link: BaseException | None = error
+    while link is not None:
+        chain.append(link)
+        link = link.__cause__ or (None if link.__suppress_context__ else link.__context__)
+    assert not any(isinstance(item, psycopg.Error) for item in chain)
+    rendered = "".join(traceback.format_exception(error)) + repr(error) + str(error)
+    assert canary not in rendered
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
-# --- PA-50 / BND: binding ------------------------------------------------------------------
+# --- PA-50 / BND: binding -------------------------------------------------------------------
 
 
-async def test_pa50_binding_used_after_its_transaction_ended(
-    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+async def test_pa50_binding_after_transaction_is_handle_expired_no_dispatch(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from haloflow.m01.errors import RepositoryHandleExpired
+
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     kept: list[Any] = []
@@ -484,15 +572,16 @@ async def test_pa50_binding_used_after_its_transaction_ended(
         kept.append(binding)
 
     before = _counts(part_a, m02_ids, tenant[1])
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
         await foundation.run_in_transaction(context, body)
-        with pytest.raises(Exception) as caught:
+        spy = _Spy(monkeypatch)
+        with pytest.raises(RepositoryHandleExpired):
             await foundation.append_observation_in(
                 kept[0], _observation(obs, part_a, subject, source)
             )
-    assert not isinstance(caught.value, obs.AppendCommitUnknown)
+    assert spy.appends == 0
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
@@ -502,39 +591,86 @@ def test_bnd_binding_cannot_be_constructed_by_caller() -> None:
         obs.TransactionBinding(object(), object())
 
 
-async def test_bnd_run_in_transaction_composes_append_with_caller_work(
+async def test_bnd_binding_attributes_cannot_be_reassigned(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
-    """One gateway boundary: the composed body appends and then fails; nothing commits."""
+    _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    outcomes: list[str] = []
 
+    async def body(binding: Any) -> None:
+        for name in ("context", "handle"):
+            try:
+                setattr(binding, name, object())
+            except (FrozenInstanceError, AttributeError):
+                outcomes.append(name)
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        await foundation.run_in_transaction(context, body)
+    assert outcomes == ["context", "handle"]
+
+
+async def test_bnd_binding_from_another_foundation_refused(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    before = _counts(part_a, m02_ids, tenant[1])
+    async with _runtime(part_a, m02_ids) as runtime:
+        first = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        second = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER_B)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        spy = _Spy(monkeypatch)
+
+        async def body(binding: Any) -> None:
+            await second.append_observation_in(binding, _observation(obs, part_a, subject, source))
+
+        with pytest.raises(obs.BindingForeign):
+            await first.run_in_transaction(context, body)
+    assert spy.appends == 0
+    assert _counts(part_a, m02_ids, tenant[1]) == before
+
+
+async def test_bnd_one_boundary_composition_with_domain_write_rolls_back(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     before = _counts(part_a, m02_ids, tenant[1])
 
-    async def body(binding: Any) -> None:
-        result = await foundation.append_observation_in(
-            binding, _observation(obs, part_a, subject, source)
-        )
-        assert result.appended_or_existing == "appended"
-        raise _DomainError("after append")
-
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+
+        async def body(binding: Any) -> None:
+            result = await foundation.append_observation_in(
+                binding, _observation(obs, part_a, subject, source)
+            )
+            await binding.handle.execute(
+                part_a.DOMAIN_INSERT_KEY, {"event_id": result.event_id, "value": "composed"}
+            )
+            raise _DomainError("after append and domain write")
+
         with pytest.raises(_DomainError):
             await foundation.run_in_transaction(context, body)
     assert _counts(part_a, m02_ids, tenant[1]) == before
 
 
-# --- PA-30: inactive tenant refused by M01 before SQL ---------------------------------------
+# --- PA-30 -------------------------------------------------------------------------------------
 
 
-async def test_pa30_suspended_tenant_refused_before_any_sql(
-    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+async def test_pa30_suspended_tenant_refused_with_zero_append_dispatch(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The resolver's own control-data reads are expected and NOT counted; the
+    assertion is zero append dispatch and zero callback invocation (Codex pt 6)."""
+
     from haloflow.m01.errors import TenantUnavailable
 
     _ready(part_a, m02_ids, tenant[1])
+    spy = _Spy(monkeypatch)
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
         original = conn.execute(
             "SELECT lifecycle_state FROM shared.tenants WHERE tenant_id = %s", (tenant[0],)
@@ -545,9 +681,9 @@ async def test_pa30_suspended_tenant_refused_before_any_sql(
             (tenant[0],),
         )
     try:
-        async with _runtime(m02_ids) as runtime:
+        async with _runtime(part_a, m02_ids) as runtime:
             with pytest.raises(TenantUnavailable):
-                await _context(runtime, tenant[0], str(uuid.uuid4()))
+                await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
     finally:
         with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
             conn.execute("SET session_replication_role = replica")
@@ -555,9 +691,10 @@ async def test_pa30_suspended_tenant_refused_before_any_sql(
                 "UPDATE shared.tenants SET lifecycle_state = %s WHERE tenant_id = %s",
                 (original, tenant[0]),
             )
+    assert spy.appends == 0
 
 
-# --- PA-18: log canary ------------------------------------------------------------------------
+# --- PA-18 -------------------------------------------------------------------------------------
 
 
 async def test_pa18_no_metadata_or_driver_text_in_logs(
@@ -566,25 +703,58 @@ async def test_pa18_no_metadata_or_driver_text_in_logs(
     subject, source = _ready(part_a, m02_ids, tenant[1])
     obs = _obs_module()
     caplog.set_level(logging.DEBUG)
-
-    async def apply(handle: Any, result: Any) -> None:
-        return None
-
-    async with _runtime(m02_ids) as runtime:
+    async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
-        context = await _context(runtime, tenant[0], str(uuid.uuid4()))
-        canary = _observation(obs, part_a, subject, source, metadata={"label_code": "unreviewed"})
-        await foundation.record_observation(context, canary, apply)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        await foundation.record_observation(
+            context,
+            _observation(obs, part_a, subject, source, metadata={"label_code": "unreviewed"}),
+            _domain_writer(part_a),
+        )
         with pytest.raises(obs.AppendFailed):
             await foundation.record_observation(
                 context,
-                _observation(obs, part_a, subject, source, event_type="m02_test_unknown"),
-                apply,
+                _observation(obs, part_a, subject, source, metadata={"label_code": "CANARY-91"}),
+                _domain_writer(part_a),
             )
     text = "\n".join(r.getMessage() for r in caplog.records)
-    for leak in ("unreviewed", "label_code", str(subject), str(source), "P0001"):
+    for leak in ("unreviewed", "CANARY-91", subject, source, "P0001"):
         assert leak not in text, leak
 
 
-# timedelta kept for parity with the M01 context TTL helpers used elsewhere.
-_ = timedelta
+# --- PA-05(b): callback-omission mutant is detected -----------------------------------------
+
+
+def _domain_oracle(m02_ids: Any, schema: str, event_ids: list[UUID]) -> list[UUID]:
+    """Event ids that committed WITHOUT their owning domain state."""
+
+    return [eid for eid in event_ids if _domain_row(m02_ids, schema, eid) is None]
+
+
+@pytest.mark.parametrize("variant", ["reviewed", "mutant_skip_callback"])
+async def test_pa05b_callback_omission_detected_by_domain_oracle(
+    part_a: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    variant: str,
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    assert hasattr(obs.EventFoundation, part_a.CALLBACK_SEAM), "callback seam missing"
+    if variant == "mutant_skip_callback":
+
+        async def skip(self: Any, apply_state_change: Any, handle: Any, result: Any) -> None:
+            return None
+
+        monkeypatch.setattr(obs.EventFoundation, part_a.CALLBACK_SEAM, skip)
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        observation = _observation(obs, part_a, subject, source)
+        await foundation.record_observation(context, observation, _domain_writer(part_a))
+    missing = _domain_oracle(m02_ids, tenant[1], [observation.event_id])
+    if variant == "reviewed":
+        assert missing == []
+    else:
+        assert missing == [observation.event_id]  # the oracle detects the mutant

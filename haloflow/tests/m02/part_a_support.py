@@ -706,3 +706,36 @@ def observation_command(
 
 
 COUNTED_TABLES: Final = ("patient_events", "patient_event_links", "event_handoff_outbox")
+
+
+# ---------------------------------------------------------------------------
+# Tranche 2b: test-owned domain state for TC04 atomicity (Codex 1ee91aa6 pt 2).
+# Applied by ADMIN with the test profile; the statements are composed into a
+# TEST catalogue (m02_test. prefix) next to the production M02 statements.
+# ---------------------------------------------------------------------------
+
+TEST_DOMAIN_SQL: Final = """
+CREATE TABLE {schema}.m02_test_domain_state (
+    event_id uuid PRIMARY KEY,
+    value varchar(32) NOT NULL
+);
+ALTER TABLE {schema}.m02_test_domain_state OWNER TO haloflow_migrator;
+GRANT SELECT, INSERT ON {schema}.m02_test_domain_state TO haloflow_runtime;
+"""
+DOMAIN_INSERT_KEY: Final = "m02_test.domain.insert"
+DOMAIN_CAPABILITY: Final = "m02_test.domain.write"
+DOMAIN_STATEMENTS_SPEC: Final = {
+    DOMAIN_INSERT_KEY: (
+        "write",
+        DOMAIN_CAPABILITY,
+        "INSERT INTO m02_test_domain_state (event_id, value) VALUES (%(event_id)s, %(value)s)",
+    ),
+}
+
+# PA-05(a) mutation seam (frozen): the production t008 SQL text carries this exact
+# marker line comment immediately before the enqueue call in the append body; the
+# mutant deletes from the marker through the end of that statement.
+T008_ENQUEUE_MARKER: Final = "-- t008:enqueue-call"
+# PA-05(b) mutation seam (frozen): EventFoundation invokes the callback only via
+# its method `_apply(apply_state_change, handle, result)`.
+CALLBACK_SEAM: Final = "_apply"
