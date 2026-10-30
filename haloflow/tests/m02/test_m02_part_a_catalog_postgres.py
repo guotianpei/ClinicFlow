@@ -12,11 +12,15 @@ its first existence assertion (class B where the row's own assertion is the
 absence; never a fixture ERROR).
 """
 
+import secrets
+from collections.abc import Callable
 from types import ModuleType
 from typing import Any
 
 import psycopg
 import pytest
+from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 pytestmark = pytest.mark.postgres
 
@@ -155,6 +159,57 @@ def test_pa41_shared_grants_grantor_is_registry_owner(part_a: ModuleType, m02_id
         for column, grantor, table_owner in rows:
             assert grantor == table_owner, (column, grantor)
             assert grantor != part_a.MIGRATOR, column
+
+
+def _shared_grant_state(conninfo: str, role: str) -> tuple[Any, ...]:
+    with psycopg.connect(conninfo, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT has_schema_privilege(%s, 'shared', 'USAGE'),"
+            " has_any_column_privilege(%s, 'shared.tenants', 'SELECT'),"
+            " (SELECT count(*) FROM shared.tenants),"
+            " (SELECT count(*) FROM pg_namespace WHERE nspname LIKE 'tenant\\_%%')",
+            (role, role),
+        ).fetchone()
+    assert row is not None
+    return tuple(row)
+
+
+def test_pa41_staged_fresh_database_grants_before_any_tenant(
+    part_a: ModuleType,
+    m02: ModuleType,
+    m02_ids: Any,
+    database_url: Callable[[dict[str, object], str], str],
+    apply_migrations: Callable[..., None],
+) -> None:
+    """Codex ee98edee: a fresh, isolated database migrated in stages. At 004 the
+    projection owner has no shared access; at 005, with zero tenants and no
+    tenant schema provisioned, the grants exist. Origin is the shared revision."""
+
+    dbname = f"haloflow_test_pa41_{secrets.token_hex(4)}"
+    admin_params: dict[str, object] = dict(conninfo_to_dict(m02_ids.admin))
+    created = False
+    try:
+        with m02.connect_admin(m02_ids) as conn:
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
+            created = True
+        apply_migrations(database_url(admin_params, dbname), "004")
+        fresh = make_conninfo(m02_ids.admin, dbname=dbname)
+        with psycopg.connect(fresh, autocommit=True) as conn:
+            exists = part_a.role_exists(conn, part_a.PROJECTION_OWNER)
+        if exists:
+            assert _shared_grant_state(fresh, part_a.PROJECTION_OWNER)[:2] == (False, False)
+        apply_migrations(database_url(admin_params, dbname), "005")
+        with psycopg.connect(fresh, autocommit=True) as conn:
+            assert part_a.role_exists(conn, part_a.PROJECTION_OWNER), "projection owner missing"
+        assert _shared_grant_state(fresh, part_a.PROJECTION_OWNER) == (True, True, 0, 0)
+    finally:
+        if created:
+            with m02.connect_admin(m02_ids) as conn:
+                conn.execute(
+                    sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                        sql.Identifier(dbname)
+                    )
+                )
 
 
 def test_pa41_supplementary_revision_text(part_a: ModuleType) -> None:
@@ -343,10 +398,15 @@ def test_pa15_projection_owner_outbox_grants(
         for privilege in ("UPDATE", "REFERENCES"):
             _assert_exact_column_privilege(part_a, conn, role, table, (), privilege)
         _assert_no_table_privileges(conn, role, table, PROTECTED_TABLE_PRIVILEGES)
-        # The append owner reaches the outbox only through enqueue.
+        # The append owner reaches the outbox only through enqueue: no table and
+        # no column privilege of any kind (Codex ee98edee).
         _assert_no_table_privileges(
             conn, part_a.APPEND_OWNER, table, ("SELECT", "INSERT", *PROTECTED_TABLE_PRIVILEGES)
         )
+        assert conn.execute(
+            "SELECT has_any_column_privilege(%s, %s, 'SELECT,INSERT,UPDATE,REFERENCES')",
+            (part_a.APPEND_OWNER, table),
+        ).fetchone() == (False,)
 
 
 @pytest.mark.parametrize(
