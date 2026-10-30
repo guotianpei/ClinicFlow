@@ -476,3 +476,66 @@ def test_t10_bad_json(tmp_path: Path, capsys: Any) -> None:
     rc, data, blob = run(api, tmp_path, capsys)
     assert rc == 1 and data["result"] == "BAD_JSON"
     no_leak(blob)
+
+
+# Codex review of f2b5c8e: F2 present-null is not a verified read --------------
+@pytest.mark.parametrize("conf", [
+    {"confirmationname": "CANARY-status-0", "shortname": None},
+    {"confirmationname": None, "shortname": "CANARY-C"},
+    {"confirmationname": None, "shortname": None},
+])
+def test_f2_present_null_never_verified(conf: dict[str, Any], tmp_path: Path,
+                                        capsys: Any) -> None:
+    api = Api(conf=conf)
+    rc, data, blob = run(api, tmp_path, capsys)
+    assert rc == 0
+    reads = data["confirmation_reads"]
+    assert reads and all(r["verified"] is False for r in reads)
+    assert all(r["null_key_count"] >= 1 for r in reads)
+    assert "CONFIRMATION_READ_SHAPE_VERIFIED" not in data["outcome_classes"]
+    no_leak(blob)
+
+
+# Codex review of f2b5c8e: F3 trailing newline never accepted or interpolated ---
+def test_f3_trailing_newline_appointment_id_is_malformed(tmp_path: Path,
+                                                         capsys: Any) -> None:
+    api = Api(appts=[appt(0, appointmentid="987654321\n"), appt(1)])
+    rc, data, blob = run(api, tmp_path, capsys)
+    assert rc == 0 and data["result"] == "COMPLETED"
+    assert data["booked"]["malformed_ids"] == 1
+    conf = [r for r in api.requests if r.url.path.endswith("/confirmationstatus")]
+    assert len(conf) == 1
+    assert all("\n" not in str(r.url) and "%0A" not in str(r.url).upper()
+               for r in api.requests)
+    no_leak(blob)
+
+
+def test_f3_trailing_newline_department_refused(tmp_path: Path, capsys: Any) -> None:
+    api = Api()
+    api.override["/departments"] = httpx.Response(
+        200, json={"departments": [{"departmentid": "1\n"}]})
+    rc, data, blob = run(api, tmp_path, capsys)
+    assert rc == 1 and data["result"] == "NO_DEPARTMENT"
+    assert len(api.requests) == 2
+    no_leak(blob)
+
+
+@pytest.mark.parametrize("path", [
+    "/v1/195900/departments\n",
+    "/v1/195900/appointments/1001\n/confirmationstatus",
+    "/v1/195900/appointments/1001/confirmationstatus\n",
+])
+def test_f3_allowlist_uses_full_match(path: str) -> None:
+    api = Api()
+    c = e2.GuardedClient(httpx.MockTransport(api))
+    with pytest.raises(e2.Stop):
+        c._send("x", "GET", e2.ORIGIN + path)
+    assert api.requests == [] and c.count == 0
+    c.close()
+
+
+def test_f3_practice_with_newline_refused(tmp_path: Path, capsys: Any) -> None:
+    api = Api()
+    rc, data, blob = run(api, tmp_path, capsys, {**GOOD_ENV, "ATHENA_PRACTICE_ID": "195900\n"})
+    assert rc == 2 and api.requests == []
+    no_leak(blob)

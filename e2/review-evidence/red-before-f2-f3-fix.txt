@@ -1,0 +1,9 @@
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f2_present_null_never_verified[conf0]
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f2_present_null_never_verified[conf1]
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f2_present_null_never_verified[conf2]
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f3_trailing_newline_appointment_id_is_malformed
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f3_trailing_newline_department_refused
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f3_allowlist_uses_full_match[/v1/195900/departments\n]
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f3_allowlist_uses_full_match[/v1/195900/appointments/1001\n/confirmationstatus]
+FAILED e2/test_athena_confirmation_shape_e2.py::test_f3_allowlist_uses_full_match[/v1/195900/appointments/1001/confirmationstatus\n]
+8 failed, 76 passed in 0.59s

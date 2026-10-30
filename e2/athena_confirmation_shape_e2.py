@@ -107,7 +107,7 @@ def gate(env: Mapping[str, str]) -> tuple[str, str]:
             or parts.path not in ("", "/") or parts.query or parts.fragment):
         raise GateRefused("base_url")
     practice = env.get("ATHENA_PRACTICE_ID", "")
-    if not ID_RE.match(practice) or practice != PRACTICE:
+    if not ID_RE.fullmatch(practice) or practice != PRACTICE:
         raise GateRefused("practice")
     cid, secret = env.get("ATHENA_CLIENT_ID", ""), env.get("ATHENA_CLIENT_SECRET", "")
     if not cid or not secret:
@@ -127,6 +127,10 @@ class GuardedClient:
         self._c.close()
 
     def _send(self, name: str, method: str, url: str, **kw: Any) -> httpx.Response:
+        # urlsplit silently strips \n, \r and \t, so check the raw string first:
+        # no control characters, spaces or DEL anywhere in the URL.
+        if any(ord(ch) < 0x21 or ord(ch) == 0x7F for ch in url):
+            raise Stop("DISALLOWED_URL")
         parts = urlsplit(url)
         if parts.scheme != "https" or parts.netloc != HOST or parts.query or parts.fragment:
             raise Stop("DISALLOWED_URL")
@@ -134,7 +138,7 @@ class GuardedClient:
             if url != TOKEN_URL:
                 raise Stop("DISALLOWED_METHOD")
         elif method == "GET":
-            if not any(p.match(parts.path) for p in ALLOWED_GET):
+            if not any(p.fullmatch(parts.path) for p in ALLOWED_GET):
                 raise Stop("DISALLOWED_URL")
         else:
             raise Stop("DISALLOWED_METHOD")
@@ -198,10 +202,12 @@ def _conf_shape(conf: Any) -> tuple[dict[str, Any], str | None]:
     if not isinstance(conf, dict):
         raise Stop("SHAPE")
     keys: dict[str, str] = {}
-    undocumented = 0
+    undocumented = nulls = 0
     for k, v in conf.items():
         if k in CONF_KEYS:
-            if v is not None and _jtype(v) != CONF_KEYS[k]:
+            if v is None:
+                nulls += 1  # present-null differs from a missing optional key; never verified
+            elif _jtype(v) != CONF_KEYS[k]:
                 raise Stop("SHAPE")
             keys[k] = _jtype(v)
         else:
@@ -210,7 +216,8 @@ def _conf_shape(conf: Any) -> tuple[dict[str, Any], str | None]:
     name = name if isinstance(name, str) else None
     empty = name is None
     return ({"keys": dict(sorted(keys.items())), "undocumented_key_count": undocumented,
-             "empty": empty, "verified": not empty, "q5_match": UNAVAILABLE}, name)
+             "null_key_count": nulls, "empty": empty, "verified": not empty and nulls == 0,
+             "q5_match": UNAVAILABLE}, name)
 
 
 def _vocabulary(c: GuardedClient, tok: str) -> tuple[dict[str, Any], list[str] | None]:
@@ -325,7 +332,7 @@ def probe(env: Mapping[str, str], today: date,
             raise Stop("SHAPE")
         dep_ids = [d["departmentid"] for d in deps["departments"]
                    if isinstance(d, dict) and isinstance(d.get("departmentid"), str)
-                   and ID_RE.match(d["departmentid"])]
+                   and ID_RE.fullmatch(d["departmentid"])]
         if not dep_ids:
             raise Stop("NO_DEPARTMENT")
         start, end = today, today + timedelta(days=WINDOW_DAYS - 1)
@@ -340,7 +347,7 @@ def probe(env: Mapping[str, str], today: date,
         malformed = duplicates = 0
         for a in appts:
             i = a.get("appointmentid")
-            if not isinstance(i, str) or not ID_RE.match(i):
+            if not isinstance(i, str) or not ID_RE.fullmatch(i):
                 malformed += 1
             elif i in ids:
                 duplicates += 1

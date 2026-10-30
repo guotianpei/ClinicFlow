@@ -1,0 +1,15 @@
+M1 bool totalcount accepted: KILLED | 1 failed, 83 passed in 0.41s
+M2 repeated page not detected: KILLED | 1 failed, 83 passed in 0.34s
+M3 short page before total not refused: KILLED | 3 failed, 81 passed in 0.39s
+M4 confirmation read cap raised 3 -> 4: KILLED | 2 failed, 82 passed in 0.39s
+M5 undocumented key name echoed: KILLED | 1 failed, 83 passed in 0.35s
+M6 non-string appointment id accepted: KILLED | 1 failed, 83 passed in 0.37s
+M7 duplicate statusid not refused: KILLED | 1 failed, 83 passed in 0.42s
+M8 vocabulary names written to output: KILLED | 23 failed, 61 passed in 0.75s
+M9 (F1) zero-sample vocabulary verifies element schema: KILLED | 1 failed, 83 passed in 0.35s
+M10 (F2) present-null counted as verified: KILLED | 1 failed, 83 passed in 0.41s
+M11 (F3) id regex prefix match instead of full match: KILLED | 1 failed, 83 passed in 0.40s
+M12 (F3) allowlist prefix match instead of full match [equivalent while M13 holds]: SURVIVED | 84 passed in 0.35s
+M13 (F3) control-character guard removed: KILLED | 3 failed, 81 passed in 0.53s
+M14 vocabulary page cap raised 4 -> 5: KILLED | 1 failed, 83 passed in 0.38s
+UNMUTATED: 84 passed in 0.35s
