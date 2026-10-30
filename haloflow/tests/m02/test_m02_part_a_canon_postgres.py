@@ -74,7 +74,6 @@ def test_pa44_sql_canon_not_codepoint_ordered(
         ("int_below", '{"x": -9007199254740992}'),
         ("fraction", '{"x": 1.5}'),
         ("integral_fraction", '{"x": 1.0}'),
-        ("exponent", '{"x": 1e2}'),
     ],
 )
 def test_pa43_sql_canon_rejects_numeric_domain(
@@ -111,3 +110,31 @@ def test_pa43_unrepresentable_strings_refused_by_jsonb_before_the_call(
         conn.transaction(),
     ):
         conn.execute("SELECT %s::jsonb", (literal,))
+
+
+def test_pa43_exponent_is_normalized_by_jsonb_so_rejection_is_raw_layer(
+    part_a: ModuleType, m02_ids: Any, production_tenant: tuple[str, str]
+) -> None:
+    """Codex b2c1ff51: JSONB normalizes 1e2 to the integer 100 (scale 0), so a jsonb
+    function cannot tell it from a permitted 100. Exponent rejection belongs to the
+    raw-input layer (test_pa43_service_raw_input_rejects[exponent]); at SQL both
+    inputs canonicalize to the same bytes."""
+
+    schema = production_tenant[1]
+    _installed(part_a, m02_ids, schema)
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT ('{\"x\":1e2}'::jsonb)::text, ('{\"x\":100}'::jsonb)::text,"
+            " scale(('{\"x\":1e2}'::jsonb->>'x')::numeric)"
+        ).fetchone()
+    assert row == ('{"x": 100}', '{"x": 100}', 0)
+    expected = "7b2278223a3130307d"  # {"x":100}
+    with psycopg.connect(m02_ids.logins["haloflow_migrator"], autocommit=True) as conn:
+        conn.execute("SET ROLE haloflow_migrator")
+        conn.execute("SET ROLE haloflow_m02_append_owner")
+        for literal in ('{"x": 1e2}', '{"x": 100}'):
+            got = conn.execute(
+                sql.SQL("SELECT {}.m02_canon_v1(%s::jsonb)").format(sql.Identifier(schema)),
+                (literal,),
+            ).fetchone()
+            assert got is not None and bytes(got[0]).hex() == expected, literal
