@@ -758,3 +758,131 @@ async def test_pa05b_callback_omission_detected_by_domain_oracle(
         assert missing == []
     else:
         assert missing == [observation.event_id]  # the oracle detects the mutant
+
+
+# --- F-OBS1 (Codex 20261031T152545Z): cancellation before and after the marker ----------
+
+
+def _cancelling_pool(mode: str, fired: list[str]) -> Any:
+    """One-shot TenantPool double, as `_faulting_pool`, raising `CancelledError` at
+    transaction exit: after COMMIT (`commit_then_cancel`) or with the transaction
+    rolled back (`cancel_no_commit`). It models a cancellation that arrives while
+    the gateway is committing, after the body (and so the marker) completed."""
+
+    import asyncio
+
+    from haloflow.m01.pool import TenantPool
+
+    class _Pool(TenantPool):
+        armed = True
+
+        @asynccontextmanager
+        async def _connection_for_gateway(self) -> AsyncIterator[Any]:
+            async with super()._connection_for_gateway() as connection:
+                if not type(self).armed:
+                    yield connection
+                    return
+                type(self).armed = False
+                real = connection.transaction
+
+                @asynccontextmanager
+                async def transaction(*args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+                    fired.append(mode)
+                    if mode == "commit_then_cancel":
+                        async with real(*args, **kwargs) as tx:
+                            yield tx
+                        raise asyncio.CancelledError()
+                    try:
+                        async with real(*args, **kwargs) as tx:
+                            yield tx
+                            raise _Rollback()
+                    except _Rollback:
+                        pass
+                    raise asyncio.CancelledError()
+
+                connection.transaction = transaction  # type: ignore[method-assign]
+                try:
+                    yield connection
+                finally:
+                    del connection.transaction
+                    assert connection.transaction.__func__ is type(connection).transaction
+
+    return _Pool
+
+
+@pytest.mark.parametrize(
+    ("mode", "retry_outcome", "committed_after_fault"),
+    [("commit_then_cancel", "existing", 1), ("cancel_no_commit", "appended", 0)],
+)
+async def test_fobs1_post_marker_cancellation_is_unknown_then_retry_converges(
+    part_a: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    mode: str,
+    retry_outcome: str,
+    committed_after_fault: int,
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    fired: list[str] = []
+    before = _counts(part_a, m02_ids, tenant[1])
+    async with _runtime(part_a, m02_ids, _cancelling_pool(mode, fired)) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        observation = _observation(obs, part_a, subject, source)
+        with pytest.raises(obs.AppendCommitUnknown) as caught:
+            await foundation.record_observation(context, observation, _domain_writer(part_a))
+        assert caught.value.event_id == observation.event_id
+        assert caught.value.__cause__ is None
+        assert fired == [mode]
+        delta = _delta(_counts(part_a, m02_ids, tenant[1]), before)
+        assert delta[0] == committed_after_fault and delta[3] == committed_after_fault
+        retry = await foundation.record_observation(context, observation, _domain_writer(part_a))
+        assert fired == [mode]  # the retry used the real transaction manager
+    assert (retry.appended_or_existing, retry.event_id) == (retry_outcome, observation.event_id)
+    # One event and exactly one domain effect, whichever branch the retry took.
+    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1, 1)
+    assert _domain_row(m02_ids, tenant[1], observation.event_id) == ("applied",)
+
+
+async def test_fobs1_pre_marker_cancellation_propagates_and_rolls_back(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
+) -> None:
+    """A real task cancellation while the callback is running (before the marker):
+    the same CancelledError type propagates, nothing commits, and a later call with
+    the same observation appends normally."""
+
+    import asyncio
+
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    before = _counts(part_a, m02_ids, tenant[1])
+    writer = _domain_writer(part_a)
+    entered = asyncio.Event()
+
+    async def apply(handle: Any, result: Any) -> None:
+        await writer(handle, result)
+        entered.set()
+        await asyncio.Event().wait()  # held until cancelled
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        observation = _observation(obs, part_a, subject, source)
+        task = asyncio.create_task(foundation.record_observation(context, observation, apply))
+        # Bounded: if the callback is never reached (a mutant), fail instead of hanging.
+        waiter = asyncio.ensure_future(entered.wait())
+        await asyncio.wait({task, waiter}, timeout=30, return_when=asyncio.FIRST_COMPLETED)
+        waiter.cancel()
+        reached = entered.is_set()
+        task.cancel()
+        if not reached:
+            await asyncio.gather(task, return_exceptions=True)
+        assert reached, "the callback was not reached"
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert task.cancelled()
+        assert _counts(part_a, m02_ids, tenant[1]) == before
+        again = await foundation.record_observation(context, observation, writer)
+    assert again.appended_or_existing == "appended"
+    assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1, 1)

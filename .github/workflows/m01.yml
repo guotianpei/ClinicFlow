@@ -112,6 +112,14 @@ jobs:
           --venv "$VENV"
           --workflow ../.github/workflows/m01.yml
           --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
+      # UC1 part A mutation controls for haloflow.m02.observation (Codex
+      # 20261031T152545Z): the service test module must pass on the unmodified
+      # source and fail on each single-change mutant; the source is restored and its
+      # SHA-256 re-checked. Results go to the evidence and to one notice.
+      - run: >-
+          python3 -I scripts/m02_observation_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

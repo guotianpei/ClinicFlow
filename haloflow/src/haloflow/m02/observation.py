@@ -23,17 +23,20 @@ Error classification (G2 decision v1):
   so no driver text or command value reaches the chain. The transaction rolled back.
 - Exceptions raised by the caller's callback or body, and M01's own errors,
   propagate unchanged: the same object, never wrapped.
-- Any `Exception` escaping the gateway AFTER the body completed (the body-completion
+- Any exception escaping the gateway AFTER the body completed (the body-completion
   marker) is `AppendCommitUnknown(event_id)`, whatever its type: M01's post-body
-  path check, COMMIT itself, or connection loss after COMMIT was sent. This is
-  conservative; an idempotent retry resolves it in either direction. Task
-  cancellation (a BaseException) propagates unchanged.
+  path check, COMMIT itself, connection loss after COMMIT was sent, or task
+  cancellation arriving during COMMIT (F-OBS1, Codex 20261031T152545Z). This is
+  conservative; an idempotent retry resolves it in either direction. Before the
+  marker, cancellation propagates unchanged and the transaction rolls back. Only
+  the process-level KeyboardInterrupt and SystemExit are never converted.
 
 Nothing here logs: the command carries metadata and identifiers (PA-18).
 """
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -231,9 +234,11 @@ class EventFoundation:
 
         try:
             return await self.__gateway.with_tenant_transaction(context, body)
-        except Exception:
-            # Cancellation and other BaseExceptions are not caught: converting a
-            # cancellation into a result would break the caller's task semantics.
+        except (Exception, asyncio.CancelledError):
+            # After the marker the commit outcome is unknown, so a cancellation that
+            # arrives during COMMIT is reported as unknown too: the caller's recovery
+            # is the same idempotent retry (F-OBS1). KeyboardInterrupt and SystemExit
+            # are process-level and always propagate.
             if not body_complete:
                 raise
         # Raised outside the handler, so no exception is attached as context.
