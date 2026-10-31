@@ -69,6 +69,29 @@ jobs:
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
       - run: $VENV/bin/pytest tests/m01 tests/m02 -q -rA
+        id: pytest
+        # The JUnit report is requested through this step's environment only, so the
+        # gated one-line command above (resolved by gate-reachability) is unchanged and
+        # the later reachability specimen runs cannot overwrite the report.
+        env:
+          PYTEST_ADDOPTS: >-
+            -o junit_family=xunit1
+            --junitxml=${{ runner.temp }}/verify-evidence/pytest/junit.xml
+      # Diagnostic only: complete node classification saved with the evidence, and
+      # notices (check-run annotations) with status, counts and the non-passing
+      # list. Never changes the job outcome; the gate is pytest's exit status above.
+      - if: ${{ !cancelled() }}
+        env:
+          PYTEST_OUTCOME: ${{ steps.pytest.outcome }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          python3 -I scripts/ci_test_report.py
+          --junit "$RUNNER_TEMP/verify-evidence/pytest/junit.xml"
+          --manifest ci/expected-red.json
+          --out "$RUNNER_TEMP/verify-evidence/pytest/classification.json"
+          --pytest-outcome "$PYTEST_OUTCOME"
+          --source-sha "$GITHUB_SHA"
+          --head-sha "$HEAD_SHA"
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.

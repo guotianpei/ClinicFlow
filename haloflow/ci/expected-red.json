@@ -1,0 +1,5 @@
+{
+ "source_ref": "3ae9404534cf6d41c67dd6a2e4a40253a7947499",
+ "scope": "verify-m01 gated pytest (tests/m01 tests/m02) on feature/m02-part-a-observation-append; diagnostic only, entries are added only after Claude/Codex review of the measured baseline, never derived automatically",
+ "entries": []
+}
