@@ -156,7 +156,7 @@ BEGIN
        OR pg_catalog.has_any_column_privilege(c_projection, v_registry, 'UPDATE')
        OR pg_catalog.has_any_column_privilege(c_projection, v_registry, 'REFERENCES')
        OR pg_catalog.has_table_privilege(c_projection, v_registry,
-              'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+              'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN')
        OR (SELECT pg_catalog.count(*)
              FROM pg_catalog.pg_attribute AS a,
                   LATERAL pg_catalog.aclexplode(a.attacl) AS x

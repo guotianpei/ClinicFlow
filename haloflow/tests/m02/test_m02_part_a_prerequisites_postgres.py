@@ -236,6 +236,20 @@ def test_pa32_a_table_wide_grant_is_refused_as_not_exact(
         _assert_refused_at_t004(ids, m02.tenant_for("pa32-table-wide"))
 
 
+def test_pa32_a_table_maintain_grant_is_refused_as_not_exact(
+    m02_ids: Any, database_url: Any, apply_migrations: Any
+) -> None:
+    """F-PA32-MAINTAIN (Codex 20261031T173440Z): MAINTAIN (PostgreSQL 17) on
+    shared.tenants, added to the valid revision-005 grants, is extra access and is
+    refused. The same database without it passes the guard first (valid control)."""
+
+    with fresh_database(m02_ids, database_url, apply_migrations, "005") as (ids, _):
+        assert _guard(ids) is None
+        with psycopg.connect(ids.admin, autocommit=True) as conn:
+            conn.execute(f"GRANT MAINTAIN ON shared.tenants TO {PROJECTION}")
+        _assert_refused_at_t004(ids, m02.tenant_for("pa32-maintain"))
+
+
 def test_pa32_a_missing_m05_migrator_edge_is_refused_and_restored_exactly(
     m02_ids: Any, database_url: Any, apply_migrations: Any
 ) -> None:
