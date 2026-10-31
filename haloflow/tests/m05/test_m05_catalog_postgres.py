@@ -481,7 +481,26 @@ def _counts(install: M05Install) -> dict[str, int]:
     }
 
 
-@pytest.mark.parametrize("spec", m05.FUNCTIONS, ids=[spec.name for spec in m05.FUNCTIONS])
+# Replaced stub rows: function -> the behaviour rows that replace it.
+STUB_REPLACED = {
+    # B2 red commit (Codex ALIGN 20261031T233740Z): MC-01..07, MB2-* rows.
+    "m05_create_item": "tests/m05/test_m05_create_postgres.py",
+}
+STUBBED = tuple(spec for spec in m05.FUNCTIONS if spec.name not in STUB_REPLACED)
+
+
+def test_mb1_t01_replacements_are_declared() -> None:
+    """A stub row may leave only by being named here with its replacement module."""
+
+    from pathlib import Path
+
+    assert set(STUB_REPLACED) <= {spec.name for spec in m05.FUNCTIONS}
+    for module in STUB_REPLACED.values():
+        assert Path(module).is_file(), module
+    assert len(STUBBED) + len(STUB_REPLACED) == len(m05.FUNCTIONS)
+
+
+@pytest.mark.parametrize("spec", STUBBED, ids=[spec.name for spec in STUBBED])
 def test_mb1_t01_stub_refuses_not_implemented_with_zero_writes(
     m05_install: M05Install, spec: m05.FunctionSpec
 ) -> None:

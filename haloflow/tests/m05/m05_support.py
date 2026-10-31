@@ -198,3 +198,123 @@ PART_A_UNIT_IDS: Final = (
 # replaced function by function by behaviour rows in B2..B4.
 STUB_SQLSTATE: Final = "P0001"
 STUB_MESSAGE: Final = "M05_NOT_IMPLEMENTED"
+
+
+# ---------------------------------------------------------------------------
+# B2 (item creation). Codex ALIGN 20261031T233740Z on design delta v1
+# (claude_uc1-part-b-b2-design-delta-v1, disposition codex_b2-design-delta-v1).
+# ---------------------------------------------------------------------------
+
+CREATE_ERROR_CODES: Final = (
+    "COMMAND_MALFORMED", "SOURCE_NOT_ELIGIBLE", "KIND_MISMATCH", "DEDUPE_CONFLICT",
+)
+
+# Synthetic workload principals (Δ6). W1 is the mapped producer; W2 is unmapped;
+# W3 is a producer the M02 test contract authorizes but no intake row names.
+W1: Final = "00000000-0000-4000-8000-0000000b2001"
+W2: Final = "00000000-0000-4000-8000-0000000b2002"
+W3: Final = "00000000-0000-4000-8000-0000000b2003"
+ACTOR: Final = "00000000-0000-4000-8000-0000000b2a01"
+
+SOURCE_TYPE: Final = "m02_test_observation_received"
+
+# Test-only intake profile, applied by the admin AFTER part A's TEST_PROFILE_SQL
+# (which activates SOURCE_TYPE v1 and its two resolvers). Never in src; production
+# intake stays empty. Two discriminator paths so a source can match two rows:
+#   label_code  = 'reviewed' -> reschedule_request (W1)
+#   channel_code = 'sms'     -> cancel_request     (W1)
+# `label_code = 'unreviewed'` has NO row: the explicitly labelled STOP / unmapped
+# stand-in (Part A has no STOP contract; this is not a STOP integration).
+_SOURCE_SCHEMA_JSON: Final = (
+    '{"type":"object","additionalProperties":false,"properties":{'
+    '"label_code":{"enum":["reviewed","unreviewed"]},'
+    '"channel_code":{"enum":["sms","voice"]}}}'
+)
+# The profile is rendered with str.format(schema=...): braces are doubled here.
+_SOURCE_SCHEMA_TEMPLATE: Final = _SOURCE_SCHEMA_JSON.replace("{", "{{").replace("}", "}}")
+
+B2_INTAKE_PROFILE_SQL: Final = f"""
+UPDATE {{schema}}.event_contracts
+   SET metadata_json_schema = '{_SOURCE_SCHEMA_TEMPLATE}'::jsonb
+ WHERE event_type = '{SOURCE_TYPE}' AND version = 1;
+INSERT INTO {{schema}}.m02_envelope_path_allowlist
+    (consumer_module, event_type, contract_version, json_path) VALUES
+    ('m05', '{SOURCE_TYPE}', 1, 'label_code'),
+    ('m05', '{SOURCE_TYPE}', 1, 'channel_code');
+INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_version,
+    discriminator_path, discriminator_value, item_kind, producer_workload_id,
+    active_in_production) VALUES
+    ('{SOURCE_TYPE}', 1, 'label_code', 'reviewed', 'reschedule_request', '{W1}', false),
+    ('{SOURCE_TYPE}', 1, 'channel_code', 'sms', 'cancel_request', '{W1}', false);
+"""
+
+# MC-05b tenant: the intake row exists but NO m05 allowlist row, so only the
+# envelope's ENVELOPE_UNSUPPORTED can refuse (Codex: an independent tenant, not an
+# uncommitted DELETE invisible to the runtime connection).
+B2_NO_ALLOWLIST_PROFILE_SQL: Final = f"""
+INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_version,
+    discriminator_path, discriminator_value, item_kind, producer_workload_id,
+    active_in_production) VALUES
+    ('{SOURCE_TYPE}', 1, 'label_code', 'reviewed', 'reschedule_request', '{W1}', false);
+"""
+
+CREATE_RESULT_KEYS: Final = ("created_or_existing", "item_id", "schema_version")
+CREATED_AFTER: Final = {"state": "open", "assignee_id": None, "outcome_code": None}
+
+# Δ3 create digest: sha256 over compact UTF-8 JSON (no whitespace; separators ","
+# and ":"; non-ASCII emitted as UTF-8, not \\u escapes) of
+#   ["m05.create/v1", tenant_id, source_event_id, item_kind, principal_id, purpose_code]
+# Independent literal vectors, computed with json.dumps(..., separators=(",", ":"),
+# ensure_ascii=False) + hashlib.sha256 on 2026-10-31:
+CREATE_DIGEST_VECTORS: Final = (
+    (
+        ("pilot-clinic-01", "00000000-0000-4000-8000-000000000101", "reschedule_request",
+         "00000000-0000-4000-8000-000000000501", "operations"),
+        '["m05.create/v1","pilot-clinic-01","00000000-0000-4000-8000-000000000101",'
+        '"reschedule_request","00000000-0000-4000-8000-000000000501","operations"]',
+        "da36bd27a59e06bea04467fa496709053f48d54e79c70101be3d243b02ae3717",
+    ),
+    (
+        ("pilot-clinic-01", "00000000-0000-4000-8000-000000000101", "reschedule_request",
+         "00000000-0000-4000-8000-000000000501", "treatment"),
+        '["m05.create/v1","pilot-clinic-01","00000000-0000-4000-8000-000000000101",'
+        '"reschedule_request","00000000-0000-4000-8000-000000000501","treatment"]',
+        "6598b4e71bd4250dca32bf045aad090f6bda1ed3b1cd0f3499e863a60f1c132b",
+    ),
+)
+
+
+def create_digest_preimage(
+    tenant_id: str, source_event_id: str, item_kind: str, principal_id: str, purpose: str
+) -> str:
+    import json
+
+    return json.dumps(
+        ["m05.create/v1", tenant_id, source_event_id, item_kind, principal_id, purpose],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def create_digest(*parts: str) -> bytes:
+    import hashlib
+
+    return hashlib.sha256(create_digest_preimage(*parts).encode("utf-8")).digest()
+
+
+# Δ5 exact grants to the M05 owner after B2. EXPLICIT ACL entries (relacl / attacl),
+# distinct from EFFECTIVE privileges (a table-level INSERT makes every column
+# effectively insertable without any attacl entry).
+B2_TABLE_ACL: Final = {"m05_followup_history": ("INSERT",)}
+B2_COLUMN_ACL: Final = {
+    "m05_intake_map": {
+        "SELECT": (
+            "source_event_type", "source_contract_version", "discriminator_path",
+            "discriminator_value", "item_kind", "producer_workload_id", "active_in_production",
+        ),
+    },
+    "m05_followup_items": {
+        "INSERT": COLUMNS["m05_followup_items"],
+        "SELECT": ("item_id", "source_event_id", "item_kind", "create_digest"),
+    },
+}
