@@ -233,11 +233,17 @@ def test_me04_provisioning_before_role_revision_refuses(
     m02_ids: m02.Identities, database_url: Any, apply_migrations: Any
 ) -> None:
     """A fresh database at Alembic 004: the M05 registry is refused at t004 (the
-    part A prerequisite guard), so no t012+ unit runs and no M05 object exists."""
+    part A prerequisite guard), so no t012+ unit runs and no M05 object exists.
+
+    The external outcome is the one PA-32 measured for a t004 refusal:
+    `TenantMigrationFailed` / MIGRATION_DDL_FAILED, t001..t003 applied, t004 failed,
+    nothing after it in the ledger. (B1 implementation run 41235896488 showed the
+    row's first expectation, `ProvisioningFailed`, was wrong: that class is a
+    sibling raised for pre-unit refusals, as in the edge row below.)"""
 
     from test_m02_part_a_prerequisites_postgres import fresh_database
 
-    from haloflow.m01.errors import ProvisioningFailed
+    from haloflow.m01.errors import TenantMigrationFailed
 
     registry_error: Exception | None = None
     try:
@@ -248,11 +254,15 @@ def test_me04_provisioning_before_role_revision_refuses(
 
     with fresh_database(m02_ids, database_url, apply_migrations, "004") as (ids, _):
         tenant = m02.tenant_for("me04-before-005")
-        with pytest.raises(ProvisioningFailed) as caught:
+        with pytest.raises(TenantMigrationFailed) as caught:
             _m05_provision(ids, tenant)
         assert caught.value.reason_code == "MIGRATION_DDL_FAILED"
         ledger = m02.ledger(ids, tenant[0])
-        assert not any(migration_id in ledger for migration_id in m05.M05_UNIT_IDS)
+        for migration_id in m05.PART_A_UNIT_IDS[:3]:
+            assert ledger[migration_id][0] == "applied", migration_id
+        assert ledger["t004_m02_reference"] == ("failed", "MIGRATION_DDL_FAILED", True)
+        for migration_id in m05.PART_A_UNIT_IDS[4:] + m05.M05_UNIT_IDS:
+            assert migration_id not in ledger, migration_id
         assert _m05_objects(ids, tenant[1]) == []
 
 
