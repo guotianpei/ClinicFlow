@@ -193,3 +193,8 @@ PART_A_UNIT_IDS: Final = (
     "t010_m02_enqueue",
     "t011_m02_envelope_read",
 )
+
+# B1 fail-closed stub refusal (Codex 20261031T192944Z item 5 / F-B1-02). Temporary:
+# replaced function by function by behaviour rows in B2..B4.
+STUB_SQLSTATE: Final = "P0001"
+STUB_MESSAGE: Final = "M05_NOT_IMPLEMENTED"

@@ -15,12 +15,16 @@ until M05 exists each row FAILS in its own body (class-B red).
 - ME-05  history UPDATE/DELETE refused for the M05 owner and the runtime (no grant),
          and a BEFORE UPDATE OR DELETE rejector trigger exists. The row-level
          rejector behaviour for the table owner is asserted in B2, when an item can
-         be created through m05_create_item;
+         be created through m05_create_item. The trigger predicate requires the ROW
+         bit, with a statement-level negative control (F-B1-01);
 - MX-02  no M05 column names EHR/appointment state; history has `assertion_kind`
          with a CHECK naming 'staff';
 - MB1-P01 the tenant reaches test target 20 with every unit applied;
 - MB1-P02 the W1 outcome codes, exactly; intake map rows inactive in production;
-         the M05 envelope allowlist rows for the resolution contract.
+         the M05 envelope allowlist rows for the resolution contract;
+- MB1-T01 TEMPORARY: each of the seven B1 stubs, called on the runtime path with
+         tenant context, refuses P0001 / M05_NOT_IMPLEMENTED with zero writes
+         (F-B1-02); replaced by behaviour rows per tranche, never silently deleted.
 """
 
 from __future__ import annotations
@@ -329,16 +333,51 @@ def test_me05_history_privileges_and_rejector_trigger(m05_install: M05Install) -
     rows = _all(
         m05_install,
         """
-        SELECT t.tgtype::int, t.tgenabled
+        SELECT t.tgtype::int, t.tgenabled::text
           FROM pg_catalog.pg_trigger t
          WHERE t.tgrelid = pg_catalog.to_regclass(%s) AND NOT t.tgisinternal
         """,
         (table,),
     )
     assert any(
-        tgtype & 2 and tgtype & 8 and tgtype & 16 and enabled == "O"
-        for tgtype, enabled in rows
+        _row_before_update_delete(tgtype) and enabled == "O" for tgtype, enabled in rows
     ), rows
+
+
+def _row_before_update_delete(tgtype: int) -> bool:
+    """pg_trigger.tgtype bits: ROW=1, BEFORE=2, INSERT=4, DELETE=8, UPDATE=16."""
+
+    return bool(tgtype & 1 and tgtype & 2 and tgtype & 8 and tgtype & 16)
+
+
+def test_me05_trigger_predicate_negative_control(m02_ids: m02.Identities) -> None:
+    """F-B1-01 (Codex 20261031T192944Z): a STATEMENT-level BEFORE UPDATE OR DELETE
+    trigger must not satisfy the ME-05 predicate; a ROW-level one must. Measured on
+    real catalogue rows, in temporary objects only (no M05 needed)."""
+
+    with m02.connect_admin(m02_ids) as conn, conn.transaction():
+        conn.execute("CREATE TEMPORARY TABLE me05_control (x integer)")
+        conn.execute(
+            "CREATE FUNCTION pg_temp.me05_reject() RETURNS trigger LANGUAGE plpgsql"
+            " AS $f$BEGIN RETURN NULL; END$f$"
+        )
+        conn.execute(
+            "CREATE TRIGGER me05_statement BEFORE UPDATE OR DELETE ON me05_control"
+            " FOR EACH STATEMENT EXECUTE FUNCTION pg_temp.me05_reject()"
+        )
+        conn.execute(
+            "CREATE TRIGGER me05_row BEFORE UPDATE OR DELETE ON me05_control"
+            " FOR EACH ROW EXECUTE FUNCTION pg_temp.me05_reject()"
+        )
+        rows = conn.execute(
+            "SELECT tgname, tgtype::int FROM pg_catalog.pg_trigger"
+            " WHERE tgrelid = 'me05_control'::regclass ORDER BY tgname"
+        ).fetchall()
+        conn.execute("DROP TABLE me05_control")
+        conn.execute("DROP FUNCTION pg_temp.me05_reject()")
+    by_name = dict(rows)
+    assert _row_before_update_delete(by_name["me05_statement"]) is False
+    assert _row_before_update_delete(by_name["me05_row"]) is True
 
 
 # --- MX-02 (catalogue half) --------------------------------------------------
@@ -411,3 +450,47 @@ def test_mb1_p02_seed_rows(m05_install: M05Install) -> None:
     assert sorted(path for (path,) in allowlist) == sorted(
         ["outcome_code", "assertion_kind", "item_kind"]
     )
+
+
+# --- MB1-T01: B1 fail-closed stubs (F-B1-02) ------------------------------------
+#
+# TEMPORARY rows. B1 installs the seven reviewed signatures with bodies that refuse
+# with P0001 / M05_NOT_IMPLEMENTED. Each tranche that gives a function behaviour
+# REPLACES that function's row here with its behaviour rows, in the same red commit
+# (never a silent deletion): create -> B2; prepare/apply/get/list/history -> B3/B4;
+# read_note -> B4.
+
+ZERO_WRITE_TABLES = (*m05.TABLES, "patient_events", "patient_event_links", "event_handoff_outbox")
+STUB_ARGUMENT = {"jsonb": "{}", "uuid": "00000000-0000-4000-8000-0000000000b1"}
+
+
+def _counts(install: M05Install) -> dict[str, int]:
+    return {
+        table: m02.admin_one(install.ids, f"SELECT count(*) FROM {install.schema}.{table}")[0]
+        for table in ZERO_WRITE_TABLES
+    }
+
+
+@pytest.mark.parametrize("spec", m05.FUNCTIONS, ids=[spec.name for spec in m05.FUNCTIONS])
+def test_mb1_t01_stub_refuses_not_implemented_with_zero_writes(
+    m05_install: M05Install, spec: m05.FunctionSpec
+) -> None:
+    """The intended caller path: the runtime login shim, SET ROLE runtime, the tenant
+    context set transaction-locally as the M01 gateway does, then the function by its
+    reviewed signature with a well-formed argument."""
+
+    m05_install.require()
+    tenant_id, schema = m05_install.tenant
+    before = _counts(m05_install)
+    with psycopg.connect(m05_install.ids.logins[m05.RUNTIME], autocommit=True) as conn:
+        conn.execute(f"SET ROLE {m05.RUNTIME}")
+        with pytest.raises(psycopg.Error) as caught, conn.transaction():
+            conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
+            conn.execute(
+                f"SELECT {schema}.{spec.name}(%s::{spec.args})", (STUB_ARGUMENT[spec.args],)
+            )
+    assert (caught.value.sqlstate, caught.value.diag.message_primary) == (
+        m05.STUB_SQLSTATE,
+        m05.STUB_MESSAGE,
+    ), spec.name
+    assert _counts(m05_install) == before, spec.name
