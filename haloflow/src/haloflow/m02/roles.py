@@ -9,3 +9,9 @@ typed gateway unit `t003` runs as it.
 from typing import Final
 
 LOCK_OWNER_ROLE: Final = "haloflow_m02_lock_owner"
+
+# UC1 part A (delta v1r1 Δ4, decision TB-3). Created by Alembic revision `005`.
+APPEND_OWNER_ROLE: Final = "haloflow_m02_append_owner"
+PROJECTION_OWNER_ROLE: Final = "haloflow_m02_projection_owner"
+READ_OWNER_ROLE: Final = "haloflow_m02_read_owner"
+M05_OWNER_ROLE: Final = "haloflow_m05_owner"
