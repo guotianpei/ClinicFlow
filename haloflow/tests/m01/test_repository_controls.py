@@ -953,7 +953,7 @@ def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]
     ]
 
 
-def _is_literal_frozenset_of_ten(value: ast.expr | None) -> bool:
+def _is_literal_frozenset_of_eleven(value: ast.expr | None) -> bool:
     return (
         isinstance(value, ast.Call)
         and isinstance(value.func, ast.Name)
@@ -964,7 +964,7 @@ def _is_literal_frozenset_of_ten(value: ast.expr | None) -> bool:
         and len(value.args[0].elts) == 1
         and isinstance(value.args[0].elts[0], ast.Constant)
         and type(value.args[0].elts[0].value) is int
-        and value.args[0].elts[0].value == 10
+        and value.args[0].elts[0].value == 11
     )
 
 
@@ -988,7 +988,7 @@ def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
 
 def _declaration_violations(path: str, source: str) -> list[str]:
     """L1-A4. The composition root assigns the declaration exactly once, at
-    module level, to the literal `frozenset({10})`; no other module assigns it."""
+    module level, to the literal `frozenset({11})`; no other module assigns it."""
 
     assigned = _declaration_assignments_in(source)
     if path != COMPOSITION_ROOT:
@@ -1014,8 +1014,8 @@ def _declaration_violations(path: str, source: str) -> list[str]:
         violations.append(
             f"{path}: {len(assigned)} assignments, {len(module_level)} module-level"
         )
-    if not all(_is_literal_frozenset_of_ten(value) for value in assigned):
-        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{10}})")
+    if not all(_is_literal_frozenset_of_eleven(value) for value in assigned):
+        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{11}})")
     return violations
 
 
@@ -1099,7 +1099,7 @@ def test_l1_a4_the_supported_set_is_declared_once_as_the_literal_three() -> None
 
 
 def test_l1_a4_negative_control() -> None:
-    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({10})\n"
+    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({11})\n"
     assert _declaration_violations(COMPOSITION_ROOT, good) == []
     assert _declaration_violations(COMPOSITION_ROOT, good + good)
     assert _declaration_violations(
@@ -1108,16 +1108,17 @@ def test_l1_a4_negative_control() -> None:
     )
     wrongs = (
         "frozenset({3})",
-        "frozenset({10, 2})",
+        "frozenset({10})",
+        "frozenset({11, 2})",
         "frozenset({True})",
-        "{10}",
-        "frozenset([10])",
+        "{11}",
+        "frozenset([11])",
     )
     for wrong in wrongs:
         source = f"APPROVED_SUPPORTED_SCHEMA_VERSIONS = {wrong}\n"
         assert _declaration_violations(COMPOSITION_ROOT, source), wrong
     assert _declaration_violations(
-        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({10})\n"
+        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({11})\n"
     )
     assert _declaration_violations("src/haloflow/m01/runtime.py", good)
 

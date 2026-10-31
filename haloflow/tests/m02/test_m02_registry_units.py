@@ -42,18 +42,19 @@ def test_2a_u01_production_registry_ids_and_target_version() -> None:
         "t005_m02_events",
         "t006_m02_outbox",
         "t007_m02_envelope_allowlist",
-        "t008_m02_canon_and_append",
-        "t009_m02_enqueue",
-        "t010_m02_envelope_read",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
     )
-    assert registry.target_version == 10
+    assert registry.target_version == 11
 
 
 def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
     """R-B0 (X-3, X-4): the M02 unit set and the approved execution roles.
 
-    UC1 part A (Codex ALIGN 20261031T015048Z): t004-t007 are migrator-owned
-    ordinary units; t008-t010 are typed units, one per function owner.
+    UC1 part A (Codex ALIGN 20261031T015048Z, amended 20261031T131639Z C1): t004-t007
+    are migrator-owned ordinary units; t008-t011 are typed units, one function each.
     """
 
     from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_TENANT_MIGRATIONS
@@ -90,6 +91,7 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
         gw.T008_MIGRATION_ID: gw.T008_DEFINITION,
         gw.T009_MIGRATION_ID: gw.T009_DEFINITION,
         gw.T010_MIGRATION_ID: gw.T010_DEFINITION,
+        gw.T011_MIGRATION_ID: gw.T011_DEFINITION,
     }
     assert T002_MIGRATION_ID == "t002_m02_operation_registry"
     assert T003_MIGRATION_ID == "t003_m02_lock_operation"
@@ -101,7 +103,7 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
     """R-A8 (B-beta), re-verified through the CG-4 route classification (X-5).
 
     No production unit is a role-bearing ORDINARY unit; every role-bearing unit
-    is a typed gateway unit (t003; UC1 part A t008-t010, one per owner).
+    is a typed gateway unit (t003; UC1 part A t008-t011, one function each).
     """
 
     from haloflow.composition import build_production_tenant_migrations

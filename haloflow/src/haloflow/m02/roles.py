@@ -15,3 +15,9 @@ APPEND_OWNER_ROLE: Final = "haloflow_m02_append_owner"
 PROJECTION_OWNER_ROLE: Final = "haloflow_m02_projection_owner"
 READ_OWNER_ROLE: Final = "haloflow_m02_read_owner"
 M05_OWNER_ROLE: Final = "haloflow_m05_owner"
+
+# Every M02 role a typed tenant unit may run as (lock gateway and the part-A owners).
+# The M05 owner is not one in part A: it owns nothing and runs no unit.
+M02_EXECUTION_ROLES: Final = frozenset(
+    {LOCK_OWNER_ROLE, APPEND_OWNER_ROLE, PROJECTION_OWNER_ROLE, READ_OWNER_ROLE}
+)

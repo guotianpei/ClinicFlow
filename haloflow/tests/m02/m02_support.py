@@ -766,14 +766,12 @@ def provision_sync(*args: Any, **kwargs: Any) -> Any:
     return asyncio.run(provision(*args, **kwargs))
 
 
-# D2 (Codex ALIGN 20261031T015048Z): the production registry's target version is
-# 10 after UC1 part A. Production-registry provisioning passes this explicitly;
-# the `provision` default stays range(1, 4) for M01-only and mutant registries.
-# P-a (2026-10-31): until t004-t010 are composed the production registry ends at
-# version 3, so the fixtures provision at 3 and the existing M02 suite keeps
-# running; rows asserting version 10 stay red in their bodies. The commit that
-# composes t004-t010 moves this to range(10, 11) (P-b).
-PRODUCTION_SUPPORTED: Final = range(3, 4)
+# D2 (Codex ALIGN 20261031T015048Z; target amended to 11 by C1, 20261031T131639Z):
+# the production registry's target version after UC1 part A. Production-registry
+# provisioning passes this explicitly; the `provision` default stays range(1, 4)
+# for M01-only and mutant registries. P-a held it at range(3, 4) until t004-t011
+# were composed; P-b moves it in the composing commit.
+PRODUCTION_SUPPORTED: Final = range(11, 12)
 
 
 def production_registry() -> Any:

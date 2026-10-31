@@ -1,9 +1,14 @@
 """UC1 part A — SQL half of m02.canon/v1 (PA-42 / PA-43 SQL layer), PostgreSQL 17.
 
-`m02_canon_v1(jsonb) -> bytea` is called by each AUTHORIZED owner role (append owner
+`m02_canon_v1(jsonb) -> text` is called by each AUTHORIZED owner role (append owner
 and projection owner, through the migrator's SET-only memberships) on the frozen
-vectors and must return exactly the independently authored bytes (part_a
-CANON_VECTORS / TYPE_VECTORS). SQL-layer rejects: out-of-range integers and any
+vectors, and `convert_to(result, 'UTF8')` -- computed by the SERVER -- must be exactly
+the independently authored bytes (part_a CANON_VECTORS / TYPE_VECTORS). AMENDED
+(Codex ALIGN 20261031T131639Z, B1): the M01 typed-function vocabulary has no bytea,
+so the function returns the canonical characters and the canonical bytes are their
+UTF-8 encoding; every vector, hash and reject literal is unchanged.
+
+SQL-layer rejects: out-of-range integers and any
 non-integral numeric, including 1.0 (JSONB keeps the scale). Raw lexical cases
 (duplicate keys, -0) are a service raw-input concern (PA-43 service rows), and an
 unpaired surrogate or U+0000 cannot reach the function because PostgreSQL JSONB
@@ -28,7 +33,10 @@ def _canon(m02_ids: Any, schema: str, role: str, value: Any) -> bytes:
         conn.execute("SET ROLE haloflow_migrator")
         conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         row = conn.execute(
-            sql.SQL("SELECT {}.m02_canon_v1(%s)").format(sql.Identifier(schema)), (Jsonb(value),)
+            sql.SQL("SELECT pg_catalog.convert_to({}.m02_canon_v1(%s), 'UTF8')").format(
+                sql.Identifier(schema)
+            ),
+            (Jsonb(value),),
         ).fetchone()
     assert row is not None
     return bytes(row[0])
@@ -134,7 +142,31 @@ def test_pa43_exponent_is_normalized_by_jsonb_so_rejection_is_raw_layer(
         conn.execute("SET ROLE haloflow_m02_append_owner")
         for literal in ('{"x": 1e2}', '{"x": 100}'):
             got = conn.execute(
-                sql.SQL("SELECT {}.m02_canon_v1(%s::jsonb)").format(sql.Identifier(schema)),
+                sql.SQL("SELECT pg_catalog.convert_to({}.m02_canon_v1(%s::jsonb), 'UTF8')").format(
+                    sql.Identifier(schema)
+                ),
                 (literal,),
             ).fetchone()
             assert got is not None and bytes(got[0]).hex() == expected, literal
+
+
+def test_b1_canon_returns_text_and_the_server_encoding_is_utf8(
+    part_a: ModuleType, m02_ids: Any, production_tenant: tuple[str, str]
+) -> None:
+    """B1 premises (Codex 20261031T131639Z): the declared result type is exactly text,
+    and the text-to-bytes rule is not assumed: the database encoding is UTF8."""
+
+    schema = production_tenant[1]
+    _installed(part_a, m02_ids, schema)
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT pg_catalog.format_type(p.prorettype, NULL), p.proretset"
+            " FROM pg_catalog.pg_proc AS p WHERE p.oid = pg_catalog.to_regprocedure(%s)",
+            (f"{schema}.m02_canon_v1(jsonb)",),
+        ).fetchone()
+        encoding = conn.execute(
+            "SELECT pg_catalog.pg_encoding_to_char(d.encoding) FROM pg_catalog.pg_database AS d"
+            " WHERE d.datname = pg_catalog.current_database()"
+        ).fetchone()
+    assert row == ("text", False)
+    assert encoding == ("UTF8",)

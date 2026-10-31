@@ -479,8 +479,7 @@ GRANT SELECT (consumer_module, event_type, contract_version, json_path)
     ON {_S}.m02_envelope_path_allowlist TO {READ_OWNER_ROLE};
 """
 
-# NOT yet composed into M02_TENANT_MIGRATIONS: see the composition note to Codex
-# (target schema version vs. the frozen harness supported range).
+# Composed into units.M02_TENANT_MIGRATIONS after t003 (Codex ALIGN 20261031T131639Z).
 PART_A_ORDINARY_UNITS: Final = MappingProxyType(
     {
         T004_MIGRATION_ID: T004_SQL,

@@ -181,11 +181,14 @@ def test_2b_u04a_a_profile_keyed_to_a_missing_unit_is_refused() -> None:
 def test_2b_u04b_a_profile_keyed_to_an_ordinary_unit_is_refused() -> None:
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
     from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
+    from haloflow.m02.roles import M02_EXECUTION_ROLES
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
 
+    # UC1 part A: the full M02 set now has four execution roles; approving only the
+    # lock owner would refuse earlier (EXECUTION_ROLE_NOT_APPROVED) and hide the row.
     refused_with(PROFILE_INVALID, lambda: build_tenant_migration_registry(
         TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS,
-        approved_execution_roles=frozenset({LOCK_OWNER}),
+        approved_execution_roles=M02_EXECUTION_ROLES,
         installed_state_profiles={
             T003: LOCK_OPERATION_PROFILE,
             "t002_m02_operation_registry": LOCK_OPERATION_PROFILE,

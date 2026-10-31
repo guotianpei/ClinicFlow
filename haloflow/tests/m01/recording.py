@@ -259,15 +259,22 @@ class Answer:
         return all(marker.casefold() in fingerprint for marker in self.markers)
 
 
-# The shipped manifest declares exactly one role membership -- the CP2-2a lock
-# owner's fixed edge (N1: SET true, INHERIT false, ADMIN false) -- so the
-# controlled-edge read must return exactly that row for
+# The shipped manifest declares one fixed membership edge per execution-role
+# profile (N1: SET true, INHERIT false, ADMIN false): the CP2-2a lock owner's and,
+# from UC1 part A (amendment A4), the append, projection, read and M05 owners'. So
+# the controlled-edge read must return exactly these rows for
 # `assess_membership_graph`'s set equality to hold. Written as a literal, not
 # derived from the manifest: a future manifest edge change must fail here loudly
 # rather than be re-matched silently (CP2-2a E-10a, owner-approved 2026-09-26).
 SHIPPED_CONTROLLED_EDGES = Answer(
     markers=("from pg_auth_members",),
-    rows=(("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False),),
+    rows=(
+        ("haloflow_m02_append_owner", "haloflow_migrator", True, False, False),
+        ("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False),
+        ("haloflow_m02_projection_owner", "haloflow_migrator", True, False, False),
+        ("haloflow_m02_read_owner", "haloflow_migrator", True, False, False),
+        ("haloflow_m05_owner", "haloflow_migrator", True, False, False),
+    ),
 )
 
 # `assert_execution_roles_safe` ends by requiring the migrator to exist and to

@@ -11,7 +11,7 @@ L-1: this module also declares the supported schema-version set and is the only
 production caller of `compose_tenant_runtime`, through
 `build_production_tenant_runtime`. No application entry point calls that yet
 (L-1W), and the production statement catalogue is empty, so the production path
-admits a version-3 tenant but serves no statement (L-1S).
+admits a version-11 tenant but serves no statement (L-1S).
 """
 
 from collections.abc import Mapping
@@ -38,7 +38,8 @@ from haloflow.m01.statements import (
     build_statement_catalog,
 )
 from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
-from haloflow.m02.roles import LOCK_OWNER_ROLE
+from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
+from haloflow.m02.roles import M02_EXECUTION_ROLES
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 
 # Approved module definition sets, in composition order. A new module is added
@@ -54,8 +55,9 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
 # CP2-2a approved the M02 unit *set* (`t002_m02_operation_registry`, an ordinary
 # migrator-owned unit). CP2-2b adds the typed gateway unit `t003_m02_lock_operation`,
 # which makes the production target version 3. Version 3 says nothing about
-# upgrading active version-2 tenants, which have no path in 2b (L-6). Runtime
-# acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
+# upgrading active version-2 tenants, which have no path in 2b (L-6). UC1 part A
+# adds t004-t011 (target version 11); no upgrade path from version 3 is claimed
+# either. Runtime acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     TENANT_MIGRATIONS,
     M02_TENANT_MIGRATIONS,
@@ -70,22 +72,35 @@ APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
 #
 # An infrastructure role cannot be approved by adding it here: the unit refuses
 # every member of `PROVISIONING_ROLES` on its own (R-P1B.22(a), D23).
-APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset({"haloflow_m02_lock_owner"})
+#
+# UC1 part A (Codex ALIGN 20261031T131639Z, C1; delta v1r1 Delta4): the append,
+# projection and read owners run t008-t011. The M05 owner runs no unit in part A.
+APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset(
+    {
+        "haloflow_m02_lock_owner",
+        "haloflow_m02_append_owner",
+        "haloflow_m02_projection_owner",
+        "haloflow_m02_read_owner",
+    }
+)
 
 # CP2-2b (architecture v3 section 5.1(1)). Installed-state profiles, keyed by
 # APPROVED MIGRATION ID, never by function name. M01 binds each to its unit at
 # composition and refuses any disagreement with the unit's declaration.
+#
+# UC1 part A (C1): every typed M02 unit carries a profile, t008-t011 included.
 APPROVED_INSTALLED_STATE_PROFILES: Mapping[str, InstalledStateProfile] = MappingProxyType(
-    {T003_MIGRATION_ID: LOCK_OPERATION_PROFILE}
+    {T003_MIGRATION_ID: LOCK_OPERATION_PROFILE, **PART_A_GATEWAY_PROFILES}
 )
 
 
 # L-1 (requirements v2, L1-D2 = M1). The schema versions the production runtime
-# admits: exactly {3}. The one declaration -- resolver, gateway, provisioner and the
+# admits: exactly {11} since UC1 part A composed t004-t011 (P-b, Codex ALIGN
+# 20261031T130451Z; previously {3}). The one declaration -- resolver, gateway, provisioner and the
 # bundle all receive this object. A literal, never derived from the registry: a
 # derived set would make the coordination check vacuous and silently admit a future
 # target. Version 3 means "the M01 infrastructure baseline through t003" (R-E11).
-APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({3})
+APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({11})
 
 
 def build_production_catalog() -> CompiledCatalog:
@@ -95,25 +110,26 @@ def build_production_catalog() -> CompiledCatalog:
 
 
 def require_m02_installed_state_profiles(registry: TenantMigrationRegistry) -> None:
-    """The M02 rule (architecture v3 section 5.1(1)).
+    """The M02 rule (architecture v3 section 5.1(1); widened by UC1 part A, C1).
 
-    The set of typed units whose execution role is the M02 lock owner must EQUAL
-    the set of units the registry holds a required installed-state profile for.
-    So the gateway cannot compose without its profile, and no M02 lock-owner typed
-    unit can escape one. Static: no database access.
+    The set of typed units whose execution role is an M02 execution role (the lock
+    owner and the part-A append, projection and read owners) must EQUAL the set of
+    units the registry holds a required installed-state profile for. So no M02
+    gateway composes without its profile, and no M02 typed unit can escape one.
+    Static: no database access.
     """
 
-    lock_owner_typed = {
+    m02_typed = {
         unit.migration_id
         for unit in registry
-        if unit.is_typed and unit.execution_role == LOCK_OWNER_ROLE
+        if unit.is_typed and unit.execution_role in M02_EXECUTION_ROLES
     }
     profiled = {
         unit.migration_id
         for unit in registry
         if registry.installed_state_requirement(unit.migration_id).required
     }
-    if lock_owner_typed != profiled:
+    if m02_typed != profiled:
         raise MigrationUnitRejected(
             reason_code=PreconditionCode.INSTALLED_STATE_PROFILE_INVALID.value
         )

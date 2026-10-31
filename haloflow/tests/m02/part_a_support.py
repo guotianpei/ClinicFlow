@@ -39,7 +39,9 @@ MEMBERSHIP: Final = {"inherit": False, "set": True, "admin": False}
 # ---------------------------------------------------------------------------
 # Tenant units, in installation order (Δ4). The single gateway unit of Δ4 is split
 # into one typed unit per function owner (Codex ALIGN 20261031T015048Z): an M01
-# typed unit carries exactly one execution role.
+# typed unit carries exactly one execution role. AMENDED (Codex ALIGN
+# 20261031T131639Z, C1): one FUNCTION per typed unit, because an installed-state
+# profile covers exactly one function; canon and append no longer share t008.
 # ---------------------------------------------------------------------------
 
 UNIT_ORDER: Final = (
@@ -47,9 +49,10 @@ UNIT_ORDER: Final = (
     "t005_m02_events",
     "t006_m02_outbox",
     "t007_m02_envelope_allowlist",
-    "t008_m02_canon_and_append",
-    "t009_m02_enqueue",
-    "t010_m02_envelope_read",
+    "t008_m02_canon",
+    "t009_m02_append",
+    "t010_m02_enqueue",
+    "t011_m02_envelope_read",
 )
 
 # ---------------------------------------------------------------------------
@@ -86,12 +89,15 @@ FUNCTIONS: Final = (
     # Call graph (Codex 95ae5bfd): the append body computes the content fingerprint
     # and the enqueue body computes the M11 key, so the private serializer is
     # executable by exactly those two owners. Owned by the append owner.
+    # AMENDED (Codex ALIGN 20261031T130451Z, O1): SECURITY DEFINER, because the M01
+    # typed-function policy admits only definers; a pure function with no table
+    # access, so definer rights add no reachable privilege.
     FunctionSpec(
         "m02_canon_v1",
         "jsonb",
         APPEND_OWNER,
         frozenset({APPEND_OWNER, PROJECTION_OWNER}),
-        False,
+        True,
     ),
 )
 SEARCH_PATH_CONFIG: Final = "search_path=pg_catalog, {schema}, pg_temp"
