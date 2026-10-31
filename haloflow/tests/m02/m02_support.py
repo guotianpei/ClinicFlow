@@ -23,7 +23,7 @@ import re
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import psycopg
@@ -764,6 +764,12 @@ async def provision(
 
 def provision_sync(*args: Any, **kwargs: Any) -> Any:
     return asyncio.run(provision(*args, **kwargs))
+
+
+# D2 (Codex ALIGN 20261031T015048Z): the production registry's target version is
+# 10 after UC1 part A. Production-registry provisioning passes this explicitly;
+# the `provision` default stays range(1, 4) for M01-only and mutant registries.
+PRODUCTION_SUPPORTED: Final = range(10, 11)
 
 
 def production_registry() -> Any:

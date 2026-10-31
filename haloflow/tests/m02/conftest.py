@@ -73,7 +73,10 @@ def production_tenant(
     try:
         # No feature assertion here (Codex P1): rows assert installation and
         # version in their own bodies, so the baseline is behaviour-red, not ERROR.
-        m02_support.provision_sync(m02_ids, m02_support.production_registry(), tenant)
+        m02_support.provision_sync(
+            m02_ids, m02_support.production_registry(), tenant,
+            supported=m02_support.PRODUCTION_SUPPORTED,
+        )
         yield tenant
     finally:
         # Codex P2: cleanup runs even when provisioning fails before `yield`.

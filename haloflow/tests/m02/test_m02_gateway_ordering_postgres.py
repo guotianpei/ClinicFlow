@@ -92,7 +92,10 @@ def test_2b_d30_a_refusal_returns_promptly_under_an_exclusive_lock(
     m02_ids: Any, m02_tenant: tuple[str, str], label: str, context: str | None,
     which: str | None, sqlstate: str,
 ) -> None:
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     tenant_id, schema = m02_tenant
     seeded = gw.seed(m02_ids, schema, f"d30-{label}")
     tenant = tenant_id if context == "any" else context
@@ -137,7 +140,10 @@ def test_2b_d30_the_reordered_mutant_waits_under_the_same_lock(
     """ME, constructed mutant (table access before the NULL check): it must NOT be
     prompt. If it were, the oracle could not distinguish the orders."""
 
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     tenant_id, schema = m02_tenant
     with m02.connect_as(m02_ids, "LOCK") as conn:
         conn.execute(MUTANT.replace("{schema}", schema))  # type: ignore[call-overload]

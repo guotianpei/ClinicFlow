@@ -573,7 +573,10 @@ def test_pa10b_other_tenants_target_is_absent(
     m02: ModuleType,
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     _ready(part_a, m02_ids, m02_tenant[1])
     foreign_subject, _ = _fixture_ids(part_a, m02_ids, m02_tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
@@ -613,7 +616,10 @@ def test_pa34_valid_looking_foreign_tenant_setting_is_mismatch(
     m02: ModuleType,
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     before = _counts(part_a, m02_ids, tenant[1])
     command = _command(part_a, m02_ids, tenant[1])
     _refused(m02_ids, tenant, command, part_a.MSG_BINDING_MISMATCH, setting=m02_tenant[0])
@@ -682,7 +688,10 @@ def test_xb1_existing_branch_retry_with_mismatched_setting_refused(
     m02_tenant: tuple[str, str],
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     command = _command(part_a, m02_ids, tenant[1])
     _append(m02_ids, tenant, command)
     _refused(m02_ids, tenant, command, part_a.MSG_BINDING_MISMATCH, setting=m02_tenant[0])
@@ -817,7 +826,10 @@ def test_pa20_equivalent_collision_returns_existing_row_unchanged(
 
 
 def _fresh(part_a: ModuleType, m02: ModuleType, m02_ids: Any, fresh: tuple[str, str]) -> None:
-    m02.provision_sync(m02_ids, m02.production_registry(), fresh)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), fresh,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     _ready(part_a, m02_ids, fresh[1])
 
 
@@ -953,7 +965,10 @@ def test_pa12_same_event_id_in_two_tenants_is_independent(
     m02: ModuleType,
 ) -> None:
     _ready(part_a, m02_ids, tenant[1])
-    m02.provision_sync(m02_ids, m02.production_registry(), m02_tenant)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), m02_tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     _ready(part_a, m02_ids, m02_tenant[1])
     shared_id = _uuid()
     first = _command(part_a, m02_ids, tenant[1], event_id=shared_id)

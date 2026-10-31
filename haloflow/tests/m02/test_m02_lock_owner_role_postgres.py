@@ -310,7 +310,10 @@ def test_2a_r07_non_superuser_deployment_login_runs_revision_004(
 
 
 def _provision_production(m02: ModuleType, ids: Any, tenant: tuple[str, str]) -> Any:
-    return m02.provision_sync(ids, m02.production_registry(), tenant)
+    return m02.provision_sync(
+        ids, m02.production_registry(), tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
 
 
 def test_2a_m01_positive_control_provisioning_succeeds(
@@ -318,7 +321,7 @@ def test_2a_m01_positive_control_provisioning_succeeds(
 ) -> None:
     m02.assert_baseline_role(m02_ids)
     outcome = _provision_production(m02, m02_ids, m02_tenant)
-    assert outcome.schema_version == 3
+    assert outcome.schema_version == 10
 
 
 def _expect_stage_one_refusal(m02: ModuleType, ids: Any, tenant: tuple[str, str]) -> None:

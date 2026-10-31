@@ -48,9 +48,10 @@ def test_pa27_role_is_nologin_with_exact_migrator_edge(
     with _admin(m02_ids) as conn:
         assert part_a.role_exists(conn, role), f"{role} does not exist"
         row = conn.execute(
-            "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication,"
-            " rolbypassrls, rolpassword IS NULL, rolconfig IS NULL"
-            " FROM pg_authid WHERE rolname = %s",
+            # D1 (Codex 20261031T015048Z): rolconfig lives on pg_roles, not pg_authid.
+            "SELECT a.rolcanlogin, a.rolsuper, a.rolcreatedb, a.rolcreaterole,"
+            " a.rolreplication, a.rolbypassrls, a.rolpassword IS NULL, r.rolconfig IS NULL"
+            " FROM pg_authid AS a JOIN pg_roles AS r ON r.oid = a.oid WHERE a.rolname = %s",
             (role,),
         ).fetchone()
         assert row == (False, False, False, False, False, False, True, True)

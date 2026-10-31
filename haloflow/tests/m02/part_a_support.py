@@ -37,7 +37,9 @@ REVISION_005: Final = "005_m02_part_a_roles"
 MEMBERSHIP: Final = {"inherit": False, "set": True, "admin": False}
 
 # ---------------------------------------------------------------------------
-# Tenant units, in installation order (Δ4).
+# Tenant units, in installation order (Δ4). The single gateway unit of Δ4 is split
+# into one typed unit per function owner (Codex ALIGN 20261031T015048Z): an M01
+# typed unit carries exactly one execution role.
 # ---------------------------------------------------------------------------
 
 UNIT_ORDER: Final = (
@@ -45,7 +47,9 @@ UNIT_ORDER: Final = (
     "t005_m02_events",
     "t006_m02_outbox",
     "t007_m02_envelope_allowlist",
-    "t008_m02_part_a_gateways",
+    "t008_m02_canon_and_append",
+    "t009_m02_enqueue",
+    "t010_m02_envelope_read",
 )
 
 # ---------------------------------------------------------------------------

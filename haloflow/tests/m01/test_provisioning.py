@@ -382,9 +382,13 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     lock gateway". This pins the number only. It claims nothing about any runtime
     accepting version-3 tenants (L-1, a carried release prerequisite), nor about
     upgrading active version-2 tenants (L-6).
+
+    UC1 part A (D2, Codex ALIGN 20261031T015048Z) extends it through
+    `t010_m02_envelope_read`: the production target is version 10. The number
+    only; no production tenant at versions 1-9 and no upgrade path is claimed.
     """
 
-    assert build_production_tenant_migrations().target_version == 3
+    assert build_production_tenant_migrations().target_version == 10
 
 
 # --- unit grammar and rendering -------------------------------------------

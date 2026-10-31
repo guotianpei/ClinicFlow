@@ -198,7 +198,7 @@ async def test_l1_e1a_e1b_a_version_three_tenant_is_resolved_and_admitted(
     async with _dependencies(m02_ids) as deps:
         runtime = build_production_tenant_runtime(deps)
         outcome = await _provision_through(runtime, m02_tenant)
-        assert outcome.schema_version == 3
+        assert outcome.schema_version == 10
 
         context = await _resolve(runtime, m02_tenant[0])  # E1a
         assert (context.tenant_id, context.schema_key) == m02_tenant
@@ -504,9 +504,9 @@ def test_l1_g3_a_fixture_widened_set_cannot_reach_the_declaration(
             provisioner_connect=object(),  # type: ignore[arg-type]
         )
     )
-    assert runtime.supported_schema_versions == frozenset({3})
-    assert runtime.resolver._supported_schema_versions == frozenset({3})
-    assert runtime.gateway._supported_schema_versions == frozenset({3})
-    assert runtime.provisioner._supported_schema_versions == frozenset({3})
+    assert runtime.supported_schema_versions == frozenset({10})
+    assert runtime.resolver._supported_schema_versions == frozenset({10})
+    assert runtime.gateway._supported_schema_versions == frozenset({10})
+    assert runtime.provisioner._supported_schema_versions == frozenset({10})
     declared = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert declared == frozenset({3})
+    assert declared == frozenset({10})

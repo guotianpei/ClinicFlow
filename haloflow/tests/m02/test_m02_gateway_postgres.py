@@ -33,7 +33,10 @@ def config_for(schema: str) -> list[str]:
 
 
 def provision_production(ids: m02.Identities, tenant: tuple[str, str]) -> Any:
-    return m02.provision_sync(ids, m02.production_registry(), tenant)
+    return m02.provision_sync(
+        ids, m02.production_registry(), tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
 
 
 # --- D01 to D03: installed shape and exact ACL ----------------------------------
@@ -389,7 +392,7 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 3
+    assert outcome.schema_version == 10
     assert calls == [m02_tenant[1]]
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
@@ -510,7 +513,7 @@ def test_2b_d24b_installed_state_drift_is_not_detected_on_skip(
 def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
-    assert provision_production(m02_ids, m02_tenant).schema_version == 3
+    assert provision_production(m02_ids, m02_tenant).schema_version == 10
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
@@ -522,7 +525,7 @@ def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
             " VALUES (%s, %s, 'provisioning', 1)",
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 3
+    assert provision_production(m02_ids, m02_tenant).schema_version == 10
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(
@@ -608,7 +611,7 @@ def test_2b_d32_mutating_caller_inputs_after_composition_changes_nothing_install
 
     outcome = m02.provision_sync(m02_ids, registry, m02_tenant)
     schema = m02_tenant[1]
-    assert outcome.schema_version == 3
+    assert outcome.schema_version == 10
     assert m02.admin_one(
         m02_ids, "SELECT proconfig FROM pg_catalog.pg_proc WHERE oid ="
         " pg_catalog.to_regprocedure(%s)", (gw.regprocedure(schema),),

@@ -37,7 +37,10 @@ _STAGES = {
 
 
 def _prepare(part_a: ModuleType, m02: ModuleType, m02_ids: Any, fresh: tuple[str, str]) -> None:
-    m02.provision_sync(m02_ids, m02.production_registry(), fresh)
+    m02.provision_sync(
+        m02_ids, m02.production_registry(), fresh,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
     with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
         assert part_a.regclass_exists(conn, f"{fresh[1]}.patient_events"), (
             f"{fresh[1]}.patient_events is not installed"
