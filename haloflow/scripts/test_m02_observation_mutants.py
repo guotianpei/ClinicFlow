@@ -250,3 +250,35 @@ def test_every_declared_kill_names_a_node_of_the_service_module() -> None:
     for mutant in mm.MUTANTS:
         assert mutant.kills, mutant.id
         assert all(node.startswith(mm.TESTS + "::") for node in mutant.kills), mutant.id
+
+
+def test_failure_sites_give_the_test_line_and_exception_type() -> None:
+    t = mm.TESTS
+    junit = f"""<testsuites><testsuite name="pytest" tests="3" failures="2" errors="1" skipped="0">
+<testcase classname="tests.m02.x" name="test_a" file="{t}" line="1">
+<failure message="AssertionError: assert 0 == 1">frame
+{t}:302: AssertionError</failure></testcase>
+<testcase classname="tests.m02.x" name="test_b" file="{t}" line="2">
+<failure message="Failed: DID NOT RAISE &lt;class 'X'&gt;">{t}:630: Failed</failure></testcase>
+<testcase classname="tests.m02.x" name="test_c" file="{t}" line="3">
+<error message="failed on setup with &quot;psycopg.OperationalError: x&quot;">no frame</error>
+</testcase></testsuite></testsuites>""".encode()
+    sites = mm.failure_sites(junit)
+    assert sites == {
+        f"{t}::test_a": "L302:AssertionError",
+        f"{t}::test_b": "L630:DID NOT RAISE <class 'X'>",
+        f"{t}::test_c": "L?:OperationalError",
+    }
+
+
+def test_failure_sites_label_a_bare_assert_and_stay_single_line() -> None:
+    t = mm.TESTS
+    junit = f"""<testsuites><testsuite name="pytest" tests="1" failures="1" errors="0" skipped="0">
+<testcase classname="tests.m02.x" name="test_a" file="{t}" line="1">
+<failure message="assert 0 == 1&#10; +  where 0 = len([])">{t}:306: AssertionError</failure>
+</testcase></testsuite></testsuites>""".encode()
+    assert mm.failure_sites(junit) == {f"{t}::test_a": "L306:AssertionError"}
+
+
+def test_notice_escaping_keeps_one_line() -> None:
+    assert mm._escape("a%b\nc\rd") == "a%25b%0Ac%0Dd"

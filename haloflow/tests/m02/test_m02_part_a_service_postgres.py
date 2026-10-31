@@ -290,7 +290,11 @@ async def test_ex_existing_branch_does_not_invoke_callback(
 
     async def apply(handle: Any, result: Any) -> None:
         calls.append(result)
-        await writer(handle, result)
+        # Write only on the first call, so a wrongly invoked second call reaches the
+        # explicit oracle below instead of failing on the domain primary key first
+        # (Codex 20261031T162724Z: intended failure location).
+        if len(calls) == 1:
+            await writer(handle, result)
 
     async with _runtime(part_a, m02_ids) as runtime:
         foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)

@@ -34,6 +34,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Mapping
@@ -277,6 +278,34 @@ class RunEvidence:
     multiple: list[str] = field(default_factory=list)
     collection_errors: list[str] = field(default_factory=list)
     junit_problem: str | None = None
+    # node id -> "L<line>:<exception>" for every failed or errored case: the test
+    # line the failure surfaced at and the exception type (Codex 20261031T162724Z:
+    # intended failure location). Message text is not kept.
+    sites: dict[str, str] = field(default_factory=dict)
+
+
+def failure_sites(data: bytes) -> dict[str, str]:
+    import xml.etree.ElementTree as ET
+
+    sites: dict[str, str] = {}
+    pattern = re.compile(re.escape(TESTS) + r":(\d+):")
+    for case in ET.fromstring(data).iter("testcase"):
+        for child in case:
+            if child.tag not in ("failure", "error"):
+                continue
+            lines = pattern.findall(child.text or "")
+            message = " ".join((child.get("message") or "").split())
+            head, _, rest = message.partition(":")
+            if message.startswith("assert "):
+                kind = "AssertionError"  # a bare assert: pytest omits the type
+            else:
+                kind = head.rsplit(".", 1)[-1].strip() or "?"
+            if kind == "Failed":
+                kind = rest.strip() or kind
+            kind = kind[:48]
+            line = lines[-1] if lines else "?"
+            sites[_REPORT._node_id(case)] = f"L{line}:{kind}"
+    return sites
 
 
 def judge_control(run: RunEvidence) -> list[str]:
@@ -400,10 +429,17 @@ def run_pytest(pytest: str, label: str, evidence: Path) -> RunEvidence:
         dict(parsed.outcomes),
         list(parsed.multiple),
         list(parsed.collection_errors),
+        sites=failure_sites(junit.read_bytes()),
     )
 
 
 Runner = Callable[[str, str, Path], RunEvidence]
+
+
+def _escape(text: str) -> str:
+    """GitHub workflow-command data escaping: %, CR and LF."""
+
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def _short(node: str) -> str:
@@ -482,6 +518,7 @@ def main(argv: list[str] | None = None, runner: Runner = run_pytest) -> int:
                         applied=True,
                         exit=run.exit,
                         failed=failed,
+                        sites={node: run.sites.get(node, "?") for node in failed},
                         problems=problems,
                         killed=not problems,
                     )
@@ -512,7 +549,11 @@ def main(argv: list[str] | None = None, runner: Runner = run_pytest) -> int:
     # (the artifact may not be reachable by a reviewer). Chunked under the measured
     # 4096-character annotation limit; the prefix "<TESTS>::test_" is elided.
     lines = [
-        f"{m['id']}: " + " ".join(_short(node) for node in m.get("failed", []))
+        f"{m['id']}: "
+        + " ".join(
+            _escape(f"{_short(node)}@{m.get('sites', {}).get(node, '?')}")
+            for node in m.get("failed", [])
+        )
         for m in results["mutants"]
     ]
     for index, chunk in enumerate(_chunks(lines, 3800), start=1):
