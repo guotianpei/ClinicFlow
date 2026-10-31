@@ -290,7 +290,9 @@ async def test_l1_e2_the_resolver_refuses_versions_one_two_and_four(
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("version", [1, 2, 4])
+# Production target 11 (Codex ALIGN 20261031T142215Z, item 5): 3 is the previous
+# target, 12 is above the target; 1 and 2 stay as the older baseline versions.
+@pytest.mark.parametrize("version", [1, 2, 3, 12])
 async def test_l1_e3a_a_row_leaving_the_set_is_refused_before_the_callback(
     m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str], version: int
 ) -> None:

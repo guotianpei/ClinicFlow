@@ -723,6 +723,43 @@ def test_pa35_absent_registry_row_for_rendered_schema(
             )
 
 
+@contextmanager
+def _runtime_temp_privilege(m02_ids: Any) -> Iterator[None]:
+    """TEST SETUP ONLY (Codex ALIGN 20261031T142215Z, item 4). Migration 001 revokes
+    TEMPORARY on the database from PUBLIC, so the runtime role cannot create the temp
+    shadow this row needs. Grant TEMPORARY to haloflow_runtime on the synthetic test
+    database for the duration of the row only if it is not already held, revoke only
+    what was granted here, and assert the database ACL is restored exactly. Production
+    grants are unchanged. The suite runs serially (no xdist), so no parallel test
+    shares the elevated role or database while this is in force."""
+
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        database, before, held = conn.execute(
+            "SELECT current_database(), d.datacl::text,"
+            " pg_catalog.has_database_privilege('haloflow_runtime', d.oid, 'TEMPORARY')"
+            " FROM pg_catalog.pg_database AS d WHERE d.datname = current_database()"
+        ).fetchone()  # type: ignore[misc]
+        target = sql.Identifier(database)
+        if not held:
+            conn.execute(
+                sql.SQL("GRANT TEMPORARY ON DATABASE {} TO haloflow_runtime").format(target)
+            )
+        try:
+            yield
+        finally:
+            if not held:
+                conn.execute(
+                    sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM haloflow_runtime").format(
+                        target
+                    )
+                )
+            after = conn.execute(
+                "SELECT datacl::text FROM pg_catalog.pg_database"
+                " WHERE datname = current_database()"
+            ).fetchone()
+            assert after == (before,)
+
+
 def test_pa37_temp_shadow_does_not_affect_binding(
     part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str]
 ) -> None:
@@ -733,6 +770,7 @@ def test_pa37_temp_shadow_does_not_affect_binding(
     command = _command(part_a, m02_ids, tenant[1])
     with (
         _registry_state(m02_ids, tenant[0], "suspended"),
+        _runtime_temp_privilege(m02_ids),
         psycopg.connect(m02_ids.logins["haloflow_runtime"], autocommit=True) as conn,
     ):
         conn.execute("SET ROLE haloflow_runtime")
@@ -743,6 +781,16 @@ def test_pa37_temp_shadow_does_not_affect_binding(
         conn.execute(
             "INSERT INTO pg_temp.tenants VALUES (%s, %s, 'active', 1)", (tenant[0], tenant[1])
         )
+        # Positive control: the shadow exists, is the runtime session's own temp
+        # relation, and holds the row claiming `active` before the refusal is asserted.
+        shadow = conn.execute(
+            "SELECT c.relpersistence, n.oid = pg_catalog.pg_my_temp_schema(),"
+            " (SELECT count(*) FROM pg_temp.tenants WHERE lifecycle_state = 'active')"
+            " FROM pg_catalog.pg_class AS c"
+            " JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace"
+            " WHERE c.oid = pg_catalog.to_regclass('pg_temp.tenants')"
+        ).fetchone()
+        assert shadow == ("t", True, 1)
         with pytest.raises(psycopg.Error) as caught, conn.transaction():
             conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant[0],))
             conn.execute(

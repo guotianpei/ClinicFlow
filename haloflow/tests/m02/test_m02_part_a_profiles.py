@@ -114,3 +114,28 @@ def test_pr5_profile_matches_the_frozen_function_manifest(
     assert grantees == {spec.owner} | set(spec.executors)
     for grantee, privilege, grantor, grantable in profile.installed_acl:
         assert (privilege, grantor, grantable) == ("EXECUTE", spec.owner, False), grantee
+
+
+# F-INT1 (Codex ALIGN 20261031T142215Z, item 3): the STATIC gate. A profile whose
+# argument or return type disagrees with the unit's frozen declaration is refused at
+# composition by `check_profile_agreement`, before any database work, so mutating a
+# profile alone can never exercise the runtime verifier. The runtime verifier is
+# reached separately, by an observed-catalogue seam, in
+# test_m02_part_a_installed_state_postgres.py.
+@pytest.mark.parametrize("migration_id", sorted(PART_A_TYPED))
+@pytest.mark.parametrize("field", ["argument_types", "return_type"])
+def test_pr6_type_disagreeing_with_the_declaration_refused_at_composition(
+    migration_id: str, field: str
+) -> None:
+    import dataclasses
+
+    profiles = _profiles()
+    original = profiles[migration_id]
+    if field == "argument_types":
+        changed = tuple("int8" for _ in original.argument_types)
+        assert changed != original.argument_types
+        profiles[migration_id] = dataclasses.replace(original, argument_types=changed)
+    else:
+        assert original.return_type != "int8"
+        profiles[migration_id] = dataclasses.replace(original, return_type="int8")
+    _refused(lambda: _build(profiles))
