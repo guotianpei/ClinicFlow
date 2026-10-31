@@ -769,7 +769,11 @@ def provision_sync(*args: Any, **kwargs: Any) -> Any:
 # D2 (Codex ALIGN 20261031T015048Z): the production registry's target version is
 # 10 after UC1 part A. Production-registry provisioning passes this explicitly;
 # the `provision` default stays range(1, 4) for M01-only and mutant registries.
-PRODUCTION_SUPPORTED: Final = range(10, 11)
+# P-a (2026-10-31): until t004-t010 are composed the production registry ends at
+# version 3, so the fixtures provision at 3 and the existing M02 suite keeps
+# running; rows asserting version 10 stay red in their bodies. The commit that
+# composes t004-t010 moves this to range(10, 11) (P-b).
+PRODUCTION_SUPPORTED: Final = range(3, 4)
 
 
 def production_registry() -> Any:
