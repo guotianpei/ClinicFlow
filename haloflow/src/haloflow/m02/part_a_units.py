@@ -35,7 +35,12 @@ from types import MappingProxyType
 from typing import Final
 
 from haloflow.m01.provisioning.roles import RUNTIME_ROLE
-from haloflow.m02.roles import APPEND_OWNER_ROLE, PROJECTION_OWNER_ROLE, READ_OWNER_ROLE
+from haloflow.m02.roles import (
+    APPEND_OWNER_ROLE,
+    M05_OWNER_ROLE,
+    PROJECTION_OWNER_ROLE,
+    READ_OWNER_ROLE,
+)
 
 T004_MIGRATION_ID: Final = "t004_m02_reference"
 T005_MIGRATION_ID: Final = "t005_m02_events"
@@ -81,7 +86,90 @@ _OBSERVATION_METADATA_SCHEMA: Final = (
     '"properties":{"label_code":{"enum":["reviewed","unreviewed"]}}}'
 )
 
-T004_SQL: Final = f"""
+# PA-32 (Codex ALIGN 20261031T170447Z): the installed prerequisites of shared Alembic
+# revision 005, verified before ANY part-A object is created. It verifies installed
+# state, not the Alembic revision marker:
+#   (1) the four part-A roles exist and are NOLOGIN with no unsafe attribute;
+#   (2) the migrator holds, to each of the four, a SET-only edge (INHERIT FALSE,
+#       SET TRUE, ADMIN FALSE) and no other edge to them; the migrator's unrelated
+#       memberships are not examined;
+#   (3) the projection owner's DATABASE-LOCAL shared access: schema `shared` USAGE
+#       and no CREATE; effective SELECT on exactly the four registry columns (every
+#       route counts: direct, PUBLIC and inherited) and no other privilege on
+#       `shared.tenants`; plus the four direct, non-grantable column grants.
+# Roles and edges are cluster-wide but (3) is per database, so a database that has
+# not run revision 005 is refused even when another database on the same cluster
+# created the roles (measured: provisioning previously succeeded there). Read-only;
+# a failure raises one fixed message and the unit's transaction rolls back.
+_MSG_PREREQUISITE: Final = "PART_A_PREREQUISITE_MISSING"
+_PREREQUISITE_GUARD: Final = f"""
+-- t004:step:prerequisites
+DO $prerequisites$
+DECLARE
+    c_roles constant pg_catalog.name[] := ARRAY[
+        '{APPEND_OWNER_ROLE}', '{PROJECTION_OWNER_ROLE}', '{READ_OWNER_ROLE}',
+        '{M05_OWNER_ROLE}']::pg_catalog.name[];
+    c_columns constant pg_catalog.name[] := ARRAY[
+        'tenant_id', 'schema_key', 'lifecycle_state', 'schema_version']::pg_catalog.name[];
+    c_projection constant pg_catalog.name := '{PROJECTION_OWNER_ROLE}';
+    v_registry pg_catalog.regclass;
+BEGIN
+    IF (SELECT pg_catalog.count(*)
+          FROM pg_catalog.pg_roles AS r
+         WHERE r.rolname = ANY (c_roles)
+           AND NOT r.rolcanlogin AND NOT r.rolsuper AND NOT r.rolcreatedb
+           AND NOT r.rolcreaterole AND NOT r.rolreplication AND NOT r.rolbypassrls) <> 4 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{_MSG_PREREQUISITE}';
+    END IF;
+    IF (SELECT pg_catalog.count(DISTINCT m.roleid)
+          FROM pg_catalog.pg_auth_members AS m
+          JOIN pg_catalog.pg_roles AS g ON g.oid = m.roleid
+          JOIN pg_catalog.pg_roles AS u ON u.oid = m.member
+         WHERE g.rolname = ANY (c_roles) AND u.rolname = 'haloflow_migrator'
+           AND m.set_option AND NOT m.inherit_option AND NOT m.admin_option) <> 4
+       OR EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_auth_members AS m
+             JOIN pg_catalog.pg_roles AS g ON g.oid = m.roleid
+             JOIN pg_catalog.pg_roles AS u ON u.oid = m.member
+            WHERE g.rolname = ANY (c_roles) AND u.rolname = 'haloflow_migrator'
+              AND (m.admin_option OR m.inherit_option OR NOT m.set_option)) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{_MSG_PREREQUISITE}';
+    END IF;
+    v_registry := pg_catalog.to_regclass('shared.tenants');
+    IF pg_catalog.to_regnamespace('shared') IS NULL OR v_registry IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{_MSG_PREREQUISITE}';
+    END IF;
+    IF NOT pg_catalog.has_schema_privilege(c_projection, 'shared', 'USAGE')
+       OR pg_catalog.has_schema_privilege(c_projection, 'shared', 'CREATE')
+       OR (SELECT pg_catalog.count(*)
+             FROM pg_catalog.pg_attribute AS a
+            WHERE a.attrelid = v_registry AND a.attnum > 0 AND NOT a.attisdropped
+              AND a.attname = ANY (c_columns)) <> 4
+       OR EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_attribute AS a
+            WHERE a.attrelid = v_registry AND a.attnum > 0 AND NOT a.attisdropped
+              AND pg_catalog.has_column_privilege(c_projection, v_registry, a.attnum, 'SELECT')
+                  IS DISTINCT FROM (a.attname = ANY (c_columns)))
+       OR pg_catalog.has_any_column_privilege(c_projection, v_registry, 'INSERT')
+       OR pg_catalog.has_any_column_privilege(c_projection, v_registry, 'UPDATE')
+       OR pg_catalog.has_any_column_privilege(c_projection, v_registry, 'REFERENCES')
+       OR pg_catalog.has_table_privilege(c_projection, v_registry,
+              'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')
+       OR (SELECT pg_catalog.count(*)
+             FROM pg_catalog.pg_attribute AS a,
+                  LATERAL pg_catalog.aclexplode(a.attacl) AS x
+            WHERE a.attrelid = v_registry AND a.attname = ANY (c_columns)
+              AND x.grantee = c_projection::pg_catalog.regrole
+              AND x.privilege_type = 'SELECT' AND NOT x.is_grantable) <> 4 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{_MSG_PREREQUISITE}';
+    END IF;
+END
+$prerequisites$;
+"""
+
+T004_SQL: Final = f"""{_PREREQUISITE_GUARD}
 -- t004:step:tables
 CREATE TABLE {_S}.ref_event_levels (
     code varchar(32) PRIMARY KEY,
