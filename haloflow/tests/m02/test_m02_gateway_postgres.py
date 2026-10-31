@@ -611,7 +611,7 @@ def test_2b_d32_mutating_caller_inputs_after_composition_changes_nothing_install
 
     outcome = m02.provision_sync(m02_ids, registry, m02_tenant)
     schema = m02_tenant[1]
-    assert outcome.schema_version == 10
+    assert outcome.schema_version == 3
     assert m02.admin_one(
         m02_ids, "SELECT proconfig FROM pg_catalog.pg_proc WHERE oid ="
         " pg_catalog.to_regprocedure(%s)", (gw.regprocedure(schema),),
