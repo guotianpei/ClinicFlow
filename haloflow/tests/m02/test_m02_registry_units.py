@@ -122,9 +122,10 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
         ("t005_m02_events", None, False),
         ("t006_m02_outbox", None, False),
         ("t007_m02_envelope_allowlist", None, False),
-        ("t008_m02_canon_and_append", "haloflow_m02_append_owner", True),
-        ("t009_m02_enqueue", "haloflow_m02_projection_owner", True),
-        ("t010_m02_envelope_read", "haloflow_m02_read_owner", True),
+        ("t008_m02_canon", "haloflow_m02_append_owner", True),
+        ("t009_m02_append", "haloflow_m02_append_owner", True),
+        ("t010_m02_enqueue", "haloflow_m02_projection_owner", True),
+        ("t011_m02_envelope_read", "haloflow_m02_read_owner", True),
     ]
 
 

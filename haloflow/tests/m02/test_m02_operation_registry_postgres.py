@@ -204,7 +204,7 @@ def test_2a_t06_schema_version_is_the_production_target(
         m02_ids,
         "SELECT schema_version FROM shared.tenants WHERE tenant_id = %s",
         (production_tenant[0],),
-    ) == (3,)
+    ) == (11,)
 
 
 # --- 2A-P01 .. P04 ---------------------------------------------------------

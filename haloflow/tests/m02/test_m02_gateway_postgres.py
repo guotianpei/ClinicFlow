@@ -393,7 +393,8 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
     assert outcome.schema_version == 11
-    assert calls == [m02_tenant[1]]
+    # One installed-state verification per profiled typed unit: t003 and t008-t011.
+    assert calls == [m02_tenant[1]] * 5
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
 
