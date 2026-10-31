@@ -116,6 +116,8 @@ jobs:
       # 20261031T152545Z): the service test module must pass on the unmodified
       # source and fail on each single-change mutant; the source is restored and its
       # SHA-256 re-checked. Results go to the evidence and to one notice.
+      # The checker's own controls first (F-MUT1): synthetic evidence, no database.
+      - run: $VENV/bin/pytest scripts/test_m02_observation_mutants.py -q -p no:cacheprovider
       - run: >-
           python3 -I scripts/m02_observation_mutants.py
           --pytest "$VENV/bin/pytest"

@@ -29,7 +29,10 @@ Error classification (G2 decision v1):
   cancellation arriving during COMMIT (F-OBS1, Codex 20261031T152545Z). This is
   conservative; an idempotent retry resolves it in either direction. Before the
   marker, cancellation propagates unchanged and the transaction rolls back. Only
-  the process-level KeyboardInterrupt and SystemExit are never converted.
+  the process-level KeyboardInterrupt and SystemExit are never converted. Process
+  termination is not a promise of rollback: a caller recovering from it, as from
+  `AppendCommitUnknown`, retries with the same `producer_dedupe_key`, the durable
+  idempotency key, and receives `existing` or `appended`.
 
 Nothing here logs: the command carries metadata and identifiers (PA-18).
 """

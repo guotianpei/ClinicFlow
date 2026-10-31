@@ -886,3 +886,187 @@ async def test_fobs1_pre_marker_cancellation_propagates_and_rolls_back(
         again = await foundation.record_observation(context, observation, writer)
     assert again.appended_or_existing == "appended"
     assert _delta(_counts(part_a, m02_ids, tenant[1]), before) == (1, 2, 1, 1)
+
+
+# --- Fallback reason codes (Codex 20261031T155616Z): the bounded error contract -------------
+#
+# These rows inject at M02's own append call: the spy-style seam replaces
+# TenantRepositoryHandle.fetch_one for the append key only. The database errors are
+# REAL psycopg errors, raised by PostgreSQL for the stated SQLSTATE and message.
+
+
+def _real_db_error(m02_ids: Any, sqlstate: str, message: str) -> psycopg.Error:
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        try:
+            probe = sql.SQL(
+                "DO $$BEGIN RAISE EXCEPTION USING ERRCODE = {}, MESSAGE = {}; END$$"
+            ).format(sql.Literal(sqlstate), sql.Literal(message))
+            conn.execute(probe)
+        except psycopg.Error as error:
+            assert error.sqlstate == sqlstate
+            return error
+    raise AssertionError("the probe did not raise")
+
+
+def _seam_append(monkeypatch: pytest.MonkeyPatch, outcome: Any) -> list[int]:
+    """Replace the append dispatch only: raise `outcome` if it is an exception,
+    else return it as the row. Other statements (the callback's) are untouched."""
+
+    from haloflow.m01.gateway import TenantRepositoryHandle
+
+    calls: list[int] = []
+    original = TenantRepositoryHandle.fetch_one
+
+    async def fetch_one(handle: Any, key: str, params: Any = None) -> Any:
+        if key != APPEND:
+            return await original(handle, key, params)
+        calls.append(1)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(TenantRepositoryHandle, "fetch_one", fetch_one)
+    return calls
+
+
+def _assert_sanitized(error: BaseException, *leaks: str) -> None:
+    assert error.__cause__ is None
+    assert error.__context__ is None or error.__suppress_context__
+    chain: list[BaseException] = []
+    link: BaseException | None = error
+    while link is not None:
+        chain.append(link)
+        link = link.__cause__ or (None if link.__suppress_context__ else link.__context__)
+    assert not any(isinstance(item, psycopg.Error) for item in chain)
+    rendered = "".join(traceback.format_exception(error)) + repr(error) + str(error)
+    for leak in leaks:
+        assert leak not in rendered, leak
+
+
+@pytest.mark.parametrize(
+    ("sqlstate", "message", "reason"),
+    [
+        ("P0001", "tenant binding absent", "TENANT_BINDING_ABSENT"),
+        ("P0001", "tenant binding inactive", "TENANT_BINDING_INACTIVE"),
+        ("P0001", "tenant binding mismatch", "TENANT_BINDING_MISMATCH"),
+        ("22023", "tenant context invalid", "TENANT_CONTEXT_INVALID"),
+        ("P0001", "CANARY-unlisted-code-5e1", "APPEND_UNAVAILABLE"),
+        ("40001", "CANARY-serialization-9b2", "APPEND_UNAVAILABLE"),
+        ("XX000", "CANARY-internal-3c7", "APPEND_UNAVAILABLE"),
+    ],
+    ids=["binding-absent", "binding-inactive", "binding-mismatch", "context-22023",
+         "unlisted-p0001", "other-40001", "other-xx000"],
+)
+async def test_map_database_error_to_fixed_reason_code(
+    part_a: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    sqlstate: str,
+    message: str,
+    reason: str,
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    injected = _real_db_error(m02_ids, sqlstate, message)
+    before = _counts(part_a, m02_ids, tenant[1])
+    callback: list[Any] = []
+
+    async def apply(handle: Any, result: Any) -> None:
+        callback.append(result)
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        calls = _seam_append(monkeypatch, injected)
+        with pytest.raises(obs.AppendFailed) as caught:
+            await foundation.record_observation(
+                context, _observation(obs, part_a, subject, source), apply
+            )
+    assert calls == [1]
+    assert caught.value.reason_code == reason
+    _assert_sanitized(caught.value, message, sqlstate)
+    assert callback == []
+    assert _counts(part_a, m02_ids, tenant[1]) == before
+
+
+_GOOD_RESULT = {
+    "schema_version": 1,
+    "event_id": "00000000-0000-4000-8000-0000000000aa",
+    "appended_or_existing": "appended",
+    "handoff_state": "enqueued",
+}
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        None,
+        (),
+        ("not-an-object",),
+        ({},),
+        ({**_GOOD_RESULT, "extra": 1},),
+        ({**_GOOD_RESULT, "schema_version": 2},),
+        ({**_GOOD_RESULT, "event_id": "CANARY-not-a-uuid"},),
+        ({**_GOOD_RESULT, "appended_or_existing": "maybe"},),
+        ({**_GOOD_RESULT, "handoff_state": None},),
+        (_GOOD_RESULT, _GOOD_RESULT),
+    ],
+    ids=["no-row", "empty-row", "string", "empty-object", "extra-key", "version-2",
+         "bad-uuid", "bad-outcome", "null-handoff", "two-columns"],
+)
+async def test_map_malformed_function_result_is_result_invalid(
+    part_a: ModuleType,
+    m02_ids: Any,
+    tenant: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    row: Any,
+) -> None:
+    subject, source = _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    before = _counts(part_a, m02_ids, tenant[1])
+    callback: list[Any] = []
+
+    async def apply(handle: Any, result: Any) -> None:
+        callback.append(result)
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        calls = _seam_append(monkeypatch, row)
+        with pytest.raises(obs.AppendFailed) as caught:
+            await foundation.record_observation(
+                context, _observation(obs, part_a, subject, source), apply
+            )
+    assert calls == [1]
+    assert caught.value.reason_code == "APPEND_RESULT_INVALID"
+    _assert_sanitized(caught.value, "CANARY-not-a-uuid")
+    assert callback == []
+    assert _counts(part_a, m02_ids, tenant[1]) == before
+
+
+async def test_map_control_a_well_formed_seam_result_is_accepted(
+    part_a: ModuleType, m02_ids: Any, tenant: tuple[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Positive control for the seam: a well-formed row is parsed and the callback runs
+    (the domain write is the test's own; no event row exists, so nothing commits that
+    the counted tables would see other than the domain row)."""
+
+    _ready(part_a, m02_ids, tenant[1])
+    obs = _obs_module()
+    seen: list[Any] = []
+
+    async def apply(handle: Any, result: Any) -> None:
+        seen.append(result)
+
+    async with _runtime(part_a, m02_ids) as runtime:
+        foundation = obs.EventFoundation(runtime.gateway, producer_service=part_a.TEST_PRODUCER)
+        context = await _context(part_a, runtime, tenant[0], str(uuid.uuid4()))
+        _seam_append(monkeypatch, (_GOOD_RESULT,))
+        result = await foundation.record_observation(
+            context, _observation(obs, part_a, str(uuid.uuid4()), str(uuid.uuid4())), apply
+        )
+    assert (str(result.event_id), result.appended_or_existing, result.handoff_state) == (
+        _GOOD_RESULT["event_id"], "appended", "enqueued"
+    )
+    assert seen == [result]
