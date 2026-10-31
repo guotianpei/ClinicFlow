@@ -403,7 +403,8 @@ class TenantMigrationRunner:
                     rows = await (
                         await connection.execute(
                             installed_state.INSTALLED_FUNCTION_QUERY,
-                            (schema_key, profile.function_name),
+                            (list(profile.argument_types), profile.return_type,
+                             schema_key, profile.function_name),
                         )
                     ).fetchall()
                     installed_state.compare_installed_function(

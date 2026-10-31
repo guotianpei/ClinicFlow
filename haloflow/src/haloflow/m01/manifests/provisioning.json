@@ -1,5 +1,17 @@
 {
   "execution_role_profiles": {
+    "haloflow_m02_append_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE",
+        "CREATE"
+      ]
+    },
     "haloflow_m02_lock_owner": {
       "login": false,
       "superuser": false,
@@ -7,12 +19,78 @@
       "createrole": false,
       "replication": false,
       "bypassrls": false,
-      "tenant_schema_privileges": ["USAGE", "CREATE"]
+      "tenant_schema_privileges": [
+        "USAGE",
+        "CREATE"
+      ]
+    },
+    "haloflow_m02_projection_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE",
+        "CREATE"
+      ]
+    },
+    "haloflow_m02_read_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE",
+        "CREATE"
+      ]
+    },
+    "haloflow_m05_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE"
+      ]
     }
   },
   "role_memberships": [
     {
+      "role": "haloflow_m02_append_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
       "role": "haloflow_m02_lock_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
+      "role": "haloflow_m02_projection_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
+      "role": "haloflow_m02_read_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
+      "role": "haloflow_m05_owner",
       "member": "haloflow_migrator",
       "set": true,
       "inherit": false,
@@ -21,25 +99,35 @@
   ],
   "tenant_schema_role_privileges": {
     "haloflow_provisioner": {
-      "privileges": ["USAGE", "CREATE"],
+      "privileges": [
+        "USAGE",
+        "CREATE"
+      ],
       "is_grantable": false,
       "grantor": "haloflow_provisioner",
       "role_class": "owner"
     },
     "haloflow_migrator": {
-      "privileges": ["USAGE", "CREATE"],
+      "privileges": [
+        "USAGE",
+        "CREATE"
+      ],
       "is_grantable": false,
       "grantor": "haloflow_provisioner",
       "role_class": "infrastructure"
     },
     "haloflow_runtime": {
-      "privileges": ["USAGE"],
+      "privileges": [
+        "USAGE"
+      ],
       "is_grantable": false,
       "grantor": "haloflow_provisioner",
       "role_class": "infrastructure"
     },
     "haloflow_audit_projector": {
-      "privileges": ["USAGE"],
+      "privileges": [
+        "USAGE"
+      ],
       "is_grantable": false,
       "grantor": "haloflow_provisioner",
       "role_class": "infrastructure"
@@ -50,7 +138,9 @@
       "role": "haloflow_runtime",
       "table": "operation_registry",
       "narrows": "tenant_schema:business_dml",
-      "privileges": ["SELECT"]
+      "privileges": [
+        "SELECT"
+      ]
     }
   ]
 }

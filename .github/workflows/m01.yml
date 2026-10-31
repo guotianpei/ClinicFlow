@@ -69,6 +69,35 @@ jobs:
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
       - run: $VENV/bin/pytest tests/m01 tests/m02 -q -rA
+        id: pytest
+        # The JUnit report and the session record (ci/ci_pytest_session.py: pytest's
+        # own final exit status and collected count) are requested through this
+        # step's environment only, so the gated one-line command above (resolved by
+        # gate-reachability) is unchanged and the later reachability specimen runs
+        # cannot overwrite either file. ci/ holds only the plugin and the manifest.
+        env:
+          PYTHONPATH: ${{ github.workspace }}/haloflow/ci
+          CI_PYTEST_SESSION_FILE: ${{ runner.temp }}/verify-evidence/pytest/session.json
+          PYTEST_ADDOPTS: >-
+            -p ci_pytest_session
+            -o junit_family=xunit1
+            --junitxml=${{ runner.temp }}/verify-evidence/pytest/junit.xml
+      # Diagnostic only: complete node classification saved with the evidence, and
+      # notices (check-run annotations) with status, counts and the non-passing
+      # list. Never changes the job outcome; the gate is pytest's exit status above.
+      - if: ${{ !cancelled() }}
+        env:
+          PYTEST_OUTCOME: ${{ steps.pytest.outcome }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: >-
+          python3 -I scripts/ci_test_report.py
+          --junit "$RUNNER_TEMP/verify-evidence/pytest/junit.xml"
+          --session "$RUNNER_TEMP/verify-evidence/pytest/session.json"
+          --manifest ci/expected-red.json
+          --out "$RUNNER_TEMP/verify-evidence/pytest/classification.json"
+          --pytest-outcome "$PYTEST_OUTCOME"
+          --source-sha "$GITHUB_SHA"
+          --head-sha "$HEAD_SHA"
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.
@@ -83,6 +112,16 @@ jobs:
           --venv "$VENV"
           --workflow ../.github/workflows/m01.yml
           --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
+      # UC1 part A mutation controls for haloflow.m02.observation (Codex
+      # 20261031T152545Z): the service test module must pass on the unmodified
+      # source and fail on each single-change mutant; the source is restored and its
+      # SHA-256 re-checked. Results go to the evidence and to one notice.
+      # The checker's own controls first (F-MUT1): synthetic evidence, no database.
+      - run: $VENV/bin/pytest scripts/test_m02_observation_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/m02_observation_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

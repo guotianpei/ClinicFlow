@@ -14,12 +14,20 @@ from collections.abc import Callable, Iterator, Sequence
 from types import ModuleType
 
 import m02_support
+import part_a_support
 import pytest
 
 
 @pytest.fixture
 def m02() -> ModuleType:
     return m02_support
+
+
+@pytest.fixture
+def part_a() -> ModuleType:
+    """UC1 part A frozen manifest and oracles (tests/m02/part_a_support.py)."""
+
+    return part_a_support
 
 
 @pytest.fixture(scope="session")
@@ -65,7 +73,10 @@ def production_tenant(
     try:
         # No feature assertion here (Codex P1): rows assert installation and
         # version in their own bodies, so the baseline is behaviour-red, not ERROR.
-        m02_support.provision_sync(m02_ids, m02_support.production_registry(), tenant)
+        m02_support.provision_sync(
+            m02_ids, m02_support.production_registry(), tenant,
+            supported=m02_support.PRODUCTION_SUPPORTED,
+        )
         yield tenant
     finally:
         # Codex P2: cleanup runs even when provisioning fails before `yield`.

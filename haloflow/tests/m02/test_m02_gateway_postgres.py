@@ -33,7 +33,10 @@ def config_for(schema: str) -> list[str]:
 
 
 def provision_production(ids: m02.Identities, tenant: tuple[str, str]) -> Any:
-    return m02.provision_sync(ids, m02.production_registry(), tenant)
+    return m02.provision_sync(
+        ids, m02.production_registry(), tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
 
 
 # --- D01 to D03: installed shape and exact ACL ----------------------------------
@@ -389,8 +392,9 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 3
-    assert calls == [m02_tenant[1]]
+    assert outcome.schema_version == 11
+    # One installed-state verification per profiled typed unit: t003 and t008-t011.
+    assert calls == [m02_tenant[1]] * 5
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
 
@@ -454,8 +458,13 @@ def test_2b_d20_control_the_same_bare_schema_route_installs_on_clean_defaults(
 ) -> None:
     gw.prepare_bare_schema(m02_ids, m02_tenant)
     outcomes = gw.run_migrations(m02_ids, m02.production_registry(), m02_tenant)
+    # UC1 part A (P-b, Codex ALIGN 20261031T131639Z): the production registry now
+    # continues through t011.
     assert [o.migration_id for o in outcomes if o.applied] == [
         "t001_m01_baseline", "t002_m02_operation_registry", T003,
+        "t004_m02_reference", "t005_m02_events", "t006_m02_outbox",
+        "t007_m02_envelope_allowlist", "t008_m02_canon", "t009_m02_append",
+        "t010_m02_enqueue", "t011_m02_envelope_read",
     ]
     assert gw.gateway_acl(m02_ids, m02_tenant[1]) == gw.EXPECTED_ACL
 
@@ -510,7 +519,7 @@ def test_2b_d24b_installed_state_drift_is_not_detected_on_skip(
 def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
-    assert provision_production(m02_ids, m02_tenant).schema_version == 3
+    assert provision_production(m02_ids, m02_tenant).schema_version == 11
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
@@ -522,7 +531,7 @@ def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
             " VALUES (%s, %s, 'provisioning', 1)",
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 3
+    assert provision_production(m02_ids, m02_tenant).schema_version == 11
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(

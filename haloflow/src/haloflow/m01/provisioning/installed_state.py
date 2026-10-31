@@ -37,6 +37,7 @@ from typing import Any, Final
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning.checksum import normalize_body
 from haloflow.m01.provisioning.codes import PreconditionCode
+from haloflow.m01.provisioning.function_policy import _TYPES as _POLICY_TYPES
 from haloflow.m01.provisioning.verification import VerificationMismatch
 from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
@@ -51,6 +52,11 @@ __all__ = [
 ]
 
 _SCHEMA_PLACEHOLDER: Final = "{schema}"
+# The closed scalar vocabulary of the function policy, reused read-only (F-INT1,
+# Codex ALIGN 20261031T142215Z). Imported, not redeclared, so the two cannot drift;
+# function_policy.py itself is unchanged because its bytes are pinned by the M01
+# phase-signature harness (sig_overlay EXPECTED_SNAPSHOT_SHA256).
+SCALAR_TYPES: Final[frozenset[str]] = _POLICY_TYPES
 # The declaration's spelling of a catalogue code (function_policy.py admits these
 # words; pg_proc stores the letters).
 _VOLATILITY: Final = {"volatile": "v", "stable": "s", "immutable": "i"}
@@ -104,6 +110,13 @@ class InstalledStateProfile:
         if type(self.argument_types) is not tuple or any(
             type(argument) is not str or not argument for argument in self.argument_types
         ):
+            raise _invalid()
+        # F-INT1: argument and return types come from the closed scalar vocabulary,
+        # checked here, before any name reaches catalogue resolution. No array,
+        # void, record or schema-qualified name is admitted.
+        if any(argument not in SCALAR_TYPES for argument in self.argument_types):
+            raise _invalid()
+        if self.return_type not in SCALAR_TYPES:
             raise _invalid()
         if type(self.installed_acl) is not tuple or not self.installed_acl:
             raise _invalid()
@@ -260,30 +273,45 @@ def check_profile_agreement(
 # ---------------------------------------------------------------------------
 
 # Executed only by the runner, after `SET LOCAL search_path = pg_catalog, pg_temp`,
-# with parameters `(schema_key, function_name)`. One row per pg_proc entry with
-# that namespace and name, over EVERY prokind. Types and modes are resolved to
-# booleans here, so the comparator never compares an OID with a text literal.
-# Supplied strings never enter SQL resolution: both are bound parameters.
+# with parameters `(argument_types, return_type, schema_key, function_name)`. One
+# row per pg_proc entry with that namespace and name, over EVERY prokind. Types and
+# modes are resolved to booleans here, so the comparator never compares an OID with
+# a text literal. Supplied strings are bound parameters only.
+#
+# F-INT1 (Codex ALIGN 20261031T142215Z): the argument and return identities are
+# relative to the profile, no longer fixed to `uuid`. Expected type names are
+# resolved by `pg_catalog.to_regtype` under the pinned pg_catalog-first path, and
+# the profile admits only the closed scalar vocabulary. An unresolvable name is
+# NULL, so its flag is false (fail closed). Both argument lists are re-aggregated
+# by ordinal into 1-based arrays: `proargtypes` is an `oidvector` with lower bound
+# 0, and array equality compares bounds, so a direct cast never equals the
+# expectation (measured: the t003 gateway itself failed that way).
 #
 # The ACL grantee OID is cast to int8 before it enters JSON. `oid` is not a
 # numeric type to jsonb, so an uncast OID becomes a JSON STRING, which the strict
 # parser below would (correctly) refuse as malformed. Measured in CI on
 # postgres:17, candidate v2: every real install failed VERIFICATION_FAILED.
 #
-# Columns (19, in this order): oid, prokind, pronargs, arg_is_uuid,
-# allargtypes_is_null, argmodes_all_in, nargdefaults_zero, rettype_is_uuid,
+# Columns (19, in this order): oid, prokind, pronargs, argtypes_match,
+# allargtypes_is_null, argmodes_all_in, nargdefaults_zero, rettype_matches,
 # proretset, lang_is_plpgsql, owner, prosecdef, provolatile, proparallel,
 # proisstrict, proconfig, prosrc, proacl_is_null, acl.
 INSTALLED_FUNCTION_QUERY: Final = """-- M01 installed function verification
 SELECT p.oid,
        p.prokind,
        p.pronargs,
-       (p.pronargs = 1
-        AND p.proargtypes[0] = 'pg_catalog.uuid'::pg_catalog.regtype) IS TRUE,
+       (ARRAY(SELECT installed.type_oid
+                FROM pg_catalog.unnest(p.proargtypes::pg_catalog.oid[])
+                     WITH ORDINALITY AS installed(type_oid, position)
+               ORDER BY installed.position)
+        = ARRAY(SELECT pg_catalog.to_regtype(expected.type_name)::pg_catalog.oid
+                  FROM pg_catalog.unnest(%s::pg_catalog.text[])
+                       WITH ORDINALITY AS expected(type_name, position)
+                 ORDER BY expected.position)) IS TRUE,
        p.proallargtypes IS NULL,
        (p.proargmodes IS NULL OR p.proargmodes = ARRAY['i']::pg_catalog."char"[]) IS TRUE,
        p.pronargdefaults = 0,
-       p.prorettype = 'pg_catalog.uuid'::pg_catalog.regtype,
+       (p.prorettype = pg_catalog.to_regtype(%s)::pg_catalog.oid) IS TRUE,
        p.proretset,
        (p.prolang = (SELECT l.oid
                        FROM pg_catalog.pg_language l
@@ -322,11 +350,11 @@ class _Observed:
     oid: int
     prokind: str
     pronargs: int
-    arg_is_uuid: bool
+    argtypes_match: bool
     allargtypes_is_null: bool
     argmodes_all_in: bool
     nargdefaults_zero: bool
-    rettype_is_uuid: bool
+    rettype_matches: bool
     proretset: bool
     lang_is_plpgsql: bool
     owner: str
@@ -384,11 +412,11 @@ def _parse_row(row: object) -> _Observed:
         raise VerificationMismatch
     if len(row) != _COLUMN_COUNT:
         raise VerificationMismatch
-    (oid, prokind, pronargs, arg_is_uuid, allargtypes_is_null, argmodes_all_in,
-     nargdefaults_zero, rettype_is_uuid, proretset, lang_is_plpgsql, owner, prosecdef,
+    (oid, prokind, pronargs, argtypes_match, allargtypes_is_null, argmodes_all_in,
+     nargdefaults_zero, rettype_matches, proretset, lang_is_plpgsql, owner, prosecdef,
      provolatile, proparallel, proisstrict, proconfig, prosrc, proacl_is_null, acl) = row
-    booleans = (arg_is_uuid, allargtypes_is_null, argmodes_all_in, nargdefaults_zero,
-                rettype_is_uuid, proretset, lang_is_plpgsql, prosecdef, proisstrict,
+    booleans = (argtypes_match, allargtypes_is_null, argmodes_all_in, nargdefaults_zero,
+                rettype_matches, proretset, lang_is_plpgsql, prosecdef, proisstrict,
                 proacl_is_null)
     if not (
         _is_int(oid)
@@ -406,9 +434,9 @@ def _parse_row(row: object) -> _Observed:
     ):
         raise VerificationMismatch
     return _Observed(
-        oid=oid, prokind=prokind, pronargs=pronargs, arg_is_uuid=arg_is_uuid,
+        oid=oid, prokind=prokind, pronargs=pronargs, argtypes_match=argtypes_match,
         allargtypes_is_null=allargtypes_is_null, argmodes_all_in=argmodes_all_in,
-        nargdefaults_zero=nargdefaults_zero, rettype_is_uuid=rettype_is_uuid,
+        nargdefaults_zero=nargdefaults_zero, rettype_matches=rettype_matches,
         proretset=proretset, lang_is_plpgsql=lang_is_plpgsql, owner=owner,
         prosecdef=prosecdef, provolatile=provolatile, proparallel=proparallel,
         proisstrict=proisstrict,
@@ -435,7 +463,8 @@ def compare_installed_function(
     for `schema_key`. Everything else expected comes from `profile`.
 
     0. Every row is parsed strictly; a malformed row of ANY identity is a mismatch.
-    1. Identity is `prokind == 'f'`, `pronargs == 1` and `arg_is_uuid`. Exactly one
+    1. Identity is `prokind == 'f'`, `pronargs` equal to the profile's argument
+       count, and `argtypes_match` (the ordered, exact argument types). Exactly one
        row must have it. Well-formed rows of another identity are ignored: there is
        no name-wide overload ban (R-B9.2(a)).
     2. Every other column of that row is asserted, including every selected boolean.
@@ -451,17 +480,21 @@ def compare_installed_function(
         or not all(_is_str(entry) for entry in expected_config)
     ):
         raise VerificationMismatch
-    # The query resolves exactly these to booleans; a profile expecting anything
-    # else cannot be verified by it, so it fails closed.
-    if (profile.prokind, profile.argument_types, profile.return_type, profile.language) != (
-        "f", ("uuid",), "uuid", "plpgsql"
-    ):
+    # The query verifies plpgsql functions only, and the profile's types must come
+    # from the closed scalar vocabulary. The profile enforces the vocabulary at
+    # construction; it is re-checked here defensively, so the comparator fails
+    # closed whatever reaches it (F-INT1).
+    if (profile.prokind, profile.language) != ("f", "plpgsql"):
+        raise VerificationMismatch
+    if any(t not in SCALAR_TYPES for t in (*profile.argument_types, profile.return_type)):
         raise VerificationMismatch
 
     parsed = [_parse_row(row) for row in rows]
     identity = [
         row for row in parsed
-        if row.prokind == "f" and row.pronargs == 1 and row.arg_is_uuid
+        if row.prokind == "f"
+        and row.pronargs == len(profile.argument_types)
+        and row.argtypes_match
     ]
     if len(identity) != 1:
         raise VerificationMismatch
@@ -471,7 +504,7 @@ def compare_installed_function(
         row.allargtypes_is_null
         and row.argmodes_all_in
         and row.nargdefaults_zero
-        and row.rettype_is_uuid
+        and row.rettype_matches
         and row.lang_is_plpgsql
     ):
         raise VerificationMismatch

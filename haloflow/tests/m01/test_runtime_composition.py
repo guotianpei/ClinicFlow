@@ -246,9 +246,9 @@ def test_l1_b2_one_declaration_object_reaches_every_consumer(spy: Spy) -> None:
     assert runtime.supported_schema_versions is declaration
 
     # Stored-value oracle (separate): equality only, no reliance on copy identity.
-    assert runtime.resolver._supported_schema_versions == frozenset({3})
-    assert runtime.gateway._supported_schema_versions == frozenset({3})
-    assert runtime.provisioner._supported_schema_versions == frozenset({3})
+    assert runtime.resolver._supported_schema_versions == frozenset({11})
+    assert runtime.gateway._supported_schema_versions == frozenset({11})
+    assert runtime.provisioner._supported_schema_versions == frozenset({11})
 
 
 def test_l1_b3_the_gateway_set_is_passed_explicitly(spy: Spy) -> None:
@@ -257,7 +257,7 @@ def test_l1_b3_the_gateway_set_is_passed_explicitly(spy: Spy) -> None:
     build_production_tenant_runtime(_dependencies(Counters()))
 
     assert spy.set_kw_passed["TenantTransactionGateway"] == [True]
-    assert spy.set_args["TenantTransactionGateway"][0] == frozenset({3})
+    assert spy.set_args["TenantTransactionGateway"][0] == frozenset({11})
     assert spy.set_args["TenantTransactionGateway"][0] != frozenset(range(1, 2))
 
 
@@ -586,11 +586,13 @@ def test_l1_g4_generic_test_composition_does_not_touch_the_declaration() -> None
         _dependencies(Counters()),
         registry=composition.build_production_tenant_migrations(),
         catalog=composition.build_production_catalog(),
-        supported_schema_versions=frozenset({1, 2, 3}),
+        # The wider test set must still contain the production target (11 since UC1
+        # part A); the row is about the declaration staying untouched.
+        supported_schema_versions=frozenset({1, 2, 3, 11}),
     )
     production = composition.build_production_tenant_runtime(_dependencies(Counters()))
 
-    assert wider.supported_schema_versions == frozenset({1, 2, 3})
-    assert production.supported_schema_versions == frozenset({3})
+    assert wider.supported_schema_versions == frozenset({1, 2, 3, 11})
+    assert production.supported_schema_versions == frozenset({11})
     declared = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert declared == frozenset({3})
+    assert declared == frozenset({11})

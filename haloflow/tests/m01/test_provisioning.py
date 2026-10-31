@@ -369,6 +369,15 @@ def test_the_production_registry_contains_no_test_units() -> None:
         "t001_m01_baseline",
         "t002_m02_operation_registry",
         "t003_m02_lock_operation",
+        # UC1 part A (P-b; Codex ALIGN 20261031T131639Z, C1).
+        "t004_m02_reference",
+        "t005_m02_events",
+        "t006_m02_outbox",
+        "t007_m02_envelope_allowlist",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
     )
     assert not any(unit.is_test_unit for unit in registry)
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
@@ -382,9 +391,13 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     lock gateway". This pins the number only. It claims nothing about any runtime
     accepting version-3 tenants (L-1, a carried release prerequisite), nor about
     upgrading active version-2 tenants (L-6).
+
+    UC1 part A (D2, Codex ALIGN 20261031T015048Z; C1 20261031T131639Z) extends it
+    through `t011_m02_envelope_read`: the production target is version 11. The
+    number only; no production tenant at versions 1-10 and no upgrade path is claimed.
     """
 
-    assert build_production_tenant_migrations().target_version == 3
+    assert build_production_tenant_migrations().target_version == 11
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1192,10 +1205,20 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
 
     registry = build_production_tenant_migrations()
 
+    # UC1 part A adds three module roles, one per typed gateway unit t008-t011 (C1);
+    # t004-t007 are migrator-owned ordinary units.
     assert [unit.execution_role for unit in registry.units] == [
         None,
         None,
         "haloflow_m02_lock_owner",
+        None,
+        None,
+        None,
+        None,
+        "haloflow_m02_append_owner",
+        "haloflow_m02_append_owner",
+        "haloflow_m02_projection_owner",
+        "haloflow_m02_read_owner",
     ]
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
 
@@ -1261,6 +1284,15 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
         "t001_m01_baseline",
         "t002_m02_operation_registry",
         "t003_m02_lock_operation",
+        # UC1 part A (P-b; Codex ALIGN 20261031T131639Z, C1).
+        "t004_m02_reference",
+        "t005_m02_events",
+        "t006_m02_outbox",
+        "t007_m02_envelope_allowlist",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
     )
     assert len(registry.units[0].checksum) == 64
 
@@ -2530,8 +2562,18 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
                 assert params == ("haloflow_migrator",)
 
         async def fetchall(self):
-            # Healthy shipped membership graph: the one declared edge (E-10b).
-            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
+            # Healthy shipped membership graph: every declared edge (E-10b; UC1 part A
+            # adds the append, projection, read and M05 owners, A4).
+            return [
+                (role, "haloflow_migrator", True, False, False)
+                for role in (
+                    "haloflow_m02_append_owner",
+                    "haloflow_m02_lock_owner",
+                    "haloflow_m02_projection_owner",
+                    "haloflow_m02_read_owner",
+                    "haloflow_m05_owner",
+                )
+            ]
 
         async def fetchone(self):
             return attribute_row
@@ -2569,8 +2611,18 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
                 seen.append(params)
 
         async def fetchall(self):
-            # Healthy shipped membership graph: the one declared edge (E-10b).
-            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
+            # Healthy shipped membership graph: every declared edge (E-10b; UC1 part A
+            # adds the append, projection, read and M05 owners, A4).
+            return [
+                (role, "haloflow_migrator", True, False, False)
+                for role in (
+                    "haloflow_m02_append_owner",
+                    "haloflow_m02_lock_owner",
+                    "haloflow_m02_projection_owner",
+                    "haloflow_m02_read_owner",
+                    "haloflow_m05_owner",
+                )
+            ]
 
         async def fetchone(self):
             return (False,)

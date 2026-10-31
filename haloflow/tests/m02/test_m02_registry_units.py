@@ -38,15 +38,29 @@ def test_2a_u01_production_registry_ids_and_target_version() -> None:
         "t001_m01_baseline",
         "t002_m02_operation_registry",
         "t003_m02_lock_operation",
+        "t004_m02_reference",
+        "t005_m02_events",
+        "t006_m02_outbox",
+        "t007_m02_envelope_allowlist",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
     )
-    assert registry.target_version == 3
+    assert registry.target_version == 11
 
 
 def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
-    """R-B0 (X-3, X-4): the M02 unit set and exactly one execution role are approved."""
+    """R-B0 (X-3, X-4): the M02 unit set and the approved execution roles.
+
+    UC1 part A (Codex ALIGN 20261031T015048Z, amended 20261031T131639Z C1): t004-t007
+    are migrator-owned ordinary units; t008-t011 are typed units, one function each.
+    """
 
     from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_TENANT_MIGRATIONS
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS
+    from haloflow.m02 import part_a_gateways as gw
+    from haloflow.m02 import part_a_units as pa
     from haloflow.m02.units import (
         M02_TENANT_MIGRATIONS,
         T002_MIGRATION_ID,
@@ -56,10 +70,28 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
     )
 
     assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
-    assert frozenset({"haloflow_m02_lock_owner"}) == APPROVED_EXECUTION_ROLES
+    assert (
+        frozenset(
+            {
+                "haloflow_m02_lock_owner",
+                "haloflow_m02_append_owner",
+                "haloflow_m02_projection_owner",
+                "haloflow_m02_read_owner",
+            }
+        )
+        == APPROVED_EXECUTION_ROLES
+    )
     assert dict(M02_TENANT_MIGRATIONS) == {
         T002_MIGRATION_ID: T002_SQL,
         T003_MIGRATION_ID: T003_DEFINITION,
+        pa.T004_MIGRATION_ID: pa.T004_SQL,
+        pa.T005_MIGRATION_ID: pa.T005_SQL,
+        pa.T006_MIGRATION_ID: pa.T006_SQL,
+        pa.T007_MIGRATION_ID: pa.T007_SQL,
+        gw.T008_MIGRATION_ID: gw.T008_DEFINITION,
+        gw.T009_MIGRATION_ID: gw.T009_DEFINITION,
+        gw.T010_MIGRATION_ID: gw.T010_DEFINITION,
+        gw.T011_MIGRATION_ID: gw.T011_DEFINITION,
     }
     assert T002_MIGRATION_ID == "t002_m02_operation_registry"
     assert T003_MIGRATION_ID == "t003_m02_lock_operation"
@@ -70,8 +102,8 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
 def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
     """R-A8 (B-beta), re-verified through the CG-4 route classification (X-5).
 
-    No production unit is a role-bearing ORDINARY unit; exactly one unit bears a
-    role, and it is the typed gateway unit.
+    No production unit is a role-bearing ORDINARY unit; every role-bearing unit
+    is a typed gateway unit (t003; UC1 part A t008-t011, one function each).
     """
 
     from haloflow.composition import build_production_tenant_migrations
@@ -86,6 +118,14 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
         ("t001_m01_baseline", None, False),
         ("t002_m02_operation_registry", None, False),
         ("t003_m02_lock_operation", "haloflow_m02_lock_owner", True),
+        ("t004_m02_reference", None, False),
+        ("t005_m02_events", None, False),
+        ("t006_m02_outbox", None, False),
+        ("t007_m02_envelope_allowlist", None, False),
+        ("t008_m02_canon", "haloflow_m02_append_owner", True),
+        ("t009_m02_append", "haloflow_m02_append_owner", True),
+        ("t010_m02_enqueue", "haloflow_m02_projection_owner", True),
+        ("t011_m02_envelope_read", "haloflow_m02_read_owner", True),
     ]
 
 
@@ -132,6 +172,7 @@ def test_2b_u_module_scope() -> None:
 
     package = Path("src/haloflow/m02")
     sources = {path.name: path.read_text() for path in package.glob("*.py")}
+    # UC1 part A adds five modules; none binds a LOCK_ name or names the gateway.
     assert set(sources) == {
         "__init__.py",
         "roles.py",
@@ -139,6 +180,14 @@ def test_2b_u_module_scope() -> None:
         "gateway_profile.py",
         "codes.py",
         "lock.py",
+        "canon.py",
+        "registry_validation.py",
+        "part_a_units.py",
+        "part_a_gateways.py",
+        "observation.py",
+        # Codex ALIGN 20261031T142215Z item 6: the approved amendment for the one
+        # production statement used by the observation service.
+        "statements.py",
     }
     bound = {
         name: set(re.findall(r"^(LOCK_[A-Z0-9_]*)\s*[:=]", source, re.MULTILINE))
@@ -151,6 +200,12 @@ def test_2b_u_module_scope() -> None:
         "gateway_profile.py": {"LOCK_OPERATION_PROFILE"},
         "codes.py": set(),
         "lock.py": set(),
+        "canon.py": set(),
+        "registry_validation.py": set(),
+        "part_a_units.py": set(),
+        "part_a_gateways.py": set(),
+        "observation.py": set(),
+        "statements.py": set(),
     }
     assert {member.name for member in LockRefusalCode} == {
         "LOCK_OPERATION_ID_REQUIRED",

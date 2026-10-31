@@ -7,6 +7,12 @@
   "modules": [
     "haloflow.composition:APPROVED_MODULE_STATEMENTS"
   ],
-  "statements": {},
+  "statements": {
+    "m02.observation.append": {
+      "mode": "write",
+      "required_capability": "m02.observation.append",
+      "sha256": "44ee7e1ce8c49ca382722bd1cda5a2d2c4a83754049060bc02904ab1a7f98906"
+    }
+  },
   "composition_root": "src/haloflow/composition.py"
 }

@@ -198,7 +198,7 @@ async def test_l1_e1a_e1b_a_version_three_tenant_is_resolved_and_admitted(
     async with _dependencies(m02_ids) as deps:
         runtime = build_production_tenant_runtime(deps)
         outcome = await _provision_through(runtime, m02_tenant)
-        assert outcome.schema_version == 3
+        assert outcome.schema_version == 11
 
         context = await _resolve(runtime, m02_tenant[0])  # E1a
         assert (context.tenant_id, context.schema_key) == m02_tenant
@@ -290,7 +290,9 @@ async def test_l1_e2_the_resolver_refuses_versions_one_two_and_four(
 
 
 @pytest.mark.postgres
-@pytest.mark.parametrize("version", [1, 2, 4])
+# Production target 11 (Codex ALIGN 20261031T142215Z, item 5): 3 is the previous
+# target, 12 is above the target; 1 and 2 stay as the older baseline versions.
+@pytest.mark.parametrize("version", [1, 2, 3, 12])
 async def test_l1_e3a_a_row_leaving_the_set_is_refused_before_the_callback(
     m02: ModuleType, m02_ids: Any, m02_tenant: tuple[str, str], version: int
 ) -> None:
@@ -332,7 +334,7 @@ async def test_l1_e3b_a_missing_registry_row_is_refused_before_the_callback(
             m02,
             m02_ids,
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version) "
-            "VALUES (%s, %s, 'active', 3)",
+            "VALUES (%s, %s, 'active', 11)",
             (tenant_id, schema_key),
         )
         == 1
@@ -414,7 +416,7 @@ async def test_l1_e3d_a_schema_key_mismatch_is_refused_before_the_callback(
             "FROM shared.tenants WHERE tenant_id = %s",
             (tenant_id,),
         )
-        assert row == (tenant_id, other_key, "active", 3)
+        assert row == (tenant_id, other_key, "active", 11)
         assert other_key != context.schema_key
 
         callback = Callback()
@@ -504,9 +506,9 @@ def test_l1_g3_a_fixture_widened_set_cannot_reach_the_declaration(
             provisioner_connect=object(),  # type: ignore[arg-type]
         )
     )
-    assert runtime.supported_schema_versions == frozenset({3})
-    assert runtime.resolver._supported_schema_versions == frozenset({3})
-    assert runtime.gateway._supported_schema_versions == frozenset({3})
-    assert runtime.provisioner._supported_schema_versions == frozenset({3})
+    assert runtime.supported_schema_versions == frozenset({11})
+    assert runtime.resolver._supported_schema_versions == frozenset({11})
+    assert runtime.gateway._supported_schema_versions == frozenset({11})
+    assert runtime.provisioner._supported_schema_versions == frozenset({11})
     declared = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert declared == frozenset({3})
+    assert declared == frozenset({11})
