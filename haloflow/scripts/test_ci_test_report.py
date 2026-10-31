@@ -165,7 +165,7 @@ def test_unexpected_skip_is_listed_but_clean(tmp_path: Path) -> None:
     run = _pytest(tmp_path, {"test_a.py": body})
     report, lines = _build(run, _manifest(tmp_path, []))
     assert report["status"] == "PASS"
-    assert "skipped test_a.py::test_s" in lines[1]
+    assert _decoded_listing(lines) == [("skipped", "test_a.py::test_s")]
 
 
 # --- incomplete or abnormal sessions (F-CIR1) ---------------------------------------
@@ -343,6 +343,26 @@ def test_malformed_or_inconsistent_report_is_unknown(
 # --- node ids, escaping, chunking ------------------------------------------------
 
 
+def _decode(text: str) -> str:
+    return text.replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
+
+
+def _decoded_listing(lines: list[str]) -> list[tuple[str, str]]:
+    """What a reader of the annotations API gets back: decode each list notice and
+    parse it with the reporter's own inverse."""
+
+    out: list[tuple[str, str]] = []
+    for line in lines[1:]:
+        title = line.split("::", 2)[1]
+        if title.startswith("notice title=ci-test-report list") and "TRUNCATED" not in title:
+            out += r.parse_listing(_decode(line.split("::", 2)[2]))
+    return out
+
+
+def _expected_listing(report: dict[str, Any]) -> list[tuple[str, str]]:
+    return sorted((cls, node) for node, cls in report["nodes"].items() if cls != "passed")
+
+
 def test_class_and_escaped_parameter_ids(tmp_path: Path) -> None:
     body = (
         "import pytest\nclass TestK:\n"
@@ -355,12 +375,37 @@ def test_class_and_escaped_parameter_ids(tmp_path: Path) -> None:
     assert len(report["nodes"]) == 4
     for line in lines:
         assert "\n" not in line and "\r" not in line
-        title = line.split("::", 2)[1]
-        assert "," not in title.split("=", 1)[1] and ":" not in title.split("=", 1)[1]
-    listing = lines[1].split("::", 2)[2]
-    assert "%25" in listing  # '%' escaped; the decoded lines are recoverable
-    decoded = listing.replace("%0A", "\n").replace("%0D", "\r").replace("%25", "%")
-    assert len(decoded.split("\n")) == 4
+        title = line.split("::", 2)[1].split("=", 1)[1]
+        assert "," not in title and ":" not in title
+    assert "%25" in lines[1]  # '%' escaped in the data
+    assert sorted(_decoded_listing(lines)) == _expected_listing(report)
+
+
+def test_listing_round_trips_within_the_measured_api_limit(tmp_path: Path) -> None:
+    """Real limits (no monkeypatch): long node ids across several files and classes;
+    every chunk's decoded message stays under the measured 4096-character API limit,
+    and the decoded chunks give back exactly the non-passing nodes."""
+
+    long = "x" * 120
+    files = {
+        f"test_{i}_{long}.py": (
+            "import pytest\n@pytest.mark.parametrize('v', range(25))\n"
+            f"def test_{long}(v):\n    assert False\n"
+        )
+        for i in range(4)
+    }
+    run = _pytest(tmp_path, files)
+    report, lines = _build(run, _manifest(tmp_path, []))
+    assert len(report["nodes"]) == 100
+    list_lines = [ln for ln in lines if "ci-test-report list " in ln.split("::", 2)[1]]
+    assert len(list_lines) > 1
+    for line in list_lines:
+        assert len(_decode(line.split("::", 2)[2]).encode()) < 4096
+    assert "TRUNCATED" not in " ".join(lines)
+    assert sorted(_decoded_listing(lines)) == _expected_listing(report)
+    titles = [ln.split("::", 2)[1] for ln in list_lines]
+    assert sum(int(t.rsplit(" ", 1)[1]) for t in titles) == 100
+    assert "listed=100/100" in lines[0]
 
 
 def test_listing_chunks_and_truncation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -374,13 +419,15 @@ def test_listing_chunks_and_truncation(tmp_path: Path, monkeypatch: pytest.Monke
     report, lines = _build(run, _manifest(tmp_path, []))
     assert len(report["nodes"]) == 30  # the JSON report is complete
     titles = [line.split("::", 2)[1] for line in lines]
-    assert titles[1:3] == [
-        "notice title=ci-test-report list 1/2",
-        "notice title=ci-test-report list 2/2",
-    ]
+    assert titles[1].startswith("notice title=ci-test-report list 1/2 nodes ")
+    assert titles[2].startswith("notice title=ci-test-report list 2/2 nodes ")
     assert titles[-1] == "notice title=ci-test-report list TRUNCATED"
-    shown = sum(len(line.split("::", 2)[2].split("%0A")) for line in lines[1:3])
+    shown = len(_decoded_listing(lines))
+    assert shown < 30
+    assert shown == sum(int(t.rsplit(" ", 1)[1]) for t in titles[1:3])
     assert f"listed={shown}/30" in lines[0]
+    for line in lines[1:3]:
+        assert len(_decode(line.split("::", 2)[2]).encode()) <= 200
 
 
 # --- manifest -------------------------------------------------------------------

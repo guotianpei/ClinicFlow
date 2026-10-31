@@ -55,7 +55,10 @@ from pathlib import Path
 from typing import Any
 
 SCHEMA = "haloflow.ci-test-report/v1"
-CHUNK_CHARS = 6000
+# Measured 2026-10-31 (run 41202862803): the check-run annotations API returns at
+# most 4096 characters of a notice message. Chunks stay below that with margin,
+# measured in UTF-8 bytes. At most 10 notices per step: summary + 8 + TRUNCATED.
+CHUNK_CHARS = 3800
 MAX_CHUNKS = 8
 
 _PRIORITY = {"error": 3, "failure": 2, "skipped": 1}
@@ -302,20 +305,75 @@ def build(
     return report, _notices(report)
 
 
-def _notices(report: dict[str, Any]) -> list[str]:
-    listed = [f"{cls} {node}" for node, cls in report["nodes"].items() if cls != "passed"]
-    chunks: list[list[str]] = [[]] if listed else []
+def _group_lines(report: dict[str, Any]) -> list[tuple[str, str]]:
+    """(header, member) pairs for every non-passing node, in a stable order.
+
+    header is ``"<class> <file>"``; member is the rest of the node id after
+    ``"<file>::"``. A reader rebuilds each node id as ``file + "::" + member``.
+    """
+
+    pairs: list[tuple[str, str]] = []
+    for node, cls in report["nodes"].items():
+        if cls == "passed":
+            continue
+        file, sep, rest = node.partition("::")
+        pairs.append((f"{cls} {file}", rest if sep else ""))
+    pairs.sort()
+    return pairs
+
+
+def _chunk(pairs: list[tuple[str, str]]) -> tuple[list[list[str]], list[int], int]:
+    """Self-contained chunks: each repeats its group header. Returns the chunk
+    lines, the node count per chunk and the number of nodes shown."""
+
+    chunks: list[list[str]] = []
+    counts: list[int] = []
     size = 0
     shown = 0
-    for line in listed:
-        if size + len(line) + 1 > CHUNK_CHARS and chunks[-1]:
+    current_header: str | None = None
+    for header, member in pairs:
+        line = "  " + member
+        need = len(line.encode()) + 1
+        if header != current_header:
+            need += len(header.encode()) + 1
+        if not chunks or (size + need > CHUNK_CHARS and counts[-1] > 0):
             if len(chunks) == MAX_CHUNKS:
                 break
             chunks.append([])
+            counts.append(0)
             size = 0
+            current_header = None
+            need = len(line.encode()) + 1 + len(header.encode()) + 1
+        if header != current_header:
+            chunks[-1].append(header)
+            current_header = header
         chunks[-1].append(line)
-        size += len(line) + 1
+        counts[-1] += 1
+        size += need
         shown += 1
+    return chunks, counts, shown
+
+
+def parse_listing(message: str) -> list[tuple[str, str]]:
+    """Inverse of one list chunk (decoded message text): (class, node id) pairs."""
+
+    out: list[tuple[str, str]] = []
+    header: tuple[str, str] | None = None
+    for line in message.split("\n"):
+        if line.startswith("  "):
+            if header is None:
+                raise ValueError("member line before any header")
+            member = line[2:]
+            out.append((header[0], f"{header[1]}::{member}" if member else header[1]))
+        else:
+            cls, _, file = line.partition(" ")
+            header = (cls, file)
+    return out
+
+
+def _notices(report: dict[str, Any]) -> list[str]:
+    pairs = _group_lines(report)
+    chunks, per_chunk, shown = _chunk(pairs)
     counts = " ".join(f"{k}={v}" for k, v in report["counts"].items()) or "none"
     summary = (
         f"status={report['status']} reason={report['reason']} "
@@ -323,17 +381,18 @@ def _notices(report: dict[str, Any]) -> list[str]:
         f"pytest={report['pytest_outcome']} session={report['pytest_session']} "
         f"manifest_source_ref={report['manifest_source_ref']} "
         f"manifest_entries={report['manifest_entries']} counts: {counts} "
-        f"listed={shown}/{len(listed)} chunks={len(chunks)} "
+        f"listed={shown}/{len(pairs)} chunks={len(chunks)} "
         f"junit_sha256={report['junit_sha256']} manifest_sha256={report['manifest_sha256']}"
     )
     out = [notice("ci-test-report summary", summary)]
-    for index, chunk in enumerate(chunks, start=1):
-        out.append(notice(f"ci-test-report list {index}/{len(chunks)}", "\n".join(chunk)))
-    if shown < len(listed):
+    for index, (chunk, n) in enumerate(zip(chunks, per_chunk, strict=True), start=1):
+        title = f"ci-test-report list {index}/{len(chunks)} nodes {n}"
+        out.append(notice(title, "\n".join(chunk)))
+    if shown < len(pairs):
         out.append(
             notice(
                 "ci-test-report list TRUNCATED",
-                f"{len(listed) - shown} nodes not listed; the uploaded JSON is complete",
+                f"{len(pairs) - shown} nodes not listed; the uploaded JSON is complete",
             )
         )
     return out
