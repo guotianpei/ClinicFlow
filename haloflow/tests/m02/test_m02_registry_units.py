@@ -185,6 +185,9 @@ def test_2b_u_module_scope() -> None:
         "part_a_units.py",
         "part_a_gateways.py",
         "observation.py",
+        # Codex ALIGN 20261031T142215Z item 6: the approved amendment for the one
+        # production statement used by the observation service.
+        "statements.py",
     }
     bound = {
         name: set(re.findall(r"^(LOCK_[A-Z0-9_]*)\s*[:=]", source, re.MULTILINE))
@@ -202,6 +205,7 @@ def test_2b_u_module_scope() -> None:
         "part_a_units.py": set(),
         "part_a_gateways.py": set(),
         "observation.py": set(),
+        "statements.py": set(),
     }
     assert {member.name for member in LockRefusalCode} == {
         "LOCK_OPERATION_ID_REQUIRED",

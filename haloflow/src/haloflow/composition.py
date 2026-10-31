@@ -10,8 +10,8 @@ rather than the catalogue the application actually runs.
 L-1: this module also declares the supported schema-version set and is the only
 production caller of `compose_tenant_runtime`, through
 `build_production_tenant_runtime`. No application entry point calls that yet
-(L-1W), and the production statement catalogue is empty, so the production path
-admits a version-11 tenant but serves no statement (L-1S).
+(L-1W). Since UC1 part A the production statement catalogue holds one statement,
+the M02 observation append, used by `haloflow.m02.observation` (L-1S).
 """
 
 from collections.abc import Mapping
@@ -40,12 +40,16 @@ from haloflow.m01.statements import (
 from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
 from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
 from haloflow.m02.roles import M02_EXECUTION_ROLES
+from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 
 # Approved module definition sets, in composition order. A new module is added
 # here and nowhere else, and doing so forces a manifest update in the same
 # commit because the manifest test composes through this tuple.
-APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS,)
+#
+# UC1 part A (Codex ALIGN 20261031T142215Z item 6): M02 contributes exactly the
+# observation append statement.
+APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS, M02_STATEMENTS)
 
 # Approved per-tenant migration definition sets. Same rule, same reason: one
 # composition path, so what a tenant schema receives is reviewable in one place.
