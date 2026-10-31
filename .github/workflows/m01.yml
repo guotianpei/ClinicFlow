@@ -63,12 +63,12 @@ jobs:
       # commands from these markers and fails closed if one is missing,
       # duplicated or does not start with the expected tool (CP2-2a I-9, 2A-C10).
       # gate-reachability: lint
-      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 tests/m05 alembic
       # gate-reachability: type
       - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
-      - run: $VENV/bin/pytest tests/m01 tests/m02 -q -rA
+      - run: $VENV/bin/pytest tests/m01 tests/m02 tests/m05 -q -rA
         id: pytest
         # The JUnit report and the session record (ci/ci_pytest_session.py: pytest's
         # own final exit status and collected count) are requested through this

@@ -11,9 +11,9 @@ LOAD_ENV = set -a; [ -f .env ] && . ./.env; set +a;
 
 # Lint/type/test scope currently mirrors .github/workflows/m01.yml (CP2-2a adds
 # M02 and the shared tests/conftest.py; architecture v4 §6.1).
-LINT_PATHS = src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+LINT_PATHS = src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 tests/m05 alembic
 TYPE_PATHS = src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
-TEST_PATHS = tests/m01 tests/m02
+TEST_PATHS = tests/m01 tests/m02 tests/m05
 
 .PHONY: help venv install run migrate revision test test-unit test-pg lint type check clean
 
