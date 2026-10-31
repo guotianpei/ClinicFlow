@@ -12,9 +12,13 @@ own exit status. The classification is a reading aid, not an acceptance.
 
 Run status (one of):
 - ``UNKNOWN``  the result cannot be classified: pytest did not run or was
-  cancelled, the report is missing, malformed or empty, a collection error or
-  interruption occurred, the report's own totals disagree with its test cases, or
-  pytest failed while the report shows no failure or error;
+  cancelled; the session record (ci/ci_pytest_session.py) is missing or
+  malformed; pytest's own exit status is not 0 or 1 (interrupted, internal or
+  usage error, nothing collected); the exit status disagrees with the step
+  outcome or with the raw report (exit 1 with no failure/error, exit 0 with
+  one); the report is missing, malformed or empty; its totals disagree with its
+  test cases; it does not contain every collected test; or a collection error
+  occurred;
 - ``PASS``     every collected node passed or was skipped and no manifest entry
   drifted;
 - ``EXPECTED_RED_ONLY``  every failure is a reviewed manifest entry, there are no
@@ -28,7 +32,12 @@ Node classes: ``passed``, ``skipped``, ``expected_failed``, ``unclassified_faile
 
 The manifest (JSON) is pinned and reviewed by hand: ``{"source_ref": str,
 "scope": str, "entries": [{"node": str, "rationale": str}, ...]}``. Nothing is
-ever added to it automatically.
+ever added to it automatically. ``source_ref`` (a 40-hex commit) and ``scope``
+are validated and shown in the report and the summary notice; any malformed
+shape makes the run UNKNOWN. Applicability: the entries were reviewed at
+``source_ref``; a reader must confirm the classified head descends from it (the
+CI checkout is shallow, so this script does not check ancestry). An empty
+manifest classifies every failure as unclassified (conservative).
 
 Stdlib only; run with ``python -I``.
 """
@@ -121,10 +130,27 @@ def parse_junit(data: bytes) -> Parsed:
     return parsed
 
 
-def load_manifest(data: bytes) -> dict[str, str]:
+@dataclass
+class Manifest:
+    source_ref: str
+    scope: str
+    entries: dict[str, str]
+
+
+_HEX = set("0123456789abcdef")
+
+
+def load_manifest(data: bytes) -> Manifest:
     raw = json.loads(data)
     if not isinstance(raw, dict) or set(raw) != {"source_ref", "scope", "entries"}:
         raise ValueError("manifest must have exactly source_ref, scope, entries")
+    source_ref, scope = raw["source_ref"], raw["scope"]
+    if not isinstance(source_ref, str) or len(source_ref) != 40 or not set(source_ref) <= _HEX:
+        raise ValueError("manifest source_ref must be a 40-hex lowercase commit")
+    if not isinstance(scope, str) or not scope.strip():
+        raise ValueError("manifest scope must be a non-empty string")
+    if not isinstance(raw["entries"], list):
+        raise ValueError("manifest entries must be a list")
     entries: dict[str, str] = {}
     for entry in raw["entries"]:
         if not isinstance(entry, dict) or set(entry) != {"node", "rationale"}:
@@ -137,7 +163,18 @@ def load_manifest(data: bytes) -> dict[str, str]:
         if node in entries:
             raise ValueError("duplicate manifest node")
         entries[node] = rationale
-    return entries
+    return Manifest(source_ref=source_ref, scope=scope, entries=entries)
+
+
+def load_session(data: bytes) -> dict[str, int]:
+    raw = json.loads(data)
+    keys = {"exitstatus", "testscollected", "testsfailed"}
+    if not isinstance(raw, dict) or set(raw) != keys:
+        raise ValueError("session record must have exactly " + ", ".join(sorted(keys)))
+    for key in keys:
+        if type(raw[key]) is not int or raw[key] < 0:
+            raise ValueError("session record values must be non-negative integers")
+    return {key: raw[key] for key in keys}
 
 
 def classify(parsed: Parsed, expected: dict[str, str]) -> dict[str, str]:
@@ -185,6 +222,7 @@ def notice(title: str, message: str) -> str:
 def build(
     *,
     junit: Path,
+    session: Path,
     manifest: Path,
     pytest_outcome: str,
     source_sha: str,
@@ -195,52 +233,72 @@ def build(
         "source_sha": source_sha,
         "head_sha": head_sha,
         "pytest_outcome": pytest_outcome,
+        "pytest_session": None,
         "status": "UNKNOWN",
         "reason": None,
         "junit_sha256": None,
         "manifest_sha256": None,
+        "manifest_source_ref": None,
+        "manifest_scope": None,
+        "manifest_entries": None,
         "counts": {},
         "nodes": {},
         "multiple_outcome_nodes": [],
     }
-    expected: dict[str, str] = {}
+
+    def unknown(reason: str) -> tuple[dict[str, Any], list[str]]:
+        report["reason"] = reason
+        return report, _notices(report)
+
     try:
         manifest_bytes = manifest.read_bytes()
         report["manifest_sha256"] = _sha256(manifest_bytes)
-        expected = load_manifest(manifest_bytes)
-    except (OSError, ValueError) as error:
-        report["reason"] = f"manifest unusable: {type(error).__name__}"
-        return report, _notices(report)
+        loaded = load_manifest(manifest_bytes)
+    except (OSError, ValueError, TypeError) as error:
+        return unknown(f"manifest unusable: {type(error).__name__}")
+    report["manifest_source_ref"] = loaded.source_ref
+    report["manifest_scope"] = loaded.scope
+    report["manifest_entries"] = len(loaded.entries)
     if pytest_outcome not in ("success", "failure"):
-        report["reason"] = f"pytest step outcome {pytest_outcome or 'absent'}"
-        return report, _notices(report)
+        return unknown(f"pytest step outcome {pytest_outcome or 'absent'}")
+    try:
+        record = load_session(session.read_bytes())
+    except OSError:
+        return unknown("pytest session record missing")
+    except (ValueError, TypeError):
+        return unknown("pytest session record malformed")
+    report["pytest_session"] = record
+    exitstatus = record["exitstatus"]
+    if exitstatus not in (0, 1):
+        return unknown(f"pytest exit status {exitstatus} (not a completed run)")
+    if (exitstatus == 0) != (pytest_outcome == "success"):
+        return unknown(f"pytest exit status {exitstatus} disagrees with step outcome")
     try:
         junit_bytes = junit.read_bytes()
     except OSError:
-        report["reason"] = "JUnit report missing"
-        return report, _notices(report)
+        return unknown("JUnit report missing")
     report["junit_sha256"] = _sha256(junit_bytes)
     try:
         parsed = parse_junit(junit_bytes)
     except ReportUnusable as error:
-        report["reason"] = str(error)
-        return report, _notices(report)
-    classes = classify(parsed, expected)
+        return unknown(str(error))
+    classes = classify(parsed, loaded.entries)
     report["nodes"] = dict(sorted(classes.items()))
     report["multiple_outcome_nodes"] = sorted(set(parsed.multiple))
     report["counts"] = dict(sorted(Counter(classes.values()).items()))
     if parsed.collection_errors:
-        report["reason"] = "collection error or interruption"
-        return report, _notices(report)
-    status = run_status(classes)
-    if pytest_outcome == "failure" and status == "PASS":
-        report["reason"] = "pytest failed but the report shows no failure or error"
-        return report, _notices(report)
+        return unknown("collection error or interruption")
+    if len(parsed.outcomes) != record["testscollected"]:
+        return unknown(
+            f"report has {len(parsed.outcomes)} tests, session collected "
+            f"{record['testscollected']} (incomplete run)"
+        )
     raw_red = any(outcome in ("failure", "error") for outcome in parsed.outcomes.values())
-    if pytest_outcome == "success" and raw_red:
-        report["reason"] = "pytest succeeded but the report shows failures or errors"
-        return report, _notices(report)
-    report["status"] = status
+    if exitstatus == 1 and not raw_red:
+        return unknown("pytest failed but the report shows no failure or error")
+    if exitstatus == 0 and raw_red:
+        return unknown("pytest succeeded but the report shows failures or errors")
+    report["status"] = run_status(classes)
     return report, _notices(report)
 
 
@@ -262,7 +320,9 @@ def _notices(report: dict[str, Any]) -> list[str]:
     summary = (
         f"status={report['status']} reason={report['reason']} "
         f"source={report['source_sha']} head={report['head_sha']} "
-        f"pytest={report['pytest_outcome']} counts: {counts} "
+        f"pytest={report['pytest_outcome']} session={report['pytest_session']} "
+        f"manifest_source_ref={report['manifest_source_ref']} "
+        f"manifest_entries={report['manifest_entries']} counts: {counts} "
         f"listed={shown}/{len(listed)} chunks={len(chunks)} "
         f"junit_sha256={report['junit_sha256']} manifest_sha256={report['manifest_sha256']}"
     )
@@ -282,6 +342,7 @@ def _notices(report: dict[str, Any]) -> list[str]:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--junit", type=Path, required=True)
+    parser.add_argument("--session", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--pytest-outcome", default="")
@@ -290,6 +351,7 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     report, lines = build(
         junit=args.junit,
+        session=args.session,
         manifest=args.manifest,
         pytest_outcome=args.pytest_outcome,
         source_sha=args.source_sha,
