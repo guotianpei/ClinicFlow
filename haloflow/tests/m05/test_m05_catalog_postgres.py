@@ -504,3 +504,66 @@ def test_mb1_t01_stub_refuses_not_implemented_with_zero_writes(
         m05.STUB_MESSAGE,
     ), spec.name
     assert _counts(m05_install) == before, spec.name
+
+
+# --- MB1-H01: history staff-assertion CHECK is total (F-B1-INTEGRITY-01) ----------
+#
+# Real rows, written as the admin inside one transaction that is always rolled back
+# (disposable: nothing persists in the module tenant). Each case runs in its own
+# savepoint. The two NULL-label resolution rows are otherwise valid, so the only
+# possible refusal is the intended constraint.
+
+_ITEM = "00000000-0000-4000-8000-0000000000c1"
+_STAFF_CHECK = "m05_followup_history_staff_assertion"
+_BEFORE_OPEN = '{"state": "open", "assignee_id": null, "outcome_code": null}'
+_AFTER_RESOLVED = (
+    '{"state": "resolved", "assignee_id": "00000000-0000-4000-8000-0000000000a1",'
+    ' "outcome_code": "reached_no_change"}'
+)
+_AFTER_CLAIMED = (
+    '{"state": "open", "assignee_id": "00000000-0000-4000-8000-0000000000a1",'
+    ' "outcome_code": null}'
+)
+HISTORY_CASES = (
+    # (id, action, assertion_kind, resolution_event_id, after, expected constraint or None)
+    ("resolve-null-label", "resolve", None, "00000000-0000-4000-8000-0000000000e1",
+     _AFTER_RESOLVED, _STAFF_CHECK),
+    ("claim_and_resolve-null-label", "claim_and_resolve", None,
+     "00000000-0000-4000-8000-0000000000e2", _AFTER_RESOLVED, _STAFF_CHECK),
+    ("resolve-staff-control", "resolve", "staff", "00000000-0000-4000-8000-0000000000e3",
+     _AFTER_RESOLVED, None),
+    ("claim_and_resolve-staff-control", "claim_and_resolve", "staff",
+     "00000000-0000-4000-8000-0000000000e4", _AFTER_RESOLVED, None),
+    ("claim-nonresolve-control", "claim", None, None, _AFTER_CLAIMED, None),
+)
+
+
+def test_mb1_h01_history_staff_assertion_check_is_total(m05_install: M05Install) -> None:
+    m05_install.require()
+    schema = m05_install.schema
+    outcomes: dict[str, str | None] = {}
+    with m02.connect_admin(m05_install.ids) as conn, conn.transaction(force_rollback=True):
+        conn.execute(
+            f"INSERT INTO {schema}.m05_followup_items (item_id, source_event_id,"
+            " item_kind, patient_id, state, version, create_digest) VALUES"
+            " (%s, '00000000-0000-4000-8000-0000000000d1', 'no_reply',"
+            " '00000000-0000-4000-8000-0000000000f1', 'open', 1,"
+            " pg_catalog.sha256('mb1-h01'::bytea))",
+            (_ITEM,),
+        )
+        for seq, (case, action, kind, event, after, _) in enumerate(HISTORY_CASES, 2):
+            try:
+                with conn.transaction():
+                    conn.execute(
+                        f"INSERT INTO {schema}.m05_followup_history (history_id,"
+                        " item_id, seq, action, actor_id, before, after,"
+                        " resolution_event_id, assertion_kind) VALUES"
+                        " (gen_random_uuid(), %s, %s, %s,"
+                        " '00000000-0000-4000-8000-0000000000a1', %s::jsonb, %s::jsonb,"
+                        " %s, %s)",
+                        (_ITEM, seq, action, _BEFORE_OPEN, after, event, kind),
+                    )
+                outcomes[case] = None
+            except psycopg.errors.CheckViolation as error:
+                outcomes[case] = error.diag.constraint_name
+    assert outcomes == {case[0]: case[5] for case in HISTORY_CASES}

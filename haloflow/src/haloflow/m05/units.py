@@ -6,6 +6,9 @@
   broad write privileges, no reads as the migrator). History, actions and notes are
   immutable: a row-level rejector refuses UPDATE and DELETE for every role,
   including the migrator, and a statement-level one refuses TRUNCATE.
+  Every history CHECK is total (never NULL): F-B1-INTEGRITY-01 (Codex
+  20261031T201233Z) found that ``assertion_kind = 'staff'`` is NULL for a NULL
+  label, which a CHECK accepts; ``IS NOT DISTINCT FROM`` is used instead.
 - ``t013_m05_seed``    the W1 outcome codes; the M05 resolution contract
   ``m05_followup_resolution_asserted`` v1 and its action family and type, all
   INACTIVE (activation is a B4/B5 decision; inactive contracts need no installed
@@ -107,7 +110,8 @@ CREATE TABLE {_S}.m05_followup_history (
     CONSTRAINT m05_followup_history_created_before
         CHECK ((action = 'created') = (before IS NULL)),
     CONSTRAINT m05_followup_history_staff_assertion
-        CHECK ((action IN ({_RESOLVE_ACTIONS}) AND assertion_kind = 'staff'
+        CHECK ((action IN ({_RESOLVE_ACTIONS})
+                AND assertion_kind IS NOT DISTINCT FROM 'staff'
                 AND resolution_event_id IS NOT NULL)
             OR (action NOT IN ({_RESOLVE_ACTIONS}) AND assertion_kind IS NULL
                 AND resolution_event_id IS NULL))
