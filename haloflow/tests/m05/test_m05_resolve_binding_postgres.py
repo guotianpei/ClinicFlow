@@ -191,7 +191,7 @@ def _workload_event(install: st.StaffInstall, item: UUID, key: UUID) -> UUID:
 # by apply; it is guaranteed by the producer: t009 step 7 refuses any key outside the
 # contract's closed schema and any missing required key (COMMAND_MALFORMED), the
 # resolution schema closes the set to exactly these three, and patient_events is
-# INSERT-only through the append owner and immutable afterwards. X-M1..3 pin that
+# INSERT-only through the append owner and immutable afterwards. X-M1..4 pin that
 # guarantee for THIS contract; no new M02 signal, read or grant.
 
 RESOLUTION_METADATA_KEYS = ("assertion_kind", "item_kind", "outcome_code")
@@ -227,6 +227,27 @@ async def test_xm2_xm3_producer_refuses_non_closed_metadata(staff_install, case)
         await rs.append_resolution(staff_install, item, uuid4(), metadata=meta)
     assert caught.value.reason_code == "COMMAND_MALFORMED"
     assert sv.full_state(staff_install) == before
+
+
+@pytest.mark.parametrize("operation", ["UPDATE", "DELETE"])
+@pytest.mark.parametrize("table", ["patient_events", "patient_event_links"])
+def test_xm4_event_evidence_is_immutable(staff_install, table, operation):
+    """Fact 4 of A-META-2, pinned here (no existing part A row covers patient_events):
+    even the table owner's UPDATE/DELETE is refused 0A000 by m02_evidence_reject."""
+
+    from test_m05_create_postgres import _ready, _source
+
+    _ready(staff_install)
+    event_id = _source(staff_install)
+    target = sql.SQL("{}.{}").format(sql.Identifier(staff_install.schema),
+                                     sql.Identifier(table))
+    statement = (sql.SQL("UPDATE {} SET event_id = event_id WHERE event_id = %s")
+                 if operation == "UPDATE" else sql.SQL("DELETE FROM {} WHERE event_id = %s"))
+    with psycopg.connect(staff_install.ids.admin) as conn, \
+            pytest.raises(psycopg.Error) as caught, conn.transaction():
+        conn.execute(statement.format(target), (event_id,))
+    assert caught.value.sqlstate == "0A000"
+    assert caught.value.diag.message_primary == "event evidence is immutable"
 
 
 async def test_mr10_unknown_event_is_invalid(staff_install):
