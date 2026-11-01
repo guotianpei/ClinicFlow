@@ -68,7 +68,8 @@ async def runtime(
     from haloflow.m01.pool import TenantPool
     from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
 
-    install.require()
+    # The caller installs first (in a worker thread from async rows: the sync install
+    # path uses asyncio.run and cannot run inside the test's event loop).
     cls = pool_class or TenantPool
     pool = cls(login or install.ids.logins["haloflow_runtime"], min_size=1, max_size=1)
     await pool.open()

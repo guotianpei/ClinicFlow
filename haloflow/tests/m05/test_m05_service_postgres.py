@@ -64,6 +64,13 @@ def _item(install: st.StaffInstall) -> UUID:
     return UUID(str(_create(install, _command(_source(install)))["item_id"]))
 
 
+async def _aitem(install: st.StaffInstall) -> UUID:
+    """The sync install/seed path uses asyncio.run, so async rows run it in a worker
+    thread; installation still happens in the test body (class-B red rule)."""
+
+    return await asyncio.to_thread(_item, install)
+
+
 def _staff(install: st.StaffInstall, *, access: tuple[str, ...] = ("read", "act"),
            active: bool = True) -> UUID:
     staff = st.new_uuid()
@@ -97,7 +104,7 @@ async def _service(install: st.StaffInstall, *, substitute: Any = None, pool_cla
 @pytest.mark.parametrize("read", [True, False])
 @pytest.mark.parametrize("supervise", [True, False])
 async def test_sv03_sent_command_is_the_context_oracle(staff_install, read, supervise):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     caps = {sv.PREPARE, sv.APPLY} | ({sv.READ} if read else set()) | (
         {sv.SUPERVISE} if supervise else set())
     async with _service(staff_install) as (rt, rec):
@@ -126,7 +133,7 @@ async def test_sv03_sent_command_is_the_context_oracle(staff_install, read, supe
     ids=["uppercase", "not-uuid", "auth-uppercase", "auth-too-long"],
 )
 async def test_sv04_noncanonical_principal_refused_before_gateway(staff_install, principal, auth):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     before = st.state(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, principal, sv.STAFF_CAPS, auth_method=auth)
@@ -169,7 +176,7 @@ async def _route(rec: Any, ctx: Any, route: str, item: UUID) -> Any:
 @pytest.mark.parametrize("case", sorted(ROUTE_DENIED_CASES))
 async def test_sv05_route_denied_before_any_gateway_call(staff_install, case):
     route, caps = ROUTE_DENIED_CASES[case]
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     before = st.state(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.SUP, caps)
@@ -189,7 +196,7 @@ async def test_sv05_route_denied_before_any_gateway_call(staff_install, case):
     ids=["no-read", "no-supervise"],
 )
 async def test_sv05_domain_refusals_in_sql(staff_install, caps, kind, assignee):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     before = st.state(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.SUP, caps)
@@ -204,7 +211,7 @@ async def test_sv05_domain_refusals_in_sql(staff_install, caps, kind, assignee):
     "caps", [sv.READ_ONLY_CAPS, sv.SUPERVISOR_CAPS], ids=["read-only", "mixed"]
 )
 async def test_sv06_read_routes_execute_only_read_statements(staff_install, caps):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, caps)
         service = _svc().M05Service(rec)
@@ -222,7 +229,7 @@ async def test_sv06_read_routes_execute_only_read_statements(staff_install, caps
 
 
 async def test_sv07a_eligible_actor_acts(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
         result = await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
@@ -245,8 +252,8 @@ def _actor(kind: str, install: st.StaffInstall, foreign: st.StaffInstall) -> UUI
 @pytest.mark.parametrize("action", m05.NON_RESOLVE_ACTIONS)
 async def test_sv07b_actor_without_standing_refused(staff_install, staff_foreign_install,
                                                     kind, action):
-    item = _item(staff_install)
-    actor = _actor(kind, staff_install, staff_foreign_install)
+    item = await _aitem(staff_install)
+    actor = await asyncio.to_thread(_actor, kind, staff_install, staff_foreign_install)
     if action == "start_progress":  # an item assigned to the actor, so only standing fails
         st.admin_rows(staff_install, sql.SQL(
             "UPDATE {}.m05_followup_items SET assignee_id = %s WHERE item_id = %s").format(
@@ -266,7 +273,7 @@ async def test_sv07b_actor_without_standing_refused(staff_install, staff_foreign
 
 
 async def test_sv07c_read_only_staff_cannot_act_but_can_read(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     reader = _staff(staff_install, access=("read",))
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, str(reader), sv.STAFF_CAPS)
@@ -279,7 +286,7 @@ async def test_sv07c_read_only_staff_cannot_act_but_can_read(staff_install):
 
 @pytest.mark.parametrize("change", ["deactivate", "revoke_read", "revoke_act"])
 async def test_sv07d_replay_requires_current_actor_standing(staff_install, change):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     actor = _staff(staff_install)
     action = _action(item, 1, "claim")
     async with _service(staff_install) as (rt, rec):
@@ -304,8 +311,8 @@ async def test_sv07d_replay_requires_current_actor_standing(staff_install, chang
 
 @pytest.mark.parametrize("kind", ["unknown", "inactive", "foreign", "no_read"])
 async def test_sv08r_reader_without_standing_refused(staff_install, staff_foreign_install, kind):
-    item = _item(staff_install)
-    actor = _actor(kind, staff_install, staff_foreign_install)
+    item = await _aitem(staff_install)
+    actor = await asyncio.to_thread(_actor, kind, staff_install, staff_foreign_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, str(actor), sv.READ_ONLY_CAPS)
         service = _svc().M05Service(rec)
@@ -326,7 +333,6 @@ def rr_login(staff_install) -> Iterator[str]:
     """A dedicated runtime login whose default isolation is REPEATABLE READ; created
     for one test and dropped after, so the shared role inventory is unchanged."""
 
-    staff_install.require()
     name = f"haloflow_test_rr_{uuid.uuid4().hex[:8]}"
     with psycopg.connect(staff_install.ids.admin, autocommit=True) as conn:
         conn.execute(sql.SQL("CREATE ROLE {} LOGIN PASSWORD 'rr' IN ROLE haloflow_runtime")
@@ -374,7 +380,7 @@ class _BeforeReader(sv.Recorder):
 
 
 async def test_sv08s_rr_snapshot_before_revoke_completes_new_txn_refused(staff_install, rr_login):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     reader = _staff(staff_install)
     async with sv.runtime(staff_install, login=rr_login) as rt:
         ctx = await sv.context(rt, staff_install, str(reader), sv.READ_ONLY_CAPS)
@@ -387,7 +393,7 @@ async def test_sv08s_rr_snapshot_before_revoke_completes_new_txn_refused(staff_i
 
 
 async def test_sv08s_rc_control_reader_statement_sees_committed_revoke(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     reader = _staff(staff_install)
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, str(reader), sv.READ_ONLY_CAPS)
@@ -399,7 +405,7 @@ async def test_sv08s_rc_control_reader_statement_sees_committed_revoke(staff_ins
 
 
 async def test_sv08t_act_only_revocation_keeps_reads(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     staff = _staff(staff_install)
     _revoke(staff_install, staff, "act")
     async with _service(staff_install) as (rt, rec):
@@ -411,7 +417,7 @@ async def test_sv08t_act_only_revocation_keeps_reads(staff_install):
 
 
 async def test_sv08u_admin_authority_independent_of_followup_access(staff_install):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     admin = uuid.uuid4()  # no directory row at all
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, str(admin),
@@ -432,7 +438,7 @@ async def test_sv08u_admin_authority_independent_of_followup_access(staff_instal
 
 
 async def test_sv09_display_via_reader_and_refused_without_standing(staff_install):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     outsider = uuid.uuid4()
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.STAFF_DISPLAY, sv.READ}))
@@ -447,7 +453,7 @@ async def test_sv09_display_via_reader_and_refused_without_standing(staff_instal
 
 
 async def test_sv09b_display_subsets_are_valid(staff_install):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.STAFF_DISPLAY, sv.READ}))
         unknown = uuid.uuid4()
@@ -458,7 +464,7 @@ async def test_sv09b_display_subsets_are_valid(staff_install):
 
 
 async def test_sv10_admin_bootstrap_without_directory_row(staff_install):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, str(uuid.uuid4()), frozenset({sv.STAFF_ADMIN}))
         staff = uuid.uuid4()
@@ -508,7 +514,7 @@ CORRUPTION_IDS = sorted(_apply_corruptions(uuid.uuid4(), uuid.uuid4()))
 
 @pytest.mark.parametrize("case", CORRUPTION_IDS)
 async def test_sv11_corrupt_apply_output_rolls_back(staff_install, case):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     key = uuid.uuid4()
     before = st.state(staff_install)
     async with sv.runtime(staff_install) as rt:
@@ -523,7 +529,7 @@ async def test_sv11_corrupt_apply_output_rolls_back(staff_install, case):
 
 @pytest.mark.parametrize("case", ["null", "scalar", "extra-key", "bad-decision", "bool-schema"])
 async def test_sv11_corrupt_prepare_output(staff_install, case):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     rows = {"null": [(None,)], "scalar": [("NEW",)],
             "extra-key": [({"schema_version": 1, "decision": "NEW", "x": 1},)],
             "bad-decision": [({"schema_version": 1, "decision": "MAYBE"},)],
@@ -550,7 +556,7 @@ def _good_admin(key: UUID, staff: UUID) -> dict[str, Any]:
                                   "staff-five-keys", "bad-status", "bad-timestamp",
                                   "access-unsorted", "name-mismatch"])
 async def test_sv11a_corrupt_admin_output_rolls_back(staff_install, case):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     key, staff = uuid.uuid4(), uuid.uuid4()
     good = _good_admin(key, staff)
     snap = good["staff"]
@@ -582,7 +588,7 @@ async def test_sv11a_corrupt_admin_output_rolls_back(staff_install, case):
 @pytest.mark.parametrize("case", ["duplicate", "unrequested", "out-of-order", "bad-status",
                                   "extra-entry-key", "bool-schema"])
 async def test_sv11d_corrupt_display_output(staff_install, case):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     a, b = sorted([m05.S1, m05.S2])
     entry = {"staff_id": a, "display_name": "Staff", "status": "active"}
     entry_b = {**entry, "staff_id": b}
@@ -601,7 +607,7 @@ async def test_sv11d_corrupt_display_output(staff_install, case):
 @pytest.mark.parametrize("case", ["get-wrong-item", "get-extra-key", "history-wrong-item",
                                   "list-over-limit", "get-bool-version"])
 async def test_sv11_corrupt_read_output(staff_install, case):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     view = st.call(staff_install, "m05_get_item", str(item))
     key = {"get-wrong-item": sv.K_GET, "get-extra-key": sv.K_GET, "get-bool-version": sv.K_GET,
            "history-wrong-item": sv.K_HISTORY, "list-over-limit": sv.K_LIST}[case]
@@ -683,7 +689,7 @@ def _faulting_pool(mode: str, fired: list[str]) -> Any:
      ("commit_then_cancel", "replayed")],
 )
 async def test_sv12_action_unknown_commit_then_recovery(staff_install, mode, retry_outcome):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     action = _action(item, 1, "claim")
     fired: list[str] = []
     async with sv.runtime(staff_install, pool_class=_faulting_pool(mode, fired)) as rt:
@@ -706,7 +712,7 @@ async def test_sv12_action_unknown_commit_then_recovery(staff_install, mode, ret
 
 @pytest.mark.parametrize("mode", ["commit_then_raise", "raise_no_commit"])
 async def test_sv12_admin_unknown_commit_then_recovery(staff_install, mode):
-    _ready(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     staff = uuid.uuid4()
     command = _staff_svc().StaffAdminCommand(client_action_id=uuid.uuid4(), operation="add",
                                              staff_id=staff, display_name="Unknown Commit")
@@ -728,7 +734,7 @@ async def test_sv12_admin_unknown_commit_then_recovery(staff_install, mode):
 
 
 async def test_sv12_post_body_path_fault_is_unknown(staff_install, monkeypatch):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with sv.runtime(staff_install) as rt:
         gateway = rt.gateway
         original = gateway._verify_effective_path
@@ -747,7 +753,7 @@ async def test_sv12_post_body_path_fault_is_unknown(staff_install, monkeypatch):
 
 
 async def test_sv12_cancellation_before_marker_is_cancellation(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     before = st.state(staff_install)
 
     class _CancelAtApply(sv.Recorder):
@@ -776,7 +782,7 @@ async def test_sv12_cancellation_before_marker_is_cancellation(staff_install):
 
 
 async def test_sv12_sanitized_failures_carry_no_driver_text(staff_install, caplog):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
         service = _svc().M05Service(rt.gateway)
@@ -795,7 +801,7 @@ async def test_sv12_sanitized_failures_carry_no_driver_text(staff_install, caplo
 
 
 async def test_sv13_repeatable_read_default_refused(staff_install, rr_login):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     before = st.state(staff_install)
     async with sv.runtime(staff_install, login=rr_login) as rt:
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
@@ -825,7 +831,7 @@ READER_CORRUPTIONS = {
 
 @pytest.mark.parametrize("case", sorted(READER_CORRUPTIONS))
 async def test_sv14a_reader_adapter_fails_closed(staff_install, case):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with sv.runtime(staff_install) as rt:
         rec = sv.Recorder(rt.gateway, {sv.K_READER: READER_CORRUPTIONS[case]})
         ctx = await sv.context(rt, staff_install, m05.S1, sv.READ_ONLY_CAPS)
@@ -836,7 +842,7 @@ async def test_sv14a_reader_adapter_fails_closed(staff_install, case):
 
 
 async def test_sv14b_workload_with_staff_uuid_gains_no_staff_authority(staff_install):
-    item = _item(staff_install)
+    item = await _aitem(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, sv.SUPERVISOR_CAPS | {sv.STAFF_DISPLAY},
                                kind="workload")
