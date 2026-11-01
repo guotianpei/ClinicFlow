@@ -3,8 +3,8 @@
 separate m05.followup.note.read capability; red gate PASS at b8258d4).
 
 - D11 normalization: CRLF and bare CR -> LF; NFC; trim; refuse remaining C0/C1
-  controls (other than LF) and U+2028/U+2029; 1..500 code points; empty after trim is
-  absent (None). No case folding.
+  controls (other than LF), U+2028/U+2029 and surrogate code points; 1..500 code
+  points; empty after trim is absent (None). No case folding.
 - note_hmac = HMAC-SHA256(key[version], "m05.note/v1\\n" + tenant + "\\n" + text), hex.
 - AEAD = AES-256-GCM, random 96-bit nonce, AAD = compact JSON
   ["m05.note/v1", tenant, item_id, client_action_id, note_id, enc_key_version].
@@ -72,7 +72,11 @@ def _refused_char(ch: str) -> bool:
     code = ord(ch)
     if ch == "\n":
         return False
-    return code < 0x20 or 0x7F <= code <= 0x9F or code in (0x2028, 0x2029)
+    # Codex 33650a09: surrogate code points (an unpaired U+D800..U+DFFF, e.g. from an
+    # escaped JSON string) are not Unicode scalar values and cannot be UTF-8 encoded;
+    # refusing them here keeps the text out of any UnicodeEncodeError.
+    return (code < 0x20 or 0x7F <= code <= 0x9F or code in (0x2028, 0x2029)
+            or 0xD800 <= code <= 0xDFFF)
 
 
 def normalize_note(text: str | None) -> str | None:

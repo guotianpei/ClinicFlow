@@ -12,6 +12,7 @@ RED TRANCHE: everything except KP-0 fails until the implementation.
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Any
 
@@ -38,6 +39,10 @@ NORMALIZE = {
     "empty-after-trim": ("   \n\t ", None),
     "none": (None, None),
     "500-code-points": ("x" * 500, "x" * 500),
+    # Codex 33650a09: valid supplementary characters stay accepted, whether written
+    # directly or as an escaped JSON surrogate PAIR.
+    "supplementary": ("Call \U0001F600 back", "Call \U0001F600 back"),
+    "escaped-json-pair": (json.loads('"Call \\ud83d\\ude00 back"'), "Call \U0001F600 back"),
 }
 
 
@@ -55,6 +60,10 @@ REFUSED = {
     "u2028": "a b",
     "u2029": "a b",
     "not-str": 5,
+    # Codex 33650a09: unpaired surrogates (not Unicode scalar values).
+    "lone-high-surrogate": "a\ud800b",
+    "lone-low-surrogate": "a\udc00b",
+    "escaped-json-lone-surrogate": json.loads('"CANARY-sur \\ud800"'),
 }
 
 
@@ -181,3 +190,44 @@ def test_rv1_resolve_action_controls() -> None:
     _resolve(outcome_code="other", note="Patient will call the front desk.")
     assert _resolve(note="  spaced  ").note == "spaced"  # stored normalized
     assert _resolve(note="   ").note is None  # empty after trim is absent
+
+
+SURROGATE_NOTES = {
+    "high": "CANARY-sur-9f2 Mrs Q \ud800",
+    "low": "CANARY-sur-9f2 Mrs Q \udfff",
+    "escaped-json": json.loads('"CANARY-sur-9f2 Mrs Q \\udbff"'),
+}
+
+
+@pytest.mark.parametrize("case", sorted(SURROGATE_NOTES))
+def test_d11_surrogate_note_refused_without_text_leak(case: str) -> None:
+    """Codex 33650a09: a note with an unpaired surrogate is CommandMalformed("note")
+    at construction, with no cause/context and no note text in any exception field,
+    before any gateway or key-provider call."""
+
+    from haloflow.m05.service import CommandMalformed, M05Service
+
+    class Spy:
+        calls: list[str] = []
+
+        def __getattr__(self, name: str) -> Any:
+            def record(*args: Any, **kwargs: Any) -> Any:
+                Spy.calls.append(name)
+                raise AssertionError(f"unexpected call {name}")
+
+            return record
+
+    gateway, keys = Spy(), Spy()
+    service = M05Service(gateway, foundation=Spy(), keys=keys)
+    note = SURROGATE_NOTES[case]
+    with pytest.raises(CommandMalformed) as caught:
+        action = _resolve(note=note)
+        service.act(object(), action)  # never reached: construction refuses first
+    error = caught.value
+    assert error.__cause__ is None and error.__context__ is None
+    rendered = repr(error) + str(error) + repr(error.args) + repr(vars(error))
+    assert "CANARY-sur-9f2" not in rendered
+    assert Spy.calls == []
+    with pytest.raises(_n().NoteInvalid) as invalid:
+        _n().normalize_note(note)
+    assert "CANARY-sur-9f2" not in repr(invalid.value) + repr(invalid.value.args)
