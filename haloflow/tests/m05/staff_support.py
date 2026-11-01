@@ -578,7 +578,18 @@ def check_admin_delta(
                 assert row["status"] == old["status"]
                 assert row["status_changed_at"] == old["status_changed_at"]
     assert row["staff_id"] == staff
-    assert row["status"] == snap["status"] and row["display_name"] == snap["display_name"]
+    # Expected values derived from the command and the pre-state, not only from the
+    # returned snapshot (Codex gate 24e463b, non-blocking hardening).
+    pre = staff_snapshot_from(before, staff)
+    expected_status = {"add": "active", "deactivate": "inactive", "reactivate": "active"}.get(
+        operation, pre["status"] if pre else None
+    )
+    expected_name = (
+        command["display_name"] if operation in ("add", "rename")
+        else (pre["display_name"] if pre else None)
+    )
+    assert row["status"] == expected_status == snap["status"]
+    assert row["display_name"] == expected_name == snap["display_name"]
     assert parse_ts(row["status_changed_at"]) == parse_ts(snap["status_changed_at"])
     # m01_staff_followup_access
     access_added = delta.added["m01_staff_followup_access"]

@@ -939,7 +939,7 @@ def test_dad1_stored_digest_equals_oracle(staff_install):
 @pytest.mark.parametrize(
     "transport",
     [{"request_id": "req-2"}, {"execution_id": "00000000-0000-4000-8000-00000000e002"},
-     {"purpose_code": "audit"}, {"auth_method": "other"}],
+     {"purpose_code": "payment"}, {"auth_method": "other"}],
     ids=["request_id", "execution_id", "purpose_code", "auth_method"],
 )
 def test_dad2_transport_change_replays(staff_install, transport):
