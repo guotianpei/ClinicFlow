@@ -1,12 +1,19 @@
-"""Frozen pre-B4 text of the four plain-string units B4 changes (COMPAT-01).
+"""Frozen pre-B4 unit evidence for COMPAT-01 (Codex ruling 4f51be67).
 
-Captured from commit ace2492 (unchanged since 6a81464 for these units) by a
-one-off generator on 2026-11-01. `PRE_B4_CHECKSUMS` are the registry checksums
-measured at the same commit; COMPAT-01 asserts the frozen text reproduces them
-(a control that the fixture really is the pre-change unit) before using it.
+Provenance: the accepted pre-B4 SHA 6a81464 (B3b, run 41334723727). Every value below
+was measured on 2026-11-01 from a clean `git worktree` of 6a81464 itself (import path
+verified to be that tree), and is identical at ace2492 (no change to src/haloflow/m02
+or m05/units.py between the two).
 
-Do not edit. The UnitDefinition units B4 changes (t009, t011, M05 gateways) are
-covered by the kind-agnostic drift guard and their pins, not frozen here.
+- PRE_B4_UNITS / PRE_B4_TEXT_SHA256 / PRE_B4_CHECKSUMS: the full text of the four
+  plain-string units B4 changes (t004, t005, t012, t013) and their registry checksums.
+  COMPAT-01a installs this old text (a full old-object installation).
+- PRE_B4_DEFINITION_CHECKSUMS: the registry checksums of the two UnitDefinition units
+  B4 changes (t009, t011). COMPAT-01b records these in a ledger: an OLD-CHECKSUM
+  compatibility case, not a full old-object installation (no UnitDefinition is
+  serialised, per the ruling).
+
+Do not edit.
 """
 
 from __future__ import annotations
@@ -18,6 +25,11 @@ PRE_B4_CHECKSUMS: Final = {
     "t005_m02_events": "40a63600e4adffac5b1baed088d31d215227f8fca6add49314a7558797af454b",
     "t012_m05_tables": "dade845f41fde8078351d236ebbff289b26fd55c2227371916b927404ac8100a",
     "t013_m05_seed": "6d2a7346d3b4d537b8e074b9c1bde224efc371dcf9f1b941e6cddd41be1ea7c7",
+}
+
+PRE_B4_DEFINITION_CHECKSUMS: Final = {
+    "t009_m02_append": "e00a81282bff7cd48721a8e70037a0c3b77c68c92c5d3305663b962628f2544c",
+    "t011_m02_envelope_read": "36236556c310c63a4e07801c10b56dbc4516ee233950548915a04f9a9a646761",
 }
 
 PRE_B4_TEXT_SHA256: Final = {

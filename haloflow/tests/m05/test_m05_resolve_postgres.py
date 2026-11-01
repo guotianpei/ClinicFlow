@@ -516,21 +516,40 @@ FAULTS = {  # table → (trigger event, statement whose execution must raise B4_
 
 @contextlib.contextmanager
 def _fault_trigger(install: st.StaffInstall, table: str, event: str) -> Iterator[None]:
+    """A test-only BEFORE trigger that raises P0001 B4_FAULT. Before raising it takes
+    nextval() of a disposable SEQUENCE: sequence advances are not transactional, so
+    the count survives the rollback and is a fault-hit witness separate from the
+    full-state oracle (Codex ruling 4f51be67). Control: the sequence is unused before
+    the row; cleanup drops trigger, function and sequence."""
+
     schema = sql.Identifier(install.schema)
+    st.admin_rows(install, sql.SQL("CREATE SEQUENCE {}.b4_fault_hits").format(schema))
     st.admin_rows(install, sql.SQL(
-        "CREATE FUNCTION {}.b4_fault() RETURNS trigger LANGUAGE plpgsql AS"
-        " $f$BEGIN RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'B4_FAULT'; END$f$"
-    ).format(schema))
+        "CREATE FUNCTION {s}.b4_fault() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER"
+        " SET search_path = pg_catalog AS $f$BEGIN"
+        " PERFORM pg_catalog.nextval('{q}.b4_fault_hits');"
+        " RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'B4_FAULT'; END$f$"
+    ).format(s=schema, q=sql.SQL(install.schema)))
     try:
         st.admin_rows(install, sql.SQL(
             "CREATE TRIGGER b4_fault BEFORE {} ON {}.{} FOR EACH ROW"
             " EXECUTE FUNCTION {}.b4_fault()").format(
             sql.SQL(event), schema, sql.Identifier(table), schema))
+        assert _fault_hits(install) == 0, "CONTROL: witness used before the row"
         yield
     finally:
         st.admin_rows(install, sql.SQL("DROP TRIGGER IF EXISTS b4_fault ON {}.{}").format(
             schema, sql.Identifier(table)))
         st.admin_rows(install, sql.SQL("DROP FUNCTION IF EXISTS {}.b4_fault()").format(schema))
+        st.admin_rows(install, sql.SQL("DROP SEQUENCE IF EXISTS {}.b4_fault_hits").format(
+            schema))
+
+
+def _fault_hits(install: st.StaffInstall) -> int:
+    ((last_value, is_called),) = st.admin_rows(install, sql.SQL(
+        "SELECT last_value, is_called FROM {}.b4_fault_hits").format(
+        sql.Identifier(install.schema)))
+    return int(last_value) if is_called else 0
 
 
 @pytest.mark.parametrize("table", sorted(FAULTS))
@@ -540,7 +559,9 @@ async def test_rb3_rb7_write_fault_rolls_back_everything(staff_install, table):
     with _fault_trigger(staff_install, table, event):
         before = sv.full_state(staff_install)
         error, rec = await _resolve_with(staff_install, {}, _resolve(item, 2, note="Fault."))
-    # Fault hit: exactly the expected statement raised the installed trigger's error.
+        hits = _fault_hits(staff_install)
+    assert hits == 1, hits  # the durable witness: the trigger fired exactly once
+    # And exactly the expected statement raised the installed trigger's error.
     assert [k for k, _ in rec.errors] == [statement], rec.errors
     raw = rec.errors[0][1]
     assert isinstance(raw, psycopg.Error) and raw.sqlstate == "P0001"
@@ -905,6 +926,7 @@ async def _san2_case(install: st.StaffInstall, case: str) -> BaseException:
         item = await _claimed(install)
         with _fault_trigger(install, "m05_followup_notes", "INSERT"):
             error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
+            assert _fault_hits(install) == 1, "SETUP: the note fault did not fire"
         return error
     # read-integrity: a canary note whose ciphertext is swapped on read
     item_a = await _resolved_with_note(install, keys, CANARY)

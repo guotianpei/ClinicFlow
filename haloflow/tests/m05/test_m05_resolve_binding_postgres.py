@@ -9,9 +9,11 @@ Red review REVISE 4c5b82fb (Codex, 2026-11-01), tests only:
 - RA-R    R2: actor standing races on resolve (the RA-1 / RA-2 pattern).
 - G-B4    R2: the exact grant set after B4 on the M05 tables and patient_events, plus
           ME-03 (the M05 owner executes exactly the envelope read among m02_*).
-- COMPAT-01 R2: a disposable tenant installed with the frozen pre-B4 plain-string
-          units, then migrated with the current registry → MIGRATION_CHECKSUM_DRIFT,
-          ledger and catalogue unchanged.
+- COMPAT-01a R2: a disposable tenant installed with the frozen pre-B4 plain-string
+          units (full old-object installation), then migrated with the current
+          registry → MIGRATION_CHECKSUM_DRIFT, ledger and catalogue unchanged.
+- COMPAT-01b old-checksum cases for t009/t011 (ruling 4f51be67): a ledger recording
+          the pre-B4 checksum → MIGRATION_CHECKSUM_DRIFT, ledger/catalogue unchanged.
 - MX-01   R2: zero Notifyre / athenahealth / outbound HTTP during resolve and note
           read, with a positive spy control.
 
@@ -222,16 +224,31 @@ def _corrupt_back_to_claimed(install: st.StaffInstall, item: UUID, key: UUID) ->
     """DECLARED STATE-CORRUPTION SEAM (replica mode; the PA precedent at
     test_m02_part_a_service_postgres.py L682): remove the action record and return the
     item to its claimed state, KEEPING the history row that references the event. Only
-    a corrupted (or racing) state can reach the reuse check with every binding true."""
+    a corrupted (or racing) state can reach the reuse check with every binding true.
+
+    Narrow scope (ruling 4f51be67): `SET LOCAL` inside one transaction, exactly one
+    action row and one item row, preconditions asserted first, and the setting proven
+    restored on the same session afterwards."""
 
     schema = sql.Identifier(install.schema)
-    with psycopg.connect(install.ids.admin) as conn, conn.transaction():
-        conn.execute("SET LOCAL session_replication_role = replica")
-        conn.execute(sql.SQL("DELETE FROM {}.m05_followup_actions WHERE item_id = %s"
-                             " AND client_action_id = %s").format(schema), (str(item), str(key)))
-        conn.execute(sql.SQL("UPDATE {}.m05_followup_items SET state = 'open',"
-                             " outcome_code = NULL, version = 2 WHERE item_id = %s").format(schema),
-                     (str(item),))
+    with psycopg.connect(install.ids.admin) as conn:
+        with conn.transaction():
+            state = conn.execute(sql.SQL(
+                "SELECT state, version FROM {}.m05_followup_items WHERE item_id = %s").format(
+                schema), (str(item),)).fetchone()
+            assert state == ("resolved", 3), ("PRECONDITION", state)
+            conn.execute("SET LOCAL session_replication_role = replica")
+            deleted = conn.execute(sql.SQL(
+                "DELETE FROM {}.m05_followup_actions WHERE item_id = %s"
+                " AND client_action_id = %s").format(schema), (str(item), str(key))).rowcount
+            updated = conn.execute(sql.SQL(
+                "UPDATE {}.m05_followup_items SET state = 'open', outcome_code = NULL,"
+                " version = 2 WHERE item_id = %s").format(schema), (str(item),)).rowcount
+            assert (deleted, updated) == (1, 1), ("PRECONDITION", deleted, updated)
+        restored = conn.execute("SHOW session_replication_role").fetchone()
+        assert restored == ("origin",), ("RESTORATION", restored)
+    history = rs.rows(install, "m05_followup_history", item)
+    assert [h["action"] for h in history].count("resolve") == 1, "PRECONDITION: history kept"
 
 
 async def test_mr10_genuine_reuse_is_reused(staff_install):
@@ -508,7 +525,7 @@ LEDGER = ("SELECT migration_id, state, attempt, checksum, sanitized_error_code, 
           " FROM shared.schema_migrations WHERE tenant_id = %s ORDER BY migration_id")
 
 
-def test_compat01_retained_pre_b4_install_refused_as_drift(m02_ids, compat_tenant):
+def test_compat01a_retained_pre_b4_install_refused_as_drift(m02_ids, compat_tenant):
     import hashlib
 
     import pre_b4_units as pre
@@ -534,6 +551,50 @@ def test_compat01_retained_pre_b4_install_refused_as_drift(m02_ids, compat_tenan
                if u.migration_id in pre.PRE_B4_CHECKSUMS
                and u.checksum != pre.PRE_B4_CHECKSUMS[u.migration_id]}
     assert changed == set(pre.PRE_B4_UNITS), changed  # B4 changes all four units
+
+    runner = TenantMigrationRunner(m02_support._connection_factory(m02_ids.logins[MIGRATOR_ROLE]),
+                                   current, manifest=st.staff_manifest())
+    with pytest.raises(TenantMigrationFailed) as drift:
+        asyncio.run(runner.apply(tenant_id=compat_tenant[0], schema_key=compat_tenant[1]))
+    assert drift.value.reason_code == SanitizedErrorCode.MIGRATION_CHECKSUM_DRIFT.value
+    assert m02_support.admin_all(m02_ids, LEDGER, (compat_tenant[0],)) == ledger
+    assert _catalogue(m02_ids, compat_tenant[1]) == catalogue
+
+
+@pytest.mark.parametrize("migration_id", ["t009_m02_append", "t011_m02_envelope_read"])
+def test_compat01b_old_checksum_ledger_refused_as_drift(m02_ids, compat_tenant, migration_id):
+    """OLD-CHECKSUM compatibility case (ruling 4f51be67), distinct from a full
+    old-object installation: a disposable tenant installed with the current registry
+    whose ledger records the pre-B4 checksum of `migration_id` (verified at 6a81464),
+    as a retained pre-B4 tenant's ledger would. Entry point: the migration runner, as
+    for any installed tenant (the provisioner refuses an active tenant by design,
+    provisioner.py L192). Expect MIGRATION_CHECKSUM_DRIFT, ledger and catalogue
+    unchanged."""
+
+    import pre_b4_units as pre
+
+    from haloflow.m01.errors import TenantMigrationFailed
+    from haloflow.m01.provisioning import MIGRATOR_ROLE, TenantMigrationRunner
+    from haloflow.m01.provisioning.codes import SanitizedErrorCode
+
+    current = st.staff_registry()
+    current_checksum = {u.migration_id: u.checksum for u in current}[migration_id]
+    old_checksum = pre.PRE_B4_DEFINITION_CHECKSUMS[migration_id]
+    assert current_checksum != old_checksum, "B4 must change this unit's checksum"
+
+    m02_support.provision_sync(m02_ids, current, compat_tenant,
+                               supported=st.STAFF_TEST_SUPPORTED, manifest=st.staff_manifest())
+    with psycopg.connect(m02_ids.admin) as conn, conn.transaction():
+        recorded = conn.execute("SELECT checksum FROM shared.schema_migrations WHERE"
+                                " tenant_id = %s AND migration_id = %s",
+                                (compat_tenant[0], migration_id)).fetchone()
+        assert recorded == (current_checksum,), ("PRECONDITION", recorded)
+        changed = conn.execute("UPDATE shared.schema_migrations SET checksum = %s WHERE"
+                               " tenant_id = %s AND migration_id = %s",
+                               (old_checksum, compat_tenant[0], migration_id)).rowcount
+        assert changed == 1
+    ledger = m02_support.admin_all(m02_ids, LEDGER, (compat_tenant[0],))
+    catalogue = _catalogue(m02_ids, compat_tenant[1])
 
     runner = TenantMigrationRunner(m02_support._connection_factory(m02_ids.logins[MIGRATOR_ROLE]),
                                    current, manifest=st.staff_manifest())
