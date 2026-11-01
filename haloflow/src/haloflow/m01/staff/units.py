@@ -640,21 +640,37 @@ END;
 _DISPLAY_BODY_SHA256: Final = "d21407820b3cfe429685298f7a392bbd80f6fb9b35801df6e3dd2720c3491a83"
 
 # t025 m01_staff_followup_reader (B3b package v2 1.2 + v2r1 A2/A3): STABLE, no lock;
-# true only for an active member holding `read`. RED TRANCHE: fail-closed stub (tenant
-# context, then refuse) until the implementation gate.
+# true only for an active member holding `read` (act not required). False for unknown,
+# inactive, missing read or other-clinic ids (schema-local); never raises for those.
 _READER_BODY: Final = r"""
 DECLARE
     v_setting text;
+    v_ok boolean;
 BEGIN
     v_setting := pg_catalog.current_setting('app.tenant_id', true);
     IF v_setting IS NULL OR v_setting = ''
        OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
         RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
     END IF;
-    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'M01_STAFF_NOT_IMPLEMENTED';
+
+    IF p_staff_id IS NULL THEN
+        RETURN false;
+    END IF;
+    -- One statement-snapshot read, no lock (v2r1 A3): active AND `read` held.
+    SELECT EXISTS (
+        SELECT 1
+          FROM {schema}.m01_staff AS s
+         WHERE s.staff_id = p_staff_id
+           AND s.status = 'active'
+           AND EXISTS (SELECT 1
+                         FROM {schema}.m01_staff_followup_access AS a
+                        WHERE a.staff_id = s.staff_id
+                          AND a.access = 'read'))
+      INTO v_ok;
+    RETURN v_ok;
 END;
 """
-_READER_BODY_SHA256: Final = "48323b0f0e15a37fff1d9cacf0f43ab3b42406199fdb20a26898d4a59900fcde"
+_READER_BODY_SHA256: Final = "ce835763697f7f6b1c697e2f4ca3af8ceaa8ea7174fccedcd51f996a110f22c9"
 
 _VOLATILITY_WORD: Final = {"stable": "STABLE", "volatile": "VOLATILE"}
 _VOLATILITY_CODE: Final = {"stable": "s", "volatile": "v"}

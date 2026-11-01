@@ -631,6 +631,12 @@ BEGIN
        OR (v_attr OPERATOR(pg_catalog.->>) 'principal_kind') <> 'actor' THEN
         @@REFUSE:NOT_AUTHORIZED@@
     END IF;
+    -- 4b. B3b (package v2 1.3): the actor's CURRENT directory standing (active, read
+    -- and act), decided under its membership lock (FOR SHARE, after the item lock),
+    -- before the key branch: a revoked or deactivated actor cannot replay either.
+    IF NOT {schema}.m01_staff_assignable(v_actor) THEN
+        @@REFUSE:NOT_AUTHORIZED@@
+    END IF;
 
     -- 5. Action-key branch: replay returns the stored snapshot, rechecking nothing
     -- else (MR-01, MA-10j).
@@ -700,8 +706,11 @@ BEGIN
     END IF;
 
     -- 6e. MA-10: the target is an active member of this clinic with read AND act,
-    -- decided under the membership lock (FOR SHARE, after the item lock).
-    IF v_target IS NOT NULL AND NOT {schema}.m01_staff_assignable(v_target) THEN
+    -- decided under the membership lock (FOR SHARE, after the item lock). A target
+    -- equal to the actor (claim; a supervisor reassigning to self) was already locked
+    -- and checked at step 4b.
+    IF v_target IS NOT NULL AND v_target <> v_actor
+       AND NOT {schema}.m01_staff_assignable(v_target) THEN
         @@REFUSE:ASSIGNEE_NOT_ELIGIBLE@@
     END IF;
 @@TAIL@@END;
@@ -874,8 +883,8 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
 _GET_ITEM_BODY_SHA256: Final = "9f592e2cbda518f631d7e634ac71461f329b35c7d17e457ecc8b2a7f53f15bf6"
 _GET_HISTORY_BODY_SHA256: Final = "8982c03dade3192fc79e22bd86f820d7664dfbf859fa1e12f394d7052104df4d"
 _LIST_ITEMS_BODY_SHA256: Final = "fca320809dc1d6d44249c3ce927ae3701bf83dc4b933b3ad4ef4dee7ef7d871d"
-_PREPARE_BODY_SHA256: Final = "bdbdb2b37efd2c77abac6e6b79abbdc01fcfa776f6627657de61fa2099dccd4c"
-_APPLY_BODY_SHA256: Final = "9d21ac4d52c3144b97e73fb4f9af291f86f575e3735ea48a6e769549df71e4dd"
+_PREPARE_BODY_SHA256: Final = "ddc80f19b64c29974d5ae9ee825632dbc2f34e1a16b89997e47ad458d2d0a5ee"
+_APPLY_BODY_SHA256: Final = "ba1515e12d9de04e2eb20fb4a4127125791a5c0e6aed0e508600abf5a77be24f"
 
 # Bodies by function. A function absent here is still the B1 fail-closed stub; each
 # tranche moves exactly the functions its gated tests cover.

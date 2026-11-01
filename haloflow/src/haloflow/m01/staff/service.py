@@ -1,20 +1,67 @@
 """B3b staff-directory service over the M01 gateway (package v2 + v2r1, Claude/Codex
-aligned 2026-11-01).
+aligned 2026-11-01; red gate PASS at 537c1b0).
 
-RED TRANCHE: the public interface is fixed here for the red tests; every service
-method raises NotImplementedError and the command types do not yet validate. The
-implementation tranche adds validation, trusted derivation and result binding.
+- Public commands are frozen dataclasses validated on construction with exact types
+  (`CommandMalformed(field)`); nothing trusted comes from the caller.
+- Attribution comes from the TenantContext only (the M02 rule); the principal must be
+  an actor with a canonical lowercase UUID id and a valid auth_method, else the route
+  is refused before any gateway call.
+- Each route checks its complete required capabilities before the gateway
+  (`RouteDenied`); the gateway still checks every statement.
+- Every statement is read with `fetch_all`; results are validated and bound to the
+  request inside the transaction, before the marker, so an invalid output rolls back.
+- After the marker any failure is `AdminCommitUnknown` (the M02 precedent); before it,
+  database errors map to fixed codes and every other exception propagates unchanged.
 
-Errors shared with the M05 service live here (M05 depends on M01, never the
-reverse). Every error carries a fixed message and a code; none carries driver text.
+Errors shared with the M05 service live here (M05 depends on M01, never the reverse).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+import re
+import unicodedata
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import Any, Final, TypeVar
 from uuid import UUID
+
+import psycopg
+from psycopg.types.json import Jsonb
+
+T = TypeVar("T")
+
+READ_CAPABILITY: Final = "m05.followup.read"
+STAFF_ADMIN_CAPABILITY: Final = "m01.staff.admin"
+STAFF_DISPLAY_CAPABILITY: Final = "m01.staff.display"
+
+K_ADMIN: Final = "m01.staff.admin"
+K_DISPLAY: Final = "m01.staff.display"
+K_READER: Final = "m01.staff.followup_reader"
+
+UUID_TEXT: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+AUTH_METHOD: Final = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+TIMESTAMP: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
+OPERATIONS: Final = ("add", "rename", "deactivate", "reactivate", "grant", "revoke")
+_WS: Final = frozenset(
+    [chr(c) for c in range(0x09, 0x0E)] + [" ", "\u0085", " ", " "]
+    + [chr(c) for c in range(0x2000, 0x200B)] + [" ", " ", " ", " ", "　"]
+)
+_FORBIDDEN: Final = re.compile("[\u0001-\u001f\u007f-\u009f  ]")
+
+ADMIN_REFUSALS: Final = frozenset({
+    "COMMAND_MALFORMED", "NOT_AUTHORIZED", "PRECONDITION_FAILED", "ACTION_KEY_CONFLICT",
+    "ACTION_KEY_ACTOR_MISMATCH",
+})
+ADMIN_FAILURES: Final = frozenset({
+    "ISOLATION_UNSUPPORTED", "COMPOSITION_UNSUPPORTED", "ADMIN_LOG_INTEGRITY",
+})
+
+
+# ---------------------------------------------------------------------------
+# Errors
+# ---------------------------------------------------------------------------
 
 
 class RouteDenied(Exception):
@@ -69,6 +116,134 @@ class AdminCommitUnknown(Exception):
         self.operation = operation
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers (also used by haloflow.m05.service)
+# ---------------------------------------------------------------------------
+
+
+def is_uuid(value: Any) -> bool:
+    return isinstance(value, UUID)
+
+
+def exact_int(value: Any) -> bool:
+    return type(value) is int
+
+
+def require_capabilities(context: Any, required: frozenset[str]) -> None:
+    if not required <= context.capabilities:
+        raise RouteDenied()
+
+
+def actor_attribution(context: Any) -> dict[str, Any] | None:
+    """Context-only attribution (the M02 rule), or None when the principal is not an
+    actor with a canonical lowercase UUID id and a valid auth_method."""
+
+    principal = context.principal
+    if principal.kind.value != "actor":
+        return None
+    if type(principal.id) is not str or not UUID_TEXT.fullmatch(principal.id):
+        return None
+    if type(principal.auth_method) is not str or not AUTH_METHOD.fullmatch(
+        principal.auth_method
+    ):
+        return None
+    return {
+        "principal_kind": principal.kind.value,
+        "principal_id": principal.id,
+        "auth_method": principal.auth_method,
+        "execution_id": str(context.execution_id),
+        "request_id": context.request_id,
+        "purpose_code": context.purpose,
+    }
+
+
+def sqlstate_and_message(error: psycopg.Error) -> tuple[str | None, str | None]:
+    sqlstate = getattr(error, "sqlstate", None)
+    message = getattr(getattr(error, "diag", None), "message_primary", None)
+    return sqlstate, message if isinstance(message, str) else None
+
+
+async def fetch_rows(
+    handle: Any, key: str, params: dict[str, Any], classify: Callable[[psycopg.Error], Exception]
+) -> list[Any]:
+    """fetch_all; a database error becomes the classified exception, raised outside
+    the handler so no driver exception is attached as cause or context."""
+
+    failure: Exception | None = None
+    try:
+        return list(await handle.fetch_all(key, params))
+    except psycopg.Error as error:
+        failure = classify(error)
+    raise failure
+
+
+def single_json(rows: list[Any]) -> Any:
+    """The one value of exactly one row with exactly one column, else a sentinel."""
+
+    if len(rows) != 1 or len(rows[0]) != 1:
+        return _INVALID
+    return rows[0][0]
+
+
+_INVALID: Final = object()
+
+
+def valid_timestamp(value: Any) -> bool:
+    if type(value) is not str or not TIMESTAMP.fullmatch(value):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.strftime("%Y-%m-%dT%H:%M:%S.%fZ") == value
+
+
+def valid_display_name(value: Any) -> bool:
+    return (
+        type(value) is str
+        and 1 <= len(value) <= 80
+        and unicodedata.is_normalized("NFC", value)
+        and not _FORBIDDEN.search(value)
+        and value[0] not in _WS
+        and value[-1] not in _WS
+    )
+
+
+def uuid_text(value: Any) -> bool:
+    return type(value) is str and bool(UUID_TEXT.fullmatch(value))
+
+
+async def run_with_marker(
+    gateway: Any,
+    context: Any,
+    body: Callable[[Any, Callable[[], None]], Awaitable[T]],
+    unknown: Callable[[], Exception],
+) -> T:
+    """The M02 marker pattern: `body(handle, mark)` calls `mark()` as its final act.
+    Before it, exceptions propagate unchanged; after it, any Exception or
+    cancellation becomes `unknown()`, raised outside the handler."""
+
+    state = {"complete": False}
+
+    def mark() -> None:
+        state["complete"] = True
+
+    async def callback(handle: Any) -> T:
+        return await body(handle, mark)
+
+    try:
+        return await gateway.with_tenant_transaction(context, callback)  # type: ignore[no-any-return]
+    except (Exception, asyncio.CancelledError):
+        if not state["complete"]:
+            raise
+    raise unknown()
+
+
+# ---------------------------------------------------------------------------
+# Public commands
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class StaffAdminCommand:
     client_action_id: UUID
@@ -76,6 +251,24 @@ class StaffAdminCommand:
     staff_id: UUID
     display_name: str | None = None
     access: str | None = None
+
+    def __post_init__(self) -> None:
+        if not is_uuid(self.client_action_id):
+            raise CommandMalformed("client_action_id")
+        if not is_uuid(self.staff_id):
+            raise CommandMalformed("staff_id")
+        if type(self.operation) is not str or self.operation not in OPERATIONS:
+            raise CommandMalformed("operation")
+        named = self.operation in ("add", "rename")
+        accessed = self.operation in ("grant", "revoke")
+        if named != (self.display_name is not None) or (
+            named and type(self.display_name) is not str
+        ):
+            raise CommandMalformed("display_name")
+        if accessed != (self.access is not None) or (
+            accessed and self.access not in ("read", "act")
+        ):
+            raise CommandMalformed("access")
 
 
 @dataclass(frozen=True)
@@ -85,12 +278,185 @@ class AdminResult:
     result: Mapping[str, Any]
 
 
+# ---------------------------------------------------------------------------
+# Classification and validation
+# ---------------------------------------------------------------------------
+
+
+def _admin_error(error: psycopg.Error) -> Exception:
+    sqlstate, message = sqlstate_and_message(error)
+    if sqlstate == "P0001" and message in ADMIN_REFUSALS:
+        return AdminRefused(message)
+    if sqlstate == "P0001" and message in ADMIN_FAILURES:
+        return AdminFailed(message)
+    if sqlstate == "22023":
+        return AdminFailed("TENANT_CONTEXT_INVALID")
+    if sqlstate == "55P03":
+        return AdminFailed("LOCK_TIMEOUT")
+    return AdminFailed("ADMIN_UNAVAILABLE")
+
+
+def read_error(error: psycopg.Error) -> Exception:
+    sqlstate, message = sqlstate_and_message(error)
+    if sqlstate == "P0001" and message in ("NOT_AUTHORIZED", "ITEM_NOT_FOUND",
+                                           "COMMAND_MALFORMED"):
+        return ReadRefused(message)
+    if sqlstate == "22023":
+        return ReadFailed("TENANT_CONTEXT_INVALID")
+    return ReadFailed("READ_UNAVAILABLE")
+
+
+def _valid_staff_snapshot(snap: Any, command: StaffAdminCommand) -> bool:
+    if type(snap) is not dict or set(snap) != {
+        "schema_version", "staff_id", "display_name", "status", "status_changed_at", "access",
+    }:
+        return False
+    access = snap["access"]
+    if not (
+        exact_int(snap["schema_version"]) and snap["schema_version"] == 1
+        and snap["staff_id"] == str(command.staff_id)
+        and valid_display_name(snap["display_name"])
+        and snap["status"] in ("active", "inactive")
+        and valid_timestamp(snap["status_changed_at"])
+        and type(access) is list
+        and all(type(a) is str and a in ("read", "act") for a in access)
+        and access == sorted(set(access))
+    ):
+        return False
+    op = command.operation
+    if op in ("add", "rename") and snap["display_name"] != command.display_name:
+        return False
+    if op == "add" and (snap["status"] != "active" or access != []):
+        return False
+    if op == "deactivate" and snap["status"] != "inactive":
+        return False
+    if op == "reactivate" and snap["status"] != "active":
+        return False
+    if op == "grant" and command.access not in access:
+        return False
+    return not (op == "revoke" and command.access in access)
+
+
+def _bind_admin(rows: list[Any], command: StaffAdminCommand) -> dict[str, Any]:
+    value = single_json(rows)
+    if (
+        type(value) is not dict
+        or set(value) != {"schema_version", "client_action_id", "operation", "staff"}
+        or not exact_int(value["schema_version"]) or value["schema_version"] != 1
+        or value["client_action_id"] != str(command.client_action_id)
+        or value["operation"] != command.operation
+        or not _valid_staff_snapshot(value["staff"], command)
+    ):
+        raise AdminFailed("ADMIN_RESULT_INVALID")
+    return value
+
+
+def _bind_display(rows: list[Any], requested: tuple[UUID, ...]) -> dict[str, Any]:
+    value = single_json(rows)
+    wanted = {str(u) for u in requested}
+    if (
+        type(value) is not dict or set(value) != {"schema_version", "staff"}
+        or not exact_int(value["schema_version"]) or value["schema_version"] != 1
+        or type(value["staff"]) is not list
+    ):
+        raise ReadFailed("READ_RESULT_INVALID")
+    ids: list[str] = []
+    for entry in value["staff"]:
+        if (
+            type(entry) is not dict or set(entry) != {"staff_id", "display_name", "status"}
+            or not uuid_text(entry["staff_id"]) or entry["staff_id"] not in wanted
+            or not valid_display_name(entry["display_name"])
+            or entry["status"] not in ("active", "inactive")
+        ):
+            raise ReadFailed("READ_RESULT_INVALID")
+        ids.append(entry["staff_id"])
+    if ids != sorted(set(ids)):
+        raise ReadFailed("READ_RESULT_INVALID")
+    return value
+
+
+async def check_reader(handle: Any, staff_id: str) -> None:
+    """The v2r1 A2 adapter: exactly one row, one column, an exact bool; only True
+    authorizes. False -> ReadRefused(NOT_AUTHORIZED); anything else ->
+    ReadFailed(READ_RESULT_INVALID). Nothing further runs on refusal or failure."""
+
+    rows = await fetch_rows(handle, K_READER, {"staff_id": UUID(staff_id)}, read_error)
+    value = single_json(rows)
+    if type(value) is not bool:
+        raise ReadFailed("READ_RESULT_INVALID")
+    if value is not True:
+        raise ReadRefused("NOT_AUTHORIZED")
+
+
+def _display_ids(staff_ids: Any) -> tuple[UUID, ...]:
+    if (
+        type(staff_ids) is not tuple
+        or not 1 <= len(staff_ids) <= 100
+        or not all(is_uuid(u) for u in staff_ids)
+        or len(set(staff_ids)) != len(staff_ids)
+    ):
+        raise CommandMalformed("staff_ids")
+    return staff_ids
+
+
+# ---------------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------------
+
+
 class StaffService:
     def __init__(self, gateway: Any) -> None:
         self._gateway = gateway
 
     async def admin(self, context: Any, command: StaffAdminCommand) -> AdminResult:
-        raise NotImplementedError("B3b staff admin service")
+        if type(command) is not StaffAdminCommand:
+            raise CommandMalformed("command")
+        require_capabilities(context, frozenset({STAFF_ADMIN_CAPABILITY}))
+        attribution = actor_attribution(context)
+        if attribution is None:
+            raise AdminRefused("NOT_AUTHORIZED")
+        sql_command: dict[str, Any] = {
+            "schema_version": 1,
+            "client_action_id": str(command.client_action_id),
+            "operation": command.operation,
+            "staff_id": str(command.staff_id),
+            "permissions": {"staff_admin": STAFF_ADMIN_CAPABILITY in context.capabilities},
+            "attribution": attribution,
+        }
+        if command.display_name is not None:
+            sql_command["display_name"] = command.display_name
+        if command.access is not None:
+            sql_command["access"] = command.access
+
+        async def body(handle: Any, mark: Callable[[], None]) -> AdminResult:
+            rows = await fetch_rows(handle, K_ADMIN, {"command": Jsonb(sql_command)},
+                                    _admin_error)
+            result = AdminResult(_bind_admin(rows, command))
+            mark()
+            return result
+
+        return await run_with_marker(
+            self._gateway, context, body,
+            lambda: AdminCommitUnknown(command.staff_id, command.client_action_id,
+                                       command.operation),
+        )
 
     async def display(self, context: Any, staff_ids: tuple[UUID, ...]) -> Mapping[str, Any]:
-        raise NotImplementedError("B3b staff display service")
+        requested = _display_ids(staff_ids)
+        require_capabilities(context, frozenset({STAFF_DISPLAY_CAPABILITY}))
+        via_admin = STAFF_ADMIN_CAPABILITY in context.capabilities
+        if not via_admin:
+            require_capabilities(context, frozenset({READ_CAPABILITY}))
+        attribution = actor_attribution(context)
+        if attribution is None:
+            raise ReadRefused("NOT_AUTHORIZED")
+        query = {"schema_version": 1, "staff_ids": [str(u) for u in requested]}
+
+        async def callback(handle: Any) -> dict[str, Any]:
+            if not via_admin:
+                await check_reader(handle, attribution["principal_id"])
+            rows = await fetch_rows(handle, K_DISPLAY, {"query": Jsonb(query)}, read_error)
+            return _bind_display(rows, requested)
+
+        result: dict[str, Any] = await self._gateway.with_tenant_transaction(context, callback)
+        return result
