@@ -913,32 +913,43 @@ def _all_text(error: BaseException) -> str:
     return "".join(traceback.format_exception(error)) + repr(error) + repr(error.args)
 
 
-async def _san2_case(install: st.StaffInstall, case: str) -> BaseException:
+async def _san2_prepare(install: st.StaffInstall, case: str) -> Any:
+    """Fixture preparation ONLY (committed writes happen here). Returns the attempted
+    operation as an async callable; the caller captures `before` between the two
+    (Codex REVISE 5ac5b9f9 item 1)."""
+
     keys = sv.TestNoteKeys()
-    if case == "key-unavailable":
+    if case in ("key-unavailable", "driver-fault"):
         item = await _claimed(install)
-        keys.current_unavailable = True
-        error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
-        return error
-    if case == "refused":
+    elif case == "refused":
         item = await _claimed(install, m05.S2)  # S1 may not resolve S2's item
+    else:  # read-integrity: a canary note whose ciphertext is swapped on read
+        item_a = await _resolved_with_note(install, keys, CANARY)
+        item_b = await _resolved_with_note(install, keys, "Other.")
+        note_a = await asyncio.to_thread(_note_id, install, item_a)
+        real_a = await asyncio.to_thread(st.call, install, "m05_read_note", str(note_a))
+        real_b = await asyncio.to_thread(st.call, install, "m05_read_note",
+                                         str(await asyncio.to_thread(_note_id, install, item_b)))
+        swapped = [({**real_a, "ciphertext": real_b["ciphertext"]},)]
+
+        async def read() -> BaseException:
+            return await _read_failure(install, keys, note_a, swapped)
+
+        return read
+
+    async def attempt() -> BaseException:
+        if case == "key-unavailable":
+            keys.current_unavailable = True
+        if case == "driver-fault":
+            # The fault trigger, function and sequence are not oracle tables.
+            with _fault_trigger(install, "m05_followup_notes", "INSERT"):
+                error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
+                assert _fault_hits(install) == 1, "SETUP: the note fault did not fire"
+            return error  # type: ignore[no-any-return]
         error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
-        return error
-    if case == "driver-fault":
-        item = await _claimed(install)
-        with _fault_trigger(install, "m05_followup_notes", "INSERT"):
-            error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
-            assert _fault_hits(install) == 1, "SETUP: the note fault did not fire"
-        return error
-    # read-integrity: a canary note whose ciphertext is swapped on read
-    item_a = await _resolved_with_note(install, keys, CANARY)
-    item_b = await _resolved_with_note(install, keys, "Other.")
-    note_a = await asyncio.to_thread(_note_id, install, item_a)
-    real_a = await asyncio.to_thread(st.call, install, "m05_read_note", str(note_a))
-    real_b = await asyncio.to_thread(st.call, install, "m05_read_note",
-                                     str(await asyncio.to_thread(_note_id, install, item_b)))
-    return await _read_failure(install, keys, note_a,
-                               [({**real_a, "ciphertext": real_b["ciphertext"]},)])
+        return error  # type: ignore[no-any-return]
+
+    return attempt
 
 
 SAN2_EXPECTED = {
@@ -951,8 +962,9 @@ SAN2_EXPECTED = {
 
 @pytest.mark.parametrize("case", sorted(SAN2_EXPECTED))
 async def test_san2_error_paths_carry_no_canary(staff_install, caplog, case):
-    before = sv.full_state(staff_install)
-    error = await _san2_case(staff_install, case)
+    attempt = await _san2_prepare(staff_install, case)
+    before = sv.full_state(staff_install)  # after fixture writes, before the operation
+    error = await attempt()
     name, code = SAN2_EXPECTED[case]
     assert type(error).__name__ == name, error
     assert getattr(error, "reason_code", getattr(error, "code", None)) == code
@@ -962,6 +974,5 @@ async def test_san2_error_paths_carry_no_canary(staff_install, caplog, case):
         assert needle not in text, case
         assert needle not in caplog.text, case
     after = sv.full_state(staff_install)
+    assert after == before  # a rejected write (or a failed read) changes nothing
     assert CANARY not in json.dumps(after, default=str)
-    if case != "read-integrity":
-        assert after == before  # rejected writes leave the state unchanged

@@ -97,7 +97,6 @@ def _matrix(install: st.StaffInstall, item: UUID, other: UUID) -> dict[str, tupl
         "metadata-outcome": ("metadata", _meta(install, item, outcome_code="cancelled_in_ehr")),
         "metadata-assertion": ("metadata", _meta(install, item, assertion_kind="workload")),
         "metadata-item-kind": ("metadata", _meta(install, item, item_kind=other_kind)),
-        "metadata-extra-key": ("metadata", _meta(install, item, note="x")),
         "metadata-missing-key": ("metadata", _meta(install, item, item_kind=None)),
         "dedupe": ("producer_dedupe_key", "m05r1:" + "0" * 64),
     }
@@ -107,7 +106,7 @@ MATRIX_CASES = (
     "type", "version", "level", "status", "operation-id", "occurred-at-only",
     "time-quality-only", "actor", "patient", "causation", "links-none", "links-extra",
     "links-relationship", "links-other-item", "metadata-outcome", "metadata-assertion",
-    "metadata-item-kind", "metadata-extra-key", "metadata-missing-key", "dedupe",
+    "metadata-item-kind", "metadata-missing-key", "dedupe",
 )
 
 
@@ -184,6 +183,50 @@ def _workload_event(install: st.StaffInstall, item: UUID, key: UUID) -> UUID:
                if json.dumps(persisted[f], sort_keys=True) != json.dumps(base[f], sort_keys=True)}
     assert differs == {"actor_id", "workload_id"}, ("SETUP CONTROL", differs)
     return UUID(event_id)
+
+
+# Contract amendment A-META (Codex REVISE 5ac5b9f9 item 2): apply's metadata predicate
+# is on the D6 FILTERED envelope: `metadata_paths` must be exactly the three allowlisted
+# paths with the expected values. Completeness of the PERSISTED key set is not observed
+# by apply; it is guaranteed by the producer: t009 step 7 refuses any key outside the
+# contract's closed schema and any missing required key (COMMAND_MALFORMED), the
+# resolution schema closes the set to exactly these three, and patient_events is
+# INSERT-only through the append owner and immutable afterwards. X-M1..3 pin that
+# guarantee for THIS contract; no new M02 signal, read or grant.
+
+RESOLUTION_METADATA_KEYS = ("assertion_kind", "item_kind", "outcome_code")
+
+
+def test_xm1_resolution_contract_schema_and_allowlist_are_closed(staff_install):
+    from test_m05_create_postgres import _ready
+
+    _ready(staff_install)
+    schema = sql.Identifier(staff_install.schema)
+    ((meta_schema,),) = st.admin_rows(staff_install, sql.SQL(
+        "SELECT metadata_json_schema FROM {}.event_contracts WHERE event_type = %s"
+        " AND version = 1").format(schema), (sv.RESOLUTION_TYPE,))
+    assert meta_schema["additionalProperties"] is False
+    assert sorted(meta_schema["required"]) == list(RESOLUTION_METADATA_KEYS)
+    assert sorted(meta_schema["properties"]) == list(RESOLUTION_METADATA_KEYS)
+    paths = st.admin_rows(staff_install, sql.SQL(
+        "SELECT json_path FROM {}.m02_envelope_path_allowlist WHERE consumer_module = 'm05'"
+        " AND event_type = %s AND contract_version = 1 ORDER BY json_path").format(schema),
+        (sv.RESOLUTION_TYPE,))
+    assert [p for (p,) in paths] == list(RESOLUTION_METADATA_KEYS)
+
+
+@pytest.mark.parametrize("case", ["extra-key", "missing-key"])
+async def test_xm2_xm3_producer_refuses_non_closed_metadata(staff_install, case):
+    """The persisted-key-set guarantee, on the real producer for this contract."""
+
+    item = await rs.claimed(staff_install)
+    meta = _meta(staff_install, item, **({"note": "x"} if case == "extra-key"
+                                         else {"item_kind": None}))
+    before = sv.full_state(staff_install)
+    with pytest.raises(rs.obs().AppendFailed) as caught:
+        await rs.append_resolution(staff_install, item, uuid4(), metadata=meta)
+    assert caught.value.reason_code == "COMMAND_MALFORMED"
+    assert sv.full_state(staff_install) == before
 
 
 async def test_mr10_unknown_event_is_invalid(staff_install):
