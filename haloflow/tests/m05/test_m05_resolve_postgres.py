@@ -482,6 +482,7 @@ async def test_rb_control_unfaulted_path_reaches_every_write(staff_install):
     item = await _claimed(staff_install)
     before = sv.full_state(staff_install)
     result, rec = await _resolve_with(staff_install, {}, _resolve(item, 2, note="Control."))
+    assert not isinstance(result, BaseException), ("CONTROL: resolve failed", result)
     assert result.outcome == "applied", result
     assert rec.errors == []
     rs.resolution_delta(before, sv.full_state(staff_install), item,
@@ -581,6 +582,7 @@ async def test_rb8_invalid_apply_output_rolls_back(staff_install):
     hooks = {"substitute": {sv.K_APPLY: [({"schema_version": 1, "outcome": "applied",
                                            "snapshot": {}},)]}}
     error, rec = await _resolve_with(staff_install, hooks, _resolve(item, 2, note="Bad output."))
+    assert len(rec.returned(sv.K_APPLY)) == 1, ("PRECONDITION: apply not reached", error)
     (real,) = rec.returned(sv.K_APPLY)
     assert real[0][0]["outcome"] == "applied"  # the real apply ran before substitution
     assert type(error) is _svc().ActionFailed and error.reason_code == "ACTION_RESULT_INVALID"
