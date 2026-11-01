@@ -689,3 +689,175 @@ def test_gm2_composition_guard_after_item_lock_is_caught(unit_mutant, staff_inst
     assert (clean.sqlstate, clean.diag.message_primary) == ("P0001", "COMPOSITION_UNSUPPORTED")
     mutant = _second_item_with_holder(unit_mutant("gm2", st.GM_2))
     assert mutant.sqlstate == "55P03", (mutant.sqlstate, str(mutant))
+
+
+# ---------------------------------------------------------------------------
+# B3b actor authority races (package v2 1.3/1.6/2.2; red review 24d1cd1 #1).
+# The actor X is a supervisor DISTINCT from the target T, so these rows can only
+# pass once step 4 checks X's directory standing under the membership lock, before
+# replay. An implementation without the actor check fails every row except RD-2,
+# which is a deadlock-freedom row (declared: it becomes discriminating with the
+# second membership lock; its mutant evidence comes with the implementation).
+# ---------------------------------------------------------------------------
+
+
+def _x_command(item: str, actor: str, target: str, action: str = "assign", *,
+               version: int = 1, key: str | None = None) -> dict[str, Any]:
+    return _cmd(item, version, action, key=key, actor=actor, assignee=target,
+                permissions=m05.SUPERVISOR_PERMISSIONS)
+
+
+def _x_setup(install: st.StaffInstall, action: str) -> tuple[str, str, str, int]:
+    """(item, actor X, target T, expected version) for an action by X on T."""
+
+    _setup(install)
+    actor, target = _eligible(install), _eligible(install)
+    item = _item(install)
+    if action == "reassign":
+        _apply(install, _assign(item, _eligible(install)))  # by SUP, so version 2
+        return item, actor, target, 2
+    return item, actor, target, 1
+
+
+@pytest.mark.parametrize("change", CHANGES)
+@pytest.mark.parametrize("action", ["assign", "reassign"])
+def test_ra1_actor_change_committed_before_apply(staff_install, action, change):
+    item, actor, target, version = _x_setup(staff_install, action)
+    st.admin_op(staff_install, _change_command(change, actor))
+    command = _x_command(item, actor, target, action, version=version)
+    before = st.state(staff_install)
+    assert _prepare(staff_install, command) == {
+        "decision": "REFUSED", "code": "NOT_AUTHORIZED", "schema_version": 1,
+    }
+    st.expect_code("NOT_AUTHORIZED", lambda: _apply(staff_install, command))
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+@pytest.mark.parametrize("change", CHANGES)
+def test_ra1r_replay_refused_after_actor_change(staff_install, change):
+    item, actor, target, _ = _x_setup(staff_install, "assign")
+    command = _x_command(item, actor, target, key=st.new_uuid())
+    assert _apply(staff_install, command)["outcome"] == "applied"
+    st.admin_op(staff_install, _change_command(change, actor))
+    before = st.state(staff_install)
+    assert _prepare(staff_install, command) == {
+        "decision": "REFUSED", "code": "NOT_AUTHORIZED", "schema_version": 1,
+    }
+    st.expect_code("NOT_AUTHORIZED", lambda: _apply(staff_install, command))
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+@pytest.mark.parametrize("rollback", [False, True], ids=["commit", "rollback"])
+@pytest.mark.parametrize("change", CHANGES)
+def test_ra2_actor_change_uncommitted_apply_waits(staff_install, change, rollback):
+    item, actor, target, _ = _x_setup(staff_install, "assign")
+    change_command = _change_command(change, actor)
+    command = _x_command(item, actor, target)
+    before = st.state(staff_install)
+    admin_conn, admin_result = _admin_open(staff_install, change_command)
+    apply_conn = st.runtime_connection(staff_install)
+    try:
+        st.set_tenant(apply_conn, staff_install)
+        with st.background(lambda: st.call_on(apply_conn, staff_install, "m05_apply_action",
+                                              command)) as box:
+            st.wait_until_blocked_by(staff_install, apply_conn.info.backend_pid,
+                                     admin_conn.info.backend_pid)
+            (admin_conn.rollback if rollback else admin_conn.commit)()
+        (apply_conn.rollback if "error" in box else apply_conn.commit)()
+    finally:
+        admin_conn.close()
+        apply_conn.close()
+    delta = st.Delta(before, st.state(staff_install))
+    if rollback:
+        assert "error" not in box, box.get("error")
+        st.check_assignment_delta(delta, before, staff_install, command, box["result"],
+                                  new_assignee=target)
+        delta.untouched(st.TABLES)
+        return
+    error = box.get("error")
+    assert isinstance(error, psycopg.Error) and error.sqlstate == "P0001"
+    assert error.diag.message_primary == "NOT_AUTHORIZED"
+    st.check_admin_delta(delta, before, staff_install, change_command, admin_result)
+    delta.untouched(st.M05_CONTENT_TABLES)
+
+
+@pytest.mark.parametrize("change", CHANGES)
+@pytest.mark.parametrize("same_txn_prepare", [False, True], ids=["apply", "prepare_apply"])
+def test_ra4_ra5_apply_first_actor_change_waits(staff_install, change, same_txn_prepare):
+    item, actor, target, _ = _x_setup(staff_install, "assign")
+    command = _x_command(item, actor, target)
+    change_command = _change_command(change, actor)
+    before = st.state(staff_install)
+    apply_conn = st.runtime_connection(staff_install)
+    admin_conn = st.runtime_connection(staff_install)
+    try:
+        st.set_tenant(apply_conn, staff_install)
+        if same_txn_prepare:
+            assert st.call_on(apply_conn, staff_install, "m05_prepare_action",
+                              command)["decision"] == "NEW"
+        else:
+            applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+        st.set_tenant(admin_conn, staff_install)
+        with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin",
+                                              change_command)) as box:
+            st.wait_until_blocked_by(staff_install, admin_conn.info.backend_pid,
+                                     apply_conn.info.backend_pid)
+            if same_txn_prepare:
+                applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+            apply_conn.commit()
+        admin_conn.commit()
+    finally:
+        apply_conn.close()
+        admin_conn.close()
+    assert "error" not in box, box.get("error")
+    delta = st.Delta(before, st.state(staff_install))
+    st.check_assignment_delta(delta, before, staff_install, command, applied, new_assignee=target)
+    st.check_admin_delta(delta, before, staff_install, change_command, box["result"])
+
+
+@pytest.mark.parametrize("change", CHANGES)
+def test_ra8_actor_lock_timeout_never_accepts(staff_install, change):
+    item, actor, target, _ = _x_setup(staff_install, "assign")
+    before = st.state(staff_install)
+    admin_conn, _ = _admin_open(staff_install, _change_command(change, actor))
+    try:
+        apply_conn = st.runtime_connection(staff_install)
+        try:
+            apply_conn.execute("SET LOCAL lock_timeout = '300ms'")
+            st.set_tenant(apply_conn, staff_install)
+            with pytest.raises(psycopg.Error) as timed_out:
+                st.call_on(apply_conn, staff_install, "m05_apply_action",
+                           _x_command(item, actor, target))
+            assert timed_out.value.sqlstate == "55P03"
+            apply_conn.rollback()
+        finally:
+            apply_conn.close()
+        st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+    finally:
+        admin_conn.rollback()
+        admin_conn.close()
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+def test_rd2_actor_and_target_deactivated_concurrently_never_deadlock(staff_install):
+    _setup(staff_install)
+    for _ in range(DEADLOCK_ROUNDS):
+        actor, target = _eligible(staff_install), _eligible(staff_install)
+        item = _item(staff_install)
+
+        def act(item: str = item, actor: str = actor, target: str = target) -> Any:
+            return _apply(staff_install, _x_command(item, actor, target))
+
+        def deactivate(staff: str) -> Any:
+            return st.admin_op(staff_install, st.admin_command("deactivate", staff))
+
+        with (st.background(act) as box_a,
+              st.background(lambda actor=actor: deactivate(actor)) as box_x,
+              st.background(lambda target=target: deactivate(target)) as box_t):
+            pass
+        assert "error" not in box_x and "error" not in box_t, (box_x, box_t)
+        error = box_a.get("error")
+        if error is not None:
+            assert isinstance(error, psycopg.Error)
+            assert error.sqlstate != "40P01", "deadlock"
+            assert error.diag.message_primary in ("NOT_AUTHORIZED", "ASSIGNEE_NOT_ELIGIBLE")

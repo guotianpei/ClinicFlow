@@ -11,6 +11,8 @@ statement ran, so corrupted-output rows exercise rollback of real writes.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -127,54 +129,83 @@ class _Handle:
         self._recorder = recorder
 
     def _note(self, key: str, params: Any) -> None:
+        # Deep copies (red review 24d1cd1 #2): a service that mutates one shared
+        # command object cannot rewrite the recorded history.
         self._recorder.statements.append(key)
-        self._recorder.params.append((key, params))
+        self._recorder.params.append((key, copy.deepcopy(_plain(params))))
 
     async def execute(self, key: str, params: Any = None) -> Any:
-        self._note(key, params)
-        return await self._handle.execute(key, params)
+        raise AssertionError("B3b services read every statement with fetch_all")
 
     async def fetch_one(self, key: str, params: Any = None) -> Any:
-        self._note(key, params)
-        row = await self._handle.fetch_one(key, params)
-        if key in self._recorder.substitute:
-            rows = self._recorder.substitute[key]
-            return rows[0] if rows else None
-        return row
+        # Red review 24d1cd1 #3: fetch_one would hide extra rows from the validator.
+        raise AssertionError("B3b services read every statement with fetch_all")
 
     async def fetch_all(self, key: str, params: Any = None) -> Any:
         self._note(key, params)
+        await self._recorder._run_hook(self._recorder.before, key)
         rows = await self._handle.fetch_all(key, params)
+        self._recorder.results.append((key, copy.deepcopy(list(rows))))
+        await self._recorder._run_hook(self._recorder.after, key)
         if key in self._recorder.substitute:
             return list(self._recorder.substitute[key])
         return rows
 
 
-class Recorder:
-    """Duck-typed gateway: the services use only `with_tenant_transaction`."""
+def _plain(params: Any) -> Any:
+    if isinstance(params, dict):
+        return {k: getattr(v, "obj", v) for k, v in params.items()}
+    return params
 
-    def __init__(self, gateway: Any, substitute: dict[str, list[tuple[Any, ...]]] | None = None):
+
+class Recorder:
+    """Duck-typed gateway (the services use only `with_tenant_transaction`).
+
+    - `calls`, `contexts`: every route-level gateway transaction and its context;
+    - `statements`, `params` (deep copies), `results` (the REAL rows, before any
+      substitution);
+    - `substitute[key]`: rows returned instead, AFTER the real statement ran;
+    - `before[key]` / `after[key]`: hooks (sync callables run in a worker thread, or
+      coroutine functions); each fires once, then is removed; an exception from a
+      hook propagates into the service exactly as a statement failure would.
+    """
+
+    def __init__(self, gateway: Any, substitute: dict[str, list[tuple[Any, ...]]] | None = None,
+                 *, before: dict[str, Any] | None = None, after: dict[str, Any] | None = None):
         self._gateway = gateway
         self.calls = 0
+        self.callbacks = 0
+        self.contexts: list[Any] = []
         self.statements: list[str] = []
         self.params: list[tuple[str, Any]] = []
+        self.results: list[tuple[str, list[Any]]] = []
         self.substitute = dict(substitute or {})
+        self.before = dict(before or {})
+        self.after = dict(after or {})
+
+    async def _run_hook(self, hooks: dict[str, Any], key: str) -> None:
+        hook = hooks.pop(key, None)
+        if hook is None:
+            return
+        if asyncio.iscoroutinefunction(hook):
+            await hook()
+        else:
+            await asyncio.to_thread(hook)
 
     async def with_tenant_transaction(self, context: Any, callback: Any, **kwargs: Any) -> Any:
         self.calls += 1
+        self.contexts.append(context)
 
         async def wrapped(handle: Any) -> Any:
+            self.callbacks += 1
             return await callback(_Handle(handle, self))
 
         return await self._gateway.with_tenant_transaction(context, wrapped, **kwargs)
 
     def sent(self, key: str) -> list[Any]:
-        """The JSON objects sent as %(command)s / %(query)s for `key`, in order."""
+        """The JSON objects sent for `key` (the single named parameter), in order."""
 
-        out: list[Any] = []
-        for k, params in self.params:
-            if k != key:
-                continue
-            value = next(iter(params.values()))
-            out.append(getattr(value, "obj", value))
-        return out
+        return [next(iter(p.values())) for k, p in self.params if k == key]
+
+    def returned(self, key: str) -> list[list[Any]]:
+        return [rows for k, rows in self.results if k == key]

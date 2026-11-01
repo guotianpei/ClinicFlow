@@ -204,6 +204,7 @@ async def test_sv05_domain_refusals_in_sql(staff_install, caps, kind, assignee):
             await _svc().M05Service(rec).act(ctx, _action(item, 1, kind, assignee))
         assert caught.value.code == "NOT_AUTHORIZED"
         assert rec.statements == [sv.K_PREPARE]  # REFUSED short-circuits apply
+        assert (rec.calls, rec.callbacks) == (1, 1)
     _untouched(staff_install, before)
 
 
@@ -232,9 +233,20 @@ async def test_sv07a_eligible_actor_acts(staff_install):
     item = await _aitem(staff_install)
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
-        result = await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
+        action = _action(item, 1, "claim")
+        result = await _svc().M05Service(rec).act(ctx, action)
         assert (result.outcome, result.snapshot["assignee_id"]) == ("applied", m05.S1)
-        assert rec.statements == [sv.K_PREPARE, sv.K_APPLY]
+        # One gateway transaction, one callback, same context, identical command.
+        assert (rec.calls, rec.callbacks, rec.statements) == (1, 1, [sv.K_PREPARE, sv.K_APPLY])
+        assert rec.contexts == [ctx]
+        assert rec.sent(sv.K_PREPARE) == rec.sent(sv.K_APPLY)
+        assert dict(result.snapshot) == rec.returned(sv.K_APPLY)[0][0][0]["snapshot"]
+        replay = await _svc().M05Service(rec).act(ctx, action)
+        assert (replay.outcome, dict(replay.snapshot)) == ("replayed", dict(result.snapshot))
+        assert (rec.calls, rec.callbacks) == (2, 2)
+        assert rec.statements[2:] == [sv.K_PREPARE, sv.K_APPLY]
+        assert rec.returned(sv.K_PREPARE)[1][0][0]["decision"] == "REPLAY"
+        assert rec.sent(sv.K_PREPARE)[1] == rec.sent(sv.K_APPLY)[1] == rec.sent(sv.K_APPLY)[0]
 
 
 def _actor(kind: str, install: st.StaffInstall, foreign: st.StaffInstall) -> UUID:
@@ -349,42 +361,14 @@ def rr_login(staff_install) -> Iterator[str]:
             conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(name)))
 
 
-class _BeforeReader(sv.Recorder):
-    """Runs `hook` (in a thread) just before the first reader statement."""
-
-    def __init__(self, gateway: Any, hook: Any) -> None:
-        super().__init__(gateway)
-        self._hook = hook
-
-    async def with_tenant_transaction(self, context: Any, callback: Any, **kwargs: Any) -> Any:
-        recorder = self
-
-        async def wrapped(handle: Any) -> Any:
-            class _H(sv._Handle):
-                async def fetch_all(self, key: str, params: Any = None) -> Any:
-                    if key == sv.K_READER and recorder._hook is not None:
-                        hook, recorder._hook = recorder._hook, None
-                        await asyncio.to_thread(hook)
-                    return await super().fetch_all(key, params)
-
-                async def fetch_one(self, key: str, params: Any = None) -> Any:
-                    if key == sv.K_READER and recorder._hook is not None:
-                        hook, recorder._hook = recorder._hook, None
-                        await asyncio.to_thread(hook)
-                    return await super().fetch_one(key, params)
-
-            return await callback(_H(handle, recorder))
-
-        self.calls += 1
-        return await self._gateway.with_tenant_transaction(context, wrapped, **kwargs)
-
-
 async def test_sv08s_rr_snapshot_before_revoke_completes_new_txn_refused(staff_install, rr_login):
     item = await _aitem(staff_install)
     reader = _staff(staff_install)
     async with sv.runtime(staff_install, login=rr_login) as rt:
         ctx = await sv.context(rt, staff_install, str(reader), sv.READ_ONLY_CAPS)
-        rec = _BeforeReader(rt.gateway, lambda: _revoke(staff_install, reader, "read"))
+        rec = sv.Recorder(
+            rt.gateway, before={sv.K_READER: lambda: _revoke(staff_install, reader, "read")}
+        )
         view = await _svc().M05Service(rec).get(ctx, item)  # snapshot predates the revoke
         assert view["item_id"] == str(item)
         with pytest.raises(_svc().ReadRefused) as caught:  # a new transaction after it
@@ -397,7 +381,9 @@ async def test_sv08s_rc_control_reader_statement_sees_committed_revoke(staff_ins
     reader = _staff(staff_install)
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, str(reader), sv.READ_ONLY_CAPS)
-        rec = _BeforeReader(rt.gateway, lambda: _revoke(staff_install, reader, "read"))
+        rec = sv.Recorder(
+            rt.gateway, before={sv.K_READER: lambda: _revoke(staff_install, reader, "read")}
+        )
         with pytest.raises(_svc().ReadRefused) as caught:
             await _svc().M05Service(rec).get(ctx, item)
         assert caught.value.code == "NOT_AUTHORIZED"
@@ -683,105 +669,234 @@ def _faulting_pool(mode: str, fired: list[str]) -> Any:
     return _Pool
 
 
-@pytest.mark.parametrize(
-    ("mode", "retry_outcome"),
-    [("commit_then_raise", "replayed"), ("raise_no_commit", "applied"),
-     ("commit_then_cancel", "replayed")],
-)
-async def test_sv12_action_unknown_commit_then_recovery(staff_install, mode, retry_outcome):
+COMMITTED = {"commit_then_raise": True, "commit_then_cancel": True, "raise_no_commit": False}
+
+
+@pytest.mark.parametrize("mode", sorted(COMMITTED))
+async def test_sv12_action_unknown_commit_then_recovery(staff_install, mode):
+    """Red review 24d1cd1 #4: the original snapshot is captured inside the
+    transaction; committed -> the retry replays exactly it and writes nothing;
+    not committed -> nothing was written and the retry applies exactly once."""
+
     item = await _aitem(staff_install)
     action = _action(item, 1, "claim")
     fired: list[str] = []
+    before = st.state(staff_install)
     async with sv.runtime(staff_install, pool_class=_faulting_pool(mode, fired)) as rt:
+        rec = sv.Recorder(rt.gateway)
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
-        service = _svc().M05Service(rt.gateway)
+        service = _svc().M05Service(rec)
         with pytest.raises(_svc().ActionCommitUnknown) as caught:
             await service.act(ctx, action)
+        assert fired == [mode]
         assert (caught.value.item_id, caught.value.client_action_id) == (
             item, action.client_action_id)
         assert caught.value.__cause__ is None and caught.value.__context__ is None
         assert "simulated" not in str(caught.value)
+        original = rec.returned(sv.K_APPLY)[0][0][0]
+        command = rec.sent(sv.K_APPLY)[0]
+        after_fault = st.state(staff_install)
         retry = await service.act(ctx, action)
-        assert fired == [mode]
-    assert retry.outcome == retry_outcome
-    rows = st.admin_rows(staff_install, sql.SQL(
-        "SELECT count(*) FROM {}.m05_followup_actions WHERE item_id = %s").format(
-        sql.Identifier(staff_install.schema)), (str(item),))
-    assert rows == [(1,)]  # applied exactly once
+        assert fired == [mode]  # the retry used the real transaction manager
+    after_retry = st.state(staff_install)
+    if COMMITTED[mode]:
+        assert (retry.outcome, dict(retry.snapshot)) == ("replayed", original["snapshot"])
+        assert after_retry == after_fault
+        st.check_assignment_delta(st.Delta(before, after_fault), before, staff_install, command,
+                                  original, new_assignee=m05.S1)
+    else:
+        assert after_fault == before
+        assert retry.outcome == "applied"
+        st.check_assignment_delta(st.Delta(before, after_retry), before, staff_install, command,
+                                  {"outcome": "applied", "snapshot": dict(retry.snapshot)},
+                                  new_assignee=m05.S1)
+    st.Delta(before, after_retry).untouched(st.TABLES)
 
 
-@pytest.mark.parametrize("mode", ["commit_then_raise", "raise_no_commit"])
+def _admin_cmd(staff: UUID, op: str = "add", **kw: Any) -> Any:
+    values: dict[str, Any] = {"client_action_id": uuid.uuid4(), "operation": op,
+                              "staff_id": staff}
+    values.update(kw)
+    if op in ("add", "rename") and "display_name" not in values:
+        values["display_name"] = "Recovery Case"
+    return _staff_svc().StaffAdminCommand(**values)
+
+
+@pytest.mark.parametrize("mode", sorted(COMMITTED))
 async def test_sv12_admin_unknown_commit_then_recovery(staff_install, mode):
     await asyncio.to_thread(_ready, staff_install)
     staff = uuid.uuid4()
-    command = _staff_svc().StaffAdminCommand(client_action_id=uuid.uuid4(), operation="add",
-                                             staff_id=staff, display_name="Unknown Commit")
+    command = _admin_cmd(staff)
     fired: list[str] = []
+    before = st.state(staff_install)
     async with sv.runtime(staff_install, pool_class=_faulting_pool(mode, fired)) as rt:
+        rec = sv.Recorder(rt.gateway)
+        ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+        service = _staff_svc().StaffService(rec)
+        with pytest.raises(_staff_svc().AdminCommitUnknown) as caught:
+            await service.admin(ctx, command)
+        assert fired == [mode]
+        assert (caught.value.staff_id, caught.value.client_action_id, caught.value.operation) == (
+            staff, command.client_action_id, "add")
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+        original = rec.returned(sv.K_ADMIN)[0][0][0]
+        sql_command = rec.sent(sv.K_ADMIN)[0]
+        after_fault = st.state(staff_install)
+        retry = await service.admin(ctx, command)
+        assert fired == [mode]
+    after_retry = st.state(staff_install)
+    if COMMITTED[mode]:
+        assert dict(retry.result) == original
+        assert after_retry == after_fault
+        st.check_admin_delta(st.Delta(before, after_fault), before, staff_install, sql_command,
+                             original)
+    else:
+        assert after_fault == before
+        st.check_admin_delta(st.Delta(before, after_retry), before, staff_install,
+                             rec.sent(sv.K_ADMIN)[1], dict(retry.result))
+    st.Delta(before, after_retry).untouched(st.M05_CONTENT_TABLES)
+
+
+def _post_body_fault(monkeypatch: Any, gateway: Any) -> dict[str, int]:
+    original = gateway._verify_effective_path
+    calls = {"n": 0}
+
+    async def verify(connection: Any, schema_key: str) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("simulated post-body path check failure")
+        await original(connection, schema_key)
+
+    monkeypatch.setattr(gateway, "_verify_effective_path", verify)
+    return calls
+
+
+async def test_sv12_action_post_body_fault_is_unknown_then_recovers(staff_install, monkeypatch):
+    item = await _aitem(staff_install)
+    action = _action(item, 1, "claim")
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        calls = _post_body_fault(monkeypatch, rt.gateway)
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        service = _svc().M05Service(rt.gateway)
+        with pytest.raises(_svc().ActionCommitUnknown) as caught:
+            await service.act(ctx, action)
+        assert calls["n"] == 2
+        assert (caught.value.item_id, caught.value.client_action_id) == (
+            item, action.client_action_id)
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+        assert st.state(staff_install) == before  # the transaction did not commit
+        monkeypatch.undo()
+        retry = await service.act(ctx, action)
+    assert retry.outcome == "applied"
+    rows = st.admin_rows(staff_install, sql.SQL(
+        "SELECT count(*) FROM {}.m05_followup_actions WHERE item_id = %s").format(
+        sql.Identifier(staff_install.schema)), (str(item),))
+    assert rows == [(1,)]
+
+
+async def test_sv12_admin_post_body_fault_is_unknown_then_recovers(staff_install, monkeypatch):
+    await asyncio.to_thread(_ready, staff_install)
+    staff = uuid.uuid4()
+    command = _admin_cmd(staff)
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        calls = _post_body_fault(monkeypatch, rt.gateway)
         ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
         service = _staff_svc().StaffService(rt.gateway)
         with pytest.raises(_staff_svc().AdminCommitUnknown) as caught:
             await service.admin(ctx, command)
-        assert (caught.value.staff_id, caught.value.client_action_id, caught.value.operation) == (
-            staff, command.client_action_id, "add")
+        assert calls["n"] == 2
         assert caught.value.__cause__ is None and caught.value.__context__ is None
+        assert st.state(staff_install) == before
+        monkeypatch.undo()
         retry = await service.admin(ctx, command)
     assert retry.result["staff"]["staff_id"] == str(staff)
-    rows = st.admin_rows(staff_install, sql.SQL(
-        "SELECT count(*) FROM {}.m01_staff_admin_log WHERE staff_id = %s").format(
-        sql.Identifier(staff_install.schema)), (str(staff),))
-    assert rows == [(1,)]
 
 
-async def test_sv12_post_body_path_fault_is_unknown(staff_install, monkeypatch):
-    item = await _aitem(staff_install)
-    async with sv.runtime(staff_install) as rt:
-        gateway = rt.gateway
-        original = gateway._verify_effective_path
-        calls = {"n": 0}
-
-        async def verify(connection: Any, schema_key: str) -> None:
-            calls["n"] += 1
-            if calls["n"] == 2:
-                raise RuntimeError("simulated post-body path check failure")
-            await original(connection, schema_key)
-
-        monkeypatch.setattr(gateway, "_verify_effective_path", verify)
-        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
-        with pytest.raises(_svc().ActionCommitUnknown):
-            await _svc().M05Service(gateway).act(ctx, _action(item, 1, "claim"))
+async def _cancel() -> None:
+    raise asyncio.CancelledError()
 
 
 async def test_sv12_cancellation_before_marker_is_cancellation(staff_install):
     item = await _aitem(staff_install)
+    await asyncio.to_thread(_ready, staff_install)
     before = st.state(staff_install)
-
-    class _CancelAtApply(sv.Recorder):
-        async def with_tenant_transaction(self, context: Any, callback: Any, **kw: Any) -> Any:
-            async def wrapped(handle: Any) -> Any:
-                class _H(sv._Handle):
-                    async def fetch_one(self, key: str, params: Any = None) -> Any:
-                        if key == sv.K_APPLY:
-                            raise asyncio.CancelledError()
-                        return await super().fetch_one(key, params)
-
-                    async def fetch_all(self, key: str, params: Any = None) -> Any:
-                        if key == sv.K_APPLY:
-                            raise asyncio.CancelledError()
-                        return await super().fetch_all(key, params)
-
-                return await callback(_H(handle, self))
-
-            return await self._gateway.with_tenant_transaction(context, wrapped, **kw)
-
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
         with pytest.raises(asyncio.CancelledError):
-            await _svc().M05Service(_CancelAtApply(rt.gateway)).act(ctx, _action(item, 1, "claim"))
+            await _svc().M05Service(sv.Recorder(rt.gateway, before={sv.K_APPLY: _cancel})).act(
+                ctx, _action(item, 1, "claim"))
+        admin_ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+        with pytest.raises(asyncio.CancelledError):
+            await _staff_svc().StaffService(sv.Recorder(rt.gateway, after={sv.K_ADMIN: _cancel}))\
+                .admin(admin_ctx, _admin_cmd(uuid.uuid4()))
     _untouched(staff_install, before)
 
 
-async def test_sv12_sanitized_failures_carry_no_driver_text(staff_install, caplog):
+class _Boom(Exception):
+    pass
+
+
+def _boom() -> None:
+    raise _Boom("programmer error after the write")
+
+
+async def test_sv12_failure_after_real_write_before_marker_rolls_back(staff_install):
+    """A non-database exception after the real statement wrote but before the result
+    was parsed propagates unchanged (M02 precedent) and the writes roll back."""
+
+    item = await _aitem(staff_install)
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        rec = sv.Recorder(rt.gateway, after={sv.K_APPLY: _boom})
+        with pytest.raises(_Boom):
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
+        assert rec.returned(sv.K_APPLY)[0][0][0]["outcome"] == "applied"  # it really wrote
+        admin_ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+        rec2 = sv.Recorder(rt.gateway, after={sv.K_ADMIN: _boom})
+        with pytest.raises(_Boom):
+            await _staff_svc().StaffService(rec2).admin(admin_ctx, _admin_cmd(uuid.uuid4()))
+    _untouched(staff_install, before)
+
+
+CANARY = "CANARY-b3b-7f3e Jane Q Patient 555-0100"
+
+
+def _driver_failure() -> None:
+    raise psycopg.errors.DataError(CANARY)
+
+
+@pytest.mark.parametrize("route", ["act", "admin", "get"])
+async def test_sv12_driver_failure_is_sanitized(staff_install, caplog, route):
+    item = await _aitem(staff_install)
+    before = st.state(staff_install)
+    key = {"act": sv.K_PREPARE, "admin": sv.K_ADMIN, "get": sv.K_READER}[route]
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, before={key: _driver_failure})
+        if route == "act":
+            ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+            expected, reason = _svc().ActionFailed, "ACTION_UNAVAILABLE"
+            call = _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
+        elif route == "admin":
+            ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+            expected, reason = _staff_svc().AdminFailed, "ADMIN_UNAVAILABLE"
+            call = _staff_svc().StaffService(rec).admin(ctx, _admin_cmd(uuid.uuid4()))
+        else:
+            ctx = await sv.context(rt, staff_install, m05.S1, sv.READ_ONLY_CAPS)
+            expected, reason = _svc().ReadFailed, "READ_UNAVAILABLE"
+            call = _svc().M05Service(rec).get(ctx, item)
+        with pytest.raises(expected) as caught:
+            await call
+    assert caught.value.reason_code == reason
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert CANARY not in str(caught.value) and CANARY not in repr(caught.value)
+    assert CANARY not in caplog.text
+    _untouched(staff_install, before)
+
+
+async def test_sv12_sanitized_domain_refusal(staff_install, caplog):
     item = await _aitem(staff_install)
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
@@ -793,6 +908,214 @@ async def test_sv12_sanitized_failures_carry_no_driver_text(staff_install, caplo
     assert caught.value.__cause__ is None and caught.value.__context__ is None
     assert str(caught.value) == "follow-up action refused"
     assert "P0001" not in caplog.text and "PL/pgSQL" not in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Red review 24d1cd1 #2/#3: the interposed revocation, prepare/list/history/admin
+# result branches, row/column shape, and service entry validation
+# ---------------------------------------------------------------------------
+
+
+def _service_pid(install: st.StaffInstall, ctx: Any) -> int:
+    rows = st.admin_rows(install, "SELECT pid FROM pg_catalog.pg_stat_activity "
+                         "WHERE application_name = %s", (f"haloflow:{ctx.execution_id}",))
+    assert len(rows) == 1, rows
+    return int(rows[0][0])
+
+
+async def test_sv07e_revocation_interposed_in_service_transaction_waits(staff_install):
+    """Package v2 1.6 through the real service: the actor's membership is locked by
+    prepare inside the one service transaction; a revocation started between prepare
+    and apply waits on THAT backend; apply succeeds; the revocation commits after."""
+
+    item = await _aitem(staff_install)
+    actor = await asyncio.to_thread(_staff, staff_install)
+    change = st.admin_command("revoke", str(actor), access="act")
+    box: dict[str, Any] = {}
+    holder: dict[str, Any] = {}
+
+    async with sv.runtime(staff_install) as rt:
+        ctx = await sv.context(rt, staff_install, str(actor), sv.STAFF_CAPS)
+
+        def interpose() -> None:
+            conn = st.runtime_connection(staff_install)
+            st.set_tenant(conn, staff_install)
+            holder["conn"] = conn
+
+            def run() -> None:
+                try:
+                    box["result"] = st.call_on(conn, staff_install, "m01_staff_admin", change)
+                    conn.commit()
+                except Exception as error:  # noqa: BLE001 - asserted below
+                    box["error"] = error
+
+            import threading
+
+            thread = threading.Thread(target=run, daemon=True)
+            thread.start()
+            holder["thread"] = thread
+            st.wait_until_blocked_by(staff_install, conn.info.backend_pid,
+                                     _service_pid(staff_install, ctx))
+
+        rec = sv.Recorder(rt.gateway, before={sv.K_APPLY: interpose})
+        result = await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
+        assert (rec.calls, rec.statements) == (1, [sv.K_PREPARE, sv.K_APPLY])
+    holder["thread"].join(st.BLOCK_BOUND_SECONDS * 2)
+    holder["conn"].close()
+    assert result.outcome == "applied" and "error" not in box, box.get("error")
+    assert "act" not in box["result"]["staff"]["access"]
+
+
+@pytest.mark.parametrize("case", ["replay-wrong-item", "replay-wrong-version", "refused-unknown",
+                                  "refused-extra-key", "two-columns", "two-rows"])
+async def test_sv11_corrupt_prepare_branches(staff_install, case):
+    item = await _aitem(staff_install)
+    key = uuid.uuid4()
+    snap = _good_apply(item, key)["snapshot"]
+    row = {
+        "replay-wrong-item": {"schema_version": 1, "decision": "REPLAY",
+                              "snapshot": {**snap, "item_id": str(uuid.uuid4())}},
+        "replay-wrong-version": {"schema_version": 1, "decision": "REPLAY",
+                                 "snapshot": {**snap, "version": 7}},
+        "refused-unknown": {"schema_version": 1, "decision": "REFUSED", "code": "NOPE"},
+        "refused-extra-key": {"schema_version": 1, "decision": "REFUSED",
+                              "code": "STALE_VERSION", "x": 1},
+        "two-columns": None, "two-rows": None,
+    }[case]
+    new = {"schema_version": 1, "decision": "NEW"}
+    rows = {"two-columns": [(new, 1)], "two-rows": [(new,), (new,)]}.get(case, [(row,)])
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_PREPARE: rows})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        with pytest.raises(_svc().ActionFailed) as caught:
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim", key=key))
+        assert caught.value.reason_code == "ACTION_RESULT_INVALID"
+        assert sv.K_APPLY not in rec.statements
+    _untouched(staff_install, before)
+
+
+async def test_sv11_apply_two_columns_rolls_back(staff_install):
+    item = await _aitem(staff_install)
+    key = uuid.uuid4()
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_APPLY: [(_good_apply(item, key), 1)]})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        with pytest.raises(_svc().ActionFailed) as caught:
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim", key=key))
+        assert caught.value.reason_code == "ACTION_RESULT_INVALID"
+    _untouched(staff_install, before)
+
+
+@pytest.mark.parametrize("case", ["state-outside-filter", "assignee-outside-filter", "next-bad",
+                                  "next-without-overflow", "item-extra-key", "items-not-list",
+                                  "two-rows"])
+async def test_sv11_corrupt_list_output(staff_install, case):
+    item = await _aitem(staff_install)
+    view = await asyncio.to_thread(st.call, staff_install, "m05_get_item", str(item))
+    query = _svc().ListQuery(limit=5, states=("open",), assignee="unassigned")
+    good = {"schema_version": 1, "items": [view], "next": None}
+    body = {
+        "state-outside-filter": {**good, "items": [{**view, "state": "in_progress"}]},
+        "assignee-outside-filter": {**good, "items": [{**view, "assignee_id": m05.S1}]},
+        "next-bad": {**good, "next": {"created_at": "x", "item_id": str(item)}},
+        "next-without-overflow": {**good, "next": {"created_at": view["created_at"],
+                                                   "item_id": str(item)}},
+        "item-extra-key": {**good, "items": [{**view, "x": 1}]},
+        "items-not-list": {**good, "items": {"0": view}},
+        "two-rows": None,
+    }[case]
+    rows = [(good,), (good,)] if case == "two-rows" else [(body,)]
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_LIST: rows})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.READ_ONLY_CAPS)
+        with pytest.raises(_svc().ReadFailed) as caught:
+            await _svc().M05Service(rec).list_items(ctx, query)
+        assert caught.value.reason_code == "READ_RESULT_INVALID"
+
+
+@pytest.mark.parametrize("case", ["entry-extra-key", "seq-bool", "seq-unordered", "bad-action",
+                                  "before-open-keys", "entries-null"])
+async def test_sv11_corrupt_history_output(staff_install, case):
+    item = await _aitem(staff_install)
+    real = await asyncio.to_thread(st.call, staff_install, "m05_get_history", str(item))
+    entry = real["entries"][0]
+    entries = {
+        "entry-extra-key": [{**entry, "x": 1}],
+        "seq-bool": [{**entry, "seq": True}],
+        "seq-unordered": [{**entry, "seq": 2}, {**entry, "seq": 1}],
+        "bad-action": [{**entry, "action": "teleport"}],
+        "before-open-keys": [{**entry, "after": {"state": "open"}}],
+        "entries-null": None,
+    }[case]
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_HISTORY: [({**real, "entries": entries},)]})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.READ_ONLY_CAPS)
+        with pytest.raises(_svc().ReadFailed) as caught:
+            await _svc().M05Service(rec).history(ctx, item)
+        assert caught.value.reason_code == "READ_RESULT_INVALID"
+
+
+@pytest.mark.parametrize(
+    ("op", "kw", "corrupt"),
+    [("grant", {"access": "act"}, {"access": ["read"]}),
+     ("revoke", {"access": "read"}, {"access": ["act", "read"]}),
+     ("deactivate", {}, {"status": "active"}),
+     ("reactivate", {}, {"status": "inactive"}),
+     ("rename", {"display_name": "Renamed Person"}, {"display_name": "Other Person"})],
+    ids=["grant", "revoke", "deactivate", "reactivate", "rename"],
+)
+async def test_sv11a_admin_operation_binding(staff_install, op, kw, corrupt):
+    await asyncio.to_thread(_ready, staff_install)
+    staff = await asyncio.to_thread(_staff, staff_install, access=("read",),
+                                    active=op != "reactivate")
+    command = _admin_cmd(staff, op, **kw)
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+        probe = sv.Recorder(rt.gateway, {sv.K_ADMIN: []})  # run for real, read the result
+        with pytest.raises(_staff_svc().AdminFailed):
+            await _staff_svc().StaffService(probe).admin(ctx, command)
+        real = probe.returned(sv.K_ADMIN)[0][0][0]
+        bad = {**real, "staff": {**real["staff"], **corrupt}}
+        rec = sv.Recorder(rt.gateway, {sv.K_ADMIN: [(bad,)]})
+        with pytest.raises(_staff_svc().AdminFailed) as caught:
+            await _staff_svc().StaffService(rec).admin(ctx, command)
+        assert caught.value.reason_code == "ADMIN_RESULT_INVALID"
+    _untouched(staff_install, before)
+
+
+ENTRY_CASES = {
+    "get-str": ("get", str(S1)),
+    "history-str": ("history", str(S1)),
+    "get-none": ("get", None),
+    "display-empty": ("display", ()),
+    "display-101": ("display", tuple(uuid.uuid4() for _ in range(101))),
+    "display-duplicate": ("display", (S1, S1)),
+    "display-str": ("display", (str(S1),)),
+    "display-list": ("display", [S1]),
+    "assign-to-self": ("assign-self", None),
+}
+
+
+@pytest.mark.parametrize("case", sorted(ENTRY_CASES))
+async def test_sv02c_service_entry_arguments_validated_before_gateway(staff_install, case):
+    route, arg = ENTRY_CASES[case]
+    item = await _aitem(staff_install)
+    async with _service(staff_install) as (rt, rec):
+        caps = sv.SUPERVISOR_CAPS | {sv.STAFF_DISPLAY}
+        ctx = await sv.context(rt, staff_install, m05.SUP, caps)
+        with pytest.raises(_svc().CommandMalformed):
+            if route == "get":
+                await _svc().M05Service(rec).get(ctx, arg)
+            elif route == "history":
+                await _svc().M05Service(rec).history(ctx, arg)
+            elif route == "display":
+                await _staff_svc().StaffService(rec).display(ctx, arg)
+            else:
+                await _svc().M05Service(rec).act(ctx, _action(item, 1, "assign", SUP))
+        assert rec.calls == 0
 
 
 # ---------------------------------------------------------------------------
