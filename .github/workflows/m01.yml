@@ -122,6 +122,14 @@ jobs:
           python3 -I scripts/m02_observation_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/mutation"
+      # UC1 part B, B2 (Codex 20261101T003810Z): four named mutants of
+      # m05_create_item, judged by the part A checker's rules (predeclared kill
+      # sets, structured evidence, restored source). Its static controls first.
+      - run: $VENV/bin/pytest scripts/test_m05_create_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/m05_create_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/m05-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
