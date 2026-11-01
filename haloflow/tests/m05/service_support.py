@@ -145,7 +145,11 @@ class _Handle:
             raise AssertionError("B3b services read every statement with fetch_all")
         self._note(key, params)
         await self._recorder._run_hook(self._recorder.before, key)
-        row = await self._handle.fetch_one(key, params)
+        try:
+            row = await self._handle.fetch_one(key, params)
+        except BaseException as error:
+            self._recorder.errors.append((key, error))  # B4 R3: the fault-hit record
+            raise
         self._recorder.results.append((key, copy.deepcopy([row] if row is not None else [])))
         await self._recorder._run_hook(self._recorder.after, key)
         return row
@@ -153,7 +157,11 @@ class _Handle:
     async def fetch_all(self, key: str, params: Any = None) -> Any:
         self._note(key, params)
         await self._recorder._run_hook(self._recorder.before, key)
-        rows = await self._handle.fetch_all(key, params)
+        try:
+            rows = await self._handle.fetch_all(key, params)
+        except BaseException as error:
+            self._recorder.errors.append((key, error))  # B4 R3: the fault-hit record
+            raise
         self._recorder.results.append((key, copy.deepcopy(list(rows))))
         await self._recorder._run_hook(self._recorder.after, key)
         n = self._recorder._calls_by_key.get(key, 0) + 1
@@ -192,6 +200,8 @@ class Recorder:
         self.statements: list[str] = []
         self.params: list[tuple[str, Any]] = []
         self.results: list[tuple[str, list[Any]]] = []
+        # B4 R3: the raw exception each statement raised, before any classification.
+        self.errors: list[tuple[str, BaseException]] = []
         self.substitute = dict(substitute or {})
         self.before = dict(before or {})
         self.after = dict(after or {})

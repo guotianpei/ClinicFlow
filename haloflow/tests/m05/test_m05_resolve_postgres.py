@@ -2,28 +2,41 @@
 2026-11-01; owner O-1 2026-11-01: all active same-clinic follow-up viewers may read
 notes through the separate m05.followup.note.read capability).
 
+Red review REVISE 4c5b82fb applied (tests only): R1 real-append fixtures report setup
+refusals with their reason code; R3 every fault row proves its fault fired (the raw
+error the statement raised, recorded before classification), an unfaulted control
+proves each write is reached, the item UPDATE fault is added, resolver rejections
+compare the full state, and RB-10/11 assert the exact committed delta bound to the
+original event and snapshot; R4 a foreign note id read by an eligible local reader, an
+authenticated non-normal plaintext, the envelope binding/size corpus and error-path
+canaries (SAN-2). The MR-10 matrix, RA-R, G-B4, COMPAT-01 and MX-01 are in
+test_m05_resolve_binding_postgres.py.
+
 Service rows run through the composed runtime, the real M01 gateway and the real M02
 EventFoundation (producer m05_followup); SQL rows call the definer functions as the
-runtime role. The oracle is `service_support.full_state`: every directory, M05 and M02
-event/link/outbox row.
+runtime role. The oracle is `service_support.full_state`.
 
-Map: MA-01/03/03s/07r/OR, RP-1..13, KP-1, MR-08, MR-10a..n, MR-14, RB-1..12,
-NR-1..9, SAN-1, HN-1 (history note_id), UQ-1, ENV-1, X-R1..3, G-B4.
+Declared expectations (red gate request v2): an M02 append failure inside resolve
+propagates as M02's own `AppendFailed(reason_code)` (no cause/context); an M05-side
+database fault is `ActionFailed("ACTION_UNAVAILABLE")`.
 
-RED TRANCHE: resolve/read_note raise NotImplementedError; the resolution contract is
-inactive (activation, resolver (a), the t011 delta and the grants come with the
-implementation), so every row fails in its own body.
+RED: resolve/read_note raise NotImplementedError and the B4 SQL/units do not exist.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
+import traceback
+from collections.abc import Iterator
 from typing import Any
 from uuid import UUID, uuid4
 
 import m05_support as m05
 import psycopg
 import pytest
+import resolve_support as rs
 import service_support as sv
 import staff_support as st
 from psycopg import sql
@@ -37,59 +50,18 @@ from test_m05_service_postgres import (
 
 pytestmark = pytest.mark.postgres
 
-CANARY = "CANARY-b4-9c1d Mrs Q Example 555-0199 DOB 01/02/1950"
-S1 = UUID(m05.S1)
+CANARY = rs.CANARY
+_svc = rs.svc
+_obs = rs.obs
+_resolve = rs.resolve_action
+_service = rs.service
+_claimed = rs.claimed
+_resolve_once = rs.resolve_once
+_events_for = rs.events_for
 
 
-def _svc() -> Any:
-    import haloflow.m05.service as service
-
-    return service
-
-
-def _obs() -> Any:
-    import haloflow.m02.observation as observation
-
-    return observation
-
-
-def _resolve(item: UUID, version: int = 1, kind: str = "resolve", outcome: str = "rescheduled",
-             note: str | None = None, key: UUID | None = None) -> Any:
-    return _svc().ResolveAction(item_id=item, client_action_id=key or uuid4(),
-                                expected_version=version, type=kind, outcome_code=outcome,
-                                note=note)
-
-
-def _service(rt: Any, keys: Any, rec: Any = None) -> Any:
-    gateway = rec or rt.gateway
-    foundation = _obs().EventFoundation(gateway, producer_service=sv.PRODUCER)
-    return _svc().M05Service(gateway, foundation=foundation, keys=keys)
-
-
-async def _claimed(install: st.StaffInstall, actor: str = m05.S1) -> UUID:
-    """An item assigned to `actor` (version 2), via the accepted SQL claim."""
-
-    from test_m05_actions_postgres import _cmd
-
-    item = await _aitem(install)
-    await asyncio.to_thread(st.call, install, "m05_apply_action", _cmd(str(item), 1, "claim",
-                                                                         actor=actor))
-    return item
-
-
-def _rows(install: st.StaffInstall, table: str, item: UUID) -> list[Any]:
-    return st.admin_rows(install, sql.SQL(
-        "SELECT to_jsonb(t) FROM {}.{} t WHERE t.item_id = %s").format(
-        sql.Identifier(install.schema), sql.Identifier(table)), (str(item),))
-
-
-def _events_for(install: st.StaffInstall, item: UUID) -> list[dict[str, Any]]:
-    rows = st.admin_rows(install, sql.SQL(
-        "SELECT to_jsonb(e) FROM {}.patient_events e JOIN {}.patient_event_links l"
-        " ON l.event_id = e.event_id WHERE l.link_id = %s AND e.event_type = %s").format(
-        sql.Identifier(install.schema), sql.Identifier(install.schema)),
-        (str(item), sv.RESOLUTION_TYPE))
-    return [r[0] for r in rows]
+def _rows(install: st.StaffInstall, table: str, item: UUID) -> list[tuple[dict[str, Any]]]:
+    return [(r,) for r in rs.rows(install, table, item)]
 
 
 # ---------------------------------------------------------------------------
@@ -212,13 +184,6 @@ async def test_ma_or_other_requires_note_in_sql_too(staff_install):
 # ---------------------------------------------------------------------------
 # RP replay protocol, KP-1
 # ---------------------------------------------------------------------------
-
-
-async def _resolve_once(install: st.StaffInstall, keys: Any, action: Any,
-                        caps: frozenset[str] = sv.RESOLVE_CAPS) -> Any:
-    async with sv.runtime(install) as rt:
-        ctx = await sv.context(rt, install, m05.S1, caps)
-        return await _service(rt, keys).act(ctx, action)
 
 
 async def _retry(install: st.StaffInstall, keys: Any, action: Any) -> tuple[Any, sv.Recorder]:
@@ -373,44 +338,14 @@ async def test_rp13_prepare1_challenge_version_exact(staff_install, value):
 
 
 # ---------------------------------------------------------------------------
-# MR-08 orphan, MR-14 route, MR-10 event binding (direct SQL apply)
+# MR-08 orphan, MR-14 route, UQ-1, ENV-1, X-R1..3
 # ---------------------------------------------------------------------------
-
-
-async def _append_resolution(install: st.StaffInstall, item: UUID, key: UUID, *,
-                             actor: str = m05.S1, **overrides: Any) -> UUID:
-    """Append a resolution observation through the real EventFoundation (fixture)."""
-
-    view = await asyncio.to_thread(st.call, install, "m05_get_item", str(item))
-    obs = _obs()
-    values: dict[str, Any] = {
-        "event_id": uuid4(), "event_type": sv.RESOLUTION_TYPE, "contract_version": 1,
-        "correlation_id": uuid4(),
-        "producer_dedupe_key": sv.resolution_dedupe_key(install.tenant[0], str(item), str(key)),
-        "links": (obs.Link("m05_followup_item_v1", item, "case"),),
-        "metadata": {"outcome_code": "rescheduled", "assertion_kind": "staff",
-                     "item_kind": view["item_kind"]},
-        "patient_id": UUID(view["patient_id"]),
-        "causation_event_id": UUID(view["source_event_id"]),
-        "occurred_at": None, "source_time_quality": "absent",
-    }
-    values.update(overrides)
-    observation = obs.Observation(**values)
-    async with sv.runtime(install) as rt:
-        ctx = await sv.context(rt, install, actor, frozenset({sv.APPEND}))
-        foundation = obs.EventFoundation(rt.gateway, producer_service=sv.PRODUCER)
-
-        async def body(binding: Any) -> Any:
-            return await foundation.append_observation_in(binding, observation)
-
-        await foundation.run_in_transaction(ctx, body)
-    return observation.event_id  # type: ignore[no-any-return]
 
 
 async def test_mr08_orphan_resolution_event_fails_closed(staff_install, caplog):
     item = await _claimed(staff_install)
     key = uuid4()
-    await _append_resolution(staff_install, item, key)
+    await rs.append_or_setup_fail(staff_install, item, key)
     before = sv.full_state(staff_install)
     with pytest.raises(_svc().ActionFailed) as caught:
         await _resolve_once(staff_install, sv.TestNoteKeys(),
@@ -431,116 +366,6 @@ async def test_mr14_resolve_without_append_capability_route_denied(staff_install
     assert rec.calls == 0 and keys.uses == []
 
 
-def _apply_command(item: UUID, key: UUID, event_id: UUID, version: int = 2,
-                   outcome: str = "rescheduled") -> dict[str, Any]:
-    return {
-        "schema_version": 1, "item_id": str(item), "client_action_id": str(key),
-        "expected_version": version,
-        "action": {"type": "resolve", "outcome_code": outcome, "note": None,
-                   "payload": {"event_id": str(event_id), "note_row": None}},
-        "permissions": m05.STAFF_PERMISSIONS,
-        "attribution": st.attribution(m05.S1),
-    }
-
-
-MR10 = {
-    "unknown-event": None,
-    "forged-actor": {"actor": m05.S2},
-    "forged-outcome": {"metadata_outcome": "cancelled_in_ehr"},
-    "forged-item-kind": {"metadata_item_kind": "cancel_request"},
-    "wrong-causation": {"causation_event_id": "RANDOM"},
-    "wrong-dedupe": {"producer_dedupe_key": "m05r1:" + "0" * 64},
-    "occurred-at-set": {"occurred_at": "NOW", "source_time_quality": "trusted"},
-    "operation-id-set": {"operation_id": "RANDOM"},
-}
-
-
-@pytest.mark.parametrize("case", sorted(MR10))
-async def test_mr10_direct_apply_event_binding(staff_install, case):
-    from datetime import UTC, datetime
-
-    item = await _claimed(staff_install)
-    key = uuid4()
-    spec = MR10[case]
-    if spec is None:
-        event_id = uuid4()
-    else:
-        overrides: dict[str, Any] = {}
-        view = await asyncio.to_thread(st.call, staff_install, "m05_get_item", str(item))
-        meta = {"outcome_code": "rescheduled", "assertion_kind": "staff",
-                "item_kind": view["item_kind"]}
-        for field, value in spec.items():
-            if field == "metadata_outcome":
-                meta["outcome_code"] = value
-            elif field == "metadata_item_kind":
-                meta["item_kind"] = value
-            elif field == "actor":
-                continue
-            elif value == "RANDOM":
-                overrides[field] = uuid4()
-            elif value == "NOW":
-                overrides[field] = datetime.now(UTC)
-            else:
-                overrides[field] = value
-        event_id = await _append_resolution(staff_install, item, key,
-                                            actor=spec.get("actor", m05.S1), metadata=meta,
-                                            **overrides)
-    before = sv.full_state(staff_install)
-    st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
-                                   _apply_command(item, key, event_id)))
-    assert sv.full_state(staff_install) == before
-
-
-async def test_mr10_event_already_referenced_is_reused(staff_install):
-    first_item = await _claimed(staff_install)
-    result = await _resolve_once(staff_install, sv.TestNoteKeys(), _resolve(first_item, 2))
-    assert result.outcome == "applied"
-    (event,) = _events_for(staff_install, first_item)
-    second = await _claimed(staff_install)
-    before = sv.full_state(staff_install)
-    st.expect_code("RESOLUTION_EVENT_REUSED",
-                   lambda: st.call(staff_install, "m05_apply_action",
-                                   _apply_command(second, uuid4(), UUID(event["event_id"]))))
-    assert sv.full_state(staff_install) == before
-
-
-async def test_mr10_other_items_event_refused(staff_install):
-    item_a, item_b = await _claimed(staff_install), await _claimed(staff_install)
-    key = uuid4()
-    event_id = await _append_resolution(staff_install, item_a, key)
-    before = sv.full_state(staff_install)
-    st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
-                                   _apply_command(item_b, key, event_id)))
-    assert sv.full_state(staff_install) == before
-
-
-async def test_mr10_other_tenant_event_identical_to_unknown(staff_install, staff_foreign_install):
-    foreign_item = await _claimed(staff_foreign_install)
-    key = uuid4()
-    foreign_event = await _append_resolution(staff_foreign_install, foreign_item, key)
-    item = await _claimed(staff_install)
-    st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
-                                   _apply_command(item, key, foreign_event)))
-
-
-async def test_mr10_wrong_event_type_refused(staff_install):
-    from test_m05_create_postgres import _source
-
-    item = await _claimed(staff_install)
-    other = await asyncio.to_thread(_source, staff_install)  # an M02 test observation
-    st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
-                                   _apply_command(item, uuid4(), UUID(other))))
-
-
-# ---------------------------------------------------------------------------
-# UQ-1, ENV-1, X-R1..3, G-B4
-# ---------------------------------------------------------------------------
-
-
 async def test_uq1_only_the_named_constraint_maps_to_reused(staff_install):
     """A unique violation from any OTHER constraint is re-raised unchanged and the
     service maps it to ACTION_UNAVAILABLE, never RESOLUTION_EVENT_REUSED (v2r1 A2)."""
@@ -552,9 +377,12 @@ async def test_uq1_only_the_named_constraint_maps_to_reused(staff_install):
         " WHERE action IN ('claim', 'resolve')").format(schema))
     try:
         before = sv.full_state(staff_install)
-        with pytest.raises(_svc().ActionFailed) as caught:
-            await _resolve_once(staff_install, sv.TestNoteKeys(), _resolve(item, 2))
-        assert caught.value.reason_code == "ACTION_UNAVAILABLE"
+        error, rec = await _resolve_with(staff_install, {}, _resolve(item, 2))
+        assert isinstance(error, _svc().ActionFailed), error
+        assert error.reason_code == "ACTION_UNAVAILABLE"
+        raw = [e for k, e in rec.errors if k == sv.K_APPLY]
+        assert len(raw) == 1 and isinstance(raw[0], psycopg.Error), rec.errors
+        assert raw[0].sqlstate == "23505" and raw[0].diag.constraint_name == "uq1_fault"
         assert sv.full_state(staff_install) == before
     finally:
         await asyncio.to_thread(st.admin_rows, staff_install, sql.SQL(
@@ -579,7 +407,7 @@ async def test_env1_envelope_carries_occurred_at_and_time_quality(staff_install,
     if occurred == "set":
         overrides = {"occurred_at": datetime(2026, 11, 1, 12, 0, tzinfo=UTC),
                      "source_time_quality": "trusted"}
-    event_id = await _append_resolution(staff_install, item, uuid4(), **overrides)
+    event_id = await rs.append_or_setup_fail(staff_install, item, uuid4(), **overrides)
     envelope = await asyncio.to_thread(_envelope, staff_install, event_id)
     assert "occurred_at" in envelope and "source_time_quality" in envelope
     if occurred == "null":
@@ -589,56 +417,35 @@ async def test_env1_envelope_carries_occurred_at_and_time_quality(staff_install,
         assert envelope["source_time_quality"] == "trusted"
 
 
+async def _expect_link_invalid(install: st.StaffInstall, item: UUID, **overrides: Any) -> None:
+    before = sv.full_state(install)
+    with pytest.raises(_obs().AppendFailed) as caught:
+        await rs.append_resolution(install, item, uuid4(), **overrides)
+    assert caught.value.reason_code == "LINK_INVALID"
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
+    assert sv.full_state(install) == before
+
+
 @pytest.mark.parametrize("target", ["missing", "wrong-patient"])
 async def test_xr_resolver_a_rejects_bad_targets(staff_install, target):
     item = await _claimed(staff_install)
     link_item = uuid4() if target == "missing" else item
-    overrides: dict[str, Any] = {"links": (_obs().Link("m05_followup_item_v1", link_item,
-                                                       "case"),)}
+    overrides: dict[str, Any] = {"links": (_obs().Link(rs.ITEM_LINK, link_item,
+                                                       rs.RELATIONSHIP),)}
     if target == "wrong-patient":
         overrides["patient_id"] = UUID("00000000-0000-4000-8000-0000000b2f02")
-    with pytest.raises(_obs().AppendFailed) as caught:
-        await _append_resolution(staff_install, item, uuid4(), **overrides)
-    assert caught.value.reason_code == "LINK_INVALID"
+    await _expect_link_invalid(staff_install, item, **overrides)
 
 
 async def test_xr3_resolver_a_rejects_other_tenant_item(staff_install, staff_foreign_install):
     foreign_item = await _claimed(staff_foreign_install)
     item = await _claimed(staff_install)
-    with pytest.raises(_obs().AppendFailed) as caught:
-        await _append_resolution(staff_install, item, uuid4(), links=(
-            _obs().Link("m05_followup_item_v1", foreign_item, "case"),))
-    assert caught.value.reason_code == "LINK_INVALID"
-
-
-def test_gb4_exact_added_grants(staff_install):
-    _ready(staff_install)
-    schema = staff_install.schema
-
-    def col(table: str, column: str, privilege: str, role: str = m05.M05_OWNER) -> bool:
-        return st.admin_rows(staff_install,
-                             "SELECT pg_catalog.has_column_privilege(%s, %s, %s, %s)",
-                             (role, f"{schema}.{table}", column, privilege))[0][0]
-
-    assert col("m05_followup_items", "outcome_code", "UPDATE")
-    assert col("m05_followup_history", "resolution_event_id", "SELECT")
-    assert col("m05_followup_actions", "event_id", "SELECT")
-    assert col("m05_followup_actions", "hmac_key_version", "SELECT")
-    for column in ("note_id", "item_id", "client_action_id", "nonce", "ciphertext",
-                   "enc_key_version", "created_at"):
-        assert col("m05_followup_notes", column, "INSERT"), column
-        assert col("m05_followup_notes", column, "SELECT"), column
-    for column in ("item_id", "patient_id"):
-        assert col("m05_followup_items", column, "SELECT", "haloflow_m02_append_owner"), column
-    assert not col("m05_followup_items", "state", "SELECT", "haloflow_m02_append_owner")
-    resolver = st.admin_rows(staff_install, sql.SQL(
-        "SELECT resolver_kind FROM {}.m02_link_resolvers WHERE link_type = 'm05_followup_item_v1'"
-    ).format(sql.Identifier(schema)))
-    assert resolver == [("module_owned",)]
+    await _expect_link_invalid(staff_install, item, links=(
+        _obs().Link(rs.ITEM_LINK, foreign_item, rs.RELATIONSHIP),))
 
 
 # ---------------------------------------------------------------------------
-# RB rollback / recovery (full-state oracle)
+# RB rollback / recovery (full-state oracle; each fault proven to fire)
 # ---------------------------------------------------------------------------
 
 
@@ -650,15 +457,35 @@ def _boom() -> None:
     raise _Boom("fault")
 
 
-async def _resolve_with(install: st.StaffInstall, rec_hooks: dict[str, Any],
-                        action: Any) -> tuple[Any, sv.Recorder]:
+async def _resolve_with(install: st.StaffInstall, rec_kwargs: dict[str, Any], action: Any,
+                        keys: Any = None) -> tuple[Any, sv.Recorder]:
     async with sv.runtime(install) as rt:
-        rec = sv.Recorder(rt.gateway, **rec_hooks)
+        rec = sv.Recorder(rt.gateway, **rec_kwargs)
         ctx = await sv.context(rt, install, m05.S1, sv.RESOLVE_CAPS)
         try:
-            return await _service(rt, sv.TestNoteKeys(), rec).act(ctx, action), rec
+            return await _service(rt, keys or sv.TestNoteKeys(), rec).act(ctx, action), rec
         except BaseException as error:  # noqa: BLE001 - CancelledError included
             return error, rec
+
+
+def _appended(rec: sv.Recorder) -> None:
+    """The append really ran and appended (the precondition for a post-append fault)."""
+
+    results = rec.returned(sv.K_APPEND)
+    assert len(results) == 1 and len(results[0]) == 1, results
+
+
+async def test_rb_control_unfaulted_path_reaches_every_write(staff_install):
+    """Prerequisite control for RB-3..7: the same command without a fault writes the
+    event, link, outbox, note, history, action and item rows (exact delta)."""
+
+    item = await _claimed(staff_install)
+    before = sv.full_state(staff_install)
+    result, rec = await _resolve_with(staff_install, {}, _resolve(item, 2, note="Control."))
+    assert result.outcome == "applied", result
+    assert rec.errors == []
+    rs.resolution_delta(before, sv.full_state(staff_install), item,
+                        snapshot=dict(result.snapshot), note=True)
 
 
 @pytest.mark.parametrize("point", ["after-append", "after-apply"])
@@ -667,33 +494,64 @@ async def test_rb1_rb9_fault_before_marker_rolls_back_everything(staff_install, 
     before = sv.full_state(staff_install)
     hooks = {"after": {sv.K_APPEND if point == "after-append" else sv.K_APPLY: _boom}}
     error, rec = await _resolve_with(staff_install, hooks, _resolve(item, 2, note="Fault."))
-    assert isinstance(error, _Boom)  # a non-database exception propagates unchanged
-    assert sv.K_APPEND in rec.statements
+    assert type(error) is _Boom, error  # a non-database exception propagates unchanged
+    _appended(rec)
+    if point == "after-apply":
+        (applied,) = rec.returned(sv.K_APPLY)
+        assert applied[0][0]["outcome"] == "applied"  # the writes happened, then rolled back
+    else:
+        assert sv.K_APPLY not in rec.statements
+    assert rec.errors == []
     assert sv.full_state(staff_install) == before
 
 
-@pytest.mark.parametrize("table", ["m05_followup_notes", "m05_followup_history",
-                                   "m05_followup_actions", "event_handoff_outbox"])
-async def test_rb3_rb7_write_fault_rolls_back_everything(staff_install, table):
-    item = await _claimed(staff_install)
-    schema = sql.Identifier(staff_install.schema)
-    st.admin_rows(staff_install, sql.SQL(
+FAULTS = {  # table → (trigger event, statement whose execution must raise B4_FAULT)
+    "m05_followup_notes": ("INSERT", sv.K_APPLY),
+    "m05_followup_history": ("INSERT", sv.K_APPLY),
+    "m05_followup_actions": ("INSERT", sv.K_APPLY),
+    "m05_followup_items": ("UPDATE", sv.K_APPLY),
+    "event_handoff_outbox": ("INSERT", sv.K_APPEND),
+}
+
+
+@contextlib.contextmanager
+def _fault_trigger(install: st.StaffInstall, table: str, event: str) -> Iterator[None]:
+    schema = sql.Identifier(install.schema)
+    st.admin_rows(install, sql.SQL(
         "CREATE FUNCTION {}.b4_fault() RETURNS trigger LANGUAGE plpgsql AS"
         " $f$BEGIN RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'B4_FAULT'; END$f$"
     ).format(schema))
     try:
-        st.admin_rows(staff_install, sql.SQL(
-            "CREATE TRIGGER b4_fault BEFORE INSERT ON {}.{} FOR EACH ROW"
-            " EXECUTE FUNCTION {}.b4_fault()").format(schema, sql.Identifier(table), schema))
-        before = sv.full_state(staff_install)
-        error, _ = await _resolve_with(staff_install, {}, _resolve(item, 2, note="Fault."))
-        assert isinstance(error, (_svc().ActionFailed, _obs().AppendFailed)), error
-        assert sv.full_state(staff_install) == before
+        st.admin_rows(install, sql.SQL(
+            "CREATE TRIGGER b4_fault BEFORE {} ON {}.{} FOR EACH ROW"
+            " EXECUTE FUNCTION {}.b4_fault()").format(
+            sql.SQL(event), schema, sql.Identifier(table), schema))
+        yield
     finally:
-        st.admin_rows(staff_install, sql.SQL("DROP TRIGGER IF EXISTS b4_fault ON {}.{}").format(
+        st.admin_rows(install, sql.SQL("DROP TRIGGER IF EXISTS b4_fault ON {}.{}").format(
             schema, sql.Identifier(table)))
-        st.admin_rows(staff_install, sql.SQL("DROP FUNCTION IF EXISTS {}.b4_fault()").format(
-            schema))
+        st.admin_rows(install, sql.SQL("DROP FUNCTION IF EXISTS {}.b4_fault()").format(schema))
+
+
+@pytest.mark.parametrize("table", sorted(FAULTS))
+async def test_rb3_rb7_write_fault_rolls_back_everything(staff_install, table):
+    event, statement = FAULTS[table]
+    item = await _claimed(staff_install)
+    with _fault_trigger(staff_install, table, event):
+        before = sv.full_state(staff_install)
+        error, rec = await _resolve_with(staff_install, {}, _resolve(item, 2, note="Fault."))
+    # Fault hit: exactly the expected statement raised the installed trigger's error.
+    assert [k for k, _ in rec.errors] == [statement], rec.errors
+    raw = rec.errors[0][1]
+    assert isinstance(raw, psycopg.Error) and raw.sqlstate == "P0001"
+    assert raw.diag.message_primary == "B4_FAULT"
+    if statement == sv.K_APPEND:
+        assert type(error) is _obs().AppendFailed and error.reason_code == "APPEND_UNAVAILABLE"
+    else:
+        _appended(rec)
+        assert type(error) is _svc().ActionFailed and error.reason_code == "ACTION_UNAVAILABLE"
+    assert error.__cause__ is None and error.__context__ is None
+    assert sv.full_state(staff_install) == before
 
 
 async def test_rb8_invalid_apply_output_rolls_back(staff_install):
@@ -701,8 +559,10 @@ async def test_rb8_invalid_apply_output_rolls_back(staff_install):
     before = sv.full_state(staff_install)
     hooks = {"substitute": {sv.K_APPLY: [({"schema_version": 1, "outcome": "applied",
                                            "snapshot": {}},)]}}
-    error, _ = await _resolve_with(staff_install, hooks, _resolve(item, 2, note="Bad output."))
-    assert isinstance(error, _svc().ActionFailed) and error.reason_code == "ACTION_RESULT_INVALID"
+    error, rec = await _resolve_with(staff_install, hooks, _resolve(item, 2, note="Bad output."))
+    (real,) = rec.returned(sv.K_APPLY)
+    assert real[0][0]["outcome"] == "applied"  # the real apply ran before substitution
+    assert type(error) is _svc().ActionFailed and error.reason_code == "ACTION_RESULT_INVALID"
     assert sv.full_state(staff_install) == before
 
 
@@ -713,9 +573,11 @@ async def test_rb12_cancellation_before_marker(staff_install):
     async def cancel() -> None:
         raise asyncio.CancelledError()
 
-    error, _ = await _resolve_with(staff_install, {"before": {sv.K_APPLY: cancel}},
-                                   _resolve(item, 2))
-    assert isinstance(error, asyncio.CancelledError)
+    error, rec = await _resolve_with(staff_install, {"before": {sv.K_APPLY: cancel}},
+                                     _resolve(item, 2))
+    assert type(error) is asyncio.CancelledError, error
+    _appended(rec)
+    assert rec.returned(sv.K_APPLY) == []  # cancelled before apply executed
     assert sv.full_state(staff_install) == before
 
 
@@ -737,17 +599,23 @@ async def test_rb10_unknown_commit_recovery_exactly_once(staff_install, mode):
             await service.act(ctx, action)
         assert fired == [mode]
         assert caught.value.__cause__ is None and caught.value.__context__ is None
-        original = rec.returned(sv.K_APPLY)[0][0][0]
+        (original_rows,) = rec.returned(sv.K_APPLY)
+        original = original_rows[0][0]
         after_fault = sv.full_state(staff_install)
         retry = await service.act(ctx, action)
-    events = _events_for(staff_install, item)
-    assert len(events) == 1
+    after_retry = sv.full_state(staff_install)
     if COMMIT_MODES[mode]:
+        event_id = rs.resolution_delta(before, after_fault, item,
+                                       snapshot=original["snapshot"], note=True)
         assert (retry.outcome, dict(retry.snapshot)) == ("replayed", original["snapshot"])
-        assert sv.full_state(staff_install) == after_fault
+        assert after_retry == after_fault  # the retry wrote nothing
     else:
-        assert after_fault == before and retry.outcome == "applied"
-    assert len(_rows(staff_install, "m05_followup_notes", item)) == 1
+        assert after_fault == before
+        assert retry.outcome == "applied"
+        event_id = rs.resolution_delta(before, after_retry, item,
+                                       snapshot=dict(retry.snapshot), note=True)
+    (event,) = _events_for(staff_install, item)
+    assert UUID(event["event_id"]) == event_id
 
 
 async def test_rb11_post_body_fault_unknown_then_applies_once(staff_install, monkeypatch):
@@ -762,8 +630,10 @@ async def test_rb11_post_body_fault_unknown_then_applies_once(staff_install, mon
             await service.act(ctx, action)
         assert calls["n"] == 2 and sv.full_state(staff_install) == before
         monkeypatch.undo()
-        assert (await service.act(ctx, action)).outcome == "applied"
-    assert len(_events_for(staff_install, item)) == 1
+        retry = await service.act(ctx, action)
+    assert retry.outcome == "applied"
+    rs.resolution_delta(before, sv.full_state(staff_install), item,
+                        snapshot=dict(retry.snapshot), note=False)
 
 
 # ---------------------------------------------------------------------------
@@ -842,40 +712,151 @@ async def test_nr4_unknown_note_is_item_not_found(staff_install):
     assert caught.value.code == "ITEM_NOT_FOUND"
 
 
-@pytest.mark.parametrize("case", ["swapped-ciphertext", "key-unavailable", "extra-key",
-                                  "short-nonce", "bool-version", "two-rows"])
-async def test_nr5_envelope_and_integrity_failures(staff_install, case):
+def _hex_mutations(real: dict[str, Any], other: dict[str, Any]) -> dict[str, Any]:
+    """case → the substituted note-read rows (None = two rows of the real envelope)."""
+
+    def with_(**changes: Any) -> list[tuple[dict[str, Any]]]:
+        return [({**real, **changes},)]
+
+    missing = dict(real)
+    missing.pop("enc_key_version")
+    return {
+        "swapped-ciphertext": with_(ciphertext=other["ciphertext"]),
+        "extra-key": with_(x=1),
+        "missing-key": [(missing,)],
+        "two-rows": [(real,), (real,)],
+        "two-columns": [(real, 1)],
+        "schema-version-2": with_(schema_version=2),
+        "note-id-mismatch": with_(note_id=other["note_id"]),
+        "item-id-uppercase": with_(item_id=real["item_id"].upper()),
+        "item-id-mismatch": with_(item_id=other["item_id"]),
+        "action-key-not-uuid": with_(client_action_id="not-a-uuid"),
+        "short-nonce": with_(nonce=real["nonce"][:-2]),
+        "long-nonce": with_(nonce=real["nonce"] + "00"),
+        "non-hex-nonce": with_(nonce="zz" * 12),
+        "null-nonce": with_(nonce=None),
+        "short-ciphertext": with_(ciphertext="00" * 15),
+        "oversize-ciphertext": with_(ciphertext="00" * (500 * 4 + 17)),
+        "version-zero": with_(enc_key_version=0),
+        "version-str": with_(enc_key_version="1"),
+        "version-bool": with_(enc_key_version=True),
+    }
+
+
+NR5_CASES = (
+    "swapped-ciphertext", "extra-key", "missing-key", "two-rows", "two-columns",
+    "schema-version-2", "note-id-mismatch", "item-id-uppercase", "item-id-mismatch",
+    "action-key-not-uuid", "short-nonce", "long-nonce", "non-hex-nonce", "null-nonce",
+    "short-ciphertext", "oversize-ciphertext", "version-zero", "version-str", "version-bool",
+)
+NR5_INTEGRITY = {"swapped-ciphertext"}
+
+
+async def _two_notes(install: st.StaffInstall, keys: Any) -> tuple[UUID, dict[str, Any],
+                                                                    dict[str, Any]]:
+    item_a = await _resolved_with_note(install, keys, "Note A.")
+    item_b = await _resolved_with_note(install, keys, "Note B.")
+    note_a = await asyncio.to_thread(_note_id, install, item_a)
+    note_b = await asyncio.to_thread(_note_id, install, item_b)
+    real_a = await asyncio.to_thread(st.call, install, "m05_read_note", str(note_a))
+    real_b = await asyncio.to_thread(st.call, install, "m05_read_note", str(note_b))
+    return note_a, real_a, real_b
+
+
+async def _read_failure(install: st.StaffInstall, keys: Any, note_id: UUID,
+                        substitute: Any = None) -> Any:
+    async with sv.runtime(install) as rt:
+        rec = sv.Recorder(rt.gateway)
+        if substitute is not None:
+            rec.substitute[sv.K_NOTE] = substitute
+        ctx = await sv.context(rt, install, m05.S1, frozenset({sv.NOTE_READ}))
+        with pytest.raises(_svc().ReadFailed) as caught:
+            await _service(rt, keys, rec).read_note(ctx, note_id)
+    return caught.value
+
+
+@pytest.mark.parametrize("case", NR5_CASES)
+async def test_nr5_envelope_binding_and_size_corpus(staff_install, case):
     keys = sv.TestNoteKeys()
-    item_a = await _resolved_with_note(staff_install, keys, "Note A.")
-    item_b = await _resolved_with_note(staff_install, keys, "Note B.")
-    note_a = await asyncio.to_thread(_note_id, staff_install, item_a)
-    note_b = await asyncio.to_thread(_note_id, staff_install, item_b)
-    real_b = await asyncio.to_thread(st.call, staff_install, "m05_read_note", str(note_b))
+    note_a, real_a, real_b = await _two_notes(staff_install, keys)
+    error = await _read_failure(staff_install, keys, note_a,
+                                _hex_mutations(real_a, real_b)[case])
+    expected = "NOTE_INTEGRITY_FAILED" if case in NR5_INTEGRITY else "READ_RESULT_INVALID"
+    assert error.reason_code == expected
+    assert error.__cause__ is None and error.__context__ is None
+    assert "Note A." not in str(error) and "Note B." not in str(error)
+
+
+async def test_nr5_key_unavailable(staff_install):
+    keys = sv.TestNoteKeys()
+    note_a, _, _ = await _two_notes(staff_install, keys)
+    keys.retire(1)
+    error = await _read_failure(staff_install, keys, note_a)
+    assert error.reason_code == "NOTE_KEY_UNAVAILABLE"
+    assert error.__cause__ is None and error.__context__ is None
+
+
+def _aead(key: bytes, tenant: str, envelope: dict[str, Any], plaintext: str) -> dict[str, Any]:
+    """An INDEPENDENT AES-256-GCM encryption (not haloflow.m05.notes) under the agreed
+    AAD form, so the row is authentic for the envelope it claims."""
+
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    aad = json.dumps(["m05.note/v1", tenant, envelope["item_id"], envelope["client_action_id"],
+                      envelope["note_id"], envelope["enc_key_version"]],
+                     separators=(",", ":")).encode()
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode(), aad)
+    return {**envelope, "nonce": nonce.hex(), "ciphertext": ciphertext.hex()}
+
+
+@pytest.mark.parametrize("plaintext", ["  padded  ", "a\r\nb", "Cafe\u0301", "a\u0007b", "",
+                                       "x" * 501])
+async def test_nr7_authentic_non_normal_plaintext_is_integrity_failure(staff_install, plaintext):
+    keys = sv.TestNoteKeys()
+    note_a, real_a, _ = await _two_notes(staff_install, keys)
+    forged = _aead(keys.enc_keys[1], staff_install.tenant[0], real_a, plaintext)
+    error = await _read_failure(staff_install, keys, note_a, [(forged,)])
+    assert error.reason_code == "NOTE_INTEGRITY_FAILED"
+    assert error.__cause__ is None and error.__context__ is None
+
+
+async def test_nr7_control_authentic_normal_plaintext_reads(staff_install):
+    """Control for NR-7: the independent encryption is accepted when the plaintext is
+    D11-normal, so the NR-7 refusals are the post-decrypt normalization check."""
+
+    keys = sv.TestNoteKeys()
+    note_a, real_a, _ = await _two_notes(staff_install, keys)
+    forged = _aead(keys.enc_keys[1], staff_install.tenant[0], real_a, "Independent text.")
     async with sv.runtime(staff_install) as rt:
         rec = sv.Recorder(rt.gateway)
-        if case == "key-unavailable":
-            keys.retire(1)
-        else:
-            probe = sv.Recorder(rt.gateway)
-            ctx0 = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
-            await _service(rt, keys, probe).read_note(ctx0, note_a)
-            real_a = probe.returned(sv.K_NOTE)[0][0][0]
-            bad = {
-                "swapped-ciphertext": {**real_a, "ciphertext": real_b["ciphertext"]},
-                "extra-key": {**real_a, "x": 1},
-                "short-nonce": {**real_a, "nonce": real_a["nonce"][:-2]},
-                "bool-version": {**real_a, "enc_key_version": True},
-                "two-rows": None,
-            }[case]
-            rec.substitute[sv.K_NOTE] = ([(real_a,), (real_a,)] if bad is None else [(bad,)])
+        rec.substitute[sv.K_NOTE] = [(forged,)]
         ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
-        with pytest.raises(_svc().ReadFailed) as caught:
-            await _service(rt, keys, rec).read_note(ctx, note_a)
-    expected = {"swapped-ciphertext": "NOTE_INTEGRITY_FAILED",
-                "key-unavailable": "NOTE_KEY_UNAVAILABLE"}.get(case, "READ_RESULT_INVALID")
-    assert caught.value.reason_code == expected
-    assert caught.value.__cause__ is None and caught.value.__context__ is None
-    assert "Note A." not in str(caught.value)
+        note = await _service(rt, keys, rec).read_note(ctx, note_a)
+    assert note["text"] == "Independent text."
+
+
+async def test_nr6_foreign_note_id_with_eligible_local_reader(staff_install,
+                                                              staff_foreign_install):
+    """An eligible LOCAL reader (S1) asks for a note id that exists only in another
+    clinic: identical to an unknown id."""
+
+    foreign_keys = sv.TestNoteKeys()
+    foreign_item = await _claimed(staff_foreign_install)
+    await _resolve_once(staff_foreign_install, foreign_keys,
+                        _resolve(foreign_item, 2, note="Foreign note."))
+    foreign_note = await asyncio.to_thread(_note_id, staff_foreign_install, foreign_item)
+    outcomes = []
+    for note_id in (foreign_note, uuid4()):
+        async with sv.runtime(staff_install) as rt:
+            ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+            with pytest.raises(_svc().ReadRefused) as caught:
+                await _service(rt, sv.TestNoteKeys()).read_note(ctx, note_id)
+        outcomes.append((type(caught.value), caught.value.code, str(caught.value)))
+    assert outcomes[0] == outcomes[1]
+    assert outcomes[0][1] == "ITEM_NOT_FOUND"
 
 
 async def test_hn1_history_note_id_on_every_entry(staff_install):
@@ -903,3 +884,60 @@ async def test_san1_canary_absent_everywhere(staff_install, caplog):
     assert CANARY not in caplog.text
     (note_row,) = [r[0] for r in _rows(staff_install, "m05_followup_notes", item)]
     assert set(note_row) >= {"nonce", "ciphertext", "enc_key_version"}
+
+
+def _all_text(error: BaseException) -> str:
+    return "".join(traceback.format_exception(error)) + repr(error) + repr(error.args)
+
+
+async def _san2_case(install: st.StaffInstall, case: str) -> BaseException:
+    keys = sv.TestNoteKeys()
+    if case == "key-unavailable":
+        item = await _claimed(install)
+        keys.current_unavailable = True
+        error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
+        return error
+    if case == "refused":
+        item = await _claimed(install, m05.S2)  # S1 may not resolve S2's item
+        error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
+        return error
+    if case == "driver-fault":
+        item = await _claimed(install)
+        with _fault_trigger(install, "m05_followup_notes", "INSERT"):
+            error, _ = await _resolve_with(install, {}, _resolve(item, 2, note=CANARY), keys)
+        return error
+    # read-integrity: a canary note whose ciphertext is swapped on read
+    item_a = await _resolved_with_note(install, keys, CANARY)
+    item_b = await _resolved_with_note(install, keys, "Other.")
+    note_a = await asyncio.to_thread(_note_id, install, item_a)
+    real_a = await asyncio.to_thread(st.call, install, "m05_read_note", str(note_a))
+    real_b = await asyncio.to_thread(st.call, install, "m05_read_note",
+                                     str(await asyncio.to_thread(_note_id, install, item_b)))
+    return await _read_failure(install, keys, note_a,
+                               [({**real_a, "ciphertext": real_b["ciphertext"]},)])
+
+
+SAN2_EXPECTED = {
+    "key-unavailable": ("ActionFailed", "KEY_UNAVAILABLE"),
+    "refused": ("ActionRefused", "NOT_AUTHORIZED"),
+    "driver-fault": ("ActionFailed", "ACTION_UNAVAILABLE"),
+    "read-integrity": ("ReadFailed", "NOTE_INTEGRITY_FAILED"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(SAN2_EXPECTED))
+async def test_san2_error_paths_carry_no_canary(staff_install, caplog, case):
+    before = sv.full_state(staff_install)
+    error = await _san2_case(staff_install, case)
+    name, code = SAN2_EXPECTED[case]
+    assert type(error).__name__ == name, error
+    assert getattr(error, "reason_code", getattr(error, "code", None)) == code
+    assert error.__cause__ is None and error.__context__ is None
+    text = _all_text(error)
+    for needle in (CANARY, CANARY.encode().hex(), CANARY.split()[0]):
+        assert needle not in text, case
+        assert needle not in caplog.text, case
+    after = sv.full_state(staff_install)
+    assert CANARY not in json.dumps(after, default=str)
+    if case != "read-integrity":
+        assert after == before  # rejected writes leave the state unchanged
