@@ -433,3 +433,20 @@ B3_COLUMN_ACL: Final = {
 }
 CURRENT_TABLE_ACL: Final = B3_TABLE_ACL
 CURRENT_COLUMN_ACL: Final = B3_COLUMN_ACL
+
+# Interim read-slice stage (Codex 20261101T013809Z): exactly B2 plus the read
+# SELECT grants; NO items UPDATE and NO action-record grants. Asserted by the MB3-GI
+# rows while assignment waits on the directory-first decision (Rachel, MA-10). When
+# the action slice lands, those rows are REPLACED (declared), and CURRENT_* (the
+# full B3 set above) must hold instead.
+READ_SLICE_TABLE_ACL: Final = {"m05_followup_history": ("INSERT",)}
+READ_SLICE_COLUMN_ACL: Final = {
+    "m05_intake_map": B2_COLUMN_ACL["m05_intake_map"],
+    "m05_followup_items": {
+        "INSERT": COLUMNS["m05_followup_items"],
+        "SELECT": COLUMNS["m05_followup_items"],
+    },
+    "m05_followup_history": {
+        "SELECT": tuple(c for c in COLUMNS["m05_followup_history"] if c != "resolution_event_id"),
+    },
+}
