@@ -169,3 +169,23 @@ def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledC
 # because the statement-catalogue manifest is only a review gate if there is
 # exactly one composition path it can pin.
 M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({})
+
+# B3b (package v2 section 6, v2r1): the staff-directory service statements. Defined
+# here and deliberately NOT composed into production (M01_STATEMENTS stays empty and
+# composition.py is unchanged until B5); tests compose this exact mapping. There is
+# no statement for m01_staff_assignable: it is reachable only from M05 SQL.
+STAFF_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
+    {
+        "m01.staff.admin": (
+            StatementMode.WRITE, "m01.staff.admin", "SELECT m01_staff_admin(%(command)s)",
+        ),
+        "m01.staff.display": (
+            StatementMode.READ, "m01.staff.display", "SELECT m01_staff_display(%(query)s)",
+        ),
+        "m01.staff.followup_reader": (
+            StatementMode.READ,
+            "m05.followup.read",
+            "SELECT m01_staff_followup_reader(%(staff_id)s)",
+        ),
+    }
+)

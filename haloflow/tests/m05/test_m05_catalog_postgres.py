@@ -432,7 +432,7 @@ def test_mx02_no_ehr_state_column_and_staff_assertion_check(m05_install: M05Inst
 
 def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Install) -> None:
     """MA-10 tranche 2 harness migration: the behaviour tenant is installed with the
-    directory units after M05 (target 24); the unit list is otherwise unchanged."""
+    directory units after M05 (target 25 since B3b); the unit list is otherwise unchanged."""
 
     from staff_support import STAFF_TEST_TARGET, STAFF_UNIT_IDS
 

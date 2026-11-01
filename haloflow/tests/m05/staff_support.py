@@ -3,7 +3,7 @@
 Package v1 + v1r1 delta + v1r2 adoption (Claude/Codex aligned 2026-11-01).
 
 The directory is installed through its OWN test registry: production units + M05
-units + the directory units t021..t024 (target 24), approving the M05 owner and
+units + the directory units t021..t025 (target 25), approving the M05 owner and
 the staff owner. The existing M05 harness (target 20) is deliberately unchanged
 in the red tranche, so rows that already pass keep their exact pinned unit lists;
 the implementation tranche moves it over when M05 starts calling the directory.
@@ -41,13 +41,15 @@ STAFF_UNIT_IDS: Final = (
     "t022_m01_staff_assignable",
     "t023_m01_staff_admin",
     "t024_m01_staff_display",
+    "t025_m01_staff_followup_reader",
 )
 STAFF_TYPED_UNITS: Final = {
     "t022_m01_staff_assignable": "m01_staff_assignable",
     "t023_m01_staff_admin": "m01_staff_admin",
     "t024_m01_staff_display": "m01_staff_display",
+    "t025_m01_staff_followup_reader": "m01_staff_followup_reader",
 }
-STAFF_TEST_TARGET: Final = 24
+STAFF_TEST_TARGET: Final = 25  # B3b adds t025 (package v2 1.2)
 STAFF_TEST_SUPPORTED: Final = range(STAFF_TEST_TARGET, STAFF_TEST_TARGET + 1)
 
 TABLES: Final = (
@@ -68,6 +70,8 @@ FUNCTIONS: Final = {
     "m01_staff_assignable": (("uuid",), "bool", "v", M05_OWNER),
     "m01_staff_admin": (("jsonb",), "jsonb", "v", RUNTIME),
     "m01_staff_display": (("jsonb",), "jsonb", "s", RUNTIME),
+    # B3b t025 (package v2 1.2): STABLE, no lock, EXECUTE to the runtime only.
+    "m01_staff_followup_reader": (("uuid",), "bool", "s", RUNTIME),
 }
 
 # v1 3.2 + v1r2 correction 3: the staff owner's exact table grants.

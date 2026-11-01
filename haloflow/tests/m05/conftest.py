@@ -80,7 +80,7 @@ def staff_install(
     m05_reset: Callable[[tuple[str, str]], None],
 ) -> Iterator[StaffInstall]:
     """MA-10: one synthetic tenant per module, installed through the staff test
-    registry (target 24); removed before and after; installed lazily."""
+    registry (target 25 since B3b); removed before and after; installed lazily."""
 
     tenant = m02_support.tenant_for(f"{request.module.__name__}:staff")
     m05_reset(tenant)

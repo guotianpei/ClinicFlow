@@ -66,7 +66,7 @@ class M05Install:
     MA-10 tranche 2 (deliberate harness migration, package v1 section 5 step 3):
     prepare/apply now call `m01_staff_assignable`, so the behaviour rows install
     through the staff test registry (production + M05 + directory units t021..t024,
-    target 24) and the staff test manifest. `m05_registry()` / `m05_manifest()`
+    target 25 since B3b t025) and the staff test manifest. `m05_registry()` / `m05_manifest()`
     above stay as they were: the static and refusal-path rows still pin the M05
     unit set by itself.
 

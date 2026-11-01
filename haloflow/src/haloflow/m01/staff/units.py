@@ -639,6 +639,23 @@ END;
 """
 _DISPLAY_BODY_SHA256: Final = "d21407820b3cfe429685298f7a392bbd80f6fb9b35801df6e3dd2720c3491a83"
 
+# t025 m01_staff_followup_reader (B3b package v2 1.2 + v2r1 A2/A3): STABLE, no lock;
+# true only for an active member holding `read`. RED TRANCHE: fail-closed stub (tenant
+# context, then refuse) until the implementation gate.
+_READER_BODY: Final = r"""
+DECLARE
+    v_setting text;
+BEGIN
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_setting IS NULL OR v_setting = ''
+       OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'M01_STAFF_NOT_IMPLEMENTED';
+END;
+"""
+_READER_BODY_SHA256: Final = "48323b0f0e15a37fff1d9cacf0f43ab3b42406199fdb20a26898d4a59900fcde"
+
 _VOLATILITY_WORD: Final = {"stable": "STABLE", "volatile": "VOLATILE"}
 _VOLATILITY_CODE: Final = {"stable": "s", "volatile": "v"}
 _RETURN_WORD: Final = {"bool": "bool", "jsonb": "jsonb"}
@@ -750,11 +767,14 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str, str, str], ...]] = (
      "jsonb", "volatile", RUNTIME_ROLE),
     ("t024_m01_staff_display", "m01_staff_display", (("p_query", "jsonb"),),
      "jsonb", "stable", RUNTIME_ROLE),
+    ("t025_m01_staff_followup_reader", "m01_staff_followup_reader", (("p_staff_id", "uuid"),),
+     "bool", "stable", RUNTIME_ROLE),
 )
 _BODIES: Final = {
     "m01_staff_assignable": (_ASSIGNABLE_BODY, _ASSIGNABLE_BODY_SHA256),
     "m01_staff_admin": (_ADMIN_BODY, _ADMIN_BODY_SHA256),
     "m01_staff_display": (_DISPLAY_BODY, _DISPLAY_BODY_SHA256),
+    "m01_staff_followup_reader": (_READER_BODY, _READER_BODY_SHA256),
 }
 
 STAFF_GATEWAY_UNITS: Final = MappingProxyType(

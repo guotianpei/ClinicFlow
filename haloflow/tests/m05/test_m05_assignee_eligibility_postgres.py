@@ -148,11 +148,16 @@ def test_ma10bcde_ineligible_target_refused(staff_install, staff_foreign_install
     _setup(staff_install)
     target = _ineligible(kind, staff_install, staff_foreign_install)
     command = _negative_command(staff_install, action, target)
+    # B3b package v2 1.3 (declared expectation change, Codex 20261101T160205Z): for
+    # claim the ineligible party is the ACTOR, now refused at step 4 by current
+    # directory standing before the target step; assign/reassign keep the MA-10 code
+    # with an eligible supervisor.
+    code = "NOT_AUTHORIZED" if action == "claim" else "ASSIGNEE_NOT_ELIGIBLE"
     before = st.state(staff_install)
     assert _prepare(staff_install, command) == {
-        "decision": "REFUSED", "code": "ASSIGNEE_NOT_ELIGIBLE", "schema_version": 1,
+        "decision": "REFUSED", "code": code, "schema_version": 1,
     }
-    st.expect_code("ASSIGNEE_NOT_ELIGIBLE", lambda: _apply(staff_install, command))
+    st.expect_code(code, lambda: _apply(staff_install, command))
     st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
 
 

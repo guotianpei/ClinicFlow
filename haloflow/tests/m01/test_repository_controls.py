@@ -46,6 +46,10 @@ M01_PACKAGE = "haloflow.m01"
 COMPOSITION_ROOT = "src/haloflow/composition.py"
 DEFINITION_SET_NAME = re.compile(r"^M\d{2}_STATEMENTS$")
 DEFINITION_SET_LOCATION = re.compile(r"^src/haloflow/m\d{2}/statements\.py$")
+# B3b (package v2 section 6, v2r1): one additional, exactly named, uncomposed set.
+# No pattern widening: this name is legal in this one file only.
+STAFF_DEFINITION_SET = "STAFF_STATEMENTS"
+STAFF_DEFINITION_LOCATION = "src/haloflow/m01/statements.py"
 
 PROTECTED_MODULES = frozenset({"haloflow.m01.pool"})
 PROTECTED_NAMES = frozenset(
@@ -139,8 +143,7 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
     """Production definition sets live only in `haloflow/mNN/statements.py`."""
 
     violations: list[str] = []
-    if DEFINITION_SET_LOCATION.fullmatch(path):
-        return violations
+    module_location = bool(DEFINITION_SET_LOCATION.fullmatch(path))
     for node in ast.walk(ast.parse(source)):
         targets: list[ast.expr] = []
         if isinstance(node, ast.Assign):
@@ -148,7 +151,11 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
         elif isinstance(node, ast.AnnAssign):
             targets = [node.target]
         for target in targets:
-            if isinstance(target, ast.Name) and DEFINITION_SET_NAME.fullmatch(target.id):
+            if not isinstance(target, ast.Name):
+                continue
+            if DEFINITION_SET_NAME.fullmatch(target.id) and not module_location:
+                violations.append(f"{path}: defines {target.id}")
+            if target.id == STAFF_DEFINITION_SET and path != STAFF_DEFINITION_LOCATION:
                 violations.append(f"{path}: defines {target.id}")
     return violations
 
@@ -323,6 +330,25 @@ def test_an_application_module_cannot_compose_or_define_an_unpinned_catalogue() 
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_import) == []
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_call) == []
     assert _definition_set_violations_in("src/haloflow/m07/statements.py", rogue_definitions) == []
+
+
+def test_staff_definition_set_is_legal_only_in_the_m01_statement_file() -> None:
+    """B3b ST-1/ST-2: STAFF_STATEMENTS is named exactly and allowed in one file; the
+    same name anywhere else, including another module's statement file, is refused."""
+
+    rogue = 'STAFF_STATEMENTS = {"m01.staff.x": (None, "c", "SELECT 1")}\n'
+    assert _definition_set_violations_in(STAFF_DEFINITION_LOCATION, rogue) == []
+    for elsewhere in (
+        "src/haloflow/m05/statements.py",
+        "src/haloflow/m01/staff/statements.py",
+        "src/haloflow/m01/staff/service.py",
+        "src/haloflow/composition.py",
+    ):
+        assert _definition_set_violations_in(elsewhere, rogue), elsewhere
+    # A similarly named set does not inherit the exemption.
+    assert _definition_set_violations_in(
+        "src/haloflow/m01/staff/units.py", 'M01_STATEMENTS = {}\n'
+    )
 
 
 def test_compiled_catalog_write_capabilities_cannot_be_supplied_or_drift() -> None:
