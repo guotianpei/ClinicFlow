@@ -989,3 +989,25 @@ COMPOSITION_BLOCK: Final = (
     "    PERFORM pg_catalog.set_config('haloflow.txn_scope', v_scope, true);\n"
 )
 GM_2: Final = {APPLY_UNIT: ((COMPOSITION_BLOCK, ""), (ITEM_LOCK, ITEM_LOCK + COMPOSITION_BLOCK))}
+
+
+# B3b SQL mutants (package v2 7, SM-1/SM-2), applied to BOTH prepare and apply.
+PREPARE_UNIT: Final = "t015_m05_prepare_action"
+ACTOR_CHECK_APPLY: Final = (
+    "    IF NOT {schema}.m01_staff_assignable(v_actor) THEN\n"
+    "        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'NOT_AUTHORIZED';\n"
+    "    END IF;\n"
+)
+ACTOR_CHECK_PREPARE: Final = (
+    "    IF NOT {schema}.m01_staff_assignable(v_actor) THEN\n"
+    "        RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'REFUSED',"
+    " 'code', 'NOT_AUTHORIZED');\n"
+    "    END IF;\n"
+)
+# SM-1: step 4b (the actor's directory check) removed.
+SM_1: Final = {APPLY_UNIT: ((ACTOR_CHECK_APPLY, ""),),
+               PREPARE_UNIT: ((ACTOR_CHECK_PREPARE, ""),)}
+# SM-2: step 6e skipped for every target, not only target == actor.
+TARGET_GUARD: Final = "    IF v_target IS NOT NULL AND v_target <> v_actor\n"
+SM_2: Final = {APPLY_UNIT: ((TARGET_GUARD, "    IF false AND v_target <> v_actor\n"),),
+               PREPARE_UNIT: ((TARGET_GUARD, "    IF false AND v_target <> v_actor\n"),)}

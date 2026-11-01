@@ -958,10 +958,17 @@ async def test_sv07e_revocation_interposed_in_service_transaction_waits(staff_in
                                      _service_pid(staff_install, ctx))
 
         rec = sv.Recorder(rt.gateway, before={sv.K_APPLY: interpose})
-        result = await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
-        assert (rec.calls, rec.statements) == (1, [sv.K_PREPARE, sv.K_APPLY])
-    holder["thread"].join(st.BLOCK_BOUND_SECONDS * 2)
-    holder["conn"].close()
+        try:
+            result = await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim"))
+            assert (rec.calls, rec.statements) == (1, [sv.K_PREPARE, sv.K_APPLY])
+        finally:  # red gate 537c1b0 hygiene: never leak the thread or connection
+            if "thread" in holder:
+                holder["thread"].join(st.BLOCK_BOUND_SECONDS * 2)
+            if "conn" in holder:
+                try:
+                    holder["conn"].rollback()
+                finally:
+                    holder["conn"].close()
     assert result.outcome == "applied" and "error" not in box, box.get("error")
     assert "act" not in box["result"]["staff"]["access"]
 
@@ -1236,3 +1243,101 @@ def test_dtr1_reader_takes_no_lock(staff_install):
         conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
         assert st.call_on(conn, staff_install, "m01_staff_followup_reader", m05.S1) is True
         conn.rollback()
+
+
+# ---------------------------------------------------------------------------
+# Service LOCK_TIMEOUT mapping; Python mutants SM-3..SM-5 (clean control first)
+# ---------------------------------------------------------------------------
+
+
+async def test_sv15_lock_timeout_maps_to_action_failed(staff_install):
+    """The gateway's lock_timeout (5 s) expires while an uncommitted admin change
+    holds the actor's membership row: ActionFailed(LOCK_TIMEOUT), zero writes."""
+
+    item = await _aitem(staff_install)
+    actor = await asyncio.to_thread(_staff, staff_install)
+    before = st.state(staff_install)
+    admin_conn = st.runtime_connection(staff_install)
+    try:
+        st.set_tenant(admin_conn, staff_install)
+        st.call_on(admin_conn, staff_install, "m01_staff_admin",
+                   st.admin_command("deactivate", str(actor)))
+        async with sv.runtime(staff_install) as rt:
+            ctx = await sv.context(rt, staff_install, str(actor), sv.STAFF_CAPS)
+            with pytest.raises(_svc().ActionFailed) as caught:
+                await _svc().M05Service(rt.gateway).act(ctx, _action(item, 1, "claim"))
+        assert caught.value.reason_code == "LOCK_TIMEOUT"
+        assert caught.value.__cause__ is None and caught.value.__context__ is None
+    finally:
+        admin_conn.rollback()
+        admin_conn.close()
+    _untouched(staff_install, before)
+
+
+async def _unknown_actor_get(install: st.StaffInstall, item: UUID) -> str:
+    async with sv.runtime(install) as rt:
+        ctx = await sv.context(rt, install, str(uuid.uuid4()), sv.READ_ONLY_CAPS)
+        try:
+            view = await _svc().M05Service(rt.gateway).get(ctx, item)
+        except _svc().ReadRefused as refused:
+            return refused.code
+        return "read:" + str(view["item_id"] == str(item))
+
+
+async def test_sm3_reads_without_reader_statement_is_caught(staff_install, monkeypatch):
+    item = await _aitem(staff_install)
+    assert await _unknown_actor_get(staff_install, item) == "NOT_AUTHORIZED"
+
+    async def skip(handle: Any, staff_id: str) -> None:
+        return None
+
+    monkeypatch.setattr(_svc(), "check_reader", skip)
+    assert await _unknown_actor_get(staff_install, item) == "read:True"
+
+
+async def _corrupt_apply_outcome(install: st.StaffInstall) -> str:
+    item = await _aitem(install)
+    key = uuid.uuid4()
+    rows = _apply_corruptions(item, key)["wrong-item"]
+    async with sv.runtime(install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_APPLY: rows})
+        ctx = await sv.context(rt, install, m05.S1, sv.STAFF_CAPS)
+        try:
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim", key=key))
+        except _svc().ActionFailed as failed:
+            return failed.reason_code
+    return "accepted"
+
+
+async def test_sm4_result_binding_removed_is_caught(staff_install, monkeypatch):
+    assert await _corrupt_apply_outcome(staff_install) == "ACTION_RESULT_INVALID"
+    monkeypatch.setattr(_svc(), "_bound_snapshot", lambda snap, action, actor: snap)
+    assert await _corrupt_apply_outcome(staff_install) == "accepted"
+
+
+async def _reader_int_outcome(install: st.StaffInstall) -> str:
+    item = await _aitem(install)
+    async with sv.runtime(install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_READER: [(1,)]})
+        ctx = await sv.context(rt, install, m05.S1, sv.READ_ONLY_CAPS)
+        try:
+            await _svc().M05Service(rec).get(ctx, item)
+        except _svc().ReadFailed as failed:
+            return failed.reason_code
+    return "authorized"
+
+
+async def test_sm5_truthy_reader_adapter_is_caught(staff_install, monkeypatch):
+    from haloflow.m01.staff import service as staff_service
+
+    assert await _reader_int_outcome(staff_install) == "READ_RESULT_INVALID"
+
+    async def truthy(handle: Any, staff_id: str) -> None:
+        rows = await staff_service.fetch_rows(handle, staff_service.K_READER,
+                                              {"staff_id": UUID(staff_id)},
+                                              staff_service.read_error)
+        if not rows[0][0]:
+            raise _svc().ReadRefused("NOT_AUTHORIZED")
+
+    monkeypatch.setattr(_svc(), "check_reader", truthy)
+    assert await _reader_int_outcome(staff_install) == "authorized"

@@ -861,3 +861,41 @@ def test_rd2_actor_and_target_deactivated_concurrently_never_deadlock(staff_inst
             assert isinstance(error, psycopg.Error)
             assert error.sqlstate != "40P01", "deadlock"
             assert error.diag.message_primary in ("NOT_AUTHORIZED", "ASSIGNEE_NOT_ELIGIBLE")
+
+
+# ---------------------------------------------------------------------------
+# B3b SQL mutants SM-1 / SM-2 (implementation evidence; clean control first)
+# ---------------------------------------------------------------------------
+
+
+def _ra1_outcome(install: st.StaffInstall) -> str:
+    item, actor, target, _ = _x_setup(install, "assign")
+    st.admin_op(install, _change_command("deactivate", actor))
+    try:
+        return str(_apply(install, _x_command(item, actor, target))["outcome"])
+    except psycopg.Error as error:
+        return str(error.diag.message_primary)
+
+
+def test_sm1_actor_check_removed_is_caught(unit_mutant, staff_install):
+    """SM-1: without step 4b a deactivated actor's assignment is applied (RA-1 red)."""
+
+    assert _ra1_outcome(staff_install) == "NOT_AUTHORIZED"
+    assert _ra1_outcome(unit_mutant("sm1", st.SM_1)) == "applied"
+
+
+def _inactive_target_outcome(install: st.StaffInstall) -> str:
+    _setup(install)
+    target = st.new_uuid()
+    st.seed_staff(install, target, active=False)
+    try:
+        return str(_apply(install, _assign(_item(install), target))["outcome"])
+    except psycopg.Error as error:
+        return str(error.diag.message_primary)
+
+
+def test_sm2_target_check_skipped_is_caught(unit_mutant, staff_install):
+    """SM-2: skipping 6e for every target lets an inactive target be assigned."""
+
+    assert _inactive_target_outcome(staff_install) == "ASSIGNEE_NOT_ELIGIBLE"
+    assert _inactive_target_outcome(unit_mutant("sm2", st.SM_2)) == "applied"
