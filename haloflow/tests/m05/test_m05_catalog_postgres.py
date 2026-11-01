@@ -485,6 +485,12 @@ def _counts(install: M05Install) -> dict[str, int]:
 STUB_REPLACED = {
     # B2 red commit (Codex ALIGN 20261031T233740Z): MC-01..07, MB2-* rows.
     "m05_create_item": "tests/m05/test_m05_create_postgres.py",
+    # B3a red commit (Codex partial ALIGN 20261101T010812Z).
+    "m05_prepare_action": "tests/m05/test_m05_actions_postgres.py",
+    "m05_apply_action": "tests/m05/test_m05_actions_postgres.py",
+    "m05_get_item": "tests/m05/test_m05_reads_postgres.py",
+    "m05_list_items": "tests/m05/test_m05_reads_postgres.py",
+    "m05_get_history": "tests/m05/test_m05_reads_postgres.py",
 }
 STUBBED = tuple(spec for spec in m05.FUNCTIONS if spec.name not in STUB_REPLACED)
 

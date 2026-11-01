@@ -706,6 +706,9 @@ def test_mb2_i_created_history_row_is_immutable(m05_install: M05Install) -> None
 
 
 # --- MB2-G: exact grants ------------------------------------------------------
+#
+# The grant rows assert m05.CURRENT_* (B3a: m05.B3_*), not the B2 sets: each tranche
+# widens the owner's exact grants, and these rows always pin the current reviewed set.
 
 
 def test_mb2_g_m05_owner_explicit_acl_entries(m05_install: M05Install) -> None:
@@ -721,7 +724,7 @@ def test_mb2_g_m05_owner_explicit_acl_entries(m05_install: M05Install) -> None:
     )
     assert sorted(table_acl) == sorted(
         (table, privilege, False)
-        for table, privileges in m05.B2_TABLE_ACL.items()
+        for table, privileges in m05.CURRENT_TABLE_ACL.items()
         for privilege in privileges
     )
     column_acl = _admin(
@@ -735,7 +738,7 @@ def test_mb2_g_m05_owner_explicit_acl_entries(m05_install: M05Install) -> None:
     )
     assert sorted(column_acl) == sorted(
         (table, column, privilege, False)
-        for table, by_privilege in m05.B2_COLUMN_ACL.items()
+        for table, by_privilege in m05.CURRENT_COLUMN_ACL.items()
         for privilege, columns in by_privilege.items()
         for column in columns
     )
@@ -748,7 +751,7 @@ def test_mb2_g_m05_owner_effective_privileges(m05_install: M05Install) -> None:
         qualified = f"{schema}.{table}"
         for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES",
                           "TRIGGER", "MAINTAIN"):
-            expected = privilege in m05.B2_TABLE_ACL.get(table, ())
+            expected = privilege in m05.CURRENT_TABLE_ACL.get(table, ())
             assert _admin(
                 m05_install,
                 "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
@@ -765,8 +768,8 @@ def test_mb2_g_m05_owner_effective_privileges(m05_install: M05Install) -> None:
         ]
         for column in columns:
             for privilege in ("SELECT", "INSERT", "UPDATE", "REFERENCES"):
-                expected = privilege in m05.B2_TABLE_ACL.get(table, ()) or column in (
-                    m05.B2_COLUMN_ACL.get(table, {}).get(privilege, ())
+                expected = privilege in m05.CURRENT_TABLE_ACL.get(table, ()) or column in (
+                    m05.CURRENT_COLUMN_ACL.get(table, {}).get(privilege, ())
                 )
                 assert _admin(
                     m05_install,

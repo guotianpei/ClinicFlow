@@ -15,7 +15,7 @@ finding for review, not something to edit to match.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 M05_OWNER: Final = "haloflow_m05_owner"
 MIGRATOR: Final = "haloflow_migrator"
@@ -318,3 +318,118 @@ B2_COLUMN_ACL: Final = {
         "SELECT": ("item_id", "source_event_id", "item_kind", "create_digest"),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# B3a (staff actions and reads, SQL). Design delta v1 (Δ1–Δ8), partial ALIGN by
+# Codex 20261101T010812Z (codex_b3-design-delta-v1-disposition). MA-10's
+# active/same-tenant staff check is an OPEN owner decision (Codex asked Rachel):
+# NOT tested, NOT replaced and NOT claimed here.
+# ---------------------------------------------------------------------------
+
+ACTION_ERROR_CODES: Final = (
+    "COMMAND_MALFORMED", "ITEM_NOT_FOUND", "NOT_AUTHORIZED", "ACTION_KEY_ACTOR_MISMATCH",
+    "ACTION_KEY_CONFLICT", "ITEM_RESOLVED", "STALE_VERSION", "PRECONDITION_FAILED",
+    "ACTION_NOT_IMPLEMENTED",
+)
+NON_RESOLVE_ACTIONS: Final = ("claim", "start_progress", "assign", "reassign")
+# Reserved for B4. Canonical B3 shape: {"type": <one of these>, "outcome_code": <W1
+# code>} exactly; anything else is COMMAND_MALFORMED before ACTION_NOT_IMPLEMENTED.
+# B4 changes this shape under its own reviewed delta.
+RESERVED_ACTIONS: Final = ("resolve", "claim_and_resolve")
+
+# Synthetic staff principals (ACTOR) and their trusted permission sets.
+S1: Final = "00000000-0000-4000-8000-0000000b3001"
+S2: Final = "00000000-0000-4000-8000-0000000b3002"
+SUP: Final = "00000000-0000-4000-8000-0000000b3003"
+STAFF_PERMISSIONS: Final = {"read": True, "act": True, "supervise": False}
+SUPERVISOR_PERMISSIONS: Final = {"read": True, "act": True, "supervise": True}
+
+PREPARE_KEYS: Final = {
+    "NEW": ("decision", "schema_version"),
+    "REPLAY": ("decision", "schema_version", "snapshot"),
+    "REFUSED": ("code", "decision", "schema_version"),
+}
+APPLY_KEYS: Final = ("outcome", "schema_version", "snapshot")
+SNAPSHOT_KEYS: Final = (
+    "action", "assignee_id", "client_action_id", "item_id", "outcome_code", "schema_version",
+    "state", "version",
+)
+ITEM_VIEW_KEYS: Final = (
+    "assignee_id", "created_at", "item_id", "item_kind", "outcome_code", "patient_id",
+    "schema_version", "source_event_id", "state", "version",
+)
+HISTORY_ENTRY_KEYS: Final = (
+    "action", "actor_id", "after", "assertion_kind", "before", "created_at", "seq",
+)
+LIST_RESULT_KEYS: Final = ("items", "next", "schema_version")
+# Timestamps leave M05 as UTC with microseconds and a literal Z.
+TIMESTAMP_PATTERN: Final = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$"
+MAX_VERSION: Final = 2147483647
+LIST_LIMIT_MAX: Final = 100
+
+# Δ4 action digest: sha256 of compact UTF-8 JSON
+#   ["m05.action/v1", tenant, item_id, client_action_id, actor_id, type,
+#    assignee_id | null, expected_version (JSON integer)]
+ACTION_DIGEST_VECTORS: Final = (
+    (
+        ("pilot-clinic-01", "00000000-0000-4000-8000-000000000201",
+         "00000000-0000-4000-8000-000000000301", "00000000-0000-4000-8000-000000000501",
+         "claim", None, 1),
+        '["m05.action/v1","pilot-clinic-01","00000000-0000-4000-8000-000000000201",'
+        '"00000000-0000-4000-8000-000000000301","00000000-0000-4000-8000-000000000501",'
+        '"claim",null,1]',
+        "24940bb25ae4ab01ee8dc4766ec5231a6be020a24ae31e6902f1cde13b732d7f",
+    ),
+    (
+        ("pilot-clinic-01", "00000000-0000-4000-8000-000000000201",
+         "00000000-0000-4000-8000-000000000302", "00000000-0000-4000-8000-000000000502",
+         "reassign", "00000000-0000-4000-8000-000000000503", 3),
+        '["m05.action/v1","pilot-clinic-01","00000000-0000-4000-8000-000000000201",'
+        '"00000000-0000-4000-8000-000000000302","00000000-0000-4000-8000-000000000502",'
+        '"reassign","00000000-0000-4000-8000-000000000503",3]',
+        "0e92515105c59ccdafec0341c1900bffc6ca3654e1aa9a9fbb28f3e4cff40b0f",
+    ),
+)
+
+
+def action_digest_preimage(
+    tenant_id: str, item_id: str, client_action_id: str, actor_id: str, action_type: str,
+    assignee_id: str | None, expected_version: int,
+) -> str:
+    import json
+
+    return json.dumps(
+        ["m05.action/v1", tenant_id, item_id, client_action_id, actor_id, action_type,
+         assignee_id, expected_version],
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def action_digest(*parts: Any) -> bytes:
+    import hashlib
+
+    return hashlib.sha256(action_digest_preimage(*parts).encode("utf-8")).digest()
+
+
+# Δ6 (with Codex's least-privilege refinement: no UPDATE(outcome_code) until B4).
+# These supersede the B2 sets: the grant rows assert CURRENT_* from B3a on.
+B3_TABLE_ACL: Final = {"m05_followup_history": ("INSERT",)}
+B3_COLUMN_ACL: Final = {
+    "m05_intake_map": B2_COLUMN_ACL["m05_intake_map"],
+    "m05_followup_items": {
+        "INSERT": COLUMNS["m05_followup_items"],
+        "SELECT": COLUMNS["m05_followup_items"],
+        "UPDATE": ("state", "assignee_id", "version"),
+    },
+    "m05_followup_history": {
+        "SELECT": tuple(c for c in COLUMNS["m05_followup_history"] if c != "resolution_event_id"),
+    },
+    "m05_followup_actions": {
+        "INSERT": COLUMNS["m05_followup_actions"],
+        "SELECT": ("item_id", "client_action_id", "actor_id", "digest", "result_snapshot"),
+    },
+}
+CURRENT_TABLE_ACL: Final = B3_TABLE_ACL
+CURRENT_COLUMN_ACL: Final = B3_COLUMN_ACL
