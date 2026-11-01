@@ -610,41 +610,61 @@ def test_compat01b_old_checksum_ledger_refused_as_drift(m02_ids, compat_tenant, 
 # ---------------------------------------------------------------------------
 
 
+VENDOR_PREFIXES = ("haloflow.integrations", "haloflow.ehr")
+
+
 class _VendorSpy:
+    """MX-01 witness without importing the adapters. They read Settings at import
+    (athenahealth.py L37, get_settings()), so the spy is an import blocker: any import
+    of haloflow.integrations* / haloflow.ehr* during the row is recorded and refused,
+    and every outbound httpx send is recorded and refused. The vendor modules must not
+    be loaded already, so a cached import cannot bypass the blocker."""
+
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import importlib.abc
+        import sys
+
         import httpx
 
-        from haloflow.ehr.athenahealth import AthenaHealthAdapter
-        from haloflow.integrations.notifyre import NotifyreClient
-
         self.calls: list[str] = []
+        loaded = sorted(m for m in sys.modules if m.startswith(VENDOR_PREFIXES))
+        assert loaded == [], ("PRECONDITION: vendor modules already imported", loaded)
+        spy = self
+
+        class _Blocker(importlib.abc.MetaPathFinder):
+            def find_spec(self, name: str, path: Any, target: Any = None) -> Any:
+                if name.startswith(VENDOR_PREFIXES):
+                    spy.calls.append(f"import {name}")
+                    raise ImportError(f"MX-01: {name} imported")
+                return None
+
+        monkeypatch.setattr(sys, "meta_path", [_Blocker(), *sys.meta_path])
 
         def record(name: str) -> Any:
-            def spy(*args: Any, **kwargs: Any) -> Any:
+            def refuse(*args: Any, **kwargs: Any) -> Any:
                 self.calls.append(name)
                 raise AssertionError(f"MX-01: {name} called")
 
-            return spy
+            return refuse
 
-        monkeypatch.setattr(NotifyreClient, "__init__", record("NotifyreClient"))
-        monkeypatch.setattr(AthenaHealthAdapter, "__init__", record("AthenaHealthAdapter"))
         monkeypatch.setattr(httpx.AsyncClient, "send", record("httpx.AsyncClient.send"))
         monkeypatch.setattr(httpx.Client, "send", record("httpx.Client.send"))
 
 
 def test_mx01_spy_control(monkeypatch):
-    """The spy is live: each spied entry point records and refuses."""
+    """The spy is live: a vendor import and an httpx send are each recorded and
+    refused."""
+
+    import importlib
 
     import httpx
 
-    from haloflow.integrations.notifyre import NotifyreClient
-
     spy = _VendorSpy(monkeypatch)
-    with pytest.raises(AssertionError):
-        NotifyreClient()
+    with pytest.raises(ImportError):
+        importlib.import_module("haloflow.integrations.notifyre")
     with pytest.raises(AssertionError):
         httpx.Client().send(httpx.Request("GET", "http://127.0.0.1:9/"))
-    assert spy.calls == ["NotifyreClient", "httpx.Client.send"]
+    assert spy.calls == ["import haloflow.integrations", "httpx.Client.send"]
 
 
 async def test_mx01_resolve_and_note_read_make_no_vendor_call(staff_install, monkeypatch):
