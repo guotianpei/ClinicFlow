@@ -129,6 +129,13 @@ def exact_int(value: Any) -> bool:
     return type(value) is int
 
 
+def member(value: Any, allowed: Any) -> bool:
+    """Exact-str enum membership for DECODED values (Codex b00b172 R1): a JSON list
+    or object must be invalid, never a TypeError from hashing it."""
+
+    return type(value) is str and value in allowed
+
+
 def require_capabilities(context: Any, required: frozenset[str]) -> None:
     if not required <= context.capabilities:
         raise RouteDenied()
@@ -316,10 +323,10 @@ def _valid_staff_snapshot(snap: Any, command: StaffAdminCommand) -> bool:
         exact_int(snap["schema_version"]) and snap["schema_version"] == 1
         and snap["staff_id"] == str(command.staff_id)
         and valid_display_name(snap["display_name"])
-        and snap["status"] in ("active", "inactive")
+        and member(snap["status"], ("active", "inactive"))
         and valid_timestamp(snap["status_changed_at"])
         and type(access) is list
-        and all(type(a) is str and a in ("read", "act") for a in access)
+        and all(member(a, ("read", "act")) for a in access)
         and access == sorted(set(access))
     ):
         return False
@@ -366,7 +373,7 @@ def _bind_display(rows: list[Any], requested: tuple[UUID, ...]) -> dict[str, Any
             type(entry) is not dict or set(entry) != {"staff_id", "display_name", "status"}
             or not uuid_text(entry["staff_id"]) or entry["staff_id"] not in wanted
             or not valid_display_name(entry["display_name"])
-            or entry["status"] not in ("active", "inactive")
+            or not member(entry["status"], ("active", "inactive"))
         ):
             raise ReadFailed("READ_RESULT_INVALID")
         ids.append(entry["staff_id"])

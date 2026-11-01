@@ -34,6 +34,7 @@ from haloflow.m01.staff.service import (
     exact_int,
     fetch_rows,
     is_uuid,
+    member,
     read_error,
     require_capabilities,
     run_with_marker,
@@ -245,11 +246,11 @@ def _bound_snapshot(snap: Any, action: StaffAction, actor: str) -> dict[str, Any
     ):
         raise _invalid()
     if action.type == "claim":
-        ok = assignee == actor and state in ("open", "in_progress")
+        ok = assignee == actor and member(state, ("open", "in_progress"))
     elif action.type == "start_progress":
         ok = assignee is not None and state == "in_progress"
     else:
-        ok = assignee == str(action.assignee_id) and state in ("open", "in_progress")
+        ok = assignee == str(action.assignee_id) and member(state, ("open", "in_progress"))
     if not ok:
         raise _invalid()
     return snap
@@ -269,7 +270,7 @@ def _decision(rows: list[Any], action: StaffAction, actor: str) -> str:
         return "REPLAY"
     if (
         decision == "REFUSED" and set(value) == {"schema_version", "decision", "code"}
-        and value["code"] in ACTION_REFUSALS
+        and member(value["code"], ACTION_REFUSALS)
     ):
         raise ActionRefused(value["code"])
     raise _invalid()
@@ -280,7 +281,7 @@ def _applied(rows: list[Any], action: StaffAction, actor: str) -> ActionResult:
     if (
         type(value) is not dict or set(value) != {"schema_version", "outcome", "snapshot"}
         or not exact_int(value["schema_version"]) or value["schema_version"] != 1
-        or value["outcome"] not in ("applied", "replayed")
+        or not member(value["outcome"], ("applied", "replayed"))
     ):
         raise _invalid()
     return ActionResult(value["outcome"], _bound_snapshot(value["snapshot"], action, actor))
@@ -295,8 +296,8 @@ def _valid_item(view: Any) -> bool:
         type(view) is dict and set(view) == ITEM_KEYS
         and exact_int(view["schema_version"]) and view["schema_version"] == 1
         and uuid_text(view["item_id"]) and uuid_text(view["source_event_id"])
-        and uuid_text(view["patient_id"]) and view["item_kind"] in ITEM_KINDS
-        and view["state"] in STATES
+        and uuid_text(view["patient_id"]) and member(view["item_kind"], ITEM_KINDS)
+        and member(view["state"], STATES)
         and (view["assignee_id"] is None or uuid_text(view["assignee_id"]))
         and (view["outcome_code"] is None or type(view["outcome_code"]) is str)
         and (view["state"] == "resolved") == (view["outcome_code"] is not None)
@@ -308,7 +309,7 @@ def _valid_item(view: Any) -> bool:
 def _valid_closed_state(value: Any) -> bool:
     return (
         type(value) is dict and set(value) == {"state", "assignee_id", "outcome_code"}
-        and value["state"] in STATES
+        and member(value["state"], STATES)
         and (value["assignee_id"] is None or uuid_text(value["assignee_id"]))
         and (value["outcome_code"] is None or type(value["outcome_code"]) is str)
     )
@@ -333,11 +334,12 @@ def _bind_history(rows: list[Any], item_id: UUID) -> dict[str, Any]:
         if (
             type(entry) is not dict or set(entry) != ENTRY_KEYS
             or not exact_int(entry["seq"]) or entry["seq"] != expected_seq
-            or entry["action"] not in HISTORY_ACTIONS or not uuid_text(entry["actor_id"])
+            or not member(entry["action"], HISTORY_ACTIONS) or not uuid_text(entry["actor_id"])
             or (entry["before"] is not None and not _valid_closed_state(entry["before"]))
             or (entry["before"] is None) != (entry["action"] == "created")
             or not _valid_closed_state(entry["after"])
-            or entry["assertion_kind"] not in (None, "staff")
+            or (entry["assertion_kind"] is not None
+                and not member(entry["assertion_kind"], ("staff",)))
             or not valid_timestamp(entry["created_at"])
         ):
             raise _read_invalid()

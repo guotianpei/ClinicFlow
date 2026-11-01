@@ -1341,3 +1341,121 @@ async def test_sm5_truthy_reader_adapter_is_caught(staff_install, monkeypatch):
 
     monkeypatch.setattr(_svc(), "check_reader", truthy)
     assert await _reader_int_outcome(staff_install) == "authorized"
+
+
+# ---------------------------------------------------------------------------
+# Codex b00b172 R1: decoded enum values that are JSON lists/objects are invalid
+# results, never a TypeError (unhashable) escaping the validator.
+# ---------------------------------------------------------------------------
+
+UNHASHABLE = {"list": [], "object": {}}
+
+
+@pytest.mark.parametrize("kind", sorted(UNHASHABLE))
+@pytest.mark.parametrize("field", ["refused-code", "decision", "replay-state", "replay-action"])
+async def test_sv16_unhashable_prepare_values(staff_install, kind, field):
+    item = await _aitem(staff_install)
+    key = uuid.uuid4()
+    bad = UNHASHABLE[kind]
+    snap = _good_apply(item, key)["snapshot"]
+    row = {
+        "refused-code": {"schema_version": 1, "decision": "REFUSED", "code": bad},
+        "decision": {"schema_version": 1, "decision": bad},
+        "replay-state": {"schema_version": 1, "decision": "REPLAY",
+                         "snapshot": {**snap, "state": bad}},
+        "replay-action": {"schema_version": 1, "decision": "REPLAY",
+                          "snapshot": {**snap, "action": bad}},
+    }[field]
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_PREPARE: [(row,)]})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        with pytest.raises(_svc().ActionFailed) as caught:
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim", key=key))
+        assert caught.value.reason_code == "ACTION_RESULT_INVALID"
+        assert sv.K_APPLY not in rec.statements
+    _untouched(staff_install, before)
+
+
+@pytest.mark.parametrize("kind", sorted(UNHASHABLE))
+@pytest.mark.parametrize("field", ["outcome", "snapshot-state"])
+async def test_sv16_unhashable_apply_values_roll_back(staff_install, kind, field):
+    item = await _aitem(staff_install)
+    key = uuid.uuid4()
+    good = _good_apply(item, key)
+    bad = UNHASHABLE[kind]
+    row = ({**good, "outcome": bad} if field == "outcome"
+           else {**good, "snapshot": {**good["snapshot"], "state": bad}})
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {sv.K_APPLY: [(row,)]})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.STAFF_CAPS)
+        with pytest.raises(_svc().ActionFailed) as caught:
+            await _svc().M05Service(rec).act(ctx, _action(item, 1, "claim", key=key))
+        assert caught.value.reason_code == "ACTION_RESULT_INVALID"
+    _untouched(staff_install, before)  # the real apply ran and was rolled back
+
+
+@pytest.mark.parametrize("kind", sorted(UNHASHABLE))
+@pytest.mark.parametrize("route", ["get-item-kind", "get-state", "list-item-kind",
+                                   "history-action", "history-assertion-kind",
+                                   "history-after-state"])
+async def test_sv16_unhashable_read_values(staff_install, kind, route):
+    item = await _aitem(staff_install)
+    view = await asyncio.to_thread(st.call, staff_install, "m05_get_item", str(item))
+    hist = await asyncio.to_thread(st.call, staff_install, "m05_get_history", str(item))
+    bad = UNHASHABLE[kind]
+    entry = hist["entries"][0]
+    key, body = {
+        "get-item-kind": (sv.K_GET, {**view, "item_kind": bad}),
+        "get-state": (sv.K_GET, {**view, "state": bad}),
+        "list-item-kind": (sv.K_LIST, {"schema_version": 1,
+                                       "items": [{**view, "item_kind": bad}], "next": None}),
+        "history-action": (sv.K_HISTORY, {**hist, "entries": [{**entry, "action": bad}]}),
+        "history-assertion-kind": (sv.K_HISTORY,
+                                   {**hist, "entries": [{**entry, "assertion_kind": bad}]}),
+        "history-after-state": (sv.K_HISTORY, {**hist, "entries": [
+            {**entry, "after": {**entry["after"], "state": bad}}]}),
+    }[route]
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway, {key: [(body,)]})
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.READ_ONLY_CAPS)
+        service = _svc().M05Service(rec)
+        call = {sv.K_GET: lambda: service.get(ctx, item),
+                sv.K_LIST: lambda: service.list_items(ctx, _svc().ListQuery(limit=5)),
+                sv.K_HISTORY: lambda: service.history(ctx, item)}[key]
+        with pytest.raises(_svc().ReadFailed) as caught:
+            await call()
+        assert caught.value.reason_code == "READ_RESULT_INVALID"
+    _untouched(staff_install, before)
+
+
+@pytest.mark.parametrize("kind", sorted(UNHASHABLE))
+@pytest.mark.parametrize("field", ["status", "access-entry"])
+async def test_sv16_unhashable_admin_and_display_values(staff_install, kind, field):
+    await asyncio.to_thread(_ready, staff_install)
+    bad = UNHASHABLE[kind]
+    staff = uuid.uuid4()
+    command = _admin_cmd(staff)
+    before = st.state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        ctx = await sv.context(rt, staff_install, st.ADMIN, frozenset({sv.STAFF_ADMIN}))
+        good = _good_admin(command.client_action_id, staff)
+        good["staff"]["display_name"] = "Recovery Case"
+        snap = ({**good["staff"], "status": bad} if field == "status"
+                else {**good["staff"], "access": [bad]})
+        rec = sv.Recorder(rt.gateway, {sv.K_ADMIN: [({**good, "staff": snap},)]})
+        with pytest.raises(_staff_svc().AdminFailed) as caught:
+            await _staff_svc().StaffService(rec).admin(ctx, command)
+        assert caught.value.reason_code == "ADMIN_RESULT_INVALID"
+        if field == "status":
+            dctx = await sv.context(rt, staff_install, m05.S1,
+                                    frozenset({sv.STAFF_DISPLAY, sv.READ}))
+            body = {"schema_version": 1,
+                    "staff": [{"staff_id": m05.S1, "display_name": "Staff", "status": bad}]}
+            drec = sv.Recorder(rt.gateway, {sv.K_DISPLAY: [(body,)]})
+            with pytest.raises(_svc().ReadFailed) as shown:
+                await _staff_svc().StaffService(drec).display(dctx, (S1,))
+            assert shown.value.reason_code == "READ_RESULT_INVALID"
+    _untouched(staff_install, before)
