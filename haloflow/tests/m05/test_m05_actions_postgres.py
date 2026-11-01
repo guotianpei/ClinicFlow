@@ -457,10 +457,23 @@ def test_mr01_replay_after_intervening_actions_and_reassignment(m05_install: M05
         "schema_version": 1, "outcome": "replayed", "snapshot": original["snapshot"],
     }
     assert _snapshot(m05_install) == before
-    # After resolution: still the original snapshot while read+act hold now.
+    # After resolution: still the original snapshot while read+act hold now, and the
+    # replay writes NOTHING (F-B3-REPLAY01: a replay that wrote the historical item
+    # state back would silently reopen the item). Fresh full snapshot AFTER the
+    # admin resolution; unchanged after prepare REPLAY and after apply replay.
     _resolve_by_admin(m05_install, item)
-    assert _apply(m05_install, retry)["snapshot"] == original["snapshot"]
-    assert _snapshot(m05_install)["m05_followup_history"] == before["m05_followup_history"]
+    resolved = _snapshot(m05_install)
+    resolved_row = _row(m05_install, item)
+    assert (resolved_row["state"], resolved_row["version"]) == ("resolved", 5)
+    assert _prepare(m05_install, retry) == {
+        "schema_version": 1, "decision": "REPLAY", "snapshot": original["snapshot"],
+    }
+    assert _snapshot(m05_install) == resolved
+    assert _apply(m05_install, retry) == {
+        "schema_version": 1, "outcome": "replayed", "snapshot": original["snapshot"],
+    }
+    assert _snapshot(m05_install) == resolved
+    assert _row(m05_install, item) == resolved_row
 
 
 def test_mr01r_replay_refused_when_read_or_act_revoked(m05_install: M05Install) -> None:
