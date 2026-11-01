@@ -1103,3 +1103,218 @@ def test_dts2_directory_sql_is_ascii_with_escapes():
     texts.update({mid: unit.template for mid, unit in units.STAFF_GATEWAY_UNITS.items()})
     for label, text in texts.items():
         assert text.isascii(), (label, [c for c in text if not c.isascii()][:5])
+
+
+# ---------------------------------------------------------------------------
+# DA-D7 / DA-D8: persisted replay integrity (Codex F-MA10-IMPL-01)
+# ---------------------------------------------------------------------------
+
+
+def _valid_rows(install: st.StaffInstall, staff: str, key: str, name: str) -> tuple[Any, Any]:
+    """A constraint-valid, semantically valid key row and log row for an `add`."""
+
+    digest = st.admin_digest(install.tenant[0], key, st.ADMIN, "add", staff, name, None)
+    snap = {"schema_version": 1, "staff_id": staff, "status": "active", "display_name": name,
+            "access": [], "status_changed_at": "2026-10-01T09:30:00.000000Z"}
+    key_row = {"client_action_id": key, "digest": digest, "actor_id": st.ADMIN,
+               "staff_id": staff}
+    log_row = {"client_action_id": key, "staff_id": staff, "operation": "add", "before": None,
+               "after": snap,
+               "result": {"schema_version": 1, "client_action_id": key, "operation": "add",
+                          "staff": dict(snap)},
+               "actor_id": st.ADMIN, "digest": digest}
+    return key_row, log_row
+
+
+def _insert_rows(install: st.StaffInstall, key_row: dict[str, Any],
+                 log_row: dict[str, Any]) -> None:
+    schema = sql.Identifier(install.schema)
+    st.admin_rows(install, sql.SQL(
+        "INSERT INTO {}.m01_staff_action_keys VALUES (%s, %s, %s, %s, now())").format(schema),
+        (key_row["client_action_id"], key_row["digest"], key_row["actor_id"],
+         key_row["staff_id"]))
+    st.admin_rows(install, sql.SQL(
+        "INSERT INTO {}.m01_staff_admin_log VALUES (gen_random_uuid(), %s, %s, %s, %s, %s, %s, "
+        "%s, %s, NULL, 'operations', %s, now())").format(schema),
+        (log_row["client_action_id"], log_row["staff_id"], log_row["operation"],
+         None if log_row["before"] is None else Jsonb(log_row["before"]),
+         Jsonb(log_row["after"]), Jsonb(log_row["result"]), log_row["actor_id"],
+         "00000000-0000-4000-8000-00000000e001", log_row["digest"]))
+
+
+def _set(path: tuple[str, ...], value: Any) -> Any:
+    def corrupt(key_row: dict[str, Any], log_row: dict[str, Any]) -> None:
+        target: Any = {"key": key_row, "log": log_row}
+        for part in path[:-1]:
+            target = target[part]
+        target[path[-1]] = value
+    return corrupt
+
+
+def _both_snapshots(field: str, value: Any) -> Any:
+    """Corrupt the after snapshot AND result.staff identically, so only the
+    snapshot's own validity (not their agreement) can catch it."""
+
+    def corrupt(key_row: dict[str, Any], log_row: dict[str, Any]) -> None:
+        log_row["after"][field] = value
+        log_row["result"]["staff"][field] = value
+    return corrupt
+
+
+def _log_operation_rename(key_row: dict[str, Any], log_row: dict[str, Any]) -> None:
+    log_row["operation"] = "rename"
+    log_row["before"] = dict(log_row["after"])  # table CHECK: before iff not add
+
+
+_OTHER = "00000000-0000-4000-8000-0000000c0fff"
+_CORRUPTIONS = {
+    "result_schema_version_999": _set(("log", "result", "schema_version"), 999),
+    "codex_counterexample": lambda k, lg: lg.__setitem__("result", {
+        "schema_version": 999, "client_action_id": lg["client_action_id"],
+        "operation": "wrong", "staff": None}),
+    "result_operation_wrong": _set(("log", "result", "operation"), "rename"),
+    "result_key_other": _set(("log", "result", "client_action_id"), _OTHER),
+    "result_staff_null": _set(("log", "result", "staff"), None),
+    "result_staff_not_object": _set(("log", "result", "staff"), "staff"),
+    "result_staff_differs_from_after": _set(("log", "result", "staff", "display_name"), "X"),
+    "snapshot_schema_version_2": _both_snapshots("schema_version", 2),
+    "snapshot_staff_id_other": _both_snapshots("staff_id", _OTHER),
+    "snapshot_status_bogus": _both_snapshots("status", "bogus"),
+    "snapshot_status_inactive_for_add": _both_snapshots("status", "inactive"),
+    "snapshot_access_invalid": _both_snapshots("access", ["write"]),
+    "snapshot_access_granted_on_add": _both_snapshots("access", ["read"]),
+    "snapshot_name_not_command": _both_snapshots("display_name", "Someone Else"),
+    "snapshot_name_null": _both_snapshots("display_name", None),
+    "snapshot_timestamp_format": _both_snapshots("status_changed_at", "2026-10-01 09:30:00"),
+    "log_operation_rename": _log_operation_rename,
+    "log_staff_other": _set(("log", "staff_id"), _OTHER),
+    "log_actor_other": _set(("log", "actor_id"), st.ADMIN2),
+    "log_digest_other": _set(("log", "digest"), b"\x00" * 32),
+    "key_staff_other": _set(("key", "staff_id"), _OTHER),
+}
+
+
+@pytest.mark.parametrize("corruption", sorted(_CORRUPTIONS))
+def test_dad7_constraint_valid_corrupt_log_never_replays(staff_install, corruption):
+    _ready(staff_install)
+    staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
+    key_row, log_row = _valid_rows(staff_install, staff, key, name)
+    _CORRUPTIONS[corruption](key_row, log_row)
+    _insert_rows(staff_install, key_row, log_row)  # passes every table constraint
+    before = st.state(staff_install)
+    st.expect_code(
+        "ADMIN_LOG_INTEGRITY",
+        lambda: st.admin_op(staff_install,
+                            st.admin_command("add", staff, key=key, display_name=name)),
+    )
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+def test_dad8_valid_historical_replay_control(staff_install):
+    """Positive control for DA-D7: the same rows, uncorrupted, replay exactly. The
+    staff member does not even exist now: replay never consults current state."""
+
+    _ready(staff_install)
+    staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
+    key_row, log_row = _valid_rows(staff_install, staff, key, name)
+    _insert_rows(staff_install, key_row, log_row)
+    before = st.state(staff_install)
+    assert st.admin_op(staff_install,
+                       st.admin_command("add", staff, key=key, display_name=name)) \
+        == log_row["result"]
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+def test_dad1b_literal_vectors_through_sql(staff_install):
+    """The three literal digest vectors executed by the SQL itself: tenant
+    `clinic-demo-01` set as the transaction tenant context, then each stored key
+    digest compared with its literal hash."""
+
+    _ready(staff_install)
+    with st.runtime_connection(staff_install) as conn:
+        for (tenant, key, actor, operation, staff, name, access), _ in st.DIGEST_VECTORS:
+            conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
+            st.call_on(conn, staff_install, "m01_staff_admin", st.admin_command(
+                operation, staff, key=key, actor=actor, display_name=name, access=access))
+            conn.commit()
+    for (_tenant, key, *_rest), expected in st.DIGEST_VECTORS:
+        rows = st.admin_rows(staff_install, sql.SQL(
+            "SELECT pg_catalog.encode(digest, 'hex') FROM {}.m01_staff_action_keys "
+            "WHERE client_action_id = %s").format(sql.Identifier(staff_install.schema)), (key,))
+        assert rows == [(expected,)], key
+
+
+# ---------------------------------------------------------------------------
+# AM-1..AM-3: directory mutants (each must make its discriminating test fail)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def mutant_install(request, m02_ids, m05_reset):
+    created: list[tuple[str, str]] = []
+
+    def make(label: str, replacements: tuple[tuple[str, str], ...]) -> st.MutantInstall:
+        import m02_support as m02
+
+        tenant = m02.tenant_for(f"{request.node.name}:{label}")
+        m05_reset(tenant)
+        created.append(tenant)
+        install = st.MutantInstall(m02_ids, tenant, replacements)
+        install.require()
+        return install
+
+    yield make
+    for tenant in created:
+        m05_reset(tenant)
+
+
+def test_am1_guard_after_lock_is_caught(mutant_install):
+    """Isolation guard moved after the membership lock: the DT-08 competing-holder
+    assertion must fail (the call waits instead of refusing at once)."""
+
+    install = mutant_install("am1", st.MUTANT_GUARD_AFTER_LOCK)
+    staff = st.new_uuid()
+    st.seed_staff(install, staff)
+    with (
+        st.holder(install, [("m01_staff", "staff_id", staff)]),
+        st.runtime_connection(install) as conn,
+    ):
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        st.set_tenant(conn, install)
+        with pytest.raises(AssertionError):
+            st.expect_immediate_code(
+                conn, "ISOLATION_UNSUPPORTED",
+                lambda: st.call_on(conn, install, "m01_staff_admin",
+                                   st.admin_command("rename", staff, display_name="Z")),
+            )
+        conn.rollback()
+
+
+def test_am2_admission_without_on_conflict_is_caught(mutant_install):
+    """Without ON CONFLICT, the DA-K1 contender fails on the unique key instead of
+    replaying: the DA-K1 assertion ('no error, same result') must fail."""
+
+    install = mutant_install("am2", st.MUTANT_NO_ON_CONFLICT)
+    staff, key = st.new_uuid(), st.new_uuid()
+    command = st.admin_command("add", staff, key=key, display_name="K1")
+    _, box = _contend(install, command, command, commit=True)
+    error = box.get("error")
+    assert isinstance(error, psycopg.Error), "mutant replayed: AM-2 not discriminated"
+    assert error.sqlstate == "23505"
+
+
+def test_am3_weak_replay_check_is_caught(mutant_install):
+    """With the fe092ed replay check, Codex's counterexample replays as success:
+    the DA-D7 assertion must fail."""
+
+    install = mutant_install("am3", st.mutant_weak_replay())
+    staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
+    key_row, log_row = _valid_rows(install, staff, key, name)
+    _CORRUPTIONS["codex_counterexample"](key_row, log_row)
+    _insert_rows(install, key_row, log_row)
+    with pytest.raises(AssertionError):
+        st.expect_code(
+            "ADMIN_LOG_INTEGRITY",
+            lambda: st.admin_op(install,
+                                st.admin_command("add", staff, key=key, display_name=name)),
+        )

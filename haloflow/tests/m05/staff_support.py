@@ -749,3 +749,105 @@ def expect_immediate_code(
         assert elapsed < IMMEDIATE_SECONDS, f"refusal waited {elapsed:.2f}s"
         return
     raise AssertionError(f"expected immediate P0001 {code}, call succeeded")
+
+
+# ---------------------------------------------------------------------------
+# Directory mutants (tranche-1 review): a mutated t023 body composed into its own
+# registry and tenant, to show that the corresponding tests discriminate.
+# ---------------------------------------------------------------------------
+
+
+def mutant_registry(replacements: tuple[tuple[str, str], ...]) -> Any:
+    from haloflow.composition import (
+        APPROVED_EXECUTION_ROLES,
+        APPROVED_INSTALLED_STATE_PROFILES,
+        APPROVED_TENANT_MIGRATIONS,
+    )
+    from haloflow.m01.provisioning.units import build_tenant_migration_registry
+    from haloflow.m01.staff import units
+    from haloflow.m05.gateways import M05_GATEWAY_PROFILES
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
+
+    body = units._ADMIN_BODY
+    for old, new in replacements:
+        assert body.count(old) == 1, ("mutation anchor not unique", old[:60])
+        body = body.replace(old, new)
+    assert body != units._ADMIN_BODY
+    sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    mutated = dict(units.STAFF_TENANT_MIGRATIONS)
+    mutated["t023_m01_staff_admin"] = units._definition(
+        "m01_staff_admin", (("p_command", "jsonb"),), "jsonb", "volatile", RUNTIME, body, sha
+    )
+    return build_tenant_migration_registry(
+        *APPROVED_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        mutated,
+        approved_execution_roles=APPROVED_EXECUTION_ROLES | {M05_OWNER, STAFF_OWNER},
+        installed_state_profiles={
+            **APPROVED_INSTALLED_STATE_PROFILES,
+            **M05_GATEWAY_PROFILES,
+            **units.STAFF_GATEWAY_PROFILES,
+        },
+    )
+
+
+class MutantInstall(StaffInstall):
+    def __init__(
+        self,
+        ids: m02_support.Identities,
+        tenant: tuple[str, str],
+        replacements: tuple[tuple[str, str], ...],
+    ) -> None:
+        super().__init__(ids, tenant)
+        self.replacements = replacements
+
+    def require(self) -> None:
+        if not self._attempted:
+            self._attempted = True
+            m02_support.provision_sync(
+                self.ids,
+                mutant_registry(self.replacements),
+                self.tenant,
+                supported=STAFF_TEST_SUPPORTED,
+                manifest=staff_manifest(),
+            )
+
+
+ISOLATION_BLOCK: Final = (
+    "\n    IF pg_catalog.current_setting('transaction_isolation') <> 'read committed' THEN\n"
+    "        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ISOLATION_UNSUPPORTED';\n"
+    "    END IF;\n"
+)
+MEMBERSHIP_LOCK: Final = "     WHERE s.staff_id = v_staff\n       FOR UPDATE;\n"
+# AM-1: the isolation guard moved after the membership lock.
+MUTANT_GUARD_AFTER_LOCK: Final = (
+    (ISOLATION_BLOCK, "\n"),
+    (MEMBERSHIP_LOCK, MEMBERSHIP_LOCK + ISOLATION_BLOCK),
+)
+# AM-2: key admission without ON CONFLICT (a concurrent identical request then
+# fails on the unique key instead of replaying).
+MUTANT_NO_ON_CONFLICT: Final = (
+    ("    ON CONFLICT (client_action_id) DO NOTHING\n", ""),
+)
+REPLAY_STRICT_START: Final = "        v_result := v_log.result;\n        v_snap := v_log.after;\n"
+
+
+def mutant_weak_replay() -> tuple[tuple[str, str], ...]:
+    """AM-3: the replay-integrity validation reduced to the fe092ed check (object
+    with the matching key only), the defect Codex found (F-MA10-IMPL-01)."""
+
+    from haloflow.m01.staff import units
+
+    body = units._ADMIN_BODY
+    start = body.index(REPLAY_STRICT_START)
+    end = body.index("        RETURN v_result;\n    END IF;\n\n    -- Admitted")
+    weak = (
+        "        v_result := v_log.result;\n"
+        "        IF v_result IS NULL\n"
+        "           OR pg_catalog.jsonb_typeof(v_result) IS DISTINCT FROM 'object'\n"
+        "           OR (v_result OPERATOR(pg_catalog.->>) 'client_action_id')"
+        " IS DISTINCT FROM v_key::text THEN\n"
+        "            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_LOG_INTEGRITY';\n"
+        "        END IF;\n"
+    )
+    return ((body[start:end], weak),)
