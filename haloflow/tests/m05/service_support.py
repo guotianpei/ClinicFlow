@@ -243,6 +243,8 @@ class Recorder:
 
 APPEND: Final = "m02.observation.append"
 NOTE_READ: Final = "m05.followup.note.read"
+# D-2: the note route is follow-up viewing (read) plus note read (O-1).
+NOTE_READER_CAPS: Final = frozenset({READ, NOTE_READ})
 RESOLVE_CAPS: Final = STAFF_CAPS | {APPEND}
 SUPERVISOR_RESOLVE_CAPS: Final = SUPERVISOR_CAPS | {APPEND}
 K_APPEND: Final = "m02.observation.append"

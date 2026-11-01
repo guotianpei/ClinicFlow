@@ -173,12 +173,13 @@ STATEMENTS: Final = {
 # column names).
 OUTCOME_CODE_COLUMNS: Final = ("outcome_code", "display_label", "note_required")
 
-# Part A production checksums at main 2b18bf3 (measured 2026-10-31). Resolver (a)
-# will change t004 and t009 in B4; that commit must change these pins together with
-# the retained-installation compatibility case (Codex 20261031T190524Z condition).
+# Part A production checksums. Pre-B4 (main 2b18bf3 / 6a81464) they were t004
+# 744f45e3...7515 and t009 e00a8128...544c (kept in pre_b4_units.py). B4 resolver (a)
+# changes both; this commit changes the pins together with the retained-installation
+# cases COMPAT-01a/01b (Codex 20261031T190524Z condition; measured 2026-11-01).
 PART_A_CHECKSUMS: Final = {
-    "t004_m02_reference": "744f45e3c55ac386f2b32735e3ae22d6172bcf1466c838b90f7e8444aad37515",
-    "t009_m02_append": "e00a81282bff7cd48721a8e70037a0c3b77c68c92c5d3305663b962628f2544c",
+    "t004_m02_reference": "2c8e09c6f88bb771d1eb8f2065c531ae85e2fd443b3fa1083d50f3cbac432e4d",
+    "t009_m02_append": "4ce106caba2b1b65c09ce6f20a96eb3135f603f7ec63e75b1e7fe66775fd81ad",
 }
 PART_A_UNIT_IDS: Final = (
     "t001_m01_baseline",
@@ -246,6 +247,17 @@ INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_versio
     active_in_production) VALUES
     ('{SOURCE_TYPE}', 1, 'label_code', 'reviewed', 'reschedule_request', '{W1}', false),
     ('{SOURCE_TYPE}', 1, 'channel_code', 'sms', 'cancel_request', '{W1}', false);
+"""
+
+# B4 test generation (package v2 5; red-gate PASS 397f5f9e, deviation D-5 reported):
+# the units keep the resolution family, type and resolver (a) INACTIVE (production
+# activation is B5); test tenants activate all three here.
+B4_RESOLUTION_PROFILE_SQL: Final = """
+UPDATE {schema}.ref_action_families SET is_active = true WHERE action_family = 'm05_followup';
+UPDATE {schema}.event_types SET is_active = true
+ WHERE event_type = 'm05_followup_resolution_asserted';
+UPDATE {schema}.m02_link_resolvers SET is_active = true
+ WHERE resolver_id = 'm05_followup_item_v1';
 """
 
 # MC-05b tenant: the intake row exists but NO m05 allowlist row, so only the
@@ -360,8 +372,9 @@ ITEM_VIEW_KEYS: Final = (
     "schema_version", "source_event_id", "state", "version",
 )
 HISTORY_ENTRY_KEYS: Final = (
-    "action", "actor_id", "after", "assertion_kind", "before", "created_at", "seq",
-)
+    "action", "actor_id", "after", "assertion_kind", "before", "created_at", "note_id",
+    "seq",
+)  # B4: note_id on every entry (v2r1 aligned extension)
 LIST_RESULT_KEYS: Final = ("items", "next", "schema_version")
 # Timestamps leave M05 as UTC with microseconds and a literal Z.
 TIMESTAMP_PATTERN: Final = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$"

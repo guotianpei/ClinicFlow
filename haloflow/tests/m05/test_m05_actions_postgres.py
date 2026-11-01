@@ -672,25 +672,16 @@ def test_mb3_a_fault_at_record_insert_rolls_back_the_item(
     _apply(m05_install, _cmd(item, 1, "claim"))  # control after removal
 
 
-# --- MB3-T: reserved resolve shapes --------------------------------------------------
+# --- MB3-T: retired by B4 -----------------------------------------------------------
+# The reserved resolve shapes (ACTION_NOT_IMPLEMENTED until B4) are replaced by the B4
+# behaviour rows, per this row's own rule: MA-01/03/OR, RP-1..13 and the MR-10 matrix
+# in tests/m05/test_m05_resolve_postgres.py and test_m05_resolve_binding_postgres.py,
+# plus MB3-T4 below (the B3 command shape {type, outcome_code} is now malformed).
 
 
-def test_mb3_t_reserved_resolve_actions(m05_install: M05Install) -> None:
+def test_mb3_t4_b3_resolve_shape_is_malformed(m05_install: M05Install) -> None:
     item = _new_item(m05_install)
     for action_type in m05.RESERVED_ACTIONS:
-        canonical = _cmd(item, 1, action_type, action_extra={"outcome_code": "rescheduled"})
-        _refused(m05_install, canonical, "ACTION_NOT_IMPLEMENTED")
-        for name, extra in {
-            "no-outcome": {},
-            "unknown-outcome": {"outcome_code": "closed"},
-            "outcome-not-string": {"outcome_code": 1},
-            "extra-key": {"outcome_code": "rescheduled", "note": "x"},
-            "with-assignee": {"outcome_code": "rescheduled", "assignee_id": m05.S2},
-        }.items():
-            try:
-                _refused(
-                    m05_install, _cmd(item, 1, action_type, action_extra=extra),
-                    "COMMAND_MALFORMED",
-                )
-            except AssertionError as error:
-                raise AssertionError(f"{action_type} {name}: {error}") from error
+        _refused(m05_install, _cmd(item, 1, action_type,
+                                   action_extra={"outcome_code": "rescheduled"}),
+                 "COMMAND_MALFORMED")

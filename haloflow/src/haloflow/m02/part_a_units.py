@@ -225,7 +225,8 @@ CREATE TABLE {_S}.event_contracts (
 CREATE TABLE {_S}.m02_link_resolvers (
     resolver_id varchar(64) PRIMARY KEY,
     relationship varchar(32) NOT NULL,
-    resolver_kind varchar(32) NOT NULL CHECK (resolver_kind IN ('synthetic_fixture')),
+    resolver_kind varchar(32) NOT NULL
+        CHECK (resolver_kind IN ('synthetic_fixture', 'module_owned')),
     is_active boolean NOT NULL
 );
 
@@ -478,8 +479,11 @@ GRANT SELECT (event_id, producer_service, producer_dedupe_key, content_fingerpri
     ON {_S}.patient_events TO {APPEND_OWNER_ROLE};
 GRANT INSERT (event_id, link_type, link_id, relationship)
     ON {_S}.patient_event_links TO {APPEND_OWNER_ROLE};
+-- B4 (v2r1 A1, Codex ruling 4f51be67): occurred_at and source_time_quality for the
+-- envelope's two new fields; nothing broader.
 GRANT SELECT (event_id, event_type, contract_version, event_level, status, operation_id,
-    patient_id, actor_id, workload_id, causation_event_id, producer_dedupe_key, metadata)
+    patient_id, actor_id, workload_id, causation_event_id, producer_dedupe_key, metadata,
+    occurred_at, source_time_quality)
     ON {_S}.patient_events TO {READ_OWNER_ROLE};
 GRANT SELECT (event_id, link_type, link_id, relationship)
     ON {_S}.patient_event_links TO {READ_OWNER_ROLE};

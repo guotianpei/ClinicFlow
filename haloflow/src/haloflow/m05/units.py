@@ -26,7 +26,7 @@ from typing import Final
 
 from haloflow.m01.provisioning.roles import RUNTIME_ROLE
 from haloflow.m01.provisioning.units import UnitDefinitions
-from haloflow.m02.roles import M05_OWNER_ROLE
+from haloflow.m02.roles import APPEND_OWNER_ROLE, M05_OWNER_ROLE
 from haloflow.m05.gateways import M05_GATEWAY_UNITS
 
 T012_MIGRATION_ID: Final = "t012_m05_tables"
@@ -104,10 +104,12 @@ CREATE TABLE {_S}.m05_followup_history (
     actor_id uuid NOT NULL,
     before jsonb CHECK (before IS NULL OR {_CLOSED_STATE.format(c="before")}),
     after jsonb NOT NULL CHECK ({_CLOSED_STATE.format(c="after")}),
-    resolution_event_id uuid UNIQUE,
+    resolution_event_id uuid,
     assertion_kind varchar(16),
     created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
     CONSTRAINT m05_followup_history_item_seq_key UNIQUE (item_id, seq),
+    -- B4 (v2r1 A2): named, so apply maps exactly this violation to REUSED.
+    CONSTRAINT m05_followup_history_resolution_event_key UNIQUE (resolution_event_id),
     CONSTRAINT m05_followup_history_created_before
         CHECK ((action = 'created') = (before IS NULL)),
     CONSTRAINT m05_followup_history_staff_assertion
@@ -206,6 +208,21 @@ GRANT INSERT (item_id, client_action_id, actor_id, requested_action, digest,
     ON {_S}.m05_followup_actions TO {M05_OWNER_ROLE};
 GRANT SELECT (item_id, client_action_id, actor_id, digest, result_snapshot)
     ON {_S}.m05_followup_actions TO {M05_OWNER_ROLE};
+-- B4 resolve and note read (package v2 3.5 + rulings 4f51be67 / cc359617): the
+-- outcome on resolve; the resolution event reference; the stored note-key version
+-- and event on the action record; the note row; the outcome seed's note rule; and,
+-- for resolver (a) in m02_append_observation, the item id and patient only.
+GRANT UPDATE (outcome_code) ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
+GRANT SELECT (resolution_event_id) ON {_S}.m05_followup_history TO {M05_OWNER_ROLE};
+GRANT SELECT (event_id, hmac_key_version) ON {_S}.m05_followup_actions TO {M05_OWNER_ROLE};
+GRANT INSERT (note_id, item_id, client_action_id, nonce, ciphertext, enc_key_version,
+    created_at)
+    ON {_S}.m05_followup_notes TO {M05_OWNER_ROLE};
+GRANT SELECT (note_id, item_id, client_action_id, nonce, ciphertext, enc_key_version,
+    created_at)
+    ON {_S}.m05_followup_notes TO {M05_OWNER_ROLE};
+GRANT SELECT (outcome_code, note_required) ON {_S}.m05_outcome_codes TO {M05_OWNER_ROLE};
+GRANT SELECT (item_id, patient_id) ON {_S}.m05_followup_items TO {APPEND_OWNER_ROLE};
 """
 
 _RESOLUTION_METADATA_SCHEMA: Final = (
@@ -254,6 +271,12 @@ INSERT INTO {_S}.event_contracts (
     '{{"handoff_kind":"event_signal","signal_type":"m02.event.appended"}}'::jsonb,
     '{{"operation_id":{{"must_be_null":true}}}}'::jsonb
 );
+
+-- t013:step:resolver
+-- B4 resolver (a): registered INACTIVE with the inactive contract. Test generations
+-- activate both (tests/m05 B4 profile); production activation is B5.
+INSERT INTO {_S}.m02_link_resolvers (resolver_id, relationship, resolver_kind, is_active)
+VALUES ('m05_followup_item_v1', 'case', 'module_owned', false);
 
 -- t013:step:envelope_allowlist
 INSERT INTO {_S}.m02_envelope_path_allowlist

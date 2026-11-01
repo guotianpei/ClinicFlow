@@ -277,17 +277,57 @@ BEGIN"""
     ) THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ITEM_NOT_FOUND';
     END IF;
+    -- B4 (v2r1, aligned extension): every entry carries note_id, the uuid of the
+    -- note recorded with that resolution or null; never the note itself.
     SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
                'seq', h.seq, 'action', h.action, 'actor_id', h.actor_id::text,
                'before', h.before, 'after', h.after, 'assertion_kind', h.assertion_kind,
+               'note_id', n.note_id::text,
                'created_at', """
     + _UTC.format(col="h.created_at")
     + r""") ORDER BY h.seq), '[]'::jsonb)
       INTO v_entries
       FROM {schema}.m05_followup_history AS h
+      LEFT JOIN {schema}.m05_followup_actions AS a
+        ON h.resolution_event_id IS NOT NULL AND a.event_id = h.resolution_event_id
+      LEFT JOIN {schema}.m05_followup_notes AS n
+        ON n.item_id = a.item_id AND n.client_action_id = a.client_action_id
      WHERE h.item_id = p_item_id;
     RETURN pg_catalog.jsonb_build_object('schema_version', 1,
         'item_id', p_item_id::text, 'entries', v_entries);
+END;
+"""
+)
+
+# B4 t020 m05_read_note (package v2 4): the ciphertext envelope only; the service
+# decrypts. Unknown and other-tenant note ids are both ITEM_NOT_FOUND (schema-local,
+# the same shape as an unknown item). The reader's standing is the service's t025
+# statement, run first in the same transaction, as for every M05 read.
+_READ_NOTE_BODY: Final = (
+    r"""
+DECLARE
+    v_setting text;
+    v_note record;
+BEGIN"""
+    + _TENANT_CHECK
+    + r"""
+    IF p_note_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ITEM_NOT_FOUND';
+    END IF;
+    SELECT n.note_id, n.item_id, n.client_action_id, n.nonce, n.ciphertext,
+           n.enc_key_version INTO v_note
+      FROM {schema}.m05_followup_notes AS n
+      JOIN {schema}.m05_followup_items AS i ON i.item_id = n.item_id
+     WHERE n.note_id = p_note_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ITEM_NOT_FOUND';
+    END IF;
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+        'note_id', v_note.note_id::text, 'item_id', v_note.item_id::text,
+        'client_action_id', v_note.client_action_id::text,
+        'nonce', pg_catalog.encode(v_note.nonce, 'hex'),
+        'ciphertext', pg_catalog.encode(v_note.ciphertext, 'hex'),
+        'enc_key_version', v_note.enc_key_version);
 END;
 """
 )
@@ -465,6 +505,17 @@ DECLARE
     v_new_assignee uuid;
     v_seq integer;
     v_snapshot jsonb;
+    v_outcome text;
+    v_note jsonb;
+    v_note_present boolean := false;
+    v_note_hmac text;
+    v_hmac_version integer;
+    v_payload jsonb;
+    v_note_row jsonb;
+    v_event uuid;
+    v_note_required boolean;
+    v_env jsonb;
+    v_constraint text;
 BEGIN
     v_setting := pg_catalog.current_setting('app.tenant_id', true);
     IF v_setting IS NULL OR v_setting = ''
@@ -548,14 +599,43 @@ BEGIN
         END IF;
         v_assignee := (v_action OPERATOR(pg_catalog.->>) 'assignee_id')::uuid;
     ELSIF v_type IN ('resolve', 'claim_and_resolve') THEN
-        IF v_keys IS DISTINCT FROM ARRAY['outcome_code', 'type']::text[]
-           OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'outcome_code')
+        -- B4 (package v2 2.1): prepare takes note_present and optionally note, never
+        -- payload; apply takes note and payload. note = null | {note_hmac,
+        -- hmac_key_version}; payload = null | {event_id, note_row}.
+        IF pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'outcome_code')
               IS DISTINCT FROM 'string'
            OR (v_action OPERATOR(pg_catalog.->>) 'outcome_code') NOT IN ('rescheduled',
               'cancelled_in_ehr', 'reached_no_change', 'no_contact_left_message',
               'no_contact_no_answer', 'other') THEN
             @@REFUSE:COMMAND_MALFORMED@@
         END IF;
+        v_outcome := v_action OPERATOR(pg_catalog.->>) 'outcome_code';
+@@RESOLVE_SHAPE@@
+        v_note := v_action OPERATOR(pg_catalog.->) 'note';
+        IF pg_catalog.jsonb_typeof(v_note) = 'null' THEN
+            v_note := NULL;
+        END IF;
+        IF v_note IS NOT NULL THEN
+            IF pg_catalog.jsonb_typeof(v_note) IS DISTINCT FROM 'object'
+               OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                     FROM pg_catalog.jsonb_object_keys(v_note) AS k)
+                  IS DISTINCT FROM ARRAY['hmac_key_version', 'note_hmac']::text[]
+               OR pg_catalog.jsonb_typeof(v_note OPERATOR(pg_catalog.->) 'note_hmac')
+                  IS DISTINCT FROM 'string'
+               OR (v_note OPERATOR(pg_catalog.->>) 'note_hmac')
+                  OPERATOR(pg_catalog.!~) '^[0-9a-f]{64}$'
+               OR pg_catalog.jsonb_typeof(v_note OPERATOR(pg_catalog.->) 'hmac_key_version')
+                  IS DISTINCT FROM 'number'
+               OR (v_note OPERATOR(pg_catalog.->) 'hmac_key_version')::text
+                  OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,4}$'
+               OR ((v_note OPERATOR(pg_catalog.->) 'hmac_key_version')::text)::integer
+                  > 32767 THEN
+                @@REFUSE:COMMAND_MALFORMED@@
+            END IF;
+            v_note_hmac := v_note OPERATOR(pg_catalog.->>) 'note_hmac';
+            v_hmac_version := ((v_note OPERATOR(pg_catalog.->) 'hmac_key_version')::text)::integer;
+        END IF;
+@@RESOLVE_PAYLOAD@@
     ELSE
         @@REFUSE:COMMAND_MALFORMED@@
     END IF;
@@ -610,13 +690,23 @@ BEGIN
     IF v_type = 'assign' AND v_assignee = v_actor THEN
         @@REFUSE:COMMAND_MALFORMED@@
     END IF;
-    -- Reserved for B4 (canonical shape only, after every malformed check).
+    -- B4: the outcome's note rule from the seed (NOTE_REQUIRED before any lock and
+    -- before the event binding).
     IF v_type IN ('resolve', 'claim_and_resolve') THEN
-        @@REFUSE:ACTION_NOT_IMPLEMENTED@@
+        SELECT o.note_required INTO v_note_required
+          FROM {schema}.m05_outcome_codes AS o
+         WHERE o.outcome_code = v_outcome;
+        IF NOT FOUND THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+        IF v_note_required AND NOT v_note_present THEN
+            @@REFUSE:NOTE_REQUIRED@@
+        END IF;
     END IF;
 
     -- 3. The item lock; unknown and other-tenant ids are identical (schema-local).
-    SELECT i.state, i.assignee_id, i.outcome_code, i.version INTO v_row
+    SELECT i.state, i.assignee_id, i.outcome_code, i.version, i.item_kind, i.patient_id,
+           i.source_event_id INTO v_row
       FROM {schema}.m05_followup_items AS i
      WHERE i.item_id = v_item
        FOR UPDATE;
@@ -640,20 +730,49 @@ BEGIN
 
     -- 5. Action-key branch: replay returns the stored snapshot, rechecking nothing
     -- else (MR-01, MA-10j).
-    v_digest := pg_catalog.sha256(pg_catalog.convert_to(
-        '["m05.action/v1",' || pg_catalog.to_json(v_setting)::text
-        || ',' || pg_catalog.to_json(v_item::text)::text
-        || ',' || pg_catalog.to_json(v_key::text)::text
-        || ',' || pg_catalog.to_json(v_actor::text)::text
-        || ',' || pg_catalog.to_json(v_type)::text
-        || ',' || COALESCE(pg_catalog.to_json(v_assignee::text)::text, 'null')
-        || ',' || v_version::text || ']', 'UTF8'));
-    SELECT a.actor_id, a.digest, a.result_snapshot INTO v_stored
+    IF v_type IN ('resolve', 'claim_and_resolve') THEN
+        -- Digest m05.action/v2 (package v2 2.1).
+        v_digest := pg_catalog.sha256(pg_catalog.convert_to(
+            '["m05.action/v2",' || pg_catalog.to_json(v_setting)::text
+            || ',' || pg_catalog.to_json(v_item::text)::text
+            || ',' || pg_catalog.to_json(v_key::text)::text
+            || ',' || pg_catalog.to_json(v_actor::text)::text
+            || ',' || pg_catalog.to_json(v_type)::text
+            || ',' || pg_catalog.to_json(v_outcome)::text
+            || ',' || COALESCE(pg_catalog.to_json(v_note_hmac)::text, 'null')
+            || ',' || COALESCE(v_hmac_version::text, 'null')
+            || ',' || v_version::text || ']', 'UTF8'));
+    ELSE
+        v_digest := pg_catalog.sha256(pg_catalog.convert_to(
+            '["m05.action/v1",' || pg_catalog.to_json(v_setting)::text
+            || ',' || pg_catalog.to_json(v_item::text)::text
+            || ',' || pg_catalog.to_json(v_key::text)::text
+            || ',' || pg_catalog.to_json(v_actor::text)::text
+            || ',' || pg_catalog.to_json(v_type)::text
+            || ',' || COALESCE(pg_catalog.to_json(v_assignee::text)::text, 'null')
+            || ',' || v_version::text || ']', 'UTF8'));
+    END IF;
+    SELECT a.actor_id, a.digest, a.result_snapshot, a.hmac_key_version INTO v_stored
       FROM {schema}.m05_followup_actions AS a
      WHERE a.item_id = v_item AND a.client_action_id = v_key;
     IF FOUND THEN
         IF v_stored.actor_id <> v_actor THEN
             @@REFUSE:ACTION_KEY_ACTOR_MISMATCH@@
+        END IF;
+        -- B4: stored structural fields first (type, outcome, note presence), then the
+        -- bounded note challenge, then the digest.
+        IF v_type IN ('resolve', 'claim_and_resolve') THEN
+            IF (v_stored.result_snapshot OPERATOR(pg_catalog.->>) 'action')
+                   IS DISTINCT FROM v_type
+               OR (v_stored.result_snapshot OPERATOR(pg_catalog.->>) 'outcome_code')
+                   IS DISTINCT FROM v_outcome
+               OR (v_stored.hmac_key_version IS NOT NULL) <> v_note_present THEN
+                @@REFUSE:ACTION_KEY_CONFLICT@@
+            END IF;
+@@RESOLVE_CHALLENGE@@
+            IF v_note_present AND v_hmac_version <> v_stored.hmac_key_version THEN
+                @@REFUSE:ACTION_KEY_CONFLICT@@
+            END IF;
         END IF;
         IF v_stored.digest <> v_digest THEN
             @@REFUSE:ACTION_KEY_CONFLICT@@
@@ -694,6 +813,22 @@ BEGIN
         END IF;
         v_target := v_assignee;
         v_new_assignee := v_assignee;
+    ELSIF v_type = 'resolve' THEN
+        IF v_row.assignee_id IS NULL THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        IF v_row.assignee_id <> v_actor
+           AND (v_perm OPERATOR(pg_catalog.->) 'supervise') <> 'true'::jsonb THEN
+            @@REFUSE:NOT_AUTHORIZED@@
+        END IF;
+        v_state := 'resolved';
+    ELSIF v_type = 'claim_and_resolve' THEN
+        IF v_row.assignee_id IS NOT NULL THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        v_target := v_actor;
+        v_new_assignee := v_actor;
+        v_state := 'resolved';
     ELSE
         IF v_row.assignee_id IS NULL OR v_row.assignee_id = v_assignee THEN
             @@REFUSE:PRECONDITION_FAILED@@
@@ -730,9 +865,18 @@ _REPLAY_PREPARE: Final = (
     "            'snapshot', v_stored.result_snapshot);"
 )
 _TAIL_PREPARE: Final = """
+    IF v_type IN ('resolve', 'claim_and_resolve') THEN
+        -- B4: NEW carries the three item fields the service needs to build the
+        -- resolution observation, read under the item lock.
+        RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'NEW',
+            'item', pg_catalog.jsonb_build_object('item_kind', v_row.item_kind,
+                'patient_id', v_row.patient_id::text,
+                'source_event_id', v_row.source_event_id::text));
+    END IF;
     RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'NEW');
 """
 _TAIL_APPLY: Final = r"""
+@@RESOLVE_APPLY@@
     -- 7. Writes: item, history (seq under the item lock), action record.
     UPDATE {schema}.m05_followup_items AS i
        SET state = v_state, assignee_id = v_new_assignee, version = v_row.version + 1
@@ -762,15 +906,190 @@ _TAIL_APPLY: Final = r"""
 """
 
 
+_RESOLVE_SHAPE_PREPARE: Final = """        IF NOT (v_keys IS NOT DISTINCT FROM
+                    ARRAY['note_present', 'outcome_code', 'type']::text[]
+                OR v_keys IS NOT DISTINCT FROM
+                    ARRAY['note', 'note_present', 'outcome_code', 'type']::text[])
+           OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'note_present')
+              IS DISTINCT FROM 'boolean' THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+        v_note_present := (v_action OPERATOR(pg_catalog.->) 'note_present') = 'true'::jsonb;
+        IF (v_action OPERATOR(pg_catalog.?) 'note')
+           AND (NOT v_note_present
+                OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'note') = 'null') THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;"""
+_RESOLVE_SHAPE_APPLY: Final = """        IF v_keys IS DISTINCT FROM
+               ARRAY['note', 'outcome_code', 'payload', 'type']::text[] THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+        v_note_present := pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'note')
+                          IS DISTINCT FROM 'null';"""
+_RESOLVE_PAYLOAD_APPLY: Final = r"""        v_payload := v_action OPERATOR(pg_catalog.->) 'payload';
+        IF pg_catalog.jsonb_typeof(v_payload) = 'null' THEN
+            v_payload := NULL;
+        END IF;
+        IF v_payload IS NOT NULL THEN
+            IF pg_catalog.jsonb_typeof(v_payload) IS DISTINCT FROM 'object'
+               OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                     FROM pg_catalog.jsonb_object_keys(v_payload) AS k)
+                  IS DISTINCT FROM ARRAY['event_id', 'note_row']::text[]
+               OR pg_catalog.jsonb_typeof(v_payload OPERATOR(pg_catalog.->) 'event_id')
+                  IS DISTINCT FROM 'string'
+               OR (v_payload OPERATOR(pg_catalog.->>) 'event_id')
+                  OPERATOR(pg_catalog.!~) c_uuid THEN
+                @@REFUSE:COMMAND_MALFORMED@@
+            END IF;
+            v_event := (v_payload OPERATOR(pg_catalog.->>) 'event_id')::uuid;
+            v_note_row := v_payload OPERATOR(pg_catalog.->) 'note_row';
+            IF pg_catalog.jsonb_typeof(v_note_row) = 'null' THEN
+                v_note_row := NULL;
+            END IF;
+            IF (v_note_row IS NULL) <> (v_note IS NULL) THEN
+                @@REFUSE:COMMAND_MALFORMED@@
+            END IF;
+            IF v_note_row IS NOT NULL AND (
+                pg_catalog.jsonb_typeof(v_note_row) IS DISTINCT FROM 'object'
+                OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                      FROM pg_catalog.jsonb_object_keys(v_note_row) AS k)
+                   IS DISTINCT FROM ARRAY['ciphertext', 'enc_key_version', 'nonce',
+                                          'note_id']::text[]
+                OR pg_catalog.jsonb_typeof(v_note_row OPERATOR(pg_catalog.->) 'note_id')
+                   IS DISTINCT FROM 'string'
+                OR (v_note_row OPERATOR(pg_catalog.->>) 'note_id') OPERATOR(pg_catalog.!~) c_uuid
+                OR pg_catalog.jsonb_typeof(v_note_row OPERATOR(pg_catalog.->) 'nonce')
+                   IS DISTINCT FROM 'string'
+                OR (v_note_row OPERATOR(pg_catalog.->>) 'nonce')
+                   OPERATOR(pg_catalog.!~) '^[0-9a-f]{24}$'
+                OR pg_catalog.jsonb_typeof(v_note_row OPERATOR(pg_catalog.->) 'ciphertext')
+                   IS DISTINCT FROM 'string'
+                OR (v_note_row OPERATOR(pg_catalog.->>) 'ciphertext')
+                   OPERATOR(pg_catalog.!~) '^[0-9a-f]+$'
+                OR pg_catalog.char_length(v_note_row OPERATOR(pg_catalog.->>) 'ciphertext') % 2 <> 0
+                OR pg_catalog.char_length(v_note_row OPERATOR(pg_catalog.->>) 'ciphertext')
+                   NOT BETWEEN 32 AND 4032
+                OR pg_catalog.jsonb_typeof(v_note_row OPERATOR(pg_catalog.->) 'enc_key_version')
+                   IS DISTINCT FROM 'number'
+                OR (v_note_row OPERATOR(pg_catalog.->) 'enc_key_version')::text
+                   OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,4}$'
+                OR ((v_note_row OPERATOR(pg_catalog.->) 'enc_key_version')::text)::integer
+                   > 32767) THEN
+                @@REFUSE:COMMAND_MALFORMED@@
+            END IF;
+        END IF;"""
+_RESOLVE_CHALLENGE_PREPARE: Final = """            IF v_note_present AND v_note IS NULL THEN
+                -- Only the stored version, only after the actor matched under the lock.
+                RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+                    'decision', 'REPLAY_CHALLENGE',
+                    'hmac_key_version', v_stored.hmac_key_version);
+            END IF;"""
+_RESOLVE_APPLY: Final = r"""    IF v_type IN ('resolve', 'claim_and_resolve') THEN
+        IF v_payload IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+        -- B4 event binding through the D6 envelope (package v2 3; A-META-1: the
+        -- filtered metadata_paths exactly). Unknown and other-tenant events are both
+        -- NULL here (schema-local). Every predicate, then reuse.
+        v_env := {schema}.m02_get_observation_envelope(v_event);
+        IF v_env IS NULL
+           OR (v_env OPERATOR(pg_catalog.->>) 'event_type')
+              IS DISTINCT FROM 'm05_followup_resolution_asserted'
+           OR (v_env OPERATOR(pg_catalog.->) 'contract_version') IS DISTINCT FROM '1'::jsonb
+           OR (v_env OPERATOR(pg_catalog.->>) 'event_level') IS DISTINCT FROM 'observation'
+           OR (v_env OPERATOR(pg_catalog.->>) 'status') IS DISTINCT FROM 'completed'
+           OR NOT (v_env OPERATOR(pg_catalog.?) 'operation_id')
+           OR pg_catalog.jsonb_typeof(v_env OPERATOR(pg_catalog.->) 'operation_id')
+              IS DISTINCT FROM 'null'
+           OR NOT (v_env OPERATOR(pg_catalog.?) 'occurred_at')
+           OR pg_catalog.jsonb_typeof(v_env OPERATOR(pg_catalog.->) 'occurred_at')
+              IS DISTINCT FROM 'null'
+           OR (v_env OPERATOR(pg_catalog.->>) 'source_time_quality') IS DISTINCT FROM 'absent'
+           OR (v_env OPERATOR(pg_catalog.->>) 'actor_id') IS DISTINCT FROM v_actor::text
+           OR pg_catalog.jsonb_typeof(v_env OPERATOR(pg_catalog.->) 'workload_id')
+              IS DISTINCT FROM 'null'
+           OR (v_env OPERATOR(pg_catalog.->>) 'patient_id')
+              IS DISTINCT FROM v_row.patient_id::text
+           OR (v_env OPERATOR(pg_catalog.->>) 'causation_event_id')
+              IS DISTINCT FROM v_row.source_event_id::text
+           OR (v_env OPERATOR(pg_catalog.->) 'links') IS DISTINCT FROM
+              pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
+                  'link_type', 'm05_followup_item_v1', 'link_id', v_item::text,
+                  'relationship', 'case'))
+           OR (v_env OPERATOR(pg_catalog.->) 'metadata_paths') IS DISTINCT FROM
+              pg_catalog.jsonb_build_object('assertion_kind', 'staff',
+                  'item_kind', v_row.item_kind, 'outcome_code', v_outcome)
+           OR (v_env OPERATOR(pg_catalog.->>) 'producer_dedupe_key') IS DISTINCT FROM
+              ('m05r1:' || pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+                  '["m05.resolve/v1",' || pg_catalog.to_json(v_setting)::text
+                  || ',' || pg_catalog.to_json(v_item::text)::text
+                  || ',' || pg_catalog.to_json(v_key::text)::text || ']', 'UTF8')), 'hex'))
+        THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'RESOLUTION_EVENT_INVALID';
+        END IF;
+        IF EXISTS (SELECT 1 FROM {schema}.m05_followup_history AS h
+                    WHERE h.resolution_event_id = v_event) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'RESOLUTION_EVENT_REUSED';
+        END IF;
+        UPDATE {schema}.m05_followup_items AS i
+           SET state = 'resolved', assignee_id = v_new_assignee, outcome_code = v_outcome,
+               version = v_row.version + 1
+         WHERE i.item_id = v_item;
+        SELECT pg_catalog.max(h.seq) INTO v_seq
+          FROM {schema}.m05_followup_history AS h
+         WHERE h.item_id = v_item;
+        BEGIN
+            INSERT INTO {schema}.m05_followup_history (history_id, item_id, seq, action,
+                actor_id, before, after, resolution_event_id, assertion_kind, created_at)
+            VALUES (pg_catalog.gen_random_uuid(), v_item, COALESCE(v_seq, 0) + 1, v_type,
+                v_actor,
+                pg_catalog.jsonb_build_object('state', v_row.state,
+                    'assignee_id', v_row.assignee_id::text, 'outcome_code', v_row.outcome_code),
+                pg_catalog.jsonb_build_object('state', 'resolved',
+                    'assignee_id', v_new_assignee::text, 'outcome_code', v_outcome),
+                v_event, 'staff', pg_catalog.statement_timestamp());
+        EXCEPTION WHEN unique_violation THEN
+            GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+            IF v_constraint = 'm05_followup_history_resolution_event_key' THEN
+                RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'RESOLUTION_EVENT_REUSED';
+            END IF;
+            RAISE;
+        END;
+        IF v_note_row IS NOT NULL THEN
+            INSERT INTO {schema}.m05_followup_notes (note_id, item_id, client_action_id, nonce,
+                ciphertext, enc_key_version, created_at)
+            VALUES ((v_note_row OPERATOR(pg_catalog.->>) 'note_id')::uuid, v_item, v_key,
+                pg_catalog.decode(v_note_row OPERATOR(pg_catalog.->>) 'nonce', 'hex'),
+                pg_catalog.decode(v_note_row OPERATOR(pg_catalog.->>) 'ciphertext', 'hex'),
+                ((v_note_row OPERATOR(pg_catalog.->) 'enc_key_version')::text)::integer,
+                pg_catalog.statement_timestamp());
+        END IF;
+        v_snapshot := pg_catalog.jsonb_build_object('schema_version', 1,
+            'item_id', v_item::text, 'client_action_id', v_key::text, 'action', v_type,
+            'version', v_row.version + 1, 'state', 'resolved',
+            'assignee_id', v_new_assignee::text, 'outcome_code', v_outcome);
+        INSERT INTO {schema}.m05_followup_actions (item_id, client_action_id, actor_id,
+            requested_action, digest, hmac_key_version, event_id, result_snapshot, created_at)
+        VALUES (v_item, v_key, v_actor, v_type, v_digest, v_hmac_version, v_event, v_snapshot,
+            pg_catalog.statement_timestamp());
+        RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', 'applied',
+            'snapshot', v_snapshot);
+    END IF;"""
+
+
 def _action_body(mode: str) -> str:
     import re
 
-    refuse = _REFUSE_APPLY if mode == "apply" else _REFUSE_PREPARE
-    body = re.sub(
-        r"@@REFUSE:([A-Z_]+)@@", lambda m: refuse.format(code=m.group(1)), _ACTION_TEMPLATE
-    )
-    body = body.replace("@@REPLAY@@", _REPLAY_APPLY if mode == "apply" else _REPLAY_PREPARE)
-    body = body.replace("@@TAIL@@", _TAIL_APPLY if mode == "apply" else _TAIL_PREPARE)
+    apply = mode == "apply"
+    refuse = _REFUSE_APPLY if apply else _REFUSE_PREPARE
+    body = _ACTION_TEMPLATE.replace("@@TAIL@@", _TAIL_APPLY if apply else _TAIL_PREPARE)
+    body = body.replace("@@RESOLVE_APPLY@@", _RESOLVE_APPLY)
+    body = body.replace("@@RESOLVE_SHAPE@@",
+                        _RESOLVE_SHAPE_APPLY if apply else _RESOLVE_SHAPE_PREPARE)
+    body = body.replace("@@RESOLVE_PAYLOAD@@", _RESOLVE_PAYLOAD_APPLY if apply else "")
+    body = body.replace("@@RESOLVE_CHALLENGE@@", "" if apply else _RESOLVE_CHALLENGE_PREPARE)
+    body = body.replace("@@REPLAY@@", _REPLAY_APPLY if apply else _REPLAY_PREPARE)
+    body = re.sub(r"@@REFUSE:([A-Z_]+)@@", lambda m: refuse.format(code=m.group(1)), body)
     assert "@@" not in body and body.isascii()
     return body
 
@@ -881,10 +1200,11 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
 )
 
 _GET_ITEM_BODY_SHA256: Final = "9f592e2cbda518f631d7e634ac71461f329b35c7d17e457ecc8b2a7f53f15bf6"
-_GET_HISTORY_BODY_SHA256: Final = "8982c03dade3192fc79e22bd86f820d7664dfbf859fa1e12f394d7052104df4d"
+_GET_HISTORY_BODY_SHA256: Final = "654c7367f142eebbe6c5f64293b25c8e30f46f52dadbac89d1ec23fd0c822ce1"
 _LIST_ITEMS_BODY_SHA256: Final = "fca320809dc1d6d44249c3ce927ae3701bf83dc4b933b3ad4ef4dee7ef7d871d"
-_PREPARE_BODY_SHA256: Final = "ddc80f19b64c29974d5ae9ee825632dbc2f34e1a16b89997e47ad458d2d0a5ee"
-_APPLY_BODY_SHA256: Final = "ba1515e12d9de04e2eb20fb4a4127125791a5c0e6aed0e508600abf5a77be24f"
+_PREPARE_BODY_SHA256: Final = "2f4222b0d85b149e04a97f6976411f7b0c76e1e13122de4783f5cdb79726032b"
+_APPLY_BODY_SHA256: Final = "ac08cd7fff1a40fbaea529a47cfd9462c3315b251b042c64fc196ea6e28e6e2b"
+_READ_NOTE_BODY_SHA256: Final = "7f6b883fac6b3ab1967be20f3a4900cf304018cb50cade6e0be8917a6797dfe8"
 
 # Bodies by function. A function absent here is still the B1 fail-closed stub; each
 # tranche moves exactly the functions its gated tests cover.
@@ -895,6 +1215,7 @@ _BODIES: Final = {
     "m05_get_item": (_GET_ITEM_BODY, _GET_ITEM_BODY_SHA256),
     "m05_get_history": (_GET_HISTORY_BODY, _GET_HISTORY_BODY_SHA256),
     "m05_list_items": (_LIST_ITEMS_BODY, _LIST_ITEMS_BODY_SHA256),
+    "m05_read_note": (_READ_NOTE_BODY, _READ_NOTE_BODY_SHA256),
 }
 
 M05_GATEWAY_UNITS: Final = MappingProxyType(

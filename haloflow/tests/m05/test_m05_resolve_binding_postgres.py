@@ -741,7 +741,7 @@ async def test_mx01_resolve_and_note_read_make_no_vendor_call(staff_install, mon
     history = await asyncio.to_thread(st.call, staff_install, "m05_get_history", str(item))
     (note_id,) = [e["note_id"] for e in history["entries"] if e["note_id"] is not None]
     async with sv.runtime(staff_install) as rt:
-        ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.NOTE_READER_CAPS)
         note = await rs.service(rt, keys).read_note(ctx, UUID(note_id))
     assert note["text"] == "Vendor spy note."
     assert spy.calls == []

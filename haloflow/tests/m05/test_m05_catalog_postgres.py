@@ -497,6 +497,8 @@ STUB_REPLACED = {
     "m05_get_item": "tests/m05/test_m05_reads_postgres.py",
     "m05_list_items": "tests/m05/test_m05_reads_postgres.py",
     "m05_get_history": "tests/m05/test_m05_reads_postgres.py",
+    # B4 (red gate PASS 397f5f9e): NR-1..7, HN-1, SAN-1/2.
+    "m05_read_note": "tests/m05/test_m05_resolve_postgres.py",
 }
 STUBBED = tuple(spec for spec in m05.FUNCTIONS if spec.name not in STUB_REPLACED)
 

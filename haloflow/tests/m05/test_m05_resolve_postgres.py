@@ -684,7 +684,7 @@ async def test_nr1_ordinary_reader_reads_note(staff_install):
     reader = await asyncio.to_thread(_staff, staff_install, access=("read",))  # no act
     async with sv.runtime(staff_install) as rt:
         rec = sv.Recorder(rt.gateway)
-        ctx = await sv.context(rt, staff_install, str(reader), frozenset({sv.NOTE_READ}))
+        ctx = await sv.context(rt, staff_install, str(reader), sv.NOTE_READER_CAPS)
         note = await _service(rt, keys, rec).read_note(ctx, note_id)
     assert note == {"note_id": str(note_id), "item_id": str(item),
                     "text": "Patient will call back."}
@@ -707,7 +707,7 @@ async def test_nr2_reader_without_standing_refused(staff_install, staff_foreign_
         actor, kind = m05.S1, "workload"
     async with sv.runtime(staff_install) as rt:
         rec = sv.Recorder(rt.gateway)
-        ctx = await sv.context(rt, staff_install, actor, frozenset({sv.NOTE_READ}), kind=kind)
+        ctx = await sv.context(rt, staff_install, actor, sv.NOTE_READER_CAPS, kind=kind)
         with pytest.raises(_svc().ReadRefused) as caught:
             await _service(rt, keys, rec).read_note(ctx, note_id)
     assert caught.value.code == "NOT_AUTHORIZED"
@@ -726,10 +726,24 @@ async def test_nr3_missing_capability_route_denied(staff_install):
     assert rec.calls == 0
 
 
+async def test_nr3b_note_capability_without_read_route_denied(staff_install):
+    """D-2: note read without follow-up viewing is refused before the gateway."""
+
+    keys = sv.TestNoteKeys()
+    item = await _resolved_with_note(staff_install, keys)
+    note_id = await asyncio.to_thread(_note_id, staff_install, item)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway)
+        ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+        with pytest.raises(_svc().RouteDenied):
+            await _service(rt, keys, rec).read_note(ctx, note_id)
+    assert rec.calls == 0
+
+
 async def test_nr4_unknown_note_is_item_not_found(staff_install):
     await asyncio.to_thread(_ready, staff_install)
     async with sv.runtime(staff_install) as rt:
-        ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.NOTE_READER_CAPS)
         with pytest.raises(_svc().ReadRefused) as caught:
             await _service(rt, sv.TestNoteKeys()).read_note(ctx, uuid4())
     assert caught.value.code == "ITEM_NOT_FOUND"
@@ -772,7 +786,8 @@ NR5_CASES = (
     "action-key-not-uuid", "short-nonce", "long-nonce", "non-hex-nonce", "null-nonce",
     "short-ciphertext", "oversize-ciphertext", "version-zero", "version-str", "version-bool",
 )
-NR5_INTEGRITY = {"swapped-ciphertext"}
+# D-3: an item_id rebinding is detectable only through the AEAD (the AAD binds it).
+NR5_INTEGRITY = {"swapped-ciphertext", "item-id-mismatch"}
 
 
 async def _two_notes(install: st.StaffInstall, keys: Any) -> tuple[UUID, dict[str, Any],
@@ -792,7 +807,7 @@ async def _read_failure(install: st.StaffInstall, keys: Any, note_id: UUID,
         rec = sv.Recorder(rt.gateway)
         if substitute is not None:
             rec.substitute[sv.K_NOTE] = substitute
-        ctx = await sv.context(rt, install, m05.S1, frozenset({sv.NOTE_READ}))
+        ctx = await sv.context(rt, install, m05.S1, sv.NOTE_READER_CAPS)
         with pytest.raises(_svc().ReadFailed) as caught:
             await _service(rt, keys, rec).read_note(ctx, note_id)
     return caught.value
@@ -856,7 +871,7 @@ async def test_nr7_control_authentic_normal_plaintext_reads(staff_install):
     async with sv.runtime(staff_install) as rt:
         rec = sv.Recorder(rt.gateway)
         rec.substitute[sv.K_NOTE] = [(forged,)]
-        ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.NOTE_READER_CAPS)
         note = await _service(rt, keys, rec).read_note(ctx, note_a)
     assert note["text"] == "Independent text."
 
@@ -874,7 +889,7 @@ async def test_nr6_foreign_note_id_with_eligible_local_reader(staff_install,
     outcomes = []
     for note_id in (foreign_note, uuid4()):
         async with sv.runtime(staff_install) as rt:
-            ctx = await sv.context(rt, staff_install, m05.S1, frozenset({sv.NOTE_READ}))
+            ctx = await sv.context(rt, staff_install, m05.S1, sv.NOTE_READER_CAPS)
             with pytest.raises(_svc().ReadRefused) as caught:
                 await _service(rt, sv.TestNoteKeys()).read_note(ctx, note_id)
         outcomes.append((type(caught.value), caught.value.code, str(caught.value)))

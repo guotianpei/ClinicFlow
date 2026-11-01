@@ -117,6 +117,7 @@ def _ready(install: M05Install, *, allowlist: bool = True) -> None:
         _admin(install, part_a.TEST_PROFILE_SQL.format(schema=schema))
         profile = m05.B2_INTAKE_PROFILE_SQL if allowlist else m05.B2_NO_ALLOWLIST_PROFILE_SQL
         _admin(install, profile.format(schema=schema))
+        _admin(install, m05.B4_RESOLUTION_PROFILE_SQL.format(schema=schema))
         for staff, name in ((m05.S1, "Staff One"), (m05.S2, "Staff Two"),
                             (m05.SUP, "Supervisor")):
             staff_support.seed_staff(install, staff, name=name)  # type: ignore[arg-type]
