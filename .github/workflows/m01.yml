@@ -130,6 +130,13 @@ jobs:
           python3 -I scripts/m05_create_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/m05-mutation"
+      # UC1 part B, B4 (package v2 7): nine named mutants of the resolve SQL and
+      # service, in four groups, judged by the same checker. Static controls first.
+      - run: $VENV/bin/pytest scripts/test_m05_resolve_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/m05_resolve_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/m05-resolve-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
