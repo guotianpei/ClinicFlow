@@ -36,10 +36,10 @@ _MSG_ROLES: Final = "staff directory role verification failed"
 # v1r2 correction 4: the Unicode White_Space set, enumerated. A display name may
 # not start or end with any of these. Explicit class, not btrim.
 _WS: Final = (
-    r"\u0009-\u000d \u0085   -     　"
+    r"\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000"
 )
 # Anywhere in the name: C0/C1 controls and the two line/paragraph separators.
-_FORBIDDEN: Final = r"\u0001-\u001f\u007f-\u009f  "
+_FORBIDDEN: Final = r"\u0001-\u001f\u007f-\u009f\u2028\u2029"
 
 DISPLAY_NAME_CHECK: Final = (
     "(display_name IS NFC NORMALIZED"
@@ -225,8 +225,9 @@ _ASSIGNABLE_BODY_SHA256: Final = "24ae3aa3aea919ae31e97c670ba1a449ffe10cbff3335a
 _ADMIN_BODY: Final = r"""
 DECLARE
     c_uuid constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
-    c_ws constant text := '[\u0009-\u000d \u0085   -     　]';
-    c_forbidden constant text := '[\u0001-\u001f\u007f-\u009f  ]';
+    c_ws constant text := '[\u0009-\u000d\u0020\u0085\u00a0\u1680'
+        || '\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]';
+    c_forbidden constant text := '[\u0001-\u001f\u007f-\u009f\u2028\u2029]';
     v_setting text;
     v_attr jsonb;
     v_perm jsonb;
@@ -498,7 +499,7 @@ BEGIN
     RETURN v_result;
 END;
 """
-_ADMIN_BODY_SHA256: Final = "923dbce1374bcaf699deea0dac2d83a128d525b128230ec8acd7f33991ddc79a"
+_ADMIN_BODY_SHA256: Final = "2fa6212b978d09e1095fbc5072af9f2a6e49475bc50a21ad25ded81feaa052e2"
 
 
 # t024 m01_staff_display (v1 3.3 DR-07): STABLE, no lock, no isolation guard; 1-100

@@ -1090,3 +1090,16 @@ def test_dad3_integrity_key_without_log_fails_closed(staff_install):
     before = st.directory_snapshot(staff_install)
     st.expect_code("ADMIN_LOG_INTEGRITY", lambda: st.admin_op(staff_install, command))
     assert st.directory_snapshot(staff_install) == before
+
+
+def test_dts2_directory_sql_is_ascii_with_escapes():
+    """Every directory SQL text (t021 and the three bodies) is pure ASCII: Unicode
+    classes are written as \\uXXXX escapes, never literal characters, so no
+    normalization (NFC folds U+2000 into U+2002) can change a class or a body hash."""
+
+    from haloflow.m01.staff import units
+
+    texts = {"t021": units.T021_SQL}
+    texts.update({mid: unit.template for mid, unit in units.STAFF_GATEWAY_UNITS.items()})
+    for label, text in texts.items():
+        assert text.isascii(), (label, [c for c in text if not c.isascii()][:5])
