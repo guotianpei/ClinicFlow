@@ -523,8 +523,12 @@ def _resolve_decision(rows: list[Any], action: ResolveAction, actor: str, *,
         raise _invalid()
     if decision == "NEW" and set(value) == {"schema_version", "decision", "item"}:
         item = value["item"]
+        # Ruling 7ce0ddad (1): closed keys, bound to the request, canonical UUIDs and a
+        # known kind, all before any key use or append.
         if (
-            type(item) is dict and set(item) == {"item_kind", "patient_id", "source_event_id"}
+            type(item) is dict
+            and set(item) == {"item_id", "item_kind", "patient_id", "source_event_id"}
+            and item["item_id"] == str(action.item_id)
             and member(item["item_kind"], ITEM_KINDS)
             and uuid_text(item["patient_id"]) and uuid_text(item["source_event_id"])
         ):
