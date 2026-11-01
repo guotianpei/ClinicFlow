@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "m02"))
 import m02_support  # noqa: E402
 import m05_support  # noqa: E402
 from m05_harness import M05Install  # noqa: E402
+from staff_support import StaffInstall  # noqa: E402
 
 
 @pytest.fixture
@@ -68,5 +69,38 @@ def m05_install(
     m05_reset(tenant)
     try:
         yield M05Install(m02_ids, tenant)
+    finally:
+        m05_reset(tenant)
+
+
+@pytest.fixture(scope="module")
+def staff_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[StaffInstall]:
+    """MA-10: one synthetic tenant per module, installed through the staff test
+    registry (target 24); removed before and after; installed lazily."""
+
+    tenant = m02_support.tenant_for(f"{request.module.__name__}:staff")
+    m05_reset(tenant)
+    try:
+        yield StaffInstall(m02_ids, tenant)
+    finally:
+        m05_reset(tenant)
+
+
+@pytest.fixture(scope="module")
+def staff_foreign_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[StaffInstall]:
+    """A second clinic, for other-tenant ids (DR-01, MA-10d)."""
+
+    tenant = m02_support.tenant_for(f"{request.module.__name__}:staff:foreign")
+    m05_reset(tenant)
+    try:
+        yield StaffInstall(m02_ids, tenant)
     finally:
         m05_reset(tenant)

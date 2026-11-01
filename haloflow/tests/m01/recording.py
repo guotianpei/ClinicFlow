@@ -274,6 +274,7 @@ SHIPPED_CONTROLLED_EDGES = Answer(
         ("haloflow_m02_projection_owner", "haloflow_migrator", True, False, False),
         ("haloflow_m02_read_owner", "haloflow_migrator", True, False, False),
         ("haloflow_m05_owner", "haloflow_migrator", True, False, False),
+        ("haloflow_staff_owner", "haloflow_migrator", True, False, False),
     ),
 )
 

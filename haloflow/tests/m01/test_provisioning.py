@@ -2572,6 +2572,7 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
                     "haloflow_m02_projection_owner",
                     "haloflow_m02_read_owner",
                     "haloflow_m05_owner",
+                    "haloflow_staff_owner",
                 )
             ]
 
@@ -2621,6 +2622,7 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
                     "haloflow_m02_projection_owner",
                     "haloflow_m02_read_owner",
                     "haloflow_m05_owner",
+                    "haloflow_staff_owner",
                 )
             ]
 
