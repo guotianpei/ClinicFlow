@@ -918,6 +918,9 @@ ENVELOPE_KEYS = {
     "producer_dedupe_key",
     "links",
     "metadata_paths",
+    # B4 v2r1 A1 (t011 delta, declared in the B4 red commit): red until implemented.
+    "occurred_at",
+    "source_time_quality",
 }
 
 

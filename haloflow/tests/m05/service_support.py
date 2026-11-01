@@ -139,7 +139,16 @@ class _Handle:
 
     async def fetch_one(self, key: str, params: Any = None) -> Any:
         # Red review 24d1cd1 #3: fetch_one would hide extra rows from the validator.
-        raise AssertionError("B3b services read every statement with fetch_all")
+        # The one exception is M02's own append (EventFoundation reads it with
+        # fetch_one; that is accepted part-A code, not B3b/B4 service code).
+        if key != "m02.observation.append":
+            raise AssertionError("B3b services read every statement with fetch_all")
+        self._note(key, params)
+        await self._recorder._run_hook(self._recorder.before, key)
+        row = await self._handle.fetch_one(key, params)
+        self._recorder.results.append((key, copy.deepcopy([row] if row is not None else [])))
+        await self._recorder._run_hook(self._recorder.after, key)
+        return row
 
     async def fetch_all(self, key: str, params: Any = None) -> Any:
         self._note(key, params)
@@ -147,6 +156,10 @@ class _Handle:
         rows = await self._handle.fetch_all(key, params)
         self._recorder.results.append((key, copy.deepcopy(list(rows))))
         await self._recorder._run_hook(self._recorder.after, key)
+        n = self._recorder._calls_by_key.get(key, 0) + 1
+        self._recorder._calls_by_key[key] = n
+        if (key, n) in self._recorder.substitute_nth:
+            return list(self._recorder.substitute_nth[(key, n)])
         if key in self._recorder.substitute:
             return list(self._recorder.substitute[key])
         return rows
@@ -182,6 +195,9 @@ class Recorder:
         self.substitute = dict(substitute or {})
         self.before = dict(before or {})
         self.after = dict(after or {})
+        # B4: substitute only the n-th call (1-based) of a key, e.g. prepare #2.
+        self.substitute_nth: dict[tuple[str, int], list[tuple[Any, ...]]] = {}
+        self._calls_by_key: dict[str, int] = {}
 
     async def _run_hook(self, hooks: dict[str, Any], key: str) -> None:
         hook = hooks.pop(key, None)
@@ -209,3 +225,100 @@ class Recorder:
 
     def returned(self, key: str) -> list[list[Any]]:
         return [rows for k, rows in self.results if k == key]
+
+
+# ---------------------------------------------------------------------------
+# B4 (package v2 + v2r1; owner O-1 2026-11-01)
+# ---------------------------------------------------------------------------
+
+APPEND: Final = "m02.observation.append"
+NOTE_READ: Final = "m05.followup.note.read"
+RESOLVE_CAPS: Final = STAFF_CAPS | {APPEND}
+SUPERVISOR_RESOLVE_CAPS: Final = SUPERVISOR_CAPS | {APPEND}
+K_APPEND: Final = "m02.observation.append"
+K_NOTE: Final = "m05.followup.note.read"
+RESOLUTION_TYPE: Final = "m05_followup_resolution_asserted"
+PRODUCER: Final = "m05_followup"
+
+
+def resolution_dedupe_key(tenant: str, item_id: str, client_action_id: str) -> str:
+    """MK-V1 (package v1r1): m05r1: + sha256(compact JSON) hex."""
+
+    import hashlib
+    import json
+
+    preimage = json.dumps(["m05.resolve/v1", tenant, item_id, client_action_id],
+                          separators=(",", ":"), ensure_ascii=False)
+    return "m05r1:" + hashlib.sha256(preimage.encode("utf-8")).hexdigest()
+
+
+MK_V1: Final = (("pilot-clinic-01", "00000000-0000-4000-8000-000000000201",
+                 "00000000-0000-4000-8000-000000000301"),
+                "m05r1:c1d4792e14070a96dca1f76be434c5105cd5a5ccd81cbd0c57d88d3223621253")
+
+
+class TestNoteKeys:
+    """Test-only NoteKeyProvider: fixed keys, a current version, a retained set; any
+    version can be retired, and the whole provider can be closed."""
+
+    __test__ = False  # not a pytest class
+
+    def __init__(self) -> None:
+        self.hmac_keys = {1: bytes([0x11]) * 32}
+        self.enc_keys = {1: bytes([0x22]) * 32}
+        self.current = 1
+        self.current_unavailable = False  # RP-12: only the CURRENT keys are gone
+        self.all_unavailable = False  # KP-1: every key is gone
+        self.uses: list[tuple[str, int | None]] = []
+
+    def _unavailable(self) -> Exception:
+        from haloflow.m05.notes import KeyUnavailable
+
+        return KeyUnavailable()
+
+    def rotate(self) -> int:
+        self.current += 1
+        self.hmac_keys[self.current] = bytes([0x30 + self.current]) * 32
+        self.enc_keys[self.current] = bytes([0x40 + self.current]) * 32
+        return self.current
+
+    def retire(self, version: int) -> None:
+        self.hmac_keys.pop(version, None)
+        self.enc_keys.pop(version, None)
+
+    def current_hmac(self) -> tuple[int, bytes]:
+        self.uses.append(("current_hmac", None))
+        if self.all_unavailable or self.current_unavailable or self.current not in self.hmac_keys:
+            raise self._unavailable()
+        return self.current, self.hmac_keys[self.current]
+
+    def hmac_key(self, version: int) -> bytes:
+        self.uses.append(("hmac_key", version))
+        if self.all_unavailable or version not in self.hmac_keys:
+            raise self._unavailable()
+        return self.hmac_keys[version]
+
+    def current_encryption(self) -> tuple[int, bytes]:
+        self.uses.append(("current_encryption", None))
+        if self.all_unavailable or self.current_unavailable or self.current not in self.enc_keys:
+            raise self._unavailable()
+        return self.current, self.enc_keys[self.current]
+
+    def encryption_key(self, version: int) -> bytes:
+        self.uses.append(("encryption_key", version))
+        if self.all_unavailable or version not in self.enc_keys:
+            raise self._unavailable()
+        return self.enc_keys[version]
+
+
+M02_TABLES: Final = ("patient_events", "patient_event_links", "event_handoff_outbox")
+
+
+def full_state(install: Any) -> dict[str, Any]:
+    """The B4 oracle: every directory and M05 row (st.state) plus every M02 event,
+    link and outbox row, as sorted JSON text."""
+
+    out: dict[str, Any] = dict(st.state(install))
+    for table in M02_TABLES:
+        out[table] = sorted(st.table_content(install, table))
+    return out

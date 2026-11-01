@@ -55,6 +55,7 @@ __all__ = [
     "M05Service",
     "ReadFailed",
     "ReadRefused",
+    "ResolveAction",
     "RouteDenied",
     "StaffAction",
 ]
@@ -388,11 +389,36 @@ ACTION_ROUTE: Final = frozenset({PREPARE_CAPABILITY, APPLY_CAPABILITY})
 READ_ROUTE: Final = frozenset({READ_CAPABILITY})
 
 
-class M05Service:
-    def __init__(self, gateway: Any) -> None:
-        self._gateway = gateway
+OUTCOME_CODES: Final = ("rescheduled", "cancelled_in_ehr", "reached_no_change",
+                         "no_contact_left_message", "no_contact_no_answer", "other")
+APPEND_CAPABILITY: Final = "m02.observation.append"
+NOTE_READ_CAPABILITY: Final = "m05.followup.note.read"
+RESOLVE_ROUTE: Final = frozenset({PREPARE_CAPABILITY, APPLY_CAPABILITY, APPEND_CAPABILITY})
+NOTE_READ_ROUTE: Final = frozenset({NOTE_READ_CAPABILITY})
 
-    async def act(self, context: Any, action: StaffAction) -> ActionResult:
+
+@dataclass(frozen=True)
+class ResolveAction:
+    """B4 (package v2 1.1). RED TRANCHE: not yet validated (D11 note normalization,
+    outcome set and `other` requires a note arrive with the implementation)."""
+
+    item_id: UUID
+    client_action_id: UUID
+    expected_version: int
+    type: str
+    outcome_code: str
+    note: str | None = None
+
+
+class M05Service:
+    def __init__(self, gateway: Any, *, foundation: Any = None, keys: Any = None) -> None:
+        self._gateway = gateway
+        self._foundation = foundation  # B4: EventFoundation for the resolution append
+        self._keys = keys  # B4: NoteKeyProvider
+
+    async def act(self, context: Any, action: StaffAction | ResolveAction) -> ActionResult:
+        if type(action) is ResolveAction:
+            return await self._resolve(context, action)
         if type(action) is not StaffAction:
             raise CommandMalformed("action")
         require_capabilities(context, ACTION_ROUTE)
@@ -463,3 +489,9 @@ class M05Service:
             raise CommandMalformed("query")
         return await self._read(context, K_LIST, {"query": Jsonb(query.render())},
                                 lambda rows: _bind_list(rows, query))
+
+    async def _resolve(self, context: Any, action: ResolveAction) -> ActionResult:
+        raise NotImplementedError("B4 resolve route")
+
+    async def read_note(self, context: Any, note_id: UUID) -> Mapping[str, Any]:
+        raise NotImplementedError("B4 note read route")
