@@ -359,3 +359,217 @@ def test_mc08_loader_is_read_only_and_leaves_no_transaction(loader_base: M05Inst
 
     assert generation.intake_rows == ()
     assert status == TransactionStatus.IDLE
+
+
+# ---------------------------------------------------------------------------
+# Round-1 corrections (Codex REVISE 20261031T235804Z,
+# codex_b2-tests-first-review-7838244).
+# ---------------------------------------------------------------------------
+
+import queue  # noqa: E402
+import threading  # noqa: E402
+
+import psycopg  # noqa: E402
+
+loader_probe = _tenant_fixture("loader-probe")
+
+# A coordinated change across three registry relations, committed in ONE writer
+# transaction. A coherent generation shows all of it or none of it.
+_COORDINATED_APPLY = (
+    "UPDATE {s}.event_types SET is_active = true"
+    " WHERE event_type = 'm02_test_observation_received';"
+    " UPDATE {s}.m02_link_resolvers SET is_active = true"
+    " WHERE resolver_id = 'm02_test_subject_v1';"
+    " INSERT INTO {s}.m05_intake_map VALUES ('m02_test_observation_received', 1,"
+    " 'label_code', 'reviewed', 'reschedule_request',"
+    " '00000000-0000-4000-8000-0000000b2001', false)"
+)
+_COORDINATED_REVERT = (
+    "UPDATE {s}.event_types SET is_active = false"
+    " WHERE event_type = 'm02_test_observation_received';"
+    " UPDATE {s}.m02_link_resolvers SET is_active = false"
+    " WHERE resolver_id = 'm02_test_subject_v1';"
+    " DELETE FROM {s}.m05_intake_map"
+)
+
+
+def _fingerprint(generation: Any) -> tuple[bool, bool, int]:
+    family = any(
+        c.event_type == "m02_test_observation_received" and c.is_active
+        for c in generation.contracts
+    )
+    resolver = any(
+        r.resolver_id == "m02_test_subject_v1" and r.is_active for r in generation.resolvers
+    )
+    return family, resolver, len(generation.intake_rows)
+
+
+@postgres
+@pytest.mark.parametrize(
+    "locked", ["event_types", "event_contracts", "m02_link_resolvers", "m05_intake_map"]
+)
+def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked: str) -> None:
+    """F-B2-SNAPSHOT01. The writer opens a transaction, takes ACCESS EXCLUSIVE on one
+    registry relation and makes the coordinated change. The loader is started and is
+    OBSERVED waiting on that lock (pg_stat_activity, bounded polling, no bare
+    sleeps); only then does the writer commit. Repeated with the lock on each
+    relation the loader reads: a loader that reads relation by relation in separate
+    snapshots has read some relation before the commit and some after in at least
+    one of these runs, returning a mixed generation. A single snapshot (or a single
+    atomic read) can only return all-before or all-after."""
+
+    loader_base.require()
+    v = _v()
+    schema = sql.Identifier(loader_base.schema)
+    before = (False, False, 0)
+    after = (True, True, 1)
+    pids: queue.Queue[int] = queue.Queue()
+    results: list[Any] = []
+
+    def run_loader() -> None:
+        async def go() -> Any:
+            async with await AsyncConnection.connect(
+                loader_base.ids.admin, autocommit=True
+            ) as conn:
+                await conn.execute("SET lock_timeout = '20s'")
+                row = await (await conn.execute("SELECT pg_backend_pid()")).fetchone()
+                assert row is not None
+                pids.put(int(row[0]))
+                return await v.load_generation(conn, loader_base.schema)
+
+        try:
+            results.append(asyncio.run(go()))
+        except Exception as error:  # noqa: BLE001 - asserted below
+            results.append(error)
+
+    writer = psycopg.connect(loader_base.ids.admin)
+    thread: threading.Thread | None = None
+    try:
+        writer.execute("SET lock_timeout = '20s'")
+        writer.execute(
+            sql.SQL("LOCK TABLE {}.{} IN ACCESS EXCLUSIVE MODE").format(
+                schema, sql.Identifier(locked)
+            )
+        )
+        writer.execute(sql.SQL(_COORDINATED_APPLY).format(s=schema))
+        thread = threading.Thread(target=run_loader, daemon=True)
+        thread.start()
+        pid = pids.get(timeout=20)
+        waiting = False
+        for _ in range(400):
+            rows = _admin_rows(
+                loader_base,
+                "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s",
+                (pid,),
+            )
+            if rows == [("Lock",)]:
+                waiting = True
+                break
+            if results:
+                break
+            threading.Event().wait(0.05)
+        assert waiting, f"loader was not observed waiting on {locked}: {results}"
+        writer.commit()
+        thread.join(timeout=30)
+        assert thread is not None and not thread.is_alive()
+        assert len(results) == 1 and not isinstance(results[0], Exception), results
+        assert _fingerprint(results[0]) in (before, after), (locked, _fingerprint(results[0]))
+    finally:
+        try:
+            writer.rollback()
+        finally:
+            writer.close()
+        if thread is not None:
+            thread.join(timeout=5)
+        _admin_exec(loader_base.ids, sql.SQL(_COORDINATED_REVERT).format(s=schema))
+    assert _fingerprint(_load(loader_base, loader_base.schema)) == before
+
+
+def _admin_rows(install: M05Install, query: str, params: Any = None) -> list[tuple[Any, ...]]:
+    return m02.admin_all(install.ids, query, params)
+
+
+@postgres
+def test_mc08_loader_transaction_is_observed_read_only(loader_probe: M05Install) -> None:
+    """F-B2-SNAPSHOT01 (read-only half). Disposable fixture: the intake table is
+    fronted by a view that calls a probe function; the probe raises a NOTICE with
+    `transaction_read_only` from INSIDE the loader's own transaction. The caller's
+    connection is default-writable, so a read-only observation is the loader's own
+    doing. One production intake row keeps the generation production-valid."""
+
+    loader_probe.require()
+    s = sql.Identifier(loader_probe.schema)
+    _admin_exec(
+        loader_probe.ids,
+        sql.SQL(
+            "ALTER TABLE {s}.m05_intake_map RENAME TO m05_intake_map_real;"
+            " CREATE FUNCTION {s}.mb2_probe() RETURNS boolean LANGUAGE plpgsql AS $f$"
+            " BEGIN RAISE NOTICE 'mb2-probe read_only=%',"
+            " current_setting('transaction_read_only'); RETURN true; END $f$;"
+            " CREATE VIEW {s}.m05_intake_map AS SELECT r.* FROM {s}.m05_intake_map_real r"
+            " WHERE (SELECT {s}.mb2_probe());"
+            " INSERT INTO {s}.m05_intake_map_real VALUES ('m05_followup_resolution_asserted', 1,"
+            " 'outcome_code', 'other', 'unclear_reply',"
+            " '00000000-0000-4000-8000-0000000b2001', true)"
+        ).format(s=s),
+    )
+    notices: list[str] = []
+
+    async def run() -> Any:
+        async with await AsyncConnection.connect(loader_probe.ids.admin, autocommit=True) as conn:
+            await conn.execute("SET default_transaction_read_only = off")
+            conn.add_notice_handler(lambda d: notices.append(d.message_primary or ""))
+            return await _v().load_generation(conn, loader_probe.schema)
+
+    generation = asyncio.run(run())
+    probes = [n for n in notices if n.startswith("mb2-probe ")]
+    assert probes, f"the probe view was not read by the loader: {notices}"
+    assert set(probes) == {"mb2-probe read_only=on"}, probes
+    assert len(generation.intake_rows) == 1
+    assert _validate(generation, "production") is None
+
+
+@postgres
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        '{"handoff_kind": 1, "signal_type": "m02.event.appended"}',
+        '{"handoff_kind": "event_signal", "signal_type": true}',
+    ],
+    ids=["handoff-kind-number", "signal-type-boolean"],
+)
+def test_mc08_loader_refuses_malformed_row_with_valid_controls(
+    loader_base: M05Install, malformed: str
+) -> None:
+    """F-B2-MALFORMED01. A contract `signal_rule` whose keys pass the table CHECK
+    but whose values are not strings is a malformed row. On an INACTIVE contract
+    the validator would never look at it, so only the loader's own decoding can
+    refuse: GENERATION_UNREADABLE, never coercion, omission or an empty accepted
+    generation. Valid before/after controls on the same tenant."""
+
+    loader_base.require()
+    v = _v()
+    assert _validate(_load(loader_base, loader_base.schema), "production") is None
+    s = sql.Identifier(loader_base.schema)
+    _admin_exec(
+        loader_base.ids,
+        sql.SQL(
+            "UPDATE {s}.event_contracts SET signal_rule = %s::jsonb"
+            " WHERE event_type = 'm05_followup_resolution_asserted'"
+        ).format(s=s),
+        (malformed,),
+    )
+    try:
+        with pytest.raises(v.RegistryRefused) as caught:
+            _load(loader_base, loader_base.schema)
+        assert caught.value.reason_code == "GENERATION_UNREADABLE"
+    finally:
+        _admin_exec(
+            loader_base.ids,
+            sql.SQL(
+                "UPDATE {s}.event_contracts SET signal_rule ="
+                " '{{\"handoff_kind\":\"event_signal\",\"signal_type\":\"m02.event.appended\"}}'"
+                "::jsonb WHERE event_type = 'm05_followup_resolution_asserted'"
+            ).format(s=s),
+        )
+    assert _validate(_load(loader_base, loader_base.schema), "production") is None
