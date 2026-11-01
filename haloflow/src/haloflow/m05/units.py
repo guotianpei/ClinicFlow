@@ -196,6 +196,16 @@ GRANT SELECT (patient_id, state, assignee_id, outcome_code, version, created_at)
 GRANT SELECT (history_id, item_id, seq, action, actor_id, before, after, assertion_kind,
     created_at)
     ON {_S}.m05_followup_history TO {M05_OWNER_ROLE};
+-- B3a action slice (design delta v1 delta 6, with Codex's least-privilege refinement: no
+-- UPDATE(outcome_code) until B4), released with MA-10 (owner choices 2026-11-01).
+-- The item UPDATE columns also cover the action lock (FOR UPDATE).
+GRANT UPDATE (state, assignee_id, version)
+    ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
+GRANT INSERT (item_id, client_action_id, actor_id, requested_action, digest,
+    hmac_key_version, event_id, result_snapshot, created_at)
+    ON {_S}.m05_followup_actions TO {M05_OWNER_ROLE};
+GRANT SELECT (item_id, client_action_id, actor_id, digest, result_snapshot)
+    ON {_S}.m05_followup_actions TO {M05_OWNER_ROLE};
 """
 
 _RESOLUTION_METADATA_SCHEMA: Final = (

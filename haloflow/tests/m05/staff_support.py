@@ -851,3 +851,137 @@ def mutant_weak_replay() -> tuple[tuple[str, str], ...]:
         "        END IF;\n"
     )
     return ((body[start:end], weak),)
+
+
+# ---------------------------------------------------------------------------
+# Tranche-2 mutants (package v1 section 4 R-M1..R-M3, plus the M05 guard-moved
+# mutants): any staff or M05 gateway body mutated by exact, unique anchors and
+# composed into its own registry and tenant; production source is never modified.
+# ---------------------------------------------------------------------------
+
+
+def _mutated(body: str, replacements: tuple[tuple[str, str], ...]) -> str:
+    out = body
+    for old, new in replacements:
+        assert out.count(old) == 1, ("mutation anchor not unique", old[:60])
+        out = out.replace(old, new)
+    assert out != body
+    return out
+
+
+def unit_mutant_registry(mutations: dict[str, tuple[tuple[str, str], ...]]) -> Any:
+    """The staff test registry with each named unit's body mutated."""
+
+    from haloflow.composition import (
+        APPROVED_EXECUTION_ROLES,
+        APPROVED_INSTALLED_STATE_PROFILES,
+        APPROVED_TENANT_MIGRATIONS,
+    )
+    from haloflow.m01.provisioning.units import build_tenant_migration_registry
+    from haloflow.m01.staff import units as staff_units
+    from haloflow.m05 import gateways
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
+
+    staff = dict(staff_units.STAFF_TENANT_MIGRATIONS)
+    m05_units = dict(M05_TENANT_MIGRATIONS)
+    staff_specs = {mid: spec for mid, *spec in staff_units._FUNCTIONS}
+    m05_specs = {mid: spec for mid, *spec in gateways._FUNCTIONS}
+    for migration_id, replacements in mutations.items():
+        if migration_id in staff_specs:
+            name, params, returns, volatility, grantee = staff_specs[migration_id]
+            body = _mutated(staff_units._BODIES[name][0], replacements)
+            sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            staff[migration_id] = staff_units._definition(
+                name, params, returns, volatility, grantee, body, sha
+            )
+        else:
+            name, params, volatility = m05_specs[migration_id]
+            body = _mutated(gateways._BODIES[name][0], replacements)
+            sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            m05_units[migration_id] = gateways._definition(name, params, volatility, body, sha)
+    return build_tenant_migration_registry(
+        *APPROVED_TENANT_MIGRATIONS,
+        m05_units,
+        staff,
+        approved_execution_roles=APPROVED_EXECUTION_ROLES | {M05_OWNER, STAFF_OWNER},
+        installed_state_profiles={
+            **APPROVED_INSTALLED_STATE_PROFILES,
+            **gateways.M05_GATEWAY_PROFILES,
+            **staff_units.STAFF_GATEWAY_PROFILES,
+        },
+    )
+
+
+class UnitMutantInstall(StaffInstall):
+    def __init__(
+        self,
+        ids: m02_support.Identities,
+        tenant: tuple[str, str],
+        mutations: dict[str, tuple[tuple[str, str], ...]],
+    ) -> None:
+        super().__init__(ids, tenant)
+        self.mutations = mutations
+
+    def require(self) -> None:
+        if not self._attempted:
+            self._attempted = True
+            m02_support.provision_sync(
+                self.ids,
+                unit_mutant_registry(self.mutations),
+                self.tenant,
+                supported=STAFF_TEST_SUPPORTED,
+                manifest=staff_manifest(),
+            )
+
+
+ASSIGNABLE: Final = "t022_m01_staff_assignable"
+ADMIN_UNIT: Final = "t023_m01_staff_admin"
+APPLY_UNIT: Final = "t016_m05_apply_action"
+
+# R-M1: the reader takes FOR KEY SHARE instead of FOR SHARE.
+R_M1: Final = {ASSIGNABLE: (("       FOR SHARE;\n", "       FOR KEY SHARE;\n"),)}
+# R-M2: the admin's membership lock removed (the row is still read; the status
+# UPDATE then takes only its implicit FOR NO KEY UPDATE, and revoke touches no
+# membership row at all).
+R_M2: Final = {ADMIN_UNIT: ((MEMBERSHIP_LOCK, "     WHERE s.staff_id = v_staff;\n"),)}
+# R-M1b: R-M1 and R-M2 together (the reader-side guarantee without the writer's
+# explicit lock).
+R_M1B: Final = {**R_M1, **R_M2}
+# R-M3: the two assignable statements merged into one query whose access count is
+# read under the snapshot taken before the lock wait.
+_TWO_STATEMENTS: Final = (
+    "    SELECT s.status INTO v_status\n"
+    "      FROM {schema}.m01_staff AS s\n"
+    "     WHERE s.staff_id = p_staff_id\n"
+    "       FOR SHARE;\n"
+)
+_MERGED: Final = (
+    "    SELECT s.status, (SELECT pg_catalog.count(*)::integer\n"
+    "                        FROM {schema}.m01_staff_followup_access AS a\n"
+    "                       WHERE a.staff_id = p_staff_id\n"
+    "                         AND a.access IN ('read', 'act'))\n"
+    "      INTO v_status, v_access\n"
+    "      FROM {schema}.m01_staff AS s\n"
+    "     WHERE s.staff_id = p_staff_id\n"
+    "       FOR SHARE;\n"
+)
+_SECOND_STATEMENT: Final = (
+    "    SELECT pg_catalog.count(*) INTO v_access\n"
+    "      FROM {schema}.m01_staff_followup_access AS a\n"
+    "     WHERE a.staff_id = p_staff_id\n"
+    "       AND a.access IN ('read', 'act');\n"
+)
+R_M3: Final = {ASSIGNABLE: ((_TWO_STATEMENTS, _MERGED), (_SECOND_STATEMENT, ""))}
+
+# GM-1: the M05 isolation guard moved after the item lock (apply).
+ITEM_LOCK: Final = "     WHERE i.item_id = v_item\n       FOR UPDATE;\n"
+GM_1: Final = {APPLY_UNIT: ((ISOLATION_BLOCK, "\n"), (ITEM_LOCK, ITEM_LOCK + ISOLATION_BLOCK))}
+# GM-2: the M05 composition check (and its scope record) moved after the item lock.
+COMPOSITION_BLOCK: Final = (
+    "    v_prior := pg_catalog.current_setting('haloflow.txn_scope', true);\n"
+    "    IF v_prior IS NOT NULL AND v_prior <> '' AND v_prior <> v_scope THEN\n"
+    "        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMPOSITION_UNSUPPORTED';\n"
+    "    END IF;\n"
+    "    PERFORM pg_catalog.set_config('haloflow.txn_scope', v_scope, true);\n"
+)
+GM_2: Final = {APPLY_UNIT: ((COMPOSITION_BLOCK, ""), (ITEM_LOCK, ITEM_LOCK + COMPOSITION_BLOCK))}

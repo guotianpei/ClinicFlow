@@ -57,6 +57,7 @@ import m05_support as m05
 import part_a_support as part_a
 import psycopg
 import pytest
+import staff_support
 from m05_harness import M05Install
 from psycopg import sql
 from psycopg.types.json import Jsonb
@@ -99,7 +100,11 @@ def _admin(install: M05Install, statement: Any, params: Any = None) -> list[tupl
 
 
 def _ready(install: M05Install, *, allowlist: bool = True) -> None:
-    """Install M05 (in the body), then apply part A's and the B2 test profiles once."""
+    """Install M05 (in the body), then apply part A's and the B2 test profiles once.
+
+    MA-10 tranche 2: the B3a staff principals S1, S2 and SUP are also seeded once as
+    assignable members (active, read + act) through the admin gateway, so the
+    action rows exercise the eligibility step with eligible targets."""
 
     install.require()
     schema = install.schema
@@ -112,6 +117,9 @@ def _ready(install: M05Install, *, allowlist: bool = True) -> None:
         _admin(install, part_a.TEST_PROFILE_SQL.format(schema=schema))
         profile = m05.B2_INTAKE_PROFILE_SQL if allowlist else m05.B2_NO_ALLOWLIST_PROFILE_SQL
         _admin(install, profile.format(schema=schema))
+        for staff, name in ((m05.S1, "Staff One"), (m05.S2, "Staff Two"),
+                            (m05.SUP, "Supervisor")):
+            staff_support.seed_staff(install, staff, name=name)  # type: ignore[arg-type]
 
 
 def _source(

@@ -332,93 +332,11 @@ def test_mb3_ri_list_filters_order_and_paging(reads_independent: M05Install) -> 
     assert _ids(first) + _ids(second) == expected[:2]
 
 
-# --- MB3-GI: interim read-slice privileges (exact) ---------------------------------
+# --- MB3-GI: REPLACED (declared) ---------------------------------------------------
 #
-# Codex 20261101T013809Z: the full-B3 grant rows (MB2-G, asserting CURRENT_*) stop at
-# the first missing future grant, so they cannot establish the interim set. These
-# rows assert it exactly: explicit ACL entries, then effective privileges, including
-# the ABSENCE of items UPDATE and of every action-record privilege. They are
-# temporary: replaced (declared) when the action slice is implemented.
-
-_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER",
-               "MAINTAIN")
-_COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
-
-
-def test_mb3_gi_read_slice_explicit_acl(m05_install: M05Install) -> None:
-    m05_install.require()
-    schema = m05_install.schema
-    table_acl = _admin(
-        m05_install,
-        "SELECT c.relname, a.privilege_type, a.is_grantable FROM pg_catalog.pg_class c,"
-        " LATERAL pg_catalog.aclexplode(c.relacl) a"
-        " WHERE c.relnamespace = %s::regnamespace AND c.relname LIKE 'm05\\_%%'"
-        " AND a.grantee = %s::regrole",
-        (schema, m05.M05_OWNER),
-    )
-    assert sorted(table_acl) == sorted(
-        (table, privilege, False)
-        for table, privileges in m05.READ_SLICE_TABLE_ACL.items()
-        for privilege in privileges
-    )
-    column_acl = _admin(
-        m05_install,
-        "SELECT c.relname, att.attname, a.privilege_type, a.is_grantable"
-        " FROM pg_catalog.pg_class c JOIN pg_catalog.pg_attribute att ON att.attrelid = c.oid,"
-        " LATERAL pg_catalog.aclexplode(att.attacl) a"
-        " WHERE c.relnamespace = %s::regnamespace AND c.relname LIKE 'm05\\_%%'"
-        " AND a.grantee = %s::regrole",
-        (schema, m05.M05_OWNER),
-    )
-    assert sorted(column_acl) == sorted(
-        (table, column, privilege, False)
-        for table, by_privilege in m05.READ_SLICE_COLUMN_ACL.items()
-        for privilege, columns in by_privilege.items()
-        for column in columns
-    )
-
-
-def test_mb3_gi_read_slice_effective_privileges(m05_install: M05Install) -> None:
-    m05_install.require()
-    schema = m05_install.schema
-    for table in m05.TABLES:
-        qualified = f"{schema}.{table}"
-        for privilege in _PRIVILEGES:
-            expected = privilege in m05.READ_SLICE_TABLE_ACL.get(table, ())
-            assert _admin(
-                m05_install,
-                "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
-                (m05.M05_OWNER, qualified, privilege),
-            ) == [(expected,)], (table, privilege)
-        columns = [
-            row[0]
-            for row in _admin(
-                m05_install,
-                "SELECT attname FROM pg_catalog.pg_attribute WHERE attrelid = %s::regclass"
-                " AND attnum > 0 AND NOT attisdropped",
-                (qualified,),
-            )
-        ]
-        for column in columns:
-            for privilege in _COLUMN_PRIVILEGES:
-                expected = privilege in m05.READ_SLICE_TABLE_ACL.get(table, ()) or column in (
-                    m05.READ_SLICE_COLUMN_ACL.get(table, {}).get(privilege, ())
-                )
-                assert _admin(
-                    m05_install,
-                    "SELECT pg_catalog.has_column_privilege(%s, %s, %s, %s)",
-                    (m05.M05_OWNER, qualified, column, privilege),
-                ) == [(expected,)], (table, column, privilege)
-    # The absences that matter for the held action slice, stated directly.
-    for column in ("state", "assignee_id", "outcome_code", "version"):
-        assert _admin(
-            m05_install,
-            "SELECT pg_catalog.has_column_privilege(%s, %s, %s, 'UPDATE')",
-            (m05.M05_OWNER, f"{schema}.m05_followup_items", column),
-        ) == [(False,)], column
-    for privilege in ("INSERT", "SELECT", "UPDATE", "REFERENCES"):
-        assert _admin(
-            m05_install,
-            "SELECT pg_catalog.has_any_column_privilege(%s, %s, %s)",
-            (m05.M05_OWNER, f"{schema}.m05_followup_actions", privilege),
-        ) == [(False,)], privilege
+# The interim read-slice grant rows (Codex 20261101T013809Z) asserted the read-only
+# stage exactly, including the ABSENCE of items UPDATE and of every action-record
+# privilege. They were declared temporary: "replaced when the action slice is
+# implemented". MA-10 tranche 2 implements that slice, so they are removed here and
+# the full B3 set is asserted instead by the MB2-G rows in
+# test_m05_create_postgres.py (CURRENT_TABLE_ACL / CURRENT_COLUMN_ACL = B3_*).

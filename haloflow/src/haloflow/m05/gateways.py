@@ -429,6 +429,347 @@ END;
 )
 
 
+# t015 m05_prepare_action / t016 m05_apply_action (B3a non-resolve actions; design
+# delta v1 Δ2-Δ4 with Codex refinements 20261101T010812Z; MA-10 package v1 3.5 +
+# v1r1 + v1r2 c5). One template, two renderings: prepare RETURNS a classification
+# (REFUSED{code} for domain refusals) and writes nothing; apply RAISES P0001 with
+# MESSAGE = code and is self-sufficient. Environment faults (22023 tenant context,
+# ISOLATION_UNSUPPORTED, COMPOSITION_UNSUPPORTED) RAISE in both.
+# Order: 1 tenant; 1b READ COMMITTED; 1c composition scope (item, key, type,
+# assignee, actor) before any lock; 2 closed shape, then reserved resolve types ->
+# ACTION_NOT_IMPLEMENTED; 3 item FOR UPDATE; 4 read+act, actor principal; 5 key
+# branch (replay / actor mismatch / conflict); 6 NEW: resolved, version,
+# precondition, supervise; 6e target eligibility through m01_staff_assignable
+# (membership FOR SHARE, after the item lock); 7 writes; 8 snapshot.
+_ACTION_TEMPLATE: Final = r"""
+DECLARE
+    c_uuid constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    v_setting text;
+    v_scope text;
+    v_prior text;
+    v_keys text[];
+    v_action jsonb;
+    v_type text;
+    v_attr jsonb;
+    v_perm jsonb;
+    v_item uuid;
+    v_key uuid;
+    v_version integer;
+    v_assignee uuid;
+    v_actor uuid;
+    v_target uuid;
+    v_row record;
+    v_stored record;
+    v_digest bytea;
+    v_state text;
+    v_new_assignee uuid;
+    v_seq integer;
+    v_snapshot jsonb;
+BEGIN
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_setting IS NULL OR v_setting = ''
+       OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+
+    -- 1b. READ COMMITTED only (MA-10 v1 3.5): an environment fault, raised.
+    IF pg_catalog.current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ISOLATION_UNSUPPORTED';
+    END IF;
+
+    -- 1c. Composition (v1r2 c5): one M05 action on one item per transaction, bound
+    -- to item, key, type, assignee and actor; checked before any lock. Diagnostic
+    -- guard; the service route is the primary control.
+    v_scope := 'm05:' || pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(
+        '["m05.scope/v1",' || pg_catalog.to_json(v_setting)::text
+        || ',' || COALESCE(pg_catalog.to_json(p_command OPERATOR(pg_catalog.->>)
+            'item_id')::text, 'null')
+        || ',' || COALESCE(pg_catalog.to_json(p_command OPERATOR(pg_catalog.->>)
+            'client_action_id')::text, 'null')
+        || ',' || COALESCE(pg_catalog.to_json(p_command OPERATOR(pg_catalog.#>>)
+            '{action,type}')::text, 'null')
+        || ',' || COALESCE(pg_catalog.to_json(p_command OPERATOR(pg_catalog.#>>)
+            '{action,assignee_id}')::text, 'null')
+        || ',' || COALESCE(pg_catalog.to_json(p_command OPERATOR(pg_catalog.#>>)
+            '{attribution,principal_id}')::text, 'null')
+        || ']', 'UTF8')), 'hex');
+    v_prior := pg_catalog.current_setting('haloflow.txn_scope', true);
+    IF v_prior IS NOT NULL AND v_prior <> '' AND v_prior <> v_scope THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMPOSITION_UNSUPPORTED';
+    END IF;
+    PERFORM pg_catalog.set_config('haloflow.txn_scope', v_scope, true);
+
+    -- 2. Closed shape.
+    IF pg_catalog.jsonb_typeof(p_command) IS DISTINCT FROM 'object' THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    SELECT pg_catalog.array_agg(k ORDER BY k) INTO v_keys
+      FROM pg_catalog.jsonb_object_keys(p_command) AS k;
+    IF v_keys IS DISTINCT FROM ARRAY['action', 'attribution', 'client_action_id',
+            'expected_version', 'item_id', 'permissions', 'schema_version']::text[]
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'schema_version')
+          IS DISTINCT FROM 'number'
+       OR (p_command OPERATOR(pg_catalog.->) 'schema_version')::text <> '1'
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'item_id')
+          IS DISTINCT FROM 'string'
+       OR (p_command OPERATOR(pg_catalog.->>) 'item_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'client_action_id')
+          IS DISTINCT FROM 'string'
+       OR (p_command OPERATOR(pg_catalog.->>) 'client_action_id')
+          OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'expected_version')
+          IS DISTINCT FROM 'number'
+       OR (p_command OPERATOR(pg_catalog.->) 'expected_version')::text
+          OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,9}$'
+       OR ((p_command OPERATOR(pg_catalog.->) 'expected_version')::text)::bigint
+          > 2147483647 THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    v_action := p_command OPERATOR(pg_catalog.->) 'action';
+    IF pg_catalog.jsonb_typeof(v_action) IS DISTINCT FROM 'object'
+       OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'type')
+          IS DISTINCT FROM 'string' THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    v_type := v_action OPERATOR(pg_catalog.->>) 'type';
+    SELECT pg_catalog.array_agg(k ORDER BY k) INTO v_keys
+      FROM pg_catalog.jsonb_object_keys(v_action) AS k;
+    IF v_type IN ('claim', 'start_progress') THEN
+        IF v_keys IS DISTINCT FROM ARRAY['type']::text[] THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+    ELSIF v_type IN ('assign', 'reassign') THEN
+        IF v_keys IS DISTINCT FROM ARRAY['assignee_id', 'type']::text[]
+           OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'assignee_id')
+              IS DISTINCT FROM 'string'
+           OR (v_action OPERATOR(pg_catalog.->>) 'assignee_id')
+              OPERATOR(pg_catalog.!~) c_uuid THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+        v_assignee := (v_action OPERATOR(pg_catalog.->>) 'assignee_id')::uuid;
+    ELSIF v_type IN ('resolve', 'claim_and_resolve') THEN
+        IF v_keys IS DISTINCT FROM ARRAY['outcome_code', 'type']::text[]
+           OR pg_catalog.jsonb_typeof(v_action OPERATOR(pg_catalog.->) 'outcome_code')
+              IS DISTINCT FROM 'string'
+           OR (v_action OPERATOR(pg_catalog.->>) 'outcome_code') NOT IN ('rescheduled',
+              'cancelled_in_ehr', 'reached_no_change', 'no_contact_left_message',
+              'no_contact_no_answer', 'other') THEN
+            @@REFUSE:COMMAND_MALFORMED@@
+        END IF;
+    ELSE
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    v_perm := p_command OPERATOR(pg_catalog.->) 'permissions';
+    IF pg_catalog.jsonb_typeof(v_perm) IS DISTINCT FROM 'object'
+       OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+             FROM pg_catalog.jsonb_object_keys(v_perm) AS k)
+          IS DISTINCT FROM ARRAY['act', 'read', 'supervise']::text[]
+       OR pg_catalog.jsonb_typeof(v_perm OPERATOR(pg_catalog.->) 'read')
+          IS DISTINCT FROM 'boolean'
+       OR pg_catalog.jsonb_typeof(v_perm OPERATOR(pg_catalog.->) 'act')
+          IS DISTINCT FROM 'boolean'
+       OR pg_catalog.jsonb_typeof(v_perm OPERATOR(pg_catalog.->) 'supervise')
+          IS DISTINCT FROM 'boolean' THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    v_attr := p_command OPERATOR(pg_catalog.->) 'attribution';
+    IF pg_catalog.jsonb_typeof(v_attr) IS DISTINCT FROM 'object'
+       OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+             FROM pg_catalog.jsonb_object_keys(v_attr) AS k)
+          IS DISTINCT FROM ARRAY['auth_method', 'execution_id', 'principal_id',
+                                 'principal_kind', 'purpose_code', 'request_id']::text[]
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'principal_kind')
+          IS DISTINCT FROM 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'principal_kind') NOT IN ('actor', 'workload')
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'principal_id')
+          IS DISTINCT FROM 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'principal_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'execution_id')
+          IS DISTINCT FROM 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'execution_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'auth_method')
+          IS DISTINCT FROM 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'auth_method')
+          OPERATOR(pg_catalog.!~) '^[a-z][a-z0-9_]{0,31}$'
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'purpose_code')
+          IS DISTINCT FROM 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'purpose_code') NOT IN ('treatment', 'payment',
+          'operations')
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'request_id')
+          NOT IN ('null', 'string')
+       OR (pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'request_id') = 'string'
+           AND pg_catalog.char_length(v_attr OPERATOR(pg_catalog.->>) 'request_id')
+               NOT BETWEEN 1 AND 128) THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    v_item := (p_command OPERATOR(pg_catalog.->>) 'item_id')::uuid;
+    v_key := (p_command OPERATOR(pg_catalog.->>) 'client_action_id')::uuid;
+    v_version := ((p_command OPERATOR(pg_catalog.->) 'expected_version')::text)::integer;
+    v_actor := (v_attr OPERATOR(pg_catalog.->>) 'principal_id')::uuid;
+    -- Self-assignment is claim (delta 2).
+    IF v_type = 'assign' AND v_assignee = v_actor THEN
+        @@REFUSE:COMMAND_MALFORMED@@
+    END IF;
+    -- Reserved for B4 (canonical shape only, after every malformed check).
+    IF v_type IN ('resolve', 'claim_and_resolve') THEN
+        @@REFUSE:ACTION_NOT_IMPLEMENTED@@
+    END IF;
+
+    -- 3. The item lock; unknown and other-tenant ids are identical (schema-local).
+    SELECT i.state, i.assignee_id, i.outcome_code, i.version INTO v_row
+      FROM {schema}.m05_followup_items AS i
+     WHERE i.item_id = v_item
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        @@REFUSE:ITEM_NOT_FOUND@@
+    END IF;
+
+    -- 4. Current read+act, actor principals only (defence in depth; not
+    -- authentication, D7a).
+    IF (v_perm OPERATOR(pg_catalog.->) 'read') <> 'true'::jsonb
+       OR (v_perm OPERATOR(pg_catalog.->) 'act') <> 'true'::jsonb
+       OR (v_attr OPERATOR(pg_catalog.->>) 'principal_kind') <> 'actor' THEN
+        @@REFUSE:NOT_AUTHORIZED@@
+    END IF;
+
+    -- 5. Action-key branch: replay returns the stored snapshot, rechecking nothing
+    -- else (MR-01, MA-10j).
+    v_digest := pg_catalog.sha256(pg_catalog.convert_to(
+        '["m05.action/v1",' || pg_catalog.to_json(v_setting)::text
+        || ',' || pg_catalog.to_json(v_item::text)::text
+        || ',' || pg_catalog.to_json(v_key::text)::text
+        || ',' || pg_catalog.to_json(v_actor::text)::text
+        || ',' || pg_catalog.to_json(v_type)::text
+        || ',' || COALESCE(pg_catalog.to_json(v_assignee::text)::text, 'null')
+        || ',' || v_version::text || ']', 'UTF8'));
+    SELECT a.actor_id, a.digest, a.result_snapshot INTO v_stored
+      FROM {schema}.m05_followup_actions AS a
+     WHERE a.item_id = v_item AND a.client_action_id = v_key;
+    IF FOUND THEN
+        IF v_stored.actor_id <> v_actor THEN
+            @@REFUSE:ACTION_KEY_ACTOR_MISMATCH@@
+        END IF;
+        IF v_stored.digest <> v_digest THEN
+            @@REFUSE:ACTION_KEY_CONFLICT@@
+        END IF;
+        @@REPLAY@@
+    END IF;
+
+    -- 6. NEW only.
+    IF v_row.state = 'resolved' THEN
+        @@REFUSE:ITEM_RESOLVED@@
+    END IF;
+    IF v_version <> v_row.version THEN
+        @@REFUSE:STALE_VERSION@@
+    END IF;
+    v_state := v_row.state;
+    v_new_assignee := v_row.assignee_id;
+    IF v_type = 'claim' THEN
+        IF v_row.assignee_id IS NOT NULL THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        v_target := v_actor;
+        v_new_assignee := v_actor;
+    ELSIF v_type = 'start_progress' THEN
+        IF v_row.state <> 'open' OR v_row.assignee_id IS NULL THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        IF v_row.assignee_id <> v_actor
+           AND (v_perm OPERATOR(pg_catalog.->) 'supervise') <> 'true'::jsonb THEN
+            @@REFUSE:NOT_AUTHORIZED@@
+        END IF;
+        v_state := 'in_progress';
+    ELSIF v_type = 'assign' THEN
+        IF v_row.assignee_id IS NOT NULL THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        IF (v_perm OPERATOR(pg_catalog.->) 'supervise') <> 'true'::jsonb THEN
+            @@REFUSE:NOT_AUTHORIZED@@
+        END IF;
+        v_target := v_assignee;
+        v_new_assignee := v_assignee;
+    ELSE
+        IF v_row.assignee_id IS NULL OR v_row.assignee_id = v_assignee THEN
+            @@REFUSE:PRECONDITION_FAILED@@
+        END IF;
+        IF (v_perm OPERATOR(pg_catalog.->) 'supervise') <> 'true'::jsonb THEN
+            @@REFUSE:NOT_AUTHORIZED@@
+        END IF;
+        v_target := v_assignee;
+        v_new_assignee := v_assignee;
+    END IF;
+
+    -- 6e. MA-10: the target is an active member of this clinic with read AND act,
+    -- decided under the membership lock (FOR SHARE, after the item lock).
+    IF v_target IS NOT NULL AND NOT {schema}.m01_staff_assignable(v_target) THEN
+        @@REFUSE:ASSIGNEE_NOT_ELIGIBLE@@
+    END IF;
+@@TAIL@@END;
+"""
+
+_REFUSE_APPLY: Final = "RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{code}';"
+_REFUSE_PREPARE: Final = (
+    "RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'REFUSED',"
+    " 'code', '{code}');"
+)
+_REPLAY_APPLY: Final = (
+    "RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', 'replayed',\n"
+    "            'snapshot', v_stored.result_snapshot);"
+)
+_REPLAY_PREPARE: Final = (
+    "RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'REPLAY',\n"
+    "            'snapshot', v_stored.result_snapshot);"
+)
+_TAIL_PREPARE: Final = """
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'NEW');
+"""
+_TAIL_APPLY: Final = r"""
+    -- 7. Writes: item, history (seq under the item lock), action record.
+    UPDATE {schema}.m05_followup_items AS i
+       SET state = v_state, assignee_id = v_new_assignee, version = v_row.version + 1
+     WHERE i.item_id = v_item;
+    SELECT pg_catalog.max(h.seq) INTO v_seq
+      FROM {schema}.m05_followup_history AS h
+     WHERE h.item_id = v_item;
+    INSERT INTO {schema}.m05_followup_history (history_id, item_id, seq, action, actor_id,
+        before, after, resolution_event_id, assertion_kind, created_at)
+    VALUES (pg_catalog.gen_random_uuid(), v_item, COALESCE(v_seq, 0) + 1, v_type, v_actor,
+        pg_catalog.jsonb_build_object('state', v_row.state,
+            'assignee_id', v_row.assignee_id::text, 'outcome_code', v_row.outcome_code),
+        pg_catalog.jsonb_build_object('state', v_state,
+            'assignee_id', v_new_assignee::text, 'outcome_code', v_row.outcome_code),
+        NULL, NULL, pg_catalog.statement_timestamp());
+    -- 8. The snapshot: the item after the action, stored and returned verbatim.
+    v_snapshot := pg_catalog.jsonb_build_object('schema_version', 1,
+        'item_id', v_item::text, 'client_action_id', v_key::text, 'action', v_type,
+        'version', v_row.version + 1, 'state', v_state,
+        'assignee_id', v_new_assignee::text, 'outcome_code', v_row.outcome_code);
+    INSERT INTO {schema}.m05_followup_actions (item_id, client_action_id, actor_id,
+        requested_action, digest, hmac_key_version, event_id, result_snapshot, created_at)
+    VALUES (v_item, v_key, v_actor, v_type, v_digest, NULL, NULL, v_snapshot,
+        pg_catalog.statement_timestamp());
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', 'applied',
+        'snapshot', v_snapshot);
+"""
+
+
+def _action_body(mode: str) -> str:
+    import re
+
+    refuse = _REFUSE_APPLY if mode == "apply" else _REFUSE_PREPARE
+    body = re.sub(
+        r"@@REFUSE:([A-Z_]+)@@", lambda m: refuse.format(code=m.group(1)), _ACTION_TEMPLATE
+    )
+    body = body.replace("@@REPLAY@@", _REPLAY_APPLY if mode == "apply" else _REPLAY_PREPARE)
+    body = body.replace("@@TAIL@@", _TAIL_APPLY if mode == "apply" else _TAIL_PREPARE)
+    assert "@@" not in body and body.isascii()
+    return body
+
+
+_PREPARE_BODY: Final = _action_body("prepare")
+_APPLY_BODY: Final = _action_body("apply")
+
+
 def _template(name: str, params: _Params, volatility: str, body: str) -> str:
     signature = ", ".join(f"{p} {t}" for p, t in params)
     argtypes = ", ".join(t for _, t in params)
@@ -533,11 +874,15 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
 _GET_ITEM_BODY_SHA256: Final = "9f592e2cbda518f631d7e634ac71461f329b35c7d17e457ecc8b2a7f53f15bf6"
 _GET_HISTORY_BODY_SHA256: Final = "8982c03dade3192fc79e22bd86f820d7664dfbf859fa1e12f394d7052104df4d"
 _LIST_ITEMS_BODY_SHA256: Final = "fca320809dc1d6d44249c3ce927ae3701bf83dc4b933b3ad4ef4dee7ef7d871d"
+_PREPARE_BODY_SHA256: Final = "bdbdb2b37efd2c77abac6e6b79abbdc01fcfa776f6627657de61fa2099dccd4c"
+_APPLY_BODY_SHA256: Final = "9d21ac4d52c3144b97e73fb4f9af291f86f575e3735ea48a6e769549df71e4dd"
 
 # Bodies by function. A function absent here is still the B1 fail-closed stub; each
 # tranche moves exactly the functions its gated tests cover.
 _BODIES: Final = {
     "m05_create_item": (_CREATE_BODY, _CREATE_BODY_SHA256),
+    "m05_prepare_action": (_PREPARE_BODY, _PREPARE_BODY_SHA256),
+    "m05_apply_action": (_APPLY_BODY, _APPLY_BODY_SHA256),
     "m05_get_item": (_GET_ITEM_BODY, _GET_ITEM_BODY_SHA256),
     "m05_get_history": (_GET_HISTORY_BODY, _GET_HISTORY_BODY_SHA256),
     "m05_list_items": (_LIST_ITEMS_BODY, _LIST_ITEMS_BODY_SHA256),

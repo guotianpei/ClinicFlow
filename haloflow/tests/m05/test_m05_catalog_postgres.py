@@ -431,11 +431,17 @@ def test_mx02_no_ehr_state_column_and_staff_assertion_check(m05_install: M05Inst
 
 
 def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Install) -> None:
+    """MA-10 tranche 2 harness migration: the behaviour tenant is installed with the
+    directory units after M05 (target 24); the unit list is otherwise unchanged."""
+
+    from staff_support import STAFF_TEST_TARGET, STAFF_UNIT_IDS
+
     result = m05_install.require()
-    assert result.schema_version == m05.M05_TEST_TARGET
+    assert result.schema_version == STAFF_TEST_TARGET
     ledger = m02.ledger(m05_install.ids, m05_install.tenant[0])
     assert {migration_id: row[0] for migration_id, row in ledger.items()} == {
-        migration_id: "applied" for migration_id in m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS
+        migration_id: "applied"
+        for migration_id in m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + STAFF_UNIT_IDS
     }
 
 

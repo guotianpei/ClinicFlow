@@ -6,9 +6,10 @@ Package v1 + v1r1 delta + v1r2 adoption (Claude/Codex aligned 2026-11-01). Owner
 choices (2026-11-01): assignable = active with follow-up read AND act; a deactivated
 assignee's items stay assigned and visible, only a supervisor reassigns.
 
-RED TRANCHE: every row fails in its own body until the directory gateways and the
-B3a action slice are implemented. Mutants R-M1..R-M3 mutate implemented bodies and
-are produced with the implementation evidence, not here.
+Written red (gate PASS on 24e463b); implemented in MA-10 tranche 2 together with the
+B3a action slice. The mutant rows at the end compose a mutated body into its own
+registry and tenant (production source untouched) and pin the measured observation
+next to the clean control.
 
 Rows:
 - MA-10a eligible target for claim (target = actor), assign, reassign -> accepted.
@@ -22,6 +23,8 @@ Rows:
 - R-1/R-2/R-2r/R-4/R-5/R-6/R-8 races, each over deactivate / revoke read / revoke act.
 - R-C1/R-C2 composition guard; no additional lock by the refused call.
 - R-D1 concurrent reassign vs deactivation: never a deadlock.
+- R-M1/R-M1b/R-M2/R-M3 directory-lock mutants against the R-2 scenario; GM-1/GM-2
+  M05 guard-moved mutants against the MA-10k and R-C1 scenarios.
 """
 
 from __future__ import annotations
@@ -512,3 +515,172 @@ def test_rd1_concurrent_reassign_and_deactivation_never_deadlock(staff_install):
             assert isinstance(error, psycopg.Error)
             assert error.sqlstate != "40P01", "deadlock"
             assert error.diag.message_primary == "ASSIGNEE_NOT_ELIGIBLE", str(error)
+
+
+# ---------------------------------------------------------------------------
+# Mutants (package v1 section 4 R-M1..R-M3; tranche-2 M05 guard-moved mutants)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def unit_mutant(request, m02_ids, m05_reset):
+    created: list[tuple[str, str]] = []
+
+    def make(label: str, mutations: dict[str, Any]) -> st.UnitMutantInstall:
+        import m02_support as m02
+
+        tenant = m02.tenant_for(f"{request.node.name}:{label}")
+        m05_reset(tenant)
+        created.append(tenant)
+        install = st.UnitMutantInstall(m02_ids, tenant, mutations)
+        install.require()
+        return install
+
+    yield make
+    for tenant in created:
+        m05_reset(tenant)
+
+
+OBSERVE_BOUND_SECONDS = 2.0
+
+
+def _blocked_by(install: st.StaffInstall, waiter: int, blocker: int, box: dict[str, Any]) -> bool:
+    """True once `waiter` is blocked by exactly `blocker`; False if the call finished
+    first or the bound passed (the observation, not a proof by sleep)."""
+
+    import time
+
+    deadline = time.monotonic() + OBSERVE_BOUND_SECONDS
+    with psycopg.connect(install.ids.admin, autocommit=True) as monitor:
+        while time.monotonic() < deadline:
+            if box:
+                return False
+            row = monitor.execute("SELECT pg_catalog.pg_blocking_pids(%s)", (waiter,)).fetchone()
+            if row is not None and list(row[0]) == [blocker]:
+                return True
+            time.sleep(st.POLL_SECONDS)
+    return False
+
+
+def _r2_observation(install: st.StaffInstall, change: str) -> tuple[bool, str]:
+    """The R-2 scenario: the admin change is open; apply(assign -> target) runs.
+    Returns (apply was blocked by the admin, apply outcome after the admin commits).
+    The apply transaction is always rolled back."""
+
+    _setup(install)
+    target = _eligible(install)
+    item = _item(install)
+    admin_conn, _ = _admin_open(install, _change_command(change, target))
+    apply_conn = st.runtime_connection(install)
+    try:
+        st.set_tenant(apply_conn, install)
+        with st.background(lambda: st.call_on(apply_conn, install, "m05_apply_action",
+                                              _assign(item, target))) as box:
+            blocked = _blocked_by(install, apply_conn.info.backend_pid,
+                                  admin_conn.info.backend_pid, box)
+            admin_conn.commit()
+        apply_conn.rollback()
+    finally:
+        admin_conn.close()
+        apply_conn.close()
+    if "result" in box:
+        return blocked, str(box["result"]["outcome"])
+    error = box["error"]
+    assert isinstance(error, psycopg.Error), error
+    return blocked, str(error.diag.message_primary)
+
+
+CLEAN_R2 = (True, "ASSIGNEE_NOT_ELIGIBLE")
+
+
+def test_rm1_key_share_alone_is_equivalent_here(unit_mutant, staff_install):
+    """R-M1 as specified. Pinned observation: NOT killed. The admin takes the
+    membership row with an explicit SELECT ... FOR UPDATE, which conflicts with FOR
+    KEY SHARE too, so the reader still waits and sees the committed change (the v2
+    probe's P3 writer used a plain UPDATE). Recorded as a finding; R-M1b below shows
+    the reader-side lock mode is what holds once the writer's explicit lock is gone."""
+
+    assert _r2_observation(staff_install, "deactivate") == CLEAN_R2
+    install = unit_mutant("rm1", st.R_M1)
+    assert _r2_observation(install, "deactivate") == CLEAN_R2
+
+
+def test_rm1b_key_share_without_writer_lock_is_caught(unit_mutant, staff_install):
+    """R-M1 + R-M2: FOR KEY SHARE does not conflict with the status UPDATE's FOR NO
+    KEY UPDATE, so apply is not blocked and accepts the stale active row."""
+
+    assert _r2_observation(staff_install, "deactivate") == CLEAN_R2
+    install = unit_mutant("rm1b", st.R_M1B)
+    assert _r2_observation(install, "deactivate") == (False, "applied")
+
+
+def test_rm2_revoke_without_membership_lock_is_caught(unit_mutant, staff_install):
+    """R-M2: revoke deletes an access row without locking the membership row, so the
+    reader's FOR SHARE does not wait and the uncommitted delete is invisible."""
+
+    assert _r2_observation(staff_install, "revoke_act") == CLEAN_R2
+    install = unit_mutant("rm2", st.R_M2)
+    assert _r2_observation(install, "revoke_act") == (False, "applied")
+
+
+def test_rm3_merged_statements_are_caught(unit_mutant, staff_install):
+    """R-M3: one query; it waits on the membership lock, but its access count comes
+    from the snapshot taken before the wait (still 2), so the revoked target passes."""
+
+    assert _r2_observation(staff_install, "revoke_act") == CLEAN_R2
+    install = unit_mutant("rm3", st.R_M3)
+    assert _r2_observation(install, "revoke_act") == (True, "applied")
+
+
+def _apply_rr_with_item_holder(install: st.StaffInstall) -> psycopg.Error:
+    _setup(install)
+    item = _item(install)
+    command = _assign(item, _eligible(install))
+    with st.holder(install, [("m05_followup_items", "item_id", item)]), \
+            st.runtime_connection(install) as conn:
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        st.set_tenant(conn, install)
+        conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
+        with pytest.raises(psycopg.Error) as caught:
+            st.call_on(conn, install, "m05_apply_action", command)
+        conn.rollback()
+    return caught.value
+
+
+def test_gm1_isolation_guard_after_item_lock_is_caught(unit_mutant, staff_install):
+    """GM-1: the clean guard refuses at once; the mutant waits on the held item and
+    fails with 55P03 (MA-10k discriminates it)."""
+
+    clean = _apply_rr_with_item_holder(staff_install)
+    assert (clean.sqlstate, clean.diag.message_primary) == ("P0001", "ISOLATION_UNSUPPORTED")
+    mutant = _apply_rr_with_item_holder(unit_mutant("gm1", st.GM_1))
+    assert mutant.sqlstate == "55P03", (mutant.sqlstate, str(mutant))
+
+
+def _second_item_with_holder(install: st.StaffInstall) -> psycopg.Error:
+    _setup(install)
+    first_item, second_item = _item(install), _item(install)
+    first = _assign(first_item, _eligible(install))
+    second = _assign(second_item, _eligible(install))
+    conn = st.runtime_connection(install)
+    try:
+        st.set_tenant(conn, install)
+        st.call_on(conn, install, "m05_apply_action", first)
+        with st.holder(install, [("m05_followup_items", "item_id", second_item)]):
+            conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
+            with pytest.raises(psycopg.Error) as caught:
+                st.call_on(conn, install, "m05_apply_action", second)
+    finally:
+        conn.rollback()
+        conn.close()
+    return caught.value
+
+
+def test_gm2_composition_guard_after_item_lock_is_caught(unit_mutant, staff_install):
+    """GM-2: the clean guard refuses the second item at once; the mutant waits on
+    the held second item and fails with 55P03 (R-C1 discriminates it)."""
+
+    clean = _second_item_with_holder(staff_install)
+    assert (clean.sqlstate, clean.diag.message_primary) == ("P0001", "COMPOSITION_UNSUPPORTED")
+    mutant = _second_item_with_holder(unit_mutant("gm2", st.GM_2))
+    assert mutant.sqlstate == "55P03", (mutant.sqlstate, str(mutant))

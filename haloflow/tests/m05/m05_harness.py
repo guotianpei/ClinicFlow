@@ -61,7 +61,14 @@ def m05_manifest() -> Any:
 
 
 class M05Install:
-    """One tenant, installed through the M05 test registry on first `require()`.
+    """One tenant, installed on first `require()`.
+
+    MA-10 tranche 2 (deliberate harness migration, package v1 section 5 step 3):
+    prepare/apply now call `m01_staff_assignable`, so the behaviour rows install
+    through the staff test registry (production + M05 + directory units t021..t024,
+    target 24) and the staff test manifest. `m05_registry()` / `m05_manifest()`
+    above stay as they were: the static and refusal-path rows still pin the M05
+    unit set by itself.
 
     The outcome (result or exception) is memoised per module, so a failing install
     is attempted once and reported in every row that needs it."""
@@ -81,12 +88,14 @@ class M05Install:
         if not self._attempted:
             self._attempted = True
             try:
+                import staff_support  # deferred: staff_support imports this module
+
                 self._result = m02_support.provision_sync(
                     self.ids,
-                    m05_registry(),
+                    staff_support.staff_registry(),
                     self.tenant,
-                    supported=m05_support.M05_TEST_SUPPORTED,
-                    manifest=m05_manifest(),
+                    supported=staff_support.STAFF_TEST_SUPPORTED,
+                    manifest=staff_support.staff_manifest(),
                 )
             except Exception as error:  # noqa: BLE001 - reported in each row's body
                 self._error = error
