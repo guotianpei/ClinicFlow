@@ -1,8 +1,9 @@
 """M05 per-tenant units t012..t020 (UC1 part B).
 
 - ``t012_m05_tables``  migrator-owned tables (package v1 section 2.1). The runtime
-  holds nothing. In B1 the M05 owner holds exactly INSERT on history; B2..B4 add
-  the exact column grants each function needs (Codex gate 20261031T194129Z: no
+  holds nothing. The M05 owner holds INSERT on history (B1) and B2's exact column
+  grants for create (intake SELECT; items INSERT + four-column SELECT); B3..B4 add
+  the exact column grants each later function needs (Codex gate 20261031T194129Z: no
   broad write privileges, no reads as the migrator). History, actions and notes are
   immutable: a row-level rejector refuses UPDATE and DELETE for every role,
   including the migrator, and a statement-level one refuses TRUNCATE.
@@ -176,6 +177,17 @@ REVOKE ALL ON {_S}.m05_outcome_codes, {_S}.m05_intake_map, {_S}.m05_followup_ite
 
 -- t012:step:grants
 GRANT INSERT ON {_S}.m05_followup_history TO {M05_OWNER_ROLE};
+-- B2 (design delta v1 Δ5): create reads the intake map, inserts items, and reads
+-- back the four columns the dedupe comparison needs. No UPDATE, DELETE or
+-- table-level SELECT anywhere; history reads arrive with B3.
+GRANT SELECT (source_event_type, source_contract_version, discriminator_path,
+    discriminator_value, item_kind, producer_workload_id, active_in_production)
+    ON {_S}.m05_intake_map TO {M05_OWNER_ROLE};
+GRANT INSERT (item_id, source_event_id, item_kind, patient_id, state, assignee_id,
+    outcome_code, version, create_digest, created_at)
+    ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
+GRANT SELECT (item_id, source_event_id, item_kind, create_digest)
+    ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
 """
 
 _RESOLUTION_METADATA_SCHEMA: Final = (

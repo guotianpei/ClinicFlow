@@ -44,6 +44,182 @@ END;
 _STUB_BODY_SHA256: Final = "11cf525d221081fdd4402cac2b8452ce4d371df2960973dd617936c0c58ea280"
 
 
+# t014 m05_create_item (B2; design delta v1 Δ1–Δ7, Codex ALIGN 20261031T233740Z,
+# tests-first GATE PASS 20261101T000802Z). Order: tenant context; closed shape
+# (COMMAND_MALFORMED); workload-only; envelope (null / ENVELOPE_UNSUPPORTED);
+# completed null-operation observation; exactly one intake match whose producer is
+# the caller and the source's workload (else SOURCE_NOT_ELIGIBLE, one shape);
+# KIND_MISMATCH; patient present; insert or dedupe by digest. Item and history are
+# one transaction; the item's patient comes from the envelope, never the caller.
+_CREATE_BODY: Final = r"""
+DECLARE
+    c_uuid constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    v_setting text;
+    v_attr jsonb;
+    v_source uuid;
+    v_kind text;
+    v_principal uuid;
+    v_purpose text;
+    v_env jsonb;
+    v_paths jsonb;
+    v_matches integer;
+    v_row record;
+    v_patient uuid;
+    v_digest bytea;
+    v_item uuid;
+    v_existing record;
+BEGIN
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_setting IS NULL OR v_setting = ''
+       OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+
+    -- 1. Closed shape.
+    IF pg_catalog.jsonb_typeof(p_command) IS DISTINCT FROM 'object'
+       OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+             FROM pg_catalog.jsonb_object_keys(p_command) AS k)
+          IS DISTINCT FROM ARRAY['attribution', 'item_kind', 'schema_version',
+                                 'source_event_id']::text[]
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'schema_version')
+          IS DISTINCT FROM 'number'
+       OR (p_command OPERATOR(pg_catalog.->) 'schema_version')::text <> '1'
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'source_event_id')
+          IS DISTINCT FROM 'string'
+       OR (p_command OPERATOR(pg_catalog.->>) 'source_event_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'item_kind')
+          IS DISTINCT FROM 'string'
+       OR (p_command OPERATOR(pg_catalog.->>) 'item_kind') NOT IN
+          ('no_reply', 'reschedule_request', 'cancel_request', 'unclear_reply') THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+    END IF;
+    v_attr := p_command OPERATOR(pg_catalog.->) 'attribution';
+    IF pg_catalog.jsonb_typeof(v_attr) IS DISTINCT FROM 'object'
+       OR (SELECT pg_catalog.array_agg(k ORDER BY k) FROM pg_catalog.jsonb_object_keys(v_attr) AS k)
+          IS DISTINCT FROM ARRAY['auth_method', 'execution_id', 'principal_id', 'principal_kind',
+                                 'purpose_code', 'request_id']::text[]
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'principal_kind') <> 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'principal_kind') NOT IN ('actor', 'workload')
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'principal_id') <> 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'principal_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'execution_id') <> 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'execution_id') OPERATOR(pg_catalog.!~) c_uuid
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'auth_method') <> 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'auth_method')
+           OPERATOR(pg_catalog.!~) '^[a-z][a-z0-9_]{0,31}$'
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'purpose_code') <> 'string'
+       OR (v_attr OPERATOR(pg_catalog.->>) 'purpose_code') NOT IN ('treatment', 'payment',
+           'operations')
+       OR pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'request_id') NOT IN ('null',
+           'string')
+       OR (pg_catalog.jsonb_typeof(v_attr OPERATOR(pg_catalog.->) 'request_id') = 'string'
+           AND pg_catalog.char_length(v_attr
+               OPERATOR(pg_catalog.->>) 'request_id') NOT BETWEEN 1 AND 128) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+    END IF;
+    v_source := (p_command OPERATOR(pg_catalog.->>) 'source_event_id')::uuid;
+    v_kind := p_command OPERATOR(pg_catalog.->>) 'item_kind';
+    v_principal := (v_attr OPERATOR(pg_catalog.->>) 'principal_id')::uuid;
+    v_purpose := v_attr OPERATOR(pg_catalog.->>) 'purpose_code';
+
+    -- 2. Workload-only (D9).
+    IF (v_attr OPERATOR(pg_catalog.->>) 'principal_kind') <> 'workload' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+
+    -- 3. Envelope-only source read (D6): unknown / foreign -> null; unsupported.
+    v_env := {schema}.m02_get_observation_envelope(v_source);
+    IF v_env IS NULL OR v_env OPERATOR(pg_catalog.?) 'error' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+
+    -- 4. A completed, null-operation observation.
+    IF (v_env OPERATOR(pg_catalog.->>) 'event_level') IS DISTINCT FROM 'observation'
+       OR (v_env OPERATOR(pg_catalog.->>) 'status') IS DISTINCT FROM 'completed'
+       OR pg_catalog.jsonb_typeof(v_env OPERATOR(pg_catalog.->) 'operation_id')
+          IS DISTINCT FROM 'null' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+
+    -- 5. Exactly one intake row matches; never pick one of several.
+    v_paths := v_env OPERATOR(pg_catalog.->) 'metadata_paths';
+    SELECT pg_catalog.count(*) INTO v_matches
+      FROM {schema}.m05_intake_map AS m
+     WHERE m.source_event_type = (v_env OPERATOR(pg_catalog.->>) 'event_type')
+       AND m.source_contract_version
+           = ((v_env OPERATOR(pg_catalog.->>) 'contract_version')::integer)
+       AND pg_catalog.jsonb_typeof(v_paths OPERATOR(pg_catalog.->) m.discriminator_path::text)
+           = 'string'
+       AND (v_paths OPERATOR(pg_catalog.->>) m.discriminator_path::text)
+           = m.discriminator_value::text;
+    IF v_matches <> 1 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+    SELECT m.item_kind, m.producer_workload_id INTO v_row
+      FROM {schema}.m05_intake_map AS m
+     WHERE m.source_event_type = (v_env OPERATOR(pg_catalog.->>) 'event_type')
+       AND m.source_contract_version
+           = ((v_env OPERATOR(pg_catalog.->>) 'contract_version')::integer)
+       AND pg_catalog.jsonb_typeof(v_paths OPERATOR(pg_catalog.->) m.discriminator_path::text)
+           = 'string'
+       AND (v_paths OPERATOR(pg_catalog.->>) m.discriminator_path::text)
+           = m.discriminator_value::text;
+    IF v_row.producer_workload_id IS DISTINCT FROM v_principal
+       OR (v_env OPERATOR(pg_catalog.->>) 'workload_id') IS DISTINCT FROM v_principal::text THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+
+    -- 6. Kind, after producer eligibility.
+    IF v_row.item_kind <> v_kind THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'KIND_MISMATCH';
+    END IF;
+
+    -- 7. Patient from the source only.
+    IF pg_catalog.jsonb_typeof(v_env OPERATOR(pg_catalog.->) 'patient_id')
+       IS DISTINCT FROM 'string' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'SOURCE_NOT_ELIGIBLE';
+    END IF;
+    v_patient := (v_env OPERATOR(pg_catalog.->>) 'patient_id')::uuid;
+
+    -- 8. Digest (compact UTF-8 JSON preimage), then insert or dedupe.
+    v_digest := pg_catalog.sha256(pg_catalog.convert_to(
+        '["m05.create/v1",' || pg_catalog.to_json(v_setting)::text
+        || ',' || pg_catalog.to_json(v_source::text)::text
+        || ',' || pg_catalog.to_json(v_kind)::text
+        || ',' || pg_catalog.to_json(v_principal::text)::text
+        || ',' || pg_catalog.to_json(v_purpose)::text || ']', 'UTF8'));
+    v_item := pg_catalog.gen_random_uuid();
+    INSERT INTO {schema}.m05_followup_items (item_id, source_event_id, item_kind, patient_id,
+        state, assignee_id, outcome_code, version, create_digest, created_at)
+    VALUES (v_item, v_source, v_kind, v_patient, 'open', NULL, NULL, 1, v_digest,
+        pg_catalog.statement_timestamp())
+    ON CONFLICT (source_event_id, item_kind) DO NOTHING;
+    IF NOT FOUND THEN
+        SELECT i.item_id, i.create_digest INTO v_existing
+          FROM {schema}.m05_followup_items AS i
+         WHERE i.source_event_id = v_source AND i.item_kind = v_kind;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'DEDUPE_CONFLICT';
+        END IF;
+        IF v_existing.create_digest <> v_digest THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'DEDUPE_CONFLICT';
+        END IF;
+        RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+            'item_id', v_existing.item_id::text, 'created_or_existing', 'existing');
+    END IF;
+    INSERT INTO {schema}.m05_followup_history (history_id, item_id, seq, action, actor_id,
+        before, after, resolution_event_id, assertion_kind, created_at)
+    VALUES (pg_catalog.gen_random_uuid(), v_item, 1, 'created', v_principal, NULL,
+        pg_catalog.jsonb_build_object('state', 'open', 'assignee_id', NULL,
+                                      'outcome_code', NULL),
+        NULL, NULL, pg_catalog.statement_timestamp());
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+        'item_id', v_item::text, 'created_or_existing', 'created');
+END;
+"""
+_CREATE_BODY_SHA256: Final = "6247e7bf3640029d6660f59425caad953c803eb798a98c7528cae31b4c7447b1"
+
+
 def _template(name: str, params: _Params, volatility: str, body: str) -> str:
     signature = ", ".join(f"{p} {t}" for p, t in params)
     argtypes = ", ".join(t for _, t in params)
@@ -145,9 +321,15 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
     ("t020_m05_read_note", "m05_read_note", (("p_note_id", "uuid"),), "stable"),
 )
 
+# Bodies by function. A function absent here is still the B1 fail-closed stub; each
+# tranche moves exactly the functions its gated tests cover.
+_BODIES: Final = {"m05_create_item": (_CREATE_BODY, _CREATE_BODY_SHA256)}
+
 M05_GATEWAY_UNITS: Final = MappingProxyType(
     {
-        migration_id: _definition(name, params, volatility, _STUB_BODY, _STUB_BODY_SHA256)
+        migration_id: _definition(
+            name, params, volatility, *_BODIES.get(name, (_STUB_BODY, _STUB_BODY_SHA256))
+        )
         for migration_id, name, params, volatility in _FUNCTIONS
     }
 )

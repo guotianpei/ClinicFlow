@@ -404,45 +404,30 @@ def _fingerprint(generation: Any) -> tuple[bool, bool, int]:
     return family, resolver, len(generation.intake_rows)
 
 
-@postgres
-@pytest.mark.parametrize(
-    "locked", ["event_types", "event_contracts", "m02_link_resolvers", "m05_intake_map"]
-)
-def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked: str) -> None:
-    """F-B2-SNAPSHOT01. The writer opens a transaction, takes ACCESS EXCLUSIVE on one
-    registry relation and makes the coordinated change. The loader is started and is
-    OBSERVED waiting on that lock (pg_stat_activity, bounded polling, no bare
-    sleeps); only then does the writer commit. Repeated with the lock on each
-    relation the loader reads: a loader that reads relation by relation in separate
-    snapshots has read some relation before the commit and some after in at least
-    one of these runs, returning a mixed generation. A single snapshot (or a single
-    atomic read) can only return all-before or all-after."""
+def _interleave(install: M05Install, locked: str, loader: Any) -> Any:
+    """Run `loader(conn, schema)` while a writer holds ACCESS EXCLUSIVE on `locked`
+    and has made the coordinated change; commit only once the loader is OBSERVED
+    waiting on the lock. Returns the loader's result (or raises its error)."""
 
-    loader_base.require()
-    v = _v()
-    schema = sql.Identifier(loader_base.schema)
-    before = (False, False, 0)
-    after = (True, True, 1)
+    schema = sql.Identifier(install.schema)
     pids: queue.Queue[int] = queue.Queue()
     results: list[Any] = []
 
     def run_loader() -> None:
         async def go() -> Any:
-            async with await AsyncConnection.connect(
-                loader_base.ids.admin, autocommit=True
-            ) as conn:
+            async with await AsyncConnection.connect(install.ids.admin, autocommit=True) as conn:
                 await conn.execute("SET lock_timeout = '20s'")
                 row = await (await conn.execute("SELECT pg_backend_pid()")).fetchone()
                 assert row is not None
                 pids.put(int(row[0]))
-                return await v.load_generation(conn, loader_base.schema)
+                return await loader(conn, install.schema)
 
         try:
             results.append(asyncio.run(go()))
-        except Exception as error:  # noqa: BLE001 - asserted below
+        except Exception as error:  # noqa: BLE001 - re-raised below
             results.append(error)
 
-    writer = psycopg.connect(loader_base.ids.admin)
+    writer = psycopg.connect(install.ids.admin)
     thread: threading.Thread | None = None
     try:
         writer.execute("SET lock_timeout = '20s'")
@@ -458,9 +443,7 @@ def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked
         waiting = False
         for _ in range(400):
             rows = _admin_rows(
-                loader_base,
-                "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s",
-                (pid,),
+                install, "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s", (pid,)
             )
             if rows == [("Lock",)]:
                 waiting = True
@@ -471,9 +454,11 @@ def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked
         assert waiting, f"loader was not observed waiting on {locked}: {results}"
         writer.commit()
         thread.join(timeout=30)
-        assert thread is not None and not thread.is_alive()
-        assert len(results) == 1 and not isinstance(results[0], Exception), results
-        assert _fingerprint(results[0]) in (before, after), (locked, _fingerprint(results[0]))
+        assert not thread.is_alive()
+        assert len(results) == 1, results
+        if isinstance(results[0], Exception):
+            raise results[0]
+        return results[0]
     finally:
         try:
             writer.rollback()
@@ -481,8 +466,79 @@ def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked
             writer.close()
         if thread is not None:
             thread.join(timeout=5)
-        _admin_exec(loader_base.ids, sql.SQL(_COORDINATED_REVERT).format(s=schema))
-    assert _fingerprint(_load(loader_base, loader_base.schema)) == before
+        _admin_exec(install.ids, sql.SQL(_COORDINATED_REVERT).format(s=schema))
+
+
+_LOCK_TARGETS = ("event_types", "event_contracts", "m02_link_resolvers", "m05_intake_map")
+
+
+@postgres
+@pytest.mark.parametrize("locked", _LOCK_TARGETS)
+def test_mc08_loader_reads_one_coherent_snapshot(loader_base: M05Install, locked: str) -> None:
+    """F-B2-SNAPSHOT01. See `_interleave`. Repeated with the lock on each relation
+    the loader reads: a loader reading relation by relation in separate snapshots
+    reads some relation before the commit and some after in at least one run (the
+    mutant control below proves the harness detects exactly that). A single
+    snapshot can only return all-before or all-after."""
+
+    loader_base.require()
+    generation = _interleave(loader_base, locked, _v().load_generation)
+    assert _fingerprint(generation) in ((False, False, 0), (True, True, 1)), (
+        locked,
+        _fingerprint(generation),
+    )
+    assert _fingerprint(_load(loader_base, loader_base.schema)) == (False, False, 0)
+
+
+async def _per_relation_mutant(conn: Any, schema_key: str) -> Any:
+    """A deliberately WRONG loader for the harness control: the same initial catalog
+    existence probe as the real loader, then one autocommit (READ COMMITTED)
+    statement per relation, so each read has its own snapshot."""
+
+    from types import SimpleNamespace
+
+    s = sql.Identifier(schema_key)
+    await conn.execute(
+        "SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n"
+        " ON n.oid = c.relnamespace WHERE n.nspname = %s",
+        (schema_key,),
+    )
+    contracts = await (
+        await conn.execute(
+            sql.SQL(
+                "SELECT c.event_type, t.is_active FROM {}.event_contracts c"
+                " JOIN {}.event_types t ON t.event_type = c.event_type"
+            ).format(s, s)
+        )
+    ).fetchall()
+    resolvers = await (
+        await conn.execute(
+            sql.SQL("SELECT resolver_id, is_active FROM {}.m02_link_resolvers").format(s)
+        )
+    ).fetchall()
+    intake = await (
+        await conn.execute(sql.SQL("SELECT 1 FROM {}.m05_intake_map").format(s))
+    ).fetchall()
+    return SimpleNamespace(
+        contracts=[SimpleNamespace(event_type=e, is_active=a) for e, a in contracts],
+        resolvers=[SimpleNamespace(resolver_id=r, is_active=a) for r, a in resolvers],
+        intake_rows=intake,
+    )
+
+
+@postgres
+def test_mc08_snapshot_harness_detects_a_per_relation_mutant(loader_base: M05Install) -> None:
+    """Codex gate condition (20261101T000802Z): the interleaving must catch a
+    separate-snapshot / READ COMMITTED loader. Run the same harness over the four
+    lock targets with the mutant: at least one run must return a MIXED generation."""
+
+    loader_base.require()
+    coherent = {(False, False, 0), (True, True, 1)}
+    observed = {
+        locked: _fingerprint(_interleave(loader_base, locked, _per_relation_mutant))
+        for locked in _LOCK_TARGETS
+    }
+    assert any(fingerprint not in coherent for fingerprint in observed.values()), observed
 
 
 def _admin_rows(install: M05Install, query: str, params: Any = None) -> list[tuple[Any, ...]]:
