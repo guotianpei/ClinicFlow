@@ -1110,20 +1110,34 @@ def test_dts2_directory_sql_is_ascii_with_escapes():
 # ---------------------------------------------------------------------------
 
 
-def _valid_rows(install: st.StaffInstall, staff: str, key: str, name: str) -> tuple[Any, Any]:
-    """A constraint-valid, semantically valid key row and log row for an `add`."""
+def _valid_rows(
+    install: st.StaffInstall, staff: str, key: str, name: str, *, operation: str = "add",
+    timestamp: str = "2026-10-01T09:30:00.000000Z",
+) -> tuple[Any, Any]:
+    """A constraint-valid, semantically valid key row and log row for `add` or
+    `deactivate` (a non-add/rename operation: the name is not in its command)."""
 
-    digest = st.admin_digest(install.tenant[0], key, st.ADMIN, "add", staff, name, None)
-    snap = {"schema_version": 1, "staff_id": staff, "status": "active", "display_name": name,
-            "access": [], "status_changed_at": "2026-10-01T09:30:00.000000Z"}
+    command_name = name if operation == "add" else None
+    digest = st.admin_digest(install.tenant[0], key, st.ADMIN, operation, staff,
+                             command_name, None)
+    status = "active" if operation == "add" else "inactive"
+    snap = {"schema_version": 1, "staff_id": staff, "status": status, "display_name": name,
+            "access": [], "status_changed_at": timestamp}
     key_row = {"client_action_id": key, "digest": digest, "actor_id": st.ADMIN,
                "staff_id": staff}
-    log_row = {"client_action_id": key, "staff_id": staff, "operation": "add", "before": None,
+    log_row = {"client_action_id": key, "staff_id": staff, "operation": operation,
+               "before": None if operation == "add" else {**snap, "status": "active"},
                "after": snap,
-               "result": {"schema_version": 1, "client_action_id": key, "operation": "add",
+               "result": {"schema_version": 1, "client_action_id": key, "operation": operation,
                           "staff": dict(snap)},
                "actor_id": st.ADMIN, "digest": digest}
     return key_row, log_row
+
+
+def _replay_command(staff: str, key: str, name: str, operation: str) -> dict[str, Any]:
+    if operation == "add":
+        return st.admin_command("add", staff, key=key, display_name=name)
+    return st.admin_command(operation, staff, key=key)
 
 
 def _insert_rows(install: st.StaffInstall, key_row: dict[str, Any],
@@ -1268,11 +1282,11 @@ def mutant_install(request, m02_ids, m05_reset):
         m05_reset(tenant)
 
 
-def test_am1_guard_after_lock_is_caught(mutant_install):
-    """Isolation guard moved after the membership lock: the DT-08 competing-holder
-    assertion must fail (the call waits instead of refusing at once)."""
+def _rename_under_rr_with_holder(install: st.StaffInstall) -> psycopg.Error | None:
+    """The DT-08 scenario: a competing holder owns the membership row; the admin
+    call runs under REPEATABLE READ with the safety lock_timeout. Returns the error
+    raised (or None) and how long it took is checked by the caller."""
 
-    install = mutant_install("am1", st.MUTANT_GUARD_AFTER_LOCK)
     staff = st.new_uuid()
     st.seed_staff(install, staff)
     with (
@@ -1281,13 +1295,30 @@ def test_am1_guard_after_lock_is_caught(mutant_install):
     ):
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         st.set_tenant(conn, install)
-        with pytest.raises(AssertionError):
-            st.expect_immediate_code(
-                conn, "ISOLATION_UNSUPPORTED",
-                lambda: st.call_on(conn, install, "m01_staff_admin",
-                                   st.admin_command("rename", staff, display_name="Z")),
-            )
+        conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
+        try:
+            st.call_on(conn, install, "m01_staff_admin",
+                       st.admin_command("rename", staff, display_name="Z"))
+        except psycopg.Error as error:
+            conn.rollback()
+            return error
         conn.rollback()
+    return None
+
+
+def test_am1_guard_after_lock_is_caught(mutant_install, staff_install):
+    """AM-1: guard moved after the membership lock. Pinned observation: the
+    mutant WAITS on the held row and fails with 55P03 (lock_timeout), where the
+    clean implementation refuses at once with ISOLATION_UNSUPPORTED."""
+
+    _ready(staff_install)
+    control = _rename_under_rr_with_holder(staff_install)
+    assert control is not None and control.sqlstate == "P0001"
+    assert control.diag.message_primary == "ISOLATION_UNSUPPORTED"
+
+    install = mutant_install("am1", st.MUTANT_GUARD_AFTER_LOCK)
+    mutant = _rename_under_rr_with_holder(install)
+    assert mutant is not None and mutant.sqlstate == "55P03", mutant
 
 
 def test_am2_admission_without_on_conflict_is_caught(mutant_install):
@@ -1303,18 +1334,96 @@ def test_am2_admission_without_on_conflict_is_caught(mutant_install):
     assert error.sqlstate == "23505"
 
 
-def test_am3_weak_replay_check_is_caught(mutant_install):
-    """With the fe092ed replay check, Codex's counterexample replays as success:
-    the DA-D7 assertion must fail."""
+def test_am3_weak_replay_check_is_caught(mutant_install, staff_install):
+    """AM-3: the fe092ed replay check. Pinned observation: with Codex's
+    counterexample stored, the mutant RETURNS that corrupt result as success; the
+    clean implementation refuses with ADMIN_LOG_INTEGRITY. Both leave state
+    unchanged."""
+
+    def scenario(install: st.StaffInstall) -> Any:
+        staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
+        key_row, log_row = _valid_rows(install, staff, key, name)
+        _CORRUPTIONS["codex_counterexample"](key_row, log_row)
+        _insert_rows(install, key_row, log_row)
+        before = st.state(install)
+        try:
+            outcome: Any = st.admin_op(install, st.admin_command("add", staff, key=key,
+                                                                 display_name=name))
+        except psycopg.Error as error:
+            outcome = error
+        st.Delta(before, st.state(install)).untouched(st.ALL_TABLES)
+        return outcome, log_row["result"]
+
+    _ready(staff_install)
+    control, _ = scenario(staff_install)
+    assert isinstance(control, psycopg.Error)
+    assert control.diag.message_primary == "ADMIN_LOG_INTEGRITY"
 
     install = mutant_install("am3", st.mutant_weak_replay())
+    mutant, stored = scenario(install)
+    assert mutant == stored  # the corrupt row came back as a success
+    assert mutant["schema_version"] == 999 and mutant["staff"] is None
+
+
+# Codex 063f4ac review: impossible calendar timestamps, and the full name rule on
+# every stored snapshot (here a deactivate, whose command carries no name).
+_TIMESTAMP_CORRUPTIONS = {
+    "feb_30": "2026-02-30T09:30:00.000000Z",
+    "feb_29_non_leap": "2027-02-29T09:30:00.000000Z",
+    "month_13": "2026-13-01T09:30:00.000000Z",
+    "hour_25": "2026-01-01T25:00:00.000000Z",
+    "minute_60": "2026-01-01T09:60:00.000000Z",
+}
+_NON_ADD_NAME_CORRUPTIONS = {
+    "leading_space": " Dana",
+    "trailing_nbsp": "Dana\u00a0",
+    "not_nfc": "Zoe\u0308",
+    "control_inside": "Da\u0001na",
+    "line_separator": "Da\u2028na",
+    "81_code_points": "x" * 81,
+}
+
+
+@pytest.mark.parametrize("label", sorted(_TIMESTAMP_CORRUPTIONS))
+@pytest.mark.parametrize("operation", ["add", "deactivate"])
+def test_dad7_impossible_timestamp_never_replays(staff_install, operation, label):
+    _ready(staff_install)
     staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
-    key_row, log_row = _valid_rows(install, staff, key, name)
-    _CORRUPTIONS["codex_counterexample"](key_row, log_row)
-    _insert_rows(install, key_row, log_row)
-    with pytest.raises(AssertionError):
-        st.expect_code(
-            "ADMIN_LOG_INTEGRITY",
-            lambda: st.admin_op(install,
-                                st.admin_command("add", staff, key=key, display_name=name)),
-        )
+    key_row, log_row = _valid_rows(staff_install, staff, key, name, operation=operation,
+                                   timestamp=_TIMESTAMP_CORRUPTIONS[label])
+    _insert_rows(staff_install, key_row, log_row)
+    before = st.state(staff_install)
+    st.expect_code("ADMIN_LOG_INTEGRITY", lambda: st.admin_op(
+        staff_install, _replay_command(staff, key, name, operation)))
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+@pytest.mark.parametrize("label", sorted(_NON_ADD_NAME_CORRUPTIONS))
+def test_dad7_non_add_snapshot_name_rule(staff_install, label):
+    _ready(staff_install)
+    staff, key = st.new_uuid(), st.new_uuid()
+    name = _NON_ADD_NAME_CORRUPTIONS[label]
+    key_row, log_row = _valid_rows(staff_install, staff, key, name, operation="deactivate")
+    _insert_rows(staff_install, key_row, log_row)
+    before = st.state(staff_install)
+    st.expect_code("ADMIN_LOG_INTEGRITY", lambda: st.admin_op(
+        staff_install, _replay_command(staff, key, name, "deactivate")))
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
+@pytest.mark.parametrize(
+    "operation, timestamp",
+    [("add", "2028-02-29T09:30:00.000000Z"), ("deactivate", "2028-02-29T23:59:59.999999Z"),
+     ("deactivate", "2026-10-01T09:30:00.000000Z")],
+    ids=["add_leap_day", "deactivate_leap_day_end", "deactivate_ordinary"],
+)
+def test_dad8_valid_controls_leap_day_and_non_add(staff_install, operation, timestamp):
+    _ready(staff_install)
+    staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
+    key_row, log_row = _valid_rows(staff_install, staff, key, name, operation=operation,
+                                   timestamp=timestamp)
+    _insert_rows(staff_install, key_row, log_row)
+    before = st.state(staff_install)
+    assert st.admin_op(staff_install, _replay_command(staff, key, name, operation)) \
+        == log_row["result"]
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)

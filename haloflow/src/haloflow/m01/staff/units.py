@@ -246,6 +246,10 @@ DECLARE
     v_stored record;
     v_log record;
     v_snap jsonb;
+    v_snap_name text;
+    v_name_ok boolean;
+    v_ts timestamptz;
+    v_ts_ok boolean;
     v_result jsonb;
     v_row record;
     v_before jsonb;
@@ -418,7 +422,34 @@ BEGIN
         END IF;
         v_result := v_log.result;
         v_snap := v_log.after;
-        IF v_stored.staff_id IS DISTINCT FROM v_staff
+        -- Canonical UTC timestamp: shape, a real calendar date (narrowly caught
+        -- parse) and an exact round trip (Codex 063f4ac review).
+        v_ts_ok := false;
+        IF pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'status_changed_at') = 'string'
+           AND (v_snap OPERATOR(pg_catalog.->>) 'status_changed_at') OPERATOR(pg_catalog.~)
+               '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{6}Z$' THEN
+            BEGIN
+                v_ts := pg_catalog.timezone('UTC', pg_catalog.replace(pg_catalog.replace(
+                    v_snap OPERATOR(pg_catalog.->>) 'status_changed_at', 'T', ' '), 'Z', '')
+                    ::timestamp);
+                v_ts_ok := pg_catalog.to_char(v_ts AT TIME ZONE 'UTC',
+                                              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                           = (v_snap OPERATOR(pg_catalog.->>) 'status_changed_at');
+            EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+                v_ts_ok := false;
+            END;
+        END IF;
+        -- The full display-name rule applies to every stored snapshot.
+        v_snap_name := CASE
+            WHEN pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'display_name') = 'string'
+            THEN v_snap OPERATOR(pg_catalog.->>) 'display_name' END;
+        v_name_ok := COALESCE(v_snap_name IS NFC NORMALIZED
+            AND pg_catalog.char_length(v_snap_name) BETWEEN 1 AND 80
+            AND v_snap_name OPERATOR(pg_catalog.!~) c_forbidden
+            AND v_snap_name OPERATOR(pg_catalog.!~) ('^' || c_ws)
+            AND v_snap_name OPERATOR(pg_catalog.!~) (c_ws || '$'), false);
+        -- Any unknown (NULL) predicate counts as corrupt.
+        IF COALESCE(v_stored.staff_id IS DISTINCT FROM v_staff
            OR v_log.operation IS DISTINCT FROM v_op
            OR v_log.staff_id IS DISTINCT FROM v_staff
            OR v_log.actor_id IS DISTINCT FROM v_actor
@@ -444,18 +475,11 @@ BEGIN
               IS DISTINCT FROM pg_catalog.to_jsonb(v_staff::text)
            OR NOT COALESCE((v_snap OPERATOR(pg_catalog.->) 'status')
                            IN ('"active"'::jsonb, '"inactive"'::jsonb), false)
-           OR pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'display_name')
-              IS DISTINCT FROM 'string'
-           OR pg_catalog.char_length(v_snap OPERATOR(pg_catalog.->>) 'display_name')
-              NOT BETWEEN 1 AND 80
+           OR NOT v_name_ok
            OR NOT COALESCE((v_snap OPERATOR(pg_catalog.->) 'access')
                            IN ('[]'::jsonb, '["act"]'::jsonb, '["read"]'::jsonb,
                                '["act", "read"]'::jsonb), false)
-           OR pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'status_changed_at')
-              IS DISTINCT FROM 'string'
-           OR (v_snap OPERATOR(pg_catalog.->>) 'status_changed_at')
-              OPERATOR(pg_catalog.!~)
-              '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{6}Z$'
+           OR NOT v_ts_ok
            -- operation-implied facts of the after snapshot
            OR (v_op IN ('add', 'reactivate')
                AND (v_snap OPERATOR(pg_catalog.->>) 'status') IS DISTINCT FROM 'active')
@@ -470,7 +494,7 @@ BEGIN
                                 OPERATOR(pg_catalog.?) v_access, false))
            OR (v_op = 'revoke'
                AND COALESCE((v_snap OPERATOR(pg_catalog.->) 'access')
-                            OPERATOR(pg_catalog.?) v_access, true)) THEN
+                            OPERATOR(pg_catalog.?) v_access, true)), true) THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_LOG_INTEGRITY';
         END IF;
         RETURN v_result;
@@ -560,7 +584,7 @@ BEGIN
     RETURN v_result;
 END;
 """
-_ADMIN_BODY_SHA256: Final = "12a6919073170dd071285b18ee84b364b548a9955d059277a117909ac5c080a6"
+_ADMIN_BODY_SHA256: Final = "c4352882071aca5b8ada639a2f0d0facd76996ff40131a5f0ef906e837ed1356"
 
 
 # t024 m01_staff_display (v1 3.3 DR-07): STABLE, no lock, no isolation guard; 1-100
