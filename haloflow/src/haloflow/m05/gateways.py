@@ -220,6 +220,215 @@ END;
 _CREATE_BODY_SHA256: Final = "6247e7bf3640029d6660f59425caad953c803eb798a98c7528cae31b4c7447b1"
 
 
+# B3a read slice (tests-first gate 20261101T013202Z: reads may proceed while MA-10
+# is pending; actions stay stubs). STABLE, SELECT-only. Timestamps leave as UTC
+# 'YYYY-MM-DDTHH:MM:SS.ffffffZ' whatever the session TimeZone. Unknown and
+# other-tenant ids are both ITEM_NOT_FOUND (the lookup is schema-local).
+_TENANT_CHECK: Final = """
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_setting IS NULL OR v_setting = ''
+       OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+"""
+_UTC: Final = (
+    "pg_catalog.to_char(pg_catalog.timezone('UTC', {col}),"
+    " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')"
+)
+_ITEM_VIEW: Final = (
+    "pg_catalog.jsonb_build_object('schema_version', 1, 'item_id', i.item_id::text,"
+    " 'source_event_id', i.source_event_id::text, 'item_kind', i.item_kind,"
+    " 'patient_id', i.patient_id::text, 'state', i.state,"
+    " 'assignee_id', i.assignee_id::text, 'outcome_code', i.outcome_code,"
+    " 'version', i.version, 'created_at', " + _UTC.format(col="i.created_at") + ")"
+)
+
+_GET_ITEM_BODY: Final = (
+    r"""
+DECLARE
+    v_setting text;
+    v_view jsonb;
+BEGIN"""
+    + _TENANT_CHECK
+    + r"""
+    SELECT """
+    + _ITEM_VIEW
+    + r""" INTO v_view
+      FROM {schema}.m05_followup_items AS i
+     WHERE i.item_id = p_item_id;
+    IF v_view IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ITEM_NOT_FOUND';
+    END IF;
+    RETURN v_view;
+END;
+"""
+)
+
+_GET_HISTORY_BODY: Final = (
+    r"""
+DECLARE
+    v_setting text;
+    v_entries jsonb;
+BEGIN"""
+    + _TENANT_CHECK
+    + r"""
+    IF p_item_id IS NULL OR NOT EXISTS (
+        SELECT 1 FROM {schema}.m05_followup_items AS i WHERE i.item_id = p_item_id
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ITEM_NOT_FOUND';
+    END IF;
+    SELECT COALESCE(pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+               'seq', h.seq, 'action', h.action, 'actor_id', h.actor_id::text,
+               'before', h.before, 'after', h.after, 'assertion_kind', h.assertion_kind,
+               'created_at', """
+    + _UTC.format(col="h.created_at")
+    + r""") ORDER BY h.seq), '[]'::jsonb)
+      INTO v_entries
+      FROM {schema}.m05_followup_history AS h
+     WHERE h.item_id = p_item_id;
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+        'item_id', p_item_id::text, 'entries', v_entries);
+END;
+"""
+)
+
+_LIST_ITEMS_BODY: Final = (
+    r"""
+DECLARE
+    c_uuid constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    c_ts constant text := '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$';
+    v_setting text;
+    v_key text;
+    v_limit integer;
+    v_states text[];
+    v_assignee_mode text := 'any';
+    v_assignee uuid;
+    v_after jsonb;
+    v_after_ts timestamptz;
+    v_after_id uuid;
+    v_rows jsonb;
+    v_count integer;
+    v_next jsonb := NULL;
+BEGIN"""
+    + _TENANT_CHECK
+    + r"""
+    IF pg_catalog.jsonb_typeof(p_query) IS DISTINCT FROM 'object'
+       OR NOT (p_query OPERATOR(pg_catalog.?) 'schema_version')
+       OR NOT (p_query OPERATOR(pg_catalog.?) 'limit')
+       OR pg_catalog.jsonb_typeof(p_query OPERATOR(pg_catalog.->) 'schema_version')
+          IS DISTINCT FROM 'number'
+       OR (p_query OPERATOR(pg_catalog.->) 'schema_version')::text <> '1'
+       OR pg_catalog.jsonb_typeof(p_query OPERATOR(pg_catalog.->) 'limit')
+          IS DISTINCT FROM 'number'
+       OR (p_query OPERATOR(pg_catalog.->) 'limit')::text
+          OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,2}$' THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+    END IF;
+    FOR v_key IN SELECT k FROM pg_catalog.jsonb_object_keys(p_query) AS k LOOP
+        IF v_key NOT IN ('schema_version', 'limit', 'states', 'assignee', 'after') THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+    END LOOP;
+    v_limit := ((p_query OPERATOR(pg_catalog.->) 'limit')::text)::integer;
+    IF v_limit > 100 THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+    END IF;
+
+    IF p_query OPERATOR(pg_catalog.?) 'states' THEN
+        IF pg_catalog.jsonb_typeof(p_query OPERATOR(pg_catalog.->) 'states')
+               IS DISTINCT FROM 'array'
+           OR pg_catalog.jsonb_array_length(p_query OPERATOR(pg_catalog.->) 'states') = 0
+           OR EXISTS (
+               SELECT 1 FROM pg_catalog.jsonb_array_elements(
+                   p_query OPERATOR(pg_catalog.->) 'states') AS e(v)
+                WHERE pg_catalog.jsonb_typeof(e.v) IS DISTINCT FROM 'string'
+                   OR (e.v OPERATOR(pg_catalog.#>>) '{}'::text[])
+                      NOT IN ('open', 'in_progress', 'resolved'))
+           OR (SELECT pg_catalog.count(DISTINCT e.v) FROM pg_catalog.jsonb_array_elements(
+                   p_query OPERATOR(pg_catalog.->) 'states') AS e(v))
+              <> pg_catalog.jsonb_array_length(p_query OPERATOR(pg_catalog.->) 'states') THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+        SELECT pg_catalog.array_agg(e.v) INTO v_states
+          FROM pg_catalog.jsonb_array_elements_text(
+              p_query OPERATOR(pg_catalog.->) 'states') AS e(v);
+    END IF;
+
+    IF p_query OPERATOR(pg_catalog.?) 'assignee' THEN
+        IF pg_catalog.jsonb_typeof(p_query OPERATOR(pg_catalog.->) 'assignee')
+               IS DISTINCT FROM 'string' THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+        IF (p_query OPERATOR(pg_catalog.->>) 'assignee') = 'unassigned' THEN
+            v_assignee_mode := 'unassigned';
+        ELSIF (p_query OPERATOR(pg_catalog.->>) 'assignee') OPERATOR(pg_catalog.~) c_uuid THEN
+            v_assignee_mode := 'id';
+            v_assignee := (p_query OPERATOR(pg_catalog.->>) 'assignee')::uuid;
+        ELSE
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+    END IF;
+
+    IF p_query OPERATOR(pg_catalog.?) 'after' THEN
+        v_after := p_query OPERATOR(pg_catalog.->) 'after';
+        IF pg_catalog.jsonb_typeof(v_after) IS DISTINCT FROM 'object'
+           OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                 FROM pg_catalog.jsonb_object_keys(v_after) AS k)
+              IS DISTINCT FROM ARRAY['created_at', 'item_id']::text[]
+           OR pg_catalog.jsonb_typeof(v_after OPERATOR(pg_catalog.->) 'created_at')
+              IS DISTINCT FROM 'string'
+           OR (v_after OPERATOR(pg_catalog.->>) 'created_at') OPERATOR(pg_catalog.!~) c_ts
+           OR pg_catalog.jsonb_typeof(v_after OPERATOR(pg_catalog.->) 'item_id')
+              IS DISTINCT FROM 'string'
+           OR (v_after OPERATOR(pg_catalog.->>) 'item_id') OPERATOR(pg_catalog.!~) c_uuid THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+        BEGIN
+            v_after_ts := pg_catalog.timezone('UTC', pg_catalog.replace(pg_catalog.replace(
+                v_after OPERATOR(pg_catalog.->>) 'created_at', 'T', ' '), 'Z', '')::timestamp);
+        EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END;
+        -- Canonical form only: re-rendering must give back exactly the input.
+        IF """
+    + _UTC.format(col="v_after_ts")
+    + r""" <> (v_after OPERATOR(pg_catalog.->>) 'created_at') THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COMMAND_MALFORMED';
+        END IF;
+        v_after_id := (v_after OPERATOR(pg_catalog.->>) 'item_id')::uuid;
+    END IF;
+
+    SELECT pg_catalog.count(*), COALESCE(pg_catalog.jsonb_agg(r.view ORDER BY r.created_at,
+               r.item_id) FILTER (WHERE r.n <= v_limit), '[]'::jsonb)
+      INTO v_count, v_rows
+      FROM (
+          SELECT """
+    + _ITEM_VIEW
+    + r""" AS view, i.created_at, i.item_id,
+                 pg_catalog.row_number() OVER (ORDER BY i.created_at, i.item_id) AS n
+            FROM {schema}.m05_followup_items AS i
+           WHERE (v_states IS NULL OR i.state = ANY (v_states))
+             AND (v_assignee_mode = 'any'
+                  OR (v_assignee_mode = 'unassigned' AND i.assignee_id IS NULL)
+                  OR (v_assignee_mode = 'id' AND i.assignee_id = v_assignee))
+             AND (v_after_ts IS NULL OR (i.created_at, i.item_id) > (v_after_ts, v_after_id))
+           ORDER BY i.created_at, i.item_id
+           LIMIT v_limit + 1
+      ) AS r;
+    IF v_count > v_limit THEN
+        v_next := pg_catalog.jsonb_build_object(
+            'created_at', v_rows OPERATOR(pg_catalog.->) (v_limit - 1)
+                OPERATOR(pg_catalog.->) 'created_at',
+            'item_id', v_rows OPERATOR(pg_catalog.->) (v_limit - 1)
+                OPERATOR(pg_catalog.->) 'item_id');
+    END IF;
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'items', v_rows,
+        'next', v_next);
+END;
+"""
+)
+
+
 def _template(name: str, params: _Params, volatility: str, body: str) -> str:
     signature = ", ".join(f"{p} {t}" for p, t in params)
     argtypes = ", ".join(t for _, t in params)
@@ -321,9 +530,18 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
     ("t020_m05_read_note", "m05_read_note", (("p_note_id", "uuid"),), "stable"),
 )
 
+_GET_ITEM_BODY_SHA256: Final = "9f592e2cbda518f631d7e634ac71461f329b35c7d17e457ecc8b2a7f53f15bf6"
+_GET_HISTORY_BODY_SHA256: Final = "8982c03dade3192fc79e22bd86f820d7664dfbf859fa1e12f394d7052104df4d"
+_LIST_ITEMS_BODY_SHA256: Final = "fca320809dc1d6d44249c3ce927ae3701bf83dc4b933b3ad4ef4dee7ef7d871d"
+
 # Bodies by function. A function absent here is still the B1 fail-closed stub; each
 # tranche moves exactly the functions its gated tests cover.
-_BODIES: Final = {"m05_create_item": (_CREATE_BODY, _CREATE_BODY_SHA256)}
+_BODIES: Final = {
+    "m05_create_item": (_CREATE_BODY, _CREATE_BODY_SHA256),
+    "m05_get_item": (_GET_ITEM_BODY, _GET_ITEM_BODY_SHA256),
+    "m05_get_history": (_GET_HISTORY_BODY, _GET_HISTORY_BODY_SHA256),
+    "m05_list_items": (_LIST_ITEMS_BODY, _LIST_ITEMS_BODY_SHA256),
+}
 
 M05_GATEWAY_UNITS: Final = MappingProxyType(
     {

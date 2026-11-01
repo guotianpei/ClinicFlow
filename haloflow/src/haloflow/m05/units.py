@@ -188,6 +188,14 @@ GRANT INSERT (item_id, source_event_id, item_kind, patient_id, state, assignee_i
     ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
 GRANT SELECT (item_id, source_event_id, item_kind, create_digest)
     ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
+-- B3a read slice (Codex 20261101T013202Z): the reads need the remaining item
+-- columns and every history column except resolution_event_id. SELECT only: the
+-- action grants (items UPDATE, actions INSERT/SELECT) wait on the MA-10 decision.
+GRANT SELECT (patient_id, state, assignee_id, outcome_code, version, created_at)
+    ON {_S}.m05_followup_items TO {M05_OWNER_ROLE};
+GRANT SELECT (history_id, item_id, seq, action, actor_id, before, after, assertion_kind,
+    created_at)
+    ON {_S}.m05_followup_history TO {M05_OWNER_ROLE};
 """
 
 _RESOLUTION_METADATA_SCHEMA: Final = (

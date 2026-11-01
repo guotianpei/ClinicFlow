@@ -245,3 +245,88 @@ def test_mb3_r_list_query_is_closed(reads_install: M05Install) -> None:
     # Controls: the well-formed bounds and cursor are accepted.
     _list(reads_install, limit=1)
     _list(reads_install, limit=m05.LIST_LIMIT_MAX, after=ok_after)
+
+
+# --- Action-independent read rows (added with the B3a read slice) ------------------
+#
+# Codex 20261101T013202Z let the read slice proceed while MA-10 is pending, with the
+# action rows staying red. Three gated read rows above set state through actions,
+# so they stay red with them. These ADDITIONAL rows prove the same read behaviour
+# with state set by direct admin fixture (assignment/state are not exercised as
+# actions here). The gated rows are unchanged and still required.
+
+reads_independent = _tenant("reads-independent")
+
+
+def _set_by_admin(install: M05Install, item: str, state: str, assignee: str | None) -> None:
+    _admin(
+        install,
+        sql.SQL(
+            "UPDATE {}.m05_followup_items SET state = %s, assignee_id = %s,"
+            " version = version + 1 WHERE item_id = %s"
+        ).format(sql.Identifier(install.schema)),
+        (state, assignee, item),
+    )
+
+
+def test_mb3_ri_get_item_and_history_of_a_created_item(m05_install: M05Install) -> None:
+    item = _new_item(m05_install)
+    view = _read(m05_install, "m05_get_item", item)
+    assert sorted(view) == sorted(m05.ITEM_VIEW_KEYS)
+    assert (view["item_id"], view["state"], view["assignee_id"], view["outcome_code"],
+            view["version"], view["schema_version"]) == (item, "open", None, None, 1, 1)
+    _ts(view["created_at"])
+    assert _read(m05_install, "m05_get_item", item, timezone="Asia/Kolkata") == view
+    history = _read(m05_install, "m05_get_history", item)
+    assert sorted(history) == ["entries", "item_id", "schema_version"]
+    [entry] = history["entries"]
+    assert sorted(entry) == sorted(m05.HISTORY_ENTRY_KEYS)
+    assert (entry["seq"], entry["action"], entry["actor_id"], entry["before"],
+            entry["after"], entry["assertion_kind"]) == (
+        1, "created", m05.W1, None,
+        {"state": "open", "assignee_id": None, "outcome_code": None}, None,
+    )
+    _ts(entry["created_at"])
+
+
+def test_mb3_ri_list_filters_order_and_paging(reads_independent: M05Install) -> None:
+    install = reads_independent
+    items = [_new_item(install) for _ in range(5)]
+    _admin(
+        install,
+        sql.SQL(
+            "UPDATE {}.m05_followup_items SET created_at = '2026-11-01 00:00:00.000001+00'"
+            " WHERE item_id = ANY(%s::uuid[])"
+        ).format(sql.Identifier(install.schema)),
+        (items[:3],),
+    )
+    _set_by_admin(install, items[3], "open", m05.S1)
+    _set_by_admin(install, items[4], "in_progress", m05.S2)
+    rows = _admin(
+        install,
+        sql.SQL(
+            "SELECT item_id::text FROM {}.m05_followup_items ORDER BY created_at, item_id"
+        ).format(sql.Identifier(install.schema)),
+    )
+    expected = [row[0] for row in rows]
+    everything = _list(install, limit=100)
+    assert _ids(everything) == expected and everything["next"] is None
+    seen: list[str] = []
+    after: Any = None
+    for _ in range(10):
+        page = _list(install, limit=2, **({"after": after} if after else {}))
+        seen.extend(_ids(page))
+        after = page["next"]
+        if after is None:
+            break
+        assert sorted(after) == ["created_at", "item_id"]
+        _ts(after["created_at"])
+    assert seen == expected and len(set(seen)) == len(seen)
+    assert _ids(_list(install, limit=100, states=["in_progress"])) == [items[4]]
+    assert _ids(_list(install, limit=100, assignee=m05.S1)) == [items[3]]
+    assert set(_ids(_list(install, limit=100, assignee="unassigned"))) == set(items[:3])
+    assert _ids(_list(install, limit=100, states=["resolved"])) == []
+    # The page boundary falls inside the tied group: limit 1 from the first tied item.
+    first = _list(install, limit=1)
+    second = _list(install, limit=1, after=first["next"])
+    assert _ids(first) + _ids(second) == expected[:2]
