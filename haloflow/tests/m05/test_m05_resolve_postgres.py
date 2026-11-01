@@ -203,13 +203,14 @@ async def test_rp1_rp2_exact_retry_replays(staff_install, note):
     action = _resolve(item, 2, note=note)
     first = await _resolve_once(staff_install, keys, action)
     before = sv.full_state(staff_install)
+    keys.uses.clear()  # test fix: only the RETRY's key use is under test
     retry, rec = await _retry(staff_install, keys, action)
     assert (retry.outcome, dict(retry.snapshot)) == ("replayed", dict(first.snapshot))
     assert sv.full_state(staff_install) == before
     expected = ([sv.K_PREPARE, sv.K_APPLY] if note is None
                 else [sv.K_PREPARE, sv.K_PREPARE, sv.K_APPLY])
     assert rec.statements == expected  # no append on replay
-    assert ("current_encryption", None) not in keys.uses[-3:]
+    assert keys.uses == ([] if note is None else [("hmac_key", 1)])  # no current key
 
 
 @pytest.mark.parametrize("change", ["text", "added", "removed", "outcome", "type"])
@@ -320,6 +321,69 @@ async def test_rp13_prepare2_only_bound_replay_or_known_refusal(staff_install, c
     assert sv.full_state(staff_install) == before
 
 
+def _new_descriptor_cases(item: UUID, view: dict[str, Any]) -> dict[str, Any]:
+    good = {"item_id": str(item), "item_kind": view["item_kind"],
+            "patient_id": view["patient_id"], "source_event_id": view["source_event_id"]}
+
+    def new(descriptor: Any) -> dict[str, Any]:
+        return {"schema_version": 1, "decision": "NEW", "item": descriptor}
+
+    missing = dict(good)
+    missing.pop("source_event_id")
+    return {
+        "no-item": {"schema_version": 1, "decision": "NEW"},
+        "item-not-object": new([good]),
+        "missing-key": new(missing),
+        "extra-key": new({**good, "state": "open"}),
+        "wrong-item": new({**good, "item_id": str(uuid4())}),
+        "item-id-uppercase": new({**good, "item_id": str(item).upper()}),
+        "patient-not-uuid": new({**good, "patient_id": "patient-1"}),
+        "source-uppercase": new({**good, "source_event_id": view["source_event_id"].upper()}),
+        "unknown-kind": new({**good, "item_kind": "callback"}),
+        "kind-not-str": new({**good, "item_kind": ["no_reply"]}),
+    }
+
+
+NEW_DESCRIPTOR_CASES = ("no-item", "item-not-object", "missing-key", "extra-key", "wrong-item",
+                        "item-id-uppercase", "patient-not-uuid", "source-uppercase",
+                        "unknown-kind", "kind-not-str")
+
+
+@pytest.mark.parametrize("case", NEW_DESCRIPTOR_CASES)
+async def test_rp14_new_descriptor_bound_before_keys_and_append(staff_install, case):
+    """Ruling 7ce0ddad (1): a malformed, missing, extra-key or wrong-item NEW
+    descriptor is ACTION_RESULT_INVALID before any key use, append or apply."""
+
+    item = await _claimed(staff_install)
+    view = await asyncio.to_thread(rs.item_view, staff_install, item)
+    row = _new_descriptor_cases(item, view)[case]
+    keys = sv.TestNoteKeys()
+    before = sv.full_state(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway)
+        rec.substitute_nth[(sv.K_PREPARE, 1)] = [(row,)]
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.RESOLVE_CAPS)
+        with pytest.raises(_svc().ActionFailed) as caught:
+            await _service(rt, keys, rec).act(ctx, _resolve(item, 2, note="Descriptor."))
+    assert caught.value.reason_code == "ACTION_RESULT_INVALID"
+    assert rec.statements == [sv.K_PREPARE] and keys.uses == []
+    assert sv.full_state(staff_install) == before
+
+
+async def test_rp14_control_real_descriptor_applies(staff_install):
+    """Control: the real NEW descriptor (item_id bound) proceeds to append and apply."""
+
+    item = await _claimed(staff_install)
+    async with sv.runtime(staff_install) as rt:
+        rec = sv.Recorder(rt.gateway)
+        ctx = await sv.context(rt, staff_install, m05.S1, sv.RESOLVE_CAPS)
+        result = await _service(rt, sv.TestNoteKeys(), rec).act(ctx, _resolve(item, 2))
+    (prepared,) = rec.returned(sv.K_PREPARE)
+    assert prepared[0][0]["item"]["item_id"] == str(item)
+    assert result.outcome == "applied"
+    assert rec.statements == [sv.K_PREPARE, sv.K_APPEND, sv.K_APPLY]
+
+
 @pytest.mark.parametrize("value", [0, -1, True, "1", None, 1.0])
 async def test_rp13_prepare1_challenge_version_exact(staff_install, value):
     item = await _claimed(staff_install)
@@ -372,9 +436,12 @@ async def test_uq1_only_the_named_constraint_maps_to_reused(staff_install):
 
     item = await _claimed(staff_install)  # history already holds a 'claim' row
     schema = sql.Identifier(staff_install.schema)
+    # Test fix: the predicate is scoped to THIS item (the module tenant holds other
+    # items with both a claim and a resolve row).
     await asyncio.to_thread(st.admin_rows, staff_install, sql.SQL(
         "CREATE UNIQUE INDEX uq1_fault ON {}.m05_followup_history (item_id)"
-        " WHERE action IN ('claim', 'resolve')").format(schema))
+        " WHERE action IN ('claim', 'resolve') AND item_id = {}::uuid").format(
+        schema, sql.Literal(str(item))))
     try:
         before = sv.full_state(staff_install)
         error, rec = await _resolve_with(staff_install, {}, _resolve(item, 2))
@@ -990,4 +1057,4 @@ async def test_san2_error_paths_carry_no_canary(staff_install, caplog, case):
         assert needle not in caplog.text, case
     after = sv.full_state(staff_install)
     assert after == before  # a rejected write (or a failed read) changes nothing
-    assert CANARY not in json.dumps(after, default=str)
+    assert CANARY not in str(after)  # test fix: the oracle has tuple keys (not JSON)

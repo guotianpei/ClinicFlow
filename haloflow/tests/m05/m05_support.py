@@ -444,8 +444,29 @@ B3_COLUMN_ACL: Final = {
         "SELECT": ("item_id", "client_action_id", "actor_id", "digest", "result_snapshot"),
     },
 }
-CURRENT_TABLE_ACL: Final = B3_TABLE_ACL
-CURRENT_COLUMN_ACL: Final = B3_COLUMN_ACL
+# B4 (package v2 3.5 + rulings 4f51be67 / cc359617): the accepted grant delta.
+B4_TABLE_ACL: Final = B3_TABLE_ACL
+B4_COLUMN_ACL: Final = {
+    "m05_outcome_codes": {"SELECT": ("outcome_code", "note_required")},
+    "m05_intake_map": B2_COLUMN_ACL["m05_intake_map"],
+    "m05_followup_items": {
+        "INSERT": COLUMNS["m05_followup_items"],
+        "SELECT": COLUMNS["m05_followup_items"],
+        "UPDATE": ("state", "assignee_id", "version", "outcome_code"),
+    },
+    "m05_followup_history": {"SELECT": COLUMNS["m05_followup_history"]},
+    "m05_followup_actions": {
+        "INSERT": COLUMNS["m05_followup_actions"],
+        "SELECT": ("item_id", "client_action_id", "actor_id", "digest", "result_snapshot",
+                   "event_id", "hmac_key_version"),
+    },
+    "m05_followup_notes": {
+        "INSERT": COLUMNS["m05_followup_notes"],
+        "SELECT": COLUMNS["m05_followup_notes"],
+    },
+}
+CURRENT_TABLE_ACL: Final = B4_TABLE_ACL
+CURRENT_COLUMN_ACL: Final = B4_COLUMN_ACL
 
 # Interim read-slice stage (Codex 20261101T013809Z): exactly B2 plus the read
 # SELECT grants; NO items UPDATE and NO action-record grants. Asserted by the MB3-GI

@@ -514,29 +514,37 @@ def test_mb1_t01_replacements_are_declared() -> None:
     assert len(STUBBED) + len(STUB_REPLACED) == len(m05.FUNCTIONS)
 
 
-@pytest.mark.parametrize("spec", STUBBED, ids=[spec.name for spec in STUBBED])
-def test_mb1_t01_stub_refuses_not_implemented_with_zero_writes(
-    m05_install: M05Install, spec: m05.FunctionSpec
-) -> None:
-    """The intended caller path: the runtime login shim, SET ROLE runtime, the tenant
-    context set transaction-locally as the M01 gateway does, then the function by its
-    reviewed signature with a well-formed argument."""
+# B4 replaced the last stub (m05_read_note), so the parametrized stub row would be an
+# empty, skipped set. Retired per its TEMPORARY rule; its closing assertion is that no
+# installed M05 function still has the stub body (D-4, reported to Codex).
+
+
+def test_mb1_t01_no_stub_remains() -> None:
+    from haloflow.m05 import gateways
+
+    assert STUBBED == ()
+    assert set(STUB_REPLACED) == {spec.name for spec in m05.FUNCTIONS}
+    assert all(name in gateways._BODIES for name in STUB_REPLACED)
+    assert all(body != gateways._STUB_BODY for body, _ in gateways._BODIES.values())
+
+
+# --- MB4-P01: the production boundary (ruling 7ce0ddad (5)) --------------------------
+
+
+def test_mb4_p01_units_leave_resolution_inactive(m05_install: M05Install) -> None:
+    """Installed by the units alone (no test profile): the resolution family, type and
+    resolver (a) are all registered INACTIVE; only test generations activate them."""
 
     m05_install.require()
-    tenant_id, schema = m05_install.tenant
-    before = _counts(m05_install)
-    with psycopg.connect(m05_install.ids.logins[m05.RUNTIME], autocommit=True) as conn:
-        conn.execute(f"SET ROLE {m05.RUNTIME}")
-        with pytest.raises(psycopg.Error) as caught, conn.transaction():
-            conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
-            conn.execute(
-                f"SELECT {schema}.{spec.name}(%s::{spec.args})", (STUB_ARGUMENT[spec.args],)
-            )
-    assert (caught.value.sqlstate, caught.value.diag.message_primary) == (
-        m05.STUB_SQLSTATE,
-        m05.STUB_MESSAGE,
-    ), spec.name
-    assert _counts(m05_install) == before, spec.name
+    schema = m05_install.schema
+    assert _all(m05_install, f"SELECT is_active FROM {schema}.ref_action_families"
+                " WHERE action_family = 'm05_followup'") == [(False,)]
+    assert _all(m05_install, f"SELECT is_active FROM {schema}.event_types"
+                " WHERE event_type = 'm05_followup_resolution_asserted'") == [(False,)]
+    assert _all(m05_install, f"SELECT relationship, resolver_kind, is_active"
+                f" FROM {schema}.m02_link_resolvers"
+                " WHERE resolver_id = 'm05_followup_item_v1'") == [("case", "module_owned",
+                                                                      False)]
 
 
 # --- MB1-H01: history staff-assertion CHECK is total (F-B1-INTEGRITY-01) ----------

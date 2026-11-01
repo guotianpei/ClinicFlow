@@ -869,7 +869,8 @@ _TAIL_PREPARE: Final = """
         -- B4: NEW carries the three item fields the service needs to build the
         -- resolution observation, read under the item lock.
         RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'decision', 'NEW',
-            'item', pg_catalog.jsonb_build_object('item_kind', v_row.item_kind,
+            'item', pg_catalog.jsonb_build_object('item_id', v_item::text,
+                'item_kind', v_row.item_kind,
                 'patient_id', v_row.patient_id::text,
                 'source_event_id', v_row.source_event_id::text));
     END IF;
@@ -1202,7 +1203,7 @@ _FUNCTIONS: Final[tuple[tuple[str, str, _Params, str], ...]] = (
 _GET_ITEM_BODY_SHA256: Final = "9f592e2cbda518f631d7e634ac71461f329b35c7d17e457ecc8b2a7f53f15bf6"
 _GET_HISTORY_BODY_SHA256: Final = "654c7367f142eebbe6c5f64293b25c8e30f46f52dadbac89d1ec23fd0c822ce1"
 _LIST_ITEMS_BODY_SHA256: Final = "fca320809dc1d6d44249c3ce927ae3701bf83dc4b933b3ad4ef4dee7ef7d871d"
-_PREPARE_BODY_SHA256: Final = "2f4222b0d85b149e04a97f6976411f7b0c76e1e13122de4783f5cdb79726032b"
+_PREPARE_BODY_SHA256: Final = "f18cb1529f237028ecdf6c46a76eae3ccaeab159975b0d85a1a7591664937cb8"
 _APPLY_BODY_SHA256: Final = "ac08cd7fff1a40fbaea529a47cfd9462c3315b251b042c64fc196ea6e28e6e2b"
 _READ_NOTE_BODY_SHA256: Final = "7f6b883fac6b3ab1967be20f3a4900cf304018cb50cade6e0be8917a6797dfe8"
 
