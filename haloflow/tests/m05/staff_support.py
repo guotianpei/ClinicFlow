@@ -460,3 +460,281 @@ def background(fn: Callable[[], Any]) -> Iterator[dict[str, Any]]:
     finally:
         thread.join(BLOCK_BOUND_SECONDS * 2)
         assert not thread.is_alive(), "background call did not finish"
+
+
+# ---------------------------------------------------------------------------
+# Exact state and intended-delta checks (red review F-MA10-RED-02)
+# ---------------------------------------------------------------------------
+
+PRIMARY_KEYS: Final = {
+    "m01_staff": ("staff_id",),
+    "m01_staff_followup_access": ("staff_id", "access"),
+    "m01_staff_action_keys": ("client_action_id",),
+    "m01_staff_admin_log": ("log_id",),
+    "m05_followup_items": ("item_id",),
+    "m05_followup_history": ("history_id",),
+    "m05_followup_actions": ("item_id", "client_action_id"),
+    "m05_followup_notes": ("note_id",),
+}
+ALL_TABLES: Final = TABLES + M05_CONTENT_TABLES
+State = dict[str, dict[tuple[Any, ...], dict[str, Any]]]
+
+
+def state(install: StaffInstall) -> State:
+    """Every row of all eight tables, keyed by primary key."""
+
+    out: State = {}
+    for table in ALL_TABLES:
+        rows = [json.loads(r) for r in table_content(install, table)]
+        out[table] = {tuple(r[c] for c in PRIMARY_KEYS[table]): r for r in rows}
+    return out
+
+
+class Delta:
+    def __init__(self, before: State, after: State) -> None:
+        self.added: dict[str, list[dict[str, Any]]] = {}
+        self.removed: dict[str, list[dict[str, Any]]] = {}
+        self.changed: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = {}
+        for table in ALL_TABLES:
+            b, a = before[table], after[table]
+            self.added[table] = [a[k] for k in a if k not in b]
+            self.removed[table] = [b[k] for k in b if k not in a]
+            self.changed[table] = [(b[k], a[k]) for k in a if k in b and a[k] != b[k]]
+
+    def untouched(self, tables: tuple[str, ...]) -> None:
+        for table in tables:
+            assert not self.added[table], (table, "added", self.added[table])
+            assert not self.removed[table], (table, "removed", self.removed[table])
+            assert not self.changed[table], (table, "changed", self.changed[table])
+
+
+def parse_ts(value: str) -> Any:
+    from datetime import datetime
+
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def bytea_hex(value: bytes) -> str:
+    return "\\x" + value.hex()
+
+
+def staff_snapshot_from(st_before: State, staff_id: str) -> dict[str, Any] | None:
+    """The closed staff snapshot as it stood in a captured state."""
+
+    row = st_before["m01_staff"].get((staff_id,))
+    if row is None:
+        return None
+    access = sorted(
+        r["access"] for r in st_before["m01_staff_followup_access"].values()
+        if r["staff_id"] == staff_id
+    )
+    return {
+        "schema_version": 1, "staff_id": staff_id, "status": row["status"],
+        "display_name": row["display_name"], "access": access,
+        "status_changed_at": row["status_changed_at"],
+    }
+
+
+def assert_snapshot_equal(actual: dict[str, Any] | None, expected: dict[str, Any] | None) -> None:
+    if expected is None:
+        assert actual is None
+        return
+    assert actual is not None
+    assert {k: v for k, v in actual.items() if k != "status_changed_at"} == {
+        k: v for k, v in expected.items() if k != "status_changed_at"
+    }
+    assert parse_ts(actual["status_changed_at"]) == parse_ts(expected["status_changed_at"])
+
+
+def check_admin_delta(
+    delta: Delta,
+    before: State,
+    install: StaffInstall,
+    command: dict[str, Any],
+    result: dict[str, Any],
+) -> None:
+    """Exactly the intended directory change for one admitted admin command; the
+    caller asserts the M05 tables separately."""
+
+    staff, operation = command["staff_id"], command["operation"]
+    key, actor = command["client_action_id"], command["attribution"]["principal_id"]
+    snap = result["staff"]
+    # m01_staff
+    if operation == "add":
+        assert not delta.changed["m01_staff"] and not delta.removed["m01_staff"]
+        (row,) = delta.added["m01_staff"]
+    else:
+        assert not delta.added["m01_staff"] and not delta.removed["m01_staff"]
+        changed = delta.changed["m01_staff"]
+        if operation in ("grant", "revoke"):
+            assert changed == []
+            row = before["m01_staff"][(staff,)]
+        else:
+            ((old, row),) = changed
+            assert old["staff_id"] == staff
+            for field in ("display_name",) if operation != "rename" else ():
+                assert row[field] == old[field]
+            if operation == "rename":
+                assert row["status"] == old["status"]
+                assert row["status_changed_at"] == old["status_changed_at"]
+    assert row["staff_id"] == staff
+    assert row["status"] == snap["status"] and row["display_name"] == snap["display_name"]
+    assert parse_ts(row["status_changed_at"]) == parse_ts(snap["status_changed_at"])
+    # m01_staff_followup_access
+    access_added = delta.added["m01_staff_followup_access"]
+    access_removed = delta.removed["m01_staff_followup_access"]
+    assert not delta.changed["m01_staff_followup_access"]
+    if operation == "grant":
+        assert [(r["staff_id"], r["access"]) for r in access_added] == [(staff, command["access"])]
+        assert access_removed == []
+    elif operation == "revoke":
+        assert [(r["staff_id"], r["access"]) for r in access_removed] == [
+            (staff, command["access"])
+        ]
+        assert access_added == []
+    else:
+        assert access_added == [] and access_removed == []
+    # snapshot access agrees with the persisted rows
+    after_access = sorted(
+        [r["access"] for r in before["m01_staff_followup_access"].values()
+         if r["staff_id"] == staff and r not in access_removed]
+        + [r["access"] for r in access_added]
+    )
+    assert snap["access"] == after_access
+    # keys and log
+    digest = admin_digest(
+        install.tenant[0], key, actor, operation, staff,
+        command.get("display_name"), command.get("access"),
+    )
+    assert not delta.changed["m01_staff_action_keys"] and not delta.removed["m01_staff_action_keys"]
+    (key_row,) = delta.added["m01_staff_action_keys"]
+    assert (key_row["client_action_id"], key_row["staff_id"], key_row["actor_id"],
+            key_row["digest"]) == (key, staff, actor, bytea_hex(digest))
+    assert not delta.changed["m01_staff_admin_log"] and not delta.removed["m01_staff_admin_log"]
+    (log,) = delta.added["m01_staff_admin_log"]
+    attribution_in = command["attribution"]
+    assert (log["client_action_id"], log["staff_id"], log["operation"], log["actor_id"],
+            log["execution_id"], log["request_id"], log["purpose_code"], log["digest"]) == (
+        key, staff, operation, actor, attribution_in["execution_id"],
+        attribution_in["request_id"], attribution_in["purpose_code"], bytea_hex(digest),
+    )
+    assert_snapshot_equal(log["before"], staff_snapshot_from(before, staff))
+    assert log["after"] == snap and log["result"] == result
+
+
+def check_assignment_delta(
+    delta: Delta,
+    before: State,
+    install: StaffInstall,
+    command: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    new_assignee: str,
+) -> None:
+    """Exactly the intended M05 change for one applied assign/reassign/claim; the
+    caller asserts the directory tables separately."""
+
+    item, key = command["item_id"], command["client_action_id"]
+    actor = command["attribution"]["principal_id"]
+    action = command["action"]["type"]
+    assert result["outcome"] == "applied"
+    ((old, new),) = delta.changed["m05_followup_items"]
+    assert not delta.added["m05_followup_items"] and not delta.removed["m05_followup_items"]
+    assert old["item_id"] == item
+    assert new == {**old, "assignee_id": new_assignee, "version": old["version"] + 1}
+    assert result["snapshot"]["version"] == new["version"]
+    assert result["snapshot"]["assignee_id"] == new_assignee
+    (history,) = delta.added["m05_followup_history"]
+    assert not delta.changed["m05_followup_history"] and not delta.removed["m05_followup_history"]
+    prior_seq = max(
+        (h["seq"] for h in before["m05_followup_history"].values() if h["item_id"] == item),
+        default=0,
+    )
+    closed = ("state", "assignee_id", "outcome_code")
+    assert (history["item_id"], history["seq"], history["action"], history["actor_id"],
+            history["resolution_event_id"], history["assertion_kind"]) == (
+        item, prior_seq + 1, action, actor, None, None,
+    )
+    assert history["before"] == {c: old[c] for c in closed}
+    assert history["after"] == {c: new[c] for c in closed}
+    (action_row,) = delta.added["m05_followup_actions"]
+    assert not delta.changed["m05_followup_actions"] and not delta.removed["m05_followup_actions"]
+    digest = m05.action_digest(
+        install.tenant[0], item, key, actor, action, command["action"].get("assignee_id"),
+        command["expected_version"],
+    )
+    assert (action_row["item_id"], action_row["client_action_id"], action_row["actor_id"],
+            action_row["requested_action"], action_row["digest"], action_row["hmac_key_version"],
+            action_row["event_id"], action_row["result_snapshot"]) == (
+        item, key, actor, action, bytea_hex(digest), None, None, result["snapshot"],
+    )
+    delta.untouched(("m05_followup_notes",))
+
+
+# ---------------------------------------------------------------------------
+# Competing lock holder (red review F-MA10-RED-03)
+# ---------------------------------------------------------------------------
+
+IMMEDIATE_SECONDS: Final = 1.0
+SAFETY_LOCK_TIMEOUT: Final = "2s"
+
+
+@contextmanager
+def holder(install: StaffInstall, rows: list[tuple[str, str, Any]]) -> Iterator[int]:
+    """A separate admin transaction holding FOR UPDATE on each (table, column,
+    value) row until exit; yields its backend pid. Rolled back on every exit."""
+
+    conn = psycopg.connect(install.ids.admin)
+    try:
+        for table, column, value in rows:
+            locked = conn.execute(
+                sql.SQL("SELECT 1 FROM {}.{} WHERE {} = %s FOR UPDATE").format(
+                    sql.Identifier(install.schema), sql.Identifier(table),
+                    sql.Identifier(column),
+                ),
+                (value,),
+            ).fetchall()
+            assert locked == [(1,)], (table, value)
+        yield conn.info.backend_pid
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def row_locked_elsewhere(install: StaffInstall, table: str, column: str, value: Any) -> bool:
+    """True when another transaction holds a conflicting lock on the row now."""
+
+    with psycopg.connect(install.ids.admin) as conn:
+        try:
+            conn.execute(
+                sql.SQL("SELECT 1 FROM {}.{} WHERE {} = %s FOR UPDATE NOWAIT").format(
+                    sql.Identifier(install.schema), sql.Identifier(table),
+                    sql.Identifier(column),
+                ),
+                (value,),
+            )
+            return False
+        except psycopg.errors.LockNotAvailable:
+            return True
+        finally:
+            conn.rollback()
+
+
+def expect_immediate_code(
+    conn: psycopg.Connection[Any], code: str, thunk: Callable[[], Any]
+) -> None:
+    """The call must refuse with `code` at once while a competing holder blocks its
+    targets. A late rejection that first waited on the held lock hits the safety
+    lock_timeout (55P03) or the elapsed bound and fails."""
+
+    conn.execute(f"SET LOCAL lock_timeout = '{SAFETY_LOCK_TIMEOUT}'")
+    started = time.monotonic()
+    try:
+        thunk()
+    except psycopg.Error as error:
+        elapsed = time.monotonic() - started
+        assert error.sqlstate == "P0001", (error.sqlstate, str(error))
+        assert error.diag.message_primary == code, error.diag.message_primary
+        assert elapsed < IMMEDIATE_SECONDS, f"refusal waited {elapsed:.2f}s"
+        return
+    raise AssertionError(f"expected immediate P0001 {code}, call succeeded")

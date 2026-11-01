@@ -341,6 +341,30 @@ def test_dt08_isolation_guard_precedes_shape(staff_install):
     )
 
 
+@pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
+def test_dt08_isolation_guard_takes_no_lock_first(staff_install, isolation):
+    """Dynamic evidence (red review F-MA10-RED-03): a competing holder owns the
+    membership row; the guarded admin call must refuse at once, never wait."""
+
+    _ready(staff_install)
+    staff = st.new_uuid()
+    st.seed_staff(staff_install, staff)
+    before = st.state(staff_install)
+    with (
+        st.holder(staff_install, [("m01_staff", "staff_id", staff)]),
+        st.runtime_connection(staff_install) as conn,
+    ):
+        conn.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation}")
+        st.set_tenant(conn, staff_install)
+        st.expect_immediate_code(
+            conn, "ISOLATION_UNSUPPORTED",
+            lambda: st.call_on(conn, staff_install, "m01_staff_admin",
+                               st.admin_command("rename", staff, display_name="Z")),
+        )
+        conn.rollback()
+    st.Delta(before, st.state(staff_install)).untouched(st.ALL_TABLES)
+
+
 def test_dt08_tenant_context_precedes_everything(staff_install):
     _ready(staff_install)
     with (
@@ -441,36 +465,57 @@ def test_dt10_display_bounds(staff_install):
 # ---------------------------------------------------------------------------
 
 
-def _table_acl(install: st.StaffInstall, table: str) -> set[tuple[str, str]]:
+def _table_acl(install: st.StaffInstall, table: str) -> set[tuple[str, str, str, bool]]:
     rows = st.admin_rows(
         install,
-        "SELECT grantee::regrole::text, privilege_type FROM pg_catalog.pg_class c, "
+        "SELECT a.grantee::regrole::text, a.privilege_type, a.grantor::regrole::text, "
+        "a.is_grantable FROM pg_catalog.pg_class c, "
         "LATERAL pg_catalog.aclexplode(c.relacl) a "
         "WHERE c.oid = pg_catalog.to_regclass(%s) AND a.grantee <> c.relowner",
         (f"{install.schema}.{table}",),
     )
-    return {(str(g), str(p)) for g, p in rows}
+    return {(str(g), str(p), str(r), bool(o)) for g, p, r, o in rows}
 
 
-def _column_acl(install: st.StaffInstall, table: str) -> set[tuple[str, str, str]]:
+def _column_acl(install: st.StaffInstall, table: str) -> set[tuple[str, str, str, str, bool]]:
     rows = st.admin_rows(
         install,
-        "SELECT a.attname, x.grantee::regrole::text, x.privilege_type "
+        "SELECT a.attname, x.grantee::regrole::text, x.privilege_type, "
+        "x.grantor::regrole::text, x.is_grantable "
         "FROM pg_catalog.pg_attribute a, LATERAL pg_catalog.aclexplode(a.attacl) x "
         "WHERE a.attrelid = pg_catalog.to_regclass(%s) AND a.attacl IS NOT NULL",
         (f"{install.schema}.{table}",),
     )
-    return {(str(c), str(g), str(p)) for c, g, p in rows}
+    return {(str(c), str(g), str(p), str(r), bool(o)) for c, g, p, r, o in rows}
+
+
+TABLE_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES",
+                    "TRIGGER", "MAINTAIN")
+COLUMN_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "REFERENCES")
+
+
+def _columns(install: st.StaffInstall, table: str) -> list[str]:
+    return [
+        str(r[0]) for r in st.admin_rows(
+            install,
+            "SELECT attname FROM pg_catalog.pg_attribute WHERE attrelid = "
+            "pg_catalog.to_regclass(%s) AND attnum > 0 AND NOT attisdropped ORDER BY attnum",
+            (f"{install.schema}.{table}",),
+        )
+    ]
 
 
 @pytest.mark.parametrize("table", st.TABLES)
 def test_dt11_exact_table_and_column_acl(staff_install, table):
+    """Exact grants including grantor (the migrator, which runs t021) and the
+    grant option (never granted)."""
+
     _ready(staff_install)
     assert _table_acl(staff_install, table) == {
-        (st.STAFF_OWNER, p) for p in st.OWNER_TABLE_ACL[table]
+        (st.STAFF_OWNER, p, st.MIGRATOR, False) for p in st.OWNER_TABLE_ACL[table]
     }
     expected_cols = {
-        (col, st.STAFF_OWNER, priv)
+        (col, st.STAFF_OWNER, priv, st.MIGRATOR, False)
         for (t, priv), cols in st.OWNER_COLUMN_ACL.items() if t == table
         for col in cols
     }
@@ -483,19 +528,50 @@ def test_dt11_exact_table_and_column_acl(staff_install, table):
     assert owner == [(st.MIGRATOR,)]
 
 
+@pytest.mark.parametrize("table", st.TABLES)
+def test_dt11_staff_owner_exact_effective_privileges(staff_install, table):
+    """Effective privileges equal the grants: every table privilege (PG17 MAINTAIN
+    included) and every column privilege, with no grant option anywhere."""
+
+    _ready(staff_install)
+    qualified = f"{staff_install.schema}.{table}"
+    granted = set(st.OWNER_TABLE_ACL[table])
+    for privilege in TABLE_PRIVILEGES:
+        (row,) = st.admin_rows(
+            staff_install,
+            "SELECT pg_catalog.has_table_privilege(%s, %s, %s), "
+            "pg_catalog.has_table_privilege(%s, %s, %s)",
+            (st.STAFF_OWNER, qualified, privilege,
+             st.STAFF_OWNER, qualified, f"{privilege} WITH GRANT OPTION"),
+        )
+        assert row == (privilege in granted, False), (table, privilege)
+    for column in _columns(staff_install, table):
+        for privilege in COLUMN_PRIVILEGES:
+            expected = privilege in granted or column in st.OWNER_COLUMN_ACL.get(
+                (table, privilege), ()
+            )
+            (row,) = st.admin_rows(
+                staff_install,
+                "SELECT pg_catalog.has_column_privilege(%s, %s, %s, %s), "
+                "pg_catalog.has_column_privilege(%s, %s, %s, %s)",
+                (st.STAFF_OWNER, qualified, column, privilege,
+                 st.STAFF_OWNER, qualified, column, f"{privilege} WITH GRANT OPTION"),
+            )
+            assert row == (expected, False), (table, column, privilege)
+
+
 @pytest.mark.parametrize("role", st.ORDINARY_ROLES)
 def test_dt11_ordinary_roles_have_no_directory_privilege(staff_install, role):
     _ready(staff_install)
     for table in st.TABLES:
         qualified = f"{staff_install.schema}.{table}"
-        for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES",
-                          "TRIGGER"):
+        for privilege in TABLE_PRIVILEGES:
             (row,) = st.admin_rows(
                 staff_install, "SELECT pg_catalog.has_table_privilege(%s, %s, %s)",
                 (role, qualified, privilege),
             )
             assert row[0] is False, (role, table, privilege)
-        for privilege in ("SELECT", "INSERT", "UPDATE", "REFERENCES"):
+        for privilege in COLUMN_PRIVILEGES:
             (row,) = st.admin_rows(
                 staff_install, "SELECT pg_catalog.has_any_column_privilege(%s, %s, %s)",
                 (role, qualified, privilege),
@@ -597,6 +673,75 @@ def test_dt13_manifest_declares_role_and_edge():
     } in document["role_memberships"]
 
 
+_ROLE_ATTRS = (
+    "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls "
+    "FROM pg_catalog.pg_roles WHERE rolname = %s"
+)
+
+
+@pytest.mark.parametrize("attribute", ["LOGIN", "BYPASSRLS"])
+def test_dt13_pre_existing_unsafe_role_refused_without_mutation(
+    m02_ids, database_url, apply_migrations, attribute
+):
+    """A pre-existing unsafe staff owner (roles are cluster-wide) is neither
+    "normalized" by Alembic 006 nor used: provisioning refuses before any unit and
+    leaves the role exactly as it found it. State is restored and compared."""
+
+    import m02_support as m02
+    from test_m02_part_a_prerequisites_postgres import fresh_database
+
+    from haloflow.m01.errors import ProvisioningFailed
+
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        original = conn.execute(_ROLE_ATTRS, (st.STAFF_OWNER,)).fetchall()
+    assert original == [(False, False, False, False, False, False)]
+    try:
+        with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+            conn.execute(f"ALTER ROLE {st.STAFF_OWNER} {attribute}")
+            unsafe = conn.execute(_ROLE_ATTRS, (st.STAFF_OWNER,)).fetchall()
+        assert unsafe != original
+        with fresh_database(m02_ids, database_url, apply_migrations, "005") as (ids, upgrade):
+            upgrade("006")  # the role exists: 006 must not alter it
+            with psycopg.connect(ids.admin, autocommit=True) as conn:
+                assert conn.execute(_ROLE_ATTRS, (st.STAFF_OWNER,)).fetchall() == unsafe
+            tenant = m02.tenant_for(f"dt13-unsafe-{attribute.lower()}")
+            with pytest.raises(ProvisioningFailed) as caught:
+                m02.provision_sync(ids, st.staff_registry(), tenant,
+                                   supported=st.STAFF_TEST_SUPPORTED,
+                                   manifest=st.staff_manifest())
+            assert caught.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"
+            assert m02.ledger(ids, tenant[0]) == {}
+            with psycopg.connect(ids.admin, autocommit=True) as conn:
+                assert conn.execute(_ROLE_ATTRS, (st.STAFF_OWNER,)).fetchall() == unsafe
+    finally:
+        with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+            conn.execute(f"ALTER ROLE {st.STAFF_OWNER} NO{attribute}")
+            restored = conn.execute(_ROLE_ATTRS, (st.STAFF_OWNER,)).fetchall()
+    assert restored == original
+
+
+def test_dt13_t021_guard_refuses_unsafe_role_directly(staff_install):
+    """The t021 guard itself (run as the migrator, as the unit runs) refuses an
+    unsafe staff owner; positive control first."""
+
+    from haloflow.m01.staff.units import T021_SQL
+
+    _ready(staff_install)
+    guard = T021_SQL.split("-- t021:step:tables")[0]
+    with psycopg.connect(staff_install.ids.logins[st.MIGRATOR], autocommit=True) as conn:
+        conn.execute(f"SET ROLE {st.MIGRATOR}")
+        conn.execute(guard)  # passes while the role is safe
+    try:
+        st.admin_rows(staff_install, f"ALTER ROLE {st.STAFF_OWNER} LOGIN")
+        with psycopg.connect(staff_install.ids.logins[st.MIGRATOR], autocommit=True) as conn:
+            conn.execute(f"SET ROLE {st.MIGRATOR}")
+            with pytest.raises(psycopg.Error) as refused:
+                conn.execute(guard)
+        assert refused.value.diag.message_primary == "staff directory role verification failed"
+    finally:
+        st.admin_rows(staff_install, f"ALTER ROLE {st.STAFF_OWNER} NOLOGIN")
+
+
 def test_dts1_static_call_graph():
     """Admin and display bodies reference no m05_ relation or function (lock order,
     v1 3.6). Applies to implemented bodies; stubs pass trivially."""
@@ -636,34 +781,49 @@ def _admin_in_txn(install: st.StaffInstall, command: dict[str, Any]) -> tuple[An
     return conn, result
 
 
+def _only_admin_delta(
+    install: st.StaffInstall, before: st.State, command: dict[str, Any], result: dict[str, Any]
+) -> None:
+    delta = st.Delta(before, st.state(install))
+    st.check_admin_delta(delta, before, install, command, result)
+    delta.untouched(st.M05_CONTENT_TABLES)
+
+
+def _contend(
+    install: st.StaffInstall, first: dict[str, Any], second: dict[str, Any], *, commit: bool
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A runs `first` and holds its transaction; B runs `second`, observed waiting
+    on A exactly; A commits or rolls back; B commits. Returns (A result, B box)."""
+
+    conn_a, result_a = _admin_in_txn(install, first)
+    conn_b = st.runtime_connection(install)
+    try:
+        st.set_tenant(conn_b, install)
+        with st.background(lambda: st.call_on(conn_b, install, "m01_staff_admin", second)) as box:
+            st.wait_until_blocked_by(install, conn_b.info.backend_pid, conn_a.info.backend_pid)
+            (conn_a.commit if commit else conn_a.rollback)()
+        if "error" in box:
+            conn_b.rollback()
+        else:
+            conn_b.commit()
+    finally:
+        conn_a.close()
+        conn_b.close()
+    return result_a, box
+
+
 def test_dak1_concurrent_identical_requests_replay(staff_install):
     _ready(staff_install)
     staff, key = st.new_uuid(), st.new_uuid()
     command = st.admin_command("add", staff, key=key, display_name="K1")
-    before = st.directory_snapshot(staff_install)
-    conn_a, result_a = _admin_in_txn(staff_install, command)
-    conn_b = st.runtime_connection(staff_install)
-    try:
-        st.set_tenant(conn_b, staff_install)
-        with st.background(lambda: st.call_on(conn_b, staff_install, "m01_staff_admin",
-                                              command)) as box:
-            st.wait_until_blocked_by(staff_install, conn_b.info.backend_pid,
-                                     conn_a.info.backend_pid)
-            conn_a.commit()
-        conn_b.commit()
-        assert "error" not in box, box.get("error")
-        assert box["result"] == result_a
-    finally:
-        conn_a.close()
-        conn_b.close()
-    after = st.directory_snapshot(staff_install)
-    for table in st.TABLES[:1] + st.TABLES[2:]:
-        assert len(st.added_rows(before[table], after[table])) == 1, table
+    before = st.state(staff_install)
+    result_a, box = _contend(staff_install, command, command, commit=True)
+    assert "error" not in box, box.get("error")
+    assert box["result"] == result_a
+    _only_admin_delta(staff_install, before, command, result_a)  # one effect only
 
 
-@pytest.mark.parametrize(
-    "variant", ["operation", "display_name", "staff_id"],
-)
+@pytest.mark.parametrize("variant", ["operation", "display_name", "staff_id"])
 def test_dak2_dak3_concurrent_conflicting_requests(staff_install, variant):
     _ready(staff_install)
     staff, key = st.new_uuid(), st.new_uuid()
@@ -673,52 +833,23 @@ def test_dak2_dak3_concurrent_conflicting_requests(staff_install, variant):
         "display_name": st.admin_command("add", staff, key=key, display_name="Other"),
         "staff_id": st.admin_command("add", st.new_uuid(), key=key, display_name="K2"),
     }[variant]
-    before = st.directory_snapshot(staff_install)
-    conn_a, result_a = _admin_in_txn(staff_install, first)
-    conn_b = st.runtime_connection(staff_install)
-    try:
-        st.set_tenant(conn_b, staff_install)
-        with st.background(lambda: st.call_on(conn_b, staff_install, "m01_staff_admin",
-                                              second)) as box:
-            st.wait_until_blocked_by(staff_install, conn_b.info.backend_pid,
-                                     conn_a.info.backend_pid)
-            conn_a.commit()
-        conn_b.rollback()
-        error = box.get("error")
-        assert isinstance(error, psycopg.Error) and error.sqlstate == "P0001"
-        assert error.diag.message_primary == "ACTION_KEY_CONFLICT"
-    finally:
-        conn_a.close()
-        conn_b.close()
-    after = st.directory_snapshot(staff_install)
-    (log,) = st.added_rows(before["m01_staff_admin_log"], after["m01_staff_admin_log"])
-    assert log["result"] == result_a
+    before = st.state(staff_install)
+    result_a, box = _contend(staff_install, first, second, commit=True)
+    error = box.get("error")
+    assert isinstance(error, psycopg.Error) and error.sqlstate == "P0001"
+    assert error.diag.message_primary == "ACTION_KEY_CONFLICT"
+    _only_admin_delta(staff_install, before, first, result_a)
 
 
 def test_dak4_first_contender_rolls_back(staff_install):
     _ready(staff_install)
     staff, key = st.new_uuid(), st.new_uuid()
     command = st.admin_command("add", staff, key=key, display_name="K4")
-    before = st.directory_snapshot(staff_install)
-    conn_a, _ = _admin_in_txn(staff_install, command)
-    conn_b = st.runtime_connection(staff_install)
-    try:
-        st.set_tenant(conn_b, staff_install)
-        with st.background(lambda: st.call_on(conn_b, staff_install, "m01_staff_admin",
-                                              command)) as box:
-            st.wait_until_blocked_by(staff_install, conn_b.info.backend_pid,
-                                     conn_a.info.backend_pid)
-            conn_a.rollback()
-        conn_b.commit()
-        assert "error" not in box, box.get("error")
-        _assert_result(box["result"], "add", key)
-    finally:
-        conn_a.close()
-        conn_b.close()
-    after = st.directory_snapshot(staff_install)
-    keys = st.added_rows(before["m01_staff_action_keys"], after["m01_staff_action_keys"])
-    logs = st.added_rows(before["m01_staff_admin_log"], after["m01_staff_admin_log"])
-    assert len(keys) == 1 and len(logs) == 1 and logs[0]["result"] == box["result"]
+    before = st.state(staff_install)
+    _, box = _contend(staff_install, command, command, commit=False)
+    assert "error" not in box, box.get("error")
+    _assert_result(box["result"], "add", key)
+    _only_admin_delta(staff_install, before, command, box["result"])  # B's effect only
 
 
 @pytest.mark.parametrize("concurrent", [False, True])
@@ -727,28 +858,16 @@ def test_dak5_different_actor_same_key(staff_install, concurrent):
     staff, key = st.new_uuid(), st.new_uuid()
     first = st.admin_command("add", staff, key=key, display_name="K5")
     second = st.admin_command("add", staff, key=key, display_name="K5", actor=st.ADMIN2)
+    before = st.state(staff_install)
     if not concurrent:
-        st.admin_op(staff_install, first)
-        before = st.directory_snapshot(staff_install)
+        result_a = st.admin_op(staff_install, first)
         st.expect_code("ACTION_KEY_ACTOR_MISMATCH", lambda: st.admin_op(staff_install, second))
-        assert st.directory_snapshot(staff_install) == before
-        return
-    conn_a, _ = _admin_in_txn(staff_install, first)
-    conn_b = st.runtime_connection(staff_install)
-    try:
-        st.set_tenant(conn_b, staff_install)
-        with st.background(lambda: st.call_on(conn_b, staff_install, "m01_staff_admin",
-                                              second)) as box:
-            st.wait_until_blocked_by(staff_install, conn_b.info.backend_pid,
-                                     conn_a.info.backend_pid)
-            conn_a.commit()
-        conn_b.rollback()
+    else:
+        result_a, box = _contend(staff_install, first, second, commit=True)
         error = box.get("error")
         assert isinstance(error, psycopg.Error)
         assert error.diag.message_primary == "ACTION_KEY_ACTOR_MISMATCH"
-    finally:
-        conn_a.close()
-        conn_b.close()
+    _only_admin_delta(staff_install, before, first, result_a)
 
 
 def test_dak6_failed_precondition_leaves_no_key_and_key_is_reusable(staff_install):
@@ -770,22 +889,25 @@ def test_dak7_different_keys_same_staff_serialize(staff_install):
     _ready(staff_install)
     staff = st.new_uuid()
     st.seed_staff(staff_install, staff, access=())
-    conn_a, _ = _admin_in_txn(staff_install, st.admin_command("grant", staff, access="read"))
-    conn_b = st.runtime_connection(staff_install)
-    try:
-        st.set_tenant(conn_b, staff_install)
-        command_b = st.admin_command("grant", staff, access="act")
-        with st.background(lambda: st.call_on(conn_b, staff_install, "m01_staff_admin",
-                                              command_b)) as box:
-            st.wait_until_blocked_by(staff_install, conn_b.info.backend_pid,
-                                     conn_a.info.backend_pid)
-            conn_a.commit()
-        conn_b.commit()
-        assert "error" not in box, box.get("error")
-        assert box["result"]["staff"]["access"] == ["act", "read"]
-    finally:
-        conn_a.close()
-        conn_b.close()
+    first = st.admin_command("grant", staff, access="read")
+    second = st.admin_command("grant", staff, access="act")
+    before = st.state(staff_install)
+    result_a, box = _contend(staff_install, first, second, commit=True)
+    assert "error" not in box, box.get("error")
+    assert result_a["staff"]["access"] == ["read"]
+    assert box["result"]["staff"]["access"] == ["act", "read"]
+    delta = st.Delta(before, st.state(staff_install))
+    assert sorted((r["staff_id"], r["access"]) for r in delta.added["m01_staff_followup_access"]) \
+        == [(staff, "act"), (staff, "read")]
+    assert sorted(r["client_action_id"] for r in delta.added["m01_staff_action_keys"]) == sorted(
+        [first["client_action_id"], second["client_action_id"]]
+    )
+    assert sorted(r["client_action_id"] for r in delta.added["m01_staff_admin_log"]) == sorted(
+        [first["client_action_id"], second["client_action_id"]]
+    )
+    for table in st.ALL_TABLES:
+        assert not delta.removed[table] and not delta.changed[table], table
+    delta.untouched(("m01_staff",) + st.M05_CONTENT_TABLES)
 
 
 # ---------------------------------------------------------------------------
