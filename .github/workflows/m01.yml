@@ -149,6 +149,13 @@ jobs:
           python3 -I scripts/b5_startup_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b5-startup-mutation"
+      # L-1W W1: 25 predeclared security mutants of the verifier and the key-set
+      # client, two groups, judged by the same checker. Static controls first.
+      - run: $VENV/bin/pytest scripts/test_l1w_w1_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/l1w_w1_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w1-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

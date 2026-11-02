@@ -53,7 +53,9 @@ async def _refused(verifier: TokenVerifier, raw: str, code: str) -> None:
         await verifier.verify(raw)
     assert caught.value.code == code
     text = f"{caught.value!r} {caught.value!s} {caught.value.args!r}"
-    assert ls.CANARY not in text and raw not in text
+    # declared test fix (W1 implementation): "" is a substring of every string, so the
+    # raw-token absence check applies only to a non-empty token
+    assert ls.CANARY not in text and (not raw or raw not in text)
 
 
 # --- V-01 valid tokens ----------------------------------------------------------

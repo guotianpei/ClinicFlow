@@ -61,10 +61,16 @@ def test_l1w_trace_t04_dangling_node_refused() -> None:
 
 def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
     script = _script()
-    output = subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
          "tests/platform"],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
-    ).stdout
-    collected = {line.strip() for line in output.splitlines() if "::" in line}
+    )
+    # Codex e0323cac: the collection itself must succeed ...
+    assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+    collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
+    assert collected, "nothing collected"
     script.check(script.TRACE, inv.W1_IDS, collected)
+    # ... and the mapped nodes must be exactly the collected tests/platform nodes, so an
+    # unmapped new test fails here instead of passing silently.
+    assert _nodes(script.TRACE) == collected, sorted(collected ^ _nodes(script.TRACE))[:10]

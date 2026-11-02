@@ -77,6 +77,7 @@ TRACE: dict[str, list[str]] = {
     ],
     "K-04": [
         "tests/platform/test_l1w_keyset_units.py::test_k04_concurrent_unknown_kids_share_one_refresh",  # noqa: E501
+        "tests/platform/test_l1w_keyset_units.py::test_k04_concurrent_first_fetch_is_single_flight",
         "tests/platform/test_l1w_keyset_units.py::test_k04_refresh_rate_limited_then_allowed_after_interval",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k04_unknown_kid_right_after_first_install_does_not_refetch",  # noqa: E501
     ],

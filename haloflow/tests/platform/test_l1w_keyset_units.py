@@ -280,6 +280,28 @@ async def test_k04_concurrent_unknown_kids_share_one_refresh() -> None:
     assert len(server.requests) == 2  # the initial fetch + exactly one refresh
 
 
+async def test_k04_concurrent_first_fetch_is_single_flight() -> None:
+    """Declared W1-implementation addition (mutation evidence: KM-SINGLE survived the
+    unknown-kid row, where the rate limit masks it). With no set installed, concurrent
+    first lookups share ONE fetch."""
+
+    server, clock = _served(RSA.jwk())
+    client = _client(server, clock)
+    gate = asyncio.Event()
+
+    async def slow() -> None:
+        await gate.wait()
+
+    server.on_request = slow
+    tasks = [asyncio.create_task(client.key_for("rsa-1", "RS256")) for _ in range(20)]
+    for _ in range(5):
+        await asyncio.sleep(0)
+    gate.set()
+    results = await asyncio.gather(*tasks)
+    assert all(r is not None for r in results)
+    assert len(server.requests) == 1
+
+
 async def test_k04_refresh_rate_limited_then_allowed_after_interval() -> None:
     server, clock = _served(RSA.jwk())
     client = _client(server, clock)
