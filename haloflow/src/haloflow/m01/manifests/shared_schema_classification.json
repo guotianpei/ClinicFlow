@@ -95,6 +95,95 @@
         "closed_at": "control-plane",
         "execution_id": "pseudonymous-id"
       }
+    },
+    "staff_identity_anchor": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "issuer": "pseudonymous-id",
+        "subject": "pseudonymous-id",
+        "created_at": "control-plane"
+      }
+    },
+    "staff_identity_bindings": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "binding_id": "pseudonymous-id",
+        "issuer": "pseudonymous-id",
+        "subject": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "staff_id": "pseudonymous-id",
+        "created_at": "control-plane",
+        "created_by_kind": "control-plane",
+        "created_by": "pseudonymous-id",
+        "revoked_at": "control-plane",
+        "revoked_by_kind": "control-plane",
+        "revoked_by": "pseudonymous-id"
+      }
+    },
+    "staff_sessions": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "issuer": "pseudonymous-id",
+        "subject": "pseudonymous-id",
+        "sid": "pseudonymous-id",
+        "tenant_id": "pseudonymous-id",
+        "staff_id": "pseudonymous-id",
+        "auth_time": "control-plane",
+        "created_at": "control-plane",
+        "last_activity_at": "control-plane",
+        "revoked_at": "control-plane",
+        "revoke_reason": "control-plane"
+      }
+    },
+    "tenant_auth_settings": {
+      "classification": "control-plane",
+      "columns": {
+        "tenant_id": "pseudonymous-id",
+        "idle_timeout_minutes": "control-plane",
+        "mfa_required": "control-plane",
+        "updated_at": "control-plane",
+        "updated_by_kind": "control-plane",
+        "updated_by": "pseudonymous-id"
+      }
+    },
+    "tenant_auth_settings_log": {
+      "classification": "control-plane",
+      "columns": {
+        "log_id": "control-plane",
+        "tenant_id": "pseudonymous-id",
+        "setting": "control-plane",
+        "old_value": "control-plane",
+        "new_value": "control-plane",
+        "actor_kind": "control-plane",
+        "actor_id": "pseudonymous-id",
+        "support_grant_id": "pseudonymous-id",
+        "ticket_reference": "pseudonymous-id",
+        "at": "control-plane"
+      }
+    },
+    "staff_identity_log": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "log_id": "control-plane",
+        "tenant_id": "pseudonymous-id",
+        "staff_id": "pseudonymous-id",
+        "action": "control-plane",
+        "actor_kind": "control-plane",
+        "actor_id": "pseudonymous-id",
+        "support_grant_id": "pseudonymous-id",
+        "ticket_reference": "pseudonymous-id",
+        "at": "control-plane"
+      }
+    },
+    "support_operator_logins": {
+      "classification": "pseudonymous-id",
+      "columns": {
+        "login_oid": "pseudonymous-id",
+        "login_name": "pseudonymous-id",
+        "actor_id": "pseudonymous-id",
+        "added_at": "control-plane",
+        "decision_ref": "control-plane"
+      }
     }
   }
 }
