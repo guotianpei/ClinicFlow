@@ -171,8 +171,15 @@ def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledC
 # exactly one composition path it can pin.
 M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
     {
+        # L-1W W3a: repointed to the role-authorized v2 gateway (t029).
         "m01.staff.admin": (
-            StatementMode.WRITE, "m01.staff.admin", "SELECT m01_staff_admin(%(command)s)",
+            StatementMode.WRITE, "m01.staff.admin", "SELECT m01_staff_admin_v2(%(command)s)",
+        ),
+        # L-1W W3a: the caller's own standing (t027).
+        "m01.staff.self_standing": (
+            StatementMode.READ,
+            "m01.staff.self_standing",
+            "SELECT m01_staff_self_standing(%(attribution)s)",
         ),
         "m01.staff.display": (
             StatementMode.READ, "m01.staff.display", "SELECT m01_staff_display(%(query)s)",

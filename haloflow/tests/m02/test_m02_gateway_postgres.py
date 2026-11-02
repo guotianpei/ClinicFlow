@@ -392,7 +392,7 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 25  # B5 (H5): production target; 11 in part A
+    assert outcome.schema_version == 32  # B5 (H5): production target; 11 in part A
     # One installed-state verification per profiled typed unit. B5 declared change:
     # t003, t008-t011 (5), the M05 gateways t014-t020 (7) and the staff gateways
     # t022-t025 (4), 16 in total.
@@ -472,6 +472,10 @@ def test_2b_d20_control_the_same_bare_schema_route_installs_on_clean_defaults(
         "t018_m05_list_items", "t019_m05_get_history", "t020_m05_read_note",
         "t021_m01_staff_directory", "t022_m01_staff_assignable", "t023_m01_staff_admin",
         "t024_m01_staff_display", "t025_m01_staff_followup_reader",
+        # L-1W W3a: t026-t032.
+        "t026_m01_staff_roles", "t027_m01_staff_self_standing", "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2", "t030_m05_prepare_action_v2", "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
     ]
     assert gw.gateway_acl(m02_ids, m02_tenant[1]) == gw.EXPECTED_ACL
 
@@ -527,7 +531,7 @@ def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
     # B5 (H5): the production target is 25 (11 in part A).
-    assert provision_production(m02_ids, m02_tenant).schema_version == 25
+    assert provision_production(m02_ids, m02_tenant).schema_version == 32
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
@@ -545,7 +549,7 @@ def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
             " VALUES (%s, %s, 'provisioning', 25)",
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 25
+    assert provision_production(m02_ids, m02_tenant).schema_version == 32
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(

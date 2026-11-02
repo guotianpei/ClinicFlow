@@ -21,12 +21,12 @@ M05_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
         "m05.followup.prepare": (
             StatementMode.WRITE,
             "m05.followup.prepare",
-            "SELECT m05_prepare_action(%(command)s)",
+            "SELECT m05_prepare_action_v2(%(command)s)",
         ),
         "m05.followup.apply": (
             StatementMode.WRITE,
             "m05.followup.apply",
-            "SELECT m05_apply_action(%(command)s)",
+            "SELECT m05_apply_action_v2(%(command)s)",
         ),
         "m05.followup.get": (
             StatementMode.READ,

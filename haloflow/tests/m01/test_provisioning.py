@@ -361,6 +361,7 @@ def test_a_test_only_unit_is_accepted_only_when_explicitly_allowed() -> None:
 def test_the_production_registry_contains_no_test_units() -> None:
     """TC-E21, over the real composition root rather than a constructed example."""
 
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
@@ -395,6 +396,14 @@ def test_the_production_registry_contains_no_test_units() -> None:
         "t023_m01_staff_admin",
         "t024_m01_staff_display",
         "t025_m01_staff_followup_reader",
+        # L-1W W3a (contract v1, Codex 215519Z): t026-t032.
+        "t026_m01_staff_roles",
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
     )
     assert not any(unit.is_test_unit for unit in registry)
     assert APPROVED_TENANT_MIGRATIONS == (
@@ -402,6 +411,7 @@ def test_the_production_registry_contains_no_test_units() -> None:
         M02_TENANT_MIGRATIONS,
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,
     )
 
 
@@ -421,9 +431,13 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     UC1 part B B5 (package v2 section 1, Codex 4b0a5448) extends it through
     `t025_m01_staff_followup_reader`: the production target is version 25. The
     number only; no upgrade path from version 11 is claimed (L-6).
+
+    L-1W W3a (contract v1, Codex 215519Z) extends it through
+    `t032_m01_staff_bootstrap_admin`: the production target is version 32. The number
+    only; no upgrade path from version 25 is claimed (L-6).
     """
 
-    assert build_production_tenant_migrations().target_version == 25
+    assert build_production_tenant_migrations().target_version == 32
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1227,6 +1241,7 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
     makes that change -- and any further one -- visible rather than silent.
     """
 
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
@@ -1263,12 +1278,22 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
         "haloflow_staff_owner",
         "haloflow_staff_owner",
         "haloflow_staff_owner",
+        # L-1W W3a: t026 migrator-owned; t030/t031 the M05 owner; the rest the staff
+        # owner.
+        None,
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_staff_owner",
     ]
     assert APPROVED_TENANT_MIGRATIONS == (
         TENANT_MIGRATIONS,
         M02_TENANT_MIGRATIONS,
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,
     )
 
 
@@ -1357,6 +1382,14 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
         "t023_m01_staff_admin",
         "t024_m01_staff_display",
         "t025_m01_staff_followup_reader",
+        # L-1W W3a (contract v1, Codex 215519Z): t026-t032.
+        "t026_m01_staff_roles",
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
     )
     assert len(registry.units[0].checksum) == 64
 
@@ -2637,6 +2670,7 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
                     "haloflow_m02_read_owner",
                     "haloflow_m05_owner",
                     "haloflow_staff_owner",
+                    "haloflow_support",  # L-1W W3a: USAGE-only profile
                 )
             ]
 
@@ -2687,6 +2721,7 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
                     "haloflow_m02_read_owner",
                     "haloflow_m05_owner",
                     "haloflow_staff_owner",
+                    "haloflow_support",  # L-1W W3a: USAGE-only profile
                 )
             ]
 

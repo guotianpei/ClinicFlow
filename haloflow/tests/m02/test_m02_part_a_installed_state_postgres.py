@@ -43,6 +43,10 @@ ORDER = (
     "t018_m05_list_items", "t019_m05_get_history", "t020_m05_read_note",
     "t021_m01_staff_directory", "t022_m01_staff_assignable", "t023_m01_staff_admin",
     "t024_m01_staff_display", "t025_m01_staff_followup_reader",
+    # L-1W W3a: t026-t032.
+    "t026_m01_staff_roles", "t027_m01_staff_self_standing", "t028_m01_staff_member_standing",
+    "t029_m01_staff_admin_v2", "t030_m05_prepare_action_v2", "t031_m05_apply_action_v2",
+    "t032_m01_staff_bootstrap_admin",
 )
 # B5 (H5): the typed M05 and staff functions the production registry verifies
 # after t011, in install order (frozen, not read from the profiles).
@@ -51,6 +55,9 @@ B5_VERIFIED = (
     "m05_list_items", "m05_get_history", "m05_read_note",
     "m01_staff_assignable", "m01_staff_admin", "m01_staff_display",
     "m01_staff_followup_reader",
+    # L-1W W3a, in install order.
+    "m01_staff_self_standing", "m01_staff_member_standing", "m01_staff_admin_v2",
+    "m05_prepare_action_v2", "m05_apply_action_v2", "m01_staff_bootstrap_admin",
 )
 # Frozen from the part-A manifest (amendment C1), not read from the profiles.
 TYPED = {

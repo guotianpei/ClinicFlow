@@ -769,6 +769,18 @@ def test_dts1_m05_bodies_call_exactly_one_directory_function():
             assert calls == set(), (migration_id, calls)
 
 
+def test_dts1_m05_v2_bodies_call_exactly_member_standing():
+    """L-1W W3a (red packet section 3): the v2 M05 actions call exactly
+    m01_staff_member_standing and no other directory function."""
+
+    from haloflow.m05.gateways_v2 import M05_V2_UNITS
+
+    assert set(M05_V2_UNITS) == {"t030_m05_prepare_action_v2", "t031_m05_apply_action_v2"}
+    for migration_id, unit in M05_V2_UNITS.items():
+        calls = set(re.findall(r"m01_staff_[a-z_]+\(", unit.template))
+        assert calls == {"m01_staff_member_standing("}, (migration_id, calls)
+
+
 # ---------------------------------------------------------------------------
 # DA-K: key admission (v1r1 delta 1)
 # ---------------------------------------------------------------------------

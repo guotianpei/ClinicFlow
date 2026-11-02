@@ -61,8 +61,16 @@ def test_2a_u01_production_registry_ids_and_target_version() -> None:
         "t023_m01_staff_admin",
         "t024_m01_staff_display",
         "t025_m01_staff_followup_reader",
+        # L-1W W3a: t026-t032 (target 32).
+        "t026_m01_staff_roles",
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
     )
-    assert registry.target_version == 25
+    assert registry.target_version == 32
 
 
 def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
@@ -72,7 +80,11 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
     are migrator-owned ordinary units; t008-t011 are typed units, one function each.
     """
 
-    from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_TENANT_MIGRATIONS
+    from haloflow.composition import (
+        APPROVED_EXECUTION_ROLES,
+        APPROVED_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,
+    )
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02 import part_a_gateways as gw
@@ -92,6 +104,7 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
         M02_TENANT_MIGRATIONS,
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,  # L-1W W3a
     )
     assert (
         frozenset(
@@ -166,6 +179,15 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
         ("t023_m01_staff_admin", "haloflow_staff_owner", True),
         ("t024_m01_staff_display", "haloflow_staff_owner", True),
         ("t025_m01_staff_followup_reader", "haloflow_staff_owner", True),
+        # L-1W W3a: t026 ordinary; t030/t031 run as the M05 owner, the rest as the
+        # staff owner.
+        ("t026_m01_staff_roles", None, False),
+        ("t027_m01_staff_self_standing", "haloflow_staff_owner", True),
+        ("t028_m01_staff_member_standing", "haloflow_staff_owner", True),
+        ("t029_m01_staff_admin_v2", "haloflow_staff_owner", True),
+        ("t030_m05_prepare_action_v2", "haloflow_m05_owner", True),
+        ("t031_m05_apply_action_v2", "haloflow_m05_owner", True),
+        ("t032_m01_staff_bootstrap_admin", "haloflow_staff_owner", True),
     ]
 
 

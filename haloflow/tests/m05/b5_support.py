@@ -11,10 +11,21 @@ from typing import Final
 import m05_support as m05
 import staff_support as st
 
-PRODUCTION_TARGET: Final = 25
+PRODUCTION_TARGET: Final = 32  # L-1W W3a (was 25 at B5)
 PRODUCTION_SUPPORTED: Final = frozenset({PRODUCTION_TARGET})
 
-PRODUCTION_UNIT_IDS: Final = m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS
+W3A_UNIT_IDS: Final = (
+    "t026_m01_staff_roles",
+    "t027_m01_staff_self_standing",
+    "t028_m01_staff_member_standing",
+    "t029_m01_staff_admin_v2",
+    "t030_m05_prepare_action_v2",
+    "t031_m05_apply_action_v2",
+    "t032_m01_staff_bootstrap_admin",
+)
+PRODUCTION_UNIT_IDS: Final = (
+    m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS + W3A_UNIT_IDS
+)
 
 M02_ROLES: Final = frozenset(
     {
@@ -32,6 +43,7 @@ STATEMENTS: Final = {
     "m01.staff.admin": ("write", "m01.staff.admin"),
     "m01.staff.display": ("read", "m01.staff.display"),
     "m01.staff.followup_reader": ("read", "m05.followup.read"),
+    "m01.staff.self_standing": ("read", "m01.staff.self_standing"),  # L-1W W3a
     "m05.followup.create": ("write", "m05.followup.create"),
     "m05.followup.prepare": ("write", "m05.followup.prepare"),
     "m05.followup.apply": ("write", "m05.followup.apply"),
@@ -41,7 +53,8 @@ STATEMENTS: Final = {
     "m05.followup.note.read": ("read", "m05.followup.note.read"),
 }
 M01_STATEMENT_KEYS: Final = frozenset(
-    {"m01.staff.admin", "m01.staff.display", "m01.staff.followup_reader"}
+    {"m01.staff.admin", "m01.staff.display", "m01.staff.followup_reader",
+     "m01.staff.self_standing"}
 )
 
 # provisioning.json tenant_schema_privileges after B5. At f9d90e1 the two
@@ -53,6 +66,8 @@ TENANT_SCHEMA_PRIVILEGES: Final = {
     "haloflow_m02_read_owner": ["USAGE", "CREATE"],
     "haloflow_m05_owner": ["USAGE", "CREATE"],
     "haloflow_staff_owner": ["USAGE", "CREATE"],
+    # L-1W W3a (t032): support holds tenant-schema USAGE only.
+    "haloflow_support": ["USAGE"],
 }
 
 PRODUCER: Final = "m05_followup"

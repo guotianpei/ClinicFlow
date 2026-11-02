@@ -534,5 +534,38 @@ TRACE: dict[str, list[str]] = {
     ],
     "PRIV-W3-01": [
         "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_privw301_staff_owner_shared_column_grants_are_exact",  # noqa: E501
+    ],    "SUP-01": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup01_support_is_a_usage_only_profile_with_the_008_edge_and_not_approved",  # noqa: E501
+    ],
+    "SUP-02": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup02_a_unit_run_as_support_is_refused_by_the_production_registry",  # noqa: E501
+    ],
+    "SUP-03": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup03_the_controlled_graph_refuses_unsafe_support_edges[undeclared-support-to-staff-owner]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup03_the_controlled_graph_refuses_unsafe_support_edges[undeclared-runtime-to-support]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup03_the_controlled_graph_refuses_unsafe_support_edges[missing]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup03_the_controlled_graph_refuses_unsafe_support_edges[inherit]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup03_the_controlled_graph_refuses_unsafe_support_edges[admin]",  # noqa: E501
+    ],
+    "SUP-04": [
+        "tests/m05/test_l1w_w3a_impl_postgres.py::test_sup04_support_login_membership_survives_provisioning",  # noqa: E501
+    ],
+    "SVC-01": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_reactivate_is_sent_as_activate_and_bound_back[applied]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_reactivate_is_sent_as_activate_and_bound_back[replayed]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_deactivate_binds_to_the_v1_shape",
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[reactivate-missing-outcome]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[reactivate-bad-outcome]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[reactivate-list-outcome]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[reactivate-extra-key]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[reactivate-v1-name-returned]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[deactivate-wrong-operation]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[deactivate-v1-four-keys-only]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_the_public_operation_set_is_unchanged",
+    ],
+    "GB-01": [
+        "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[136-True]",
+        "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[137-False]",
+        "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[0-False]",
     ],
 }
