@@ -98,6 +98,10 @@ jobs:
           --pytest-outcome "$PYTEST_OUTCOME"
           --source-sha "$GITHUB_SHA"
           --head-sha "$HEAD_SHA"
+      # UC1 B5 closeout trace controls (Codex 24f9221d R5: measured in CI). They
+      # run even when pytest failed, so a red tranche measures them too.
+      - if: ${{ !cancelled() }}
+        run: $VENV/bin/pytest scripts/test_uc1_trace.py -q -rA -p no:cacheprovider
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.
