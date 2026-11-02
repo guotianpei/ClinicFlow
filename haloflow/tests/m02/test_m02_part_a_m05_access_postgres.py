@@ -116,6 +116,9 @@ OWNED_FUNCTIONS = (
     "m05_list_items(jsonb)",
     "m05_get_history(uuid)",
     "m05_read_note(uuid)",
+    # L-1W W3a: the v2 action gateways t030/t031.
+    "m05_prepare_action_v2(jsonb)",
+    "m05_apply_action_v2(jsonb)",
 )
 # Explicit EXECUTE grants FROM OTHER ROLES (t011 envelope: src/haloflow/m02/
 # part_a_gateways.py T011 grantee; t022 assignability: src/haloflow/m01/staff/units.py
@@ -123,6 +126,8 @@ OWNED_FUNCTIONS = (
 GRANTED_FUNCTIONS = {
     ("m02_get_observation_envelope(uuid)", "EXECUTE", READ_OWNER, False),
     ("m01_staff_assignable(uuid)", "EXECUTE", STAFF_OWNER, False),
+    # L-1W W3a t028 (pin 2).
+    ("m01_staff_member_standing(uuid)", "EXECUTE", STAFF_OWNER, False),
 }
 
 _FUNCTION_KEY = "p.proname || '(' || pg_catalog.oidvectortypes(p.proargtypes) || ')'"

@@ -395,8 +395,8 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
     assert outcome.schema_version == 32  # B5 (H5): production target; 11 in part A
     # One installed-state verification per profiled typed unit. B5 declared change:
     # t003, t008-t011 (5), the M05 gateways t014-t020 (7) and the staff gateways
-    # t022-t025 (4), 16 in total.
-    assert calls == [m02_tenant[1]] * 16
+    # t022-t025 (4), 16 in total; L-1W W3a adds t027-t032 (6), 22 in total.
+    assert calls == [m02_tenant[1]] * 22
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
 
@@ -546,7 +546,7 @@ def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
     with m02.connect_admin(m02_ids) as conn:
         conn.execute(
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version)"
-            " VALUES (%s, %s, 'provisioning', 25)",
+            " VALUES (%s, %s, 'provisioning', 32)",  # L-1W W3a target
             m02_tenant,
         )
     assert provision_production(m02_ids, m02_tenant).schema_version == 32

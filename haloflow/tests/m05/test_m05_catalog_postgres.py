@@ -124,7 +124,9 @@ def test_me01_no_other_m05_function(m05_install: M05Install) -> None:
     )
     # regprocedure text is schema-qualified only when not on search_path; compare names.
     names = sorted(text.rsplit(".", 1)[-1] for (text,) in rows)
-    assert names == sorted(f"{spec.name}({spec.args})" for spec in m05.FUNCTIONS)
+    # L-1W W3a: the production registry also installs the two v2 action gateways.
+    assert names == sorted([f"{spec.name}({spec.args})" for spec in m05.FUNCTIONS]
+                           + ["m05_prepare_action_v2(jsonb)", "m05_apply_action_v2(jsonb)"])
 
 
 # --- ME-02 -----------------------------------------------------------------
@@ -434,6 +436,7 @@ def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Inst
     """MA-10 tranche 2 harness migration: the behaviour tenant is installed with the
     directory units after M05 (target 25 since B3b); the unit list is otherwise unchanged."""
 
+    from b5_support import W3A_UNIT_IDS
     from staff_support import STAFF_TEST_TARGET, STAFF_UNIT_IDS
 
     result = m05_install.require()
@@ -442,6 +445,7 @@ def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Inst
     assert {migration_id: row[0] for migration_id, row in ledger.items()} == {
         migration_id: "applied"
         for migration_id in m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + STAFF_UNIT_IDS
+        + W3A_UNIT_IDS  # L-1W W3a
     }
 
 

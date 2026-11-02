@@ -205,6 +205,7 @@ def test_l06_bootstrap_waits_on_a_status_change_of_an_admin(
     the explicit W3b hold (v1 bypass)."""
 
     install = _setup(staff_install)
+    w3.normalize_staff(install, B)  # FIXTURE SETUP: the other parameter may leave B inactive
     for staff_id in (A, B):
         w3.seed_role(install, staff_id, "clinic_admin")  # FIXTURE SETUP
     if change == "activate":

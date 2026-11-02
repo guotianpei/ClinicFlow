@@ -61,7 +61,7 @@ def test_gb01_granted_by_length_boundary(
 ) -> None:
     w3.ready_with_staff(staff_install)
     w3.drop_role(staff_install, m05.S1, "supervisor")  # FIXTURE SETUP: clean slate
-    granted_by = ("support:" + "a" * 128)[:length] if length else ""
+    granted_by = ("support:" + "a" * 129)[:length]  # 136 = support: + 128-char actor
     insert = sql.SQL(
         "INSERT INTO {}.m01_staff_roles (staff_id, role, granted_by, granted_at)"
         " VALUES (%s, 'supervisor', %s, clock_timestamp())"

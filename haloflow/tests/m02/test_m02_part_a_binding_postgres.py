@@ -215,5 +215,5 @@ def test_pa40_control_both_tenants_are_distinct_and_active(
         ).fetchall()
     assert sorted(rows) == sorted(
         # B5 (H5): provisioned through the production registry, target 25.
-        [(tenant_id, schema, "active", 25) for tenant_id, schema in pair]
+        [(tenant_id, schema, "active", 32) for tenant_id, schema in pair]  # L-1W W3a
     )

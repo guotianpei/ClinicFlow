@@ -298,9 +298,11 @@ def test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths(
     branches complete without waiting."""
 
     install = _setup(staff_install)
+    w3.ensure_staff(install, st.ADMIN)  # the admin actor must be a member (role row FK)
     w3.seed_role(install, st.ADMIN, "clinic_admin")  # FIXTURE SETUP
     target = "00000000-0000-4000-8000-0000000c8b01"
     w3.ensure_staff(install, target)
+    w3.normalize_staff(install, target)  # FIXTURE SETUP: active, read+act, no role
     if operation == "activate":
         st.admin_op(install, st.admin_command("deactivate", target))
     if operation == "revoke_role":

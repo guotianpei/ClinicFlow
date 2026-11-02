@@ -49,6 +49,29 @@ def ensure_staff(install: st.StaffInstall, staff_id: str) -> None:
         st.seed_staff(install, staff_id, name=f"Staff {staff_id[-4:]}")
 
 
+def normalize_staff(install: st.StaffInstall, staff_id: str) -> None:
+    """FIXTURE SETUP (through the still-callable v1 admin gateway): an existing member
+    is made active with read and act and holds no role row, so module-scoped rows that
+    change it do not leak into the next row."""
+
+    status = st.admin_rows(
+        install,
+        sql.SQL("SELECT status FROM {}.m01_staff WHERE staff_id = %s").format(
+            sql.Identifier(install.schema)), (staff_id,),
+    )
+    if status == [("inactive",)]:
+        st.admin_op(install, st.admin_command("reactivate", staff_id))
+    held = {a for (a,) in st.admin_rows(
+        install,
+        sql.SQL("SELECT access FROM {}.m01_staff_followup_access WHERE staff_id = %s").format(
+            sql.Identifier(install.schema)), (staff_id,))}
+    for access in ("read", "act"):
+        if access not in held:
+            st.admin_op(install, st.admin_command("grant", staff_id, access=access))
+    for role in ("supervisor", "clinic_admin"):
+        drop_role(install, staff_id, role)
+
+
 def seed_role(install: st.StaffInstall, staff_id: str, role: str) -> None:
     """FIXTURE SETUP (escape hatch, admin connection): insert one role row."""
 
@@ -71,6 +94,17 @@ def drop_role(install: st.StaffInstall, staff_id: str, role: str) -> None:
             sql.Identifier(install.schema)),
         (staff_id, role),
     )
+
+
+def seed_service_roles(install: st.StaffInstall) -> None:
+    """FIXTURE SETUP for the service suites after statement repointing (red packet
+    section 3): StaffService.admin reaches m01_staff_admin_v2, so the admin actor
+    st.ADMIN is a member holding clinic_admin; FollowupService supervise reaches the v2
+    actions, so m05.SUP holds supervisor. No scenario changes otherwise."""
+
+    ensure_staff(install, st.ADMIN)
+    seed_role(install, st.ADMIN, "clinic_admin")
+    seed_role(install, m05.SUP, "supervisor")
 
 
 def roles(install: st.StaffInstall) -> list[tuple[Any, ...]]:
