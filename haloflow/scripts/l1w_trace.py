@@ -390,4 +390,37 @@ TRACE: dict[str, list[str]] = {
     "FX-02": [
         "tests/platform/test_l1w_w2_inventory_postgres.py::test_fx02_cleanup_restores_triggers_even_when_the_statement_fails",  # noqa: E501
     ],
+    "PF-01": [
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf01_safe_pre_existing_roles_remain_usable",  # noqa: E501
+    ],
+    "PF-02": [
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-LOGIN]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-SUPERUSER]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-CREATEDB]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-CREATEROLE]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-REPLICATION]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-BYPASSRLS]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-LOGIN]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-SUPERUSER]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-CREATEDB]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-CREATEROLE]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-REPLICATION]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-BYPASSRLS]",  # noqa: E501
+    ],
+    "PF-03": [
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_identity_owner-group-role]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_identity_owner-superuser-login]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_support-group-role]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_support-superuser-login]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_identity_owner_refuses_even_a_plain_login_member",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_support_accepts_a_plain_login_member",  # noqa: E501
+    ],
+    "PF-04": [
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf04_extra_outgoing_membership_refused[haloflow_identity_owner]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf04_extra_outgoing_membership_refused[haloflow_support]",  # noqa: E501
+    ],
+    "PF-05": [
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_identity_owner]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_support]",  # noqa: E501
+    ],
 }
