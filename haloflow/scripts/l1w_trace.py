@@ -423,4 +423,13 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_identity_owner]",  # noqa: E501
         "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_support]",  # noqa: E501
     ],
+    "SET-01": [
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set01_concurrent_first_setters_of_different_settings_keep_both_values",  # noqa: E501
+    ],
+    "SET-02": [
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set02_concurrent_first_setters_of_one_setting_log_an_accurate_chain",  # noqa: E501
+    ],
+    "SET-03": [
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set03_support_grant_revoked_while_waiting_on_the_first_row_is_refused",  # noqa: E501
+    ],
 }

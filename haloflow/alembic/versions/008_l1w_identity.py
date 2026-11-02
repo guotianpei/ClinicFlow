@@ -615,10 +615,15 @@ _SET_BODY = """
         v_new := p_value;
     END IF;{pre}
     BEGIN
+        -- Serialize first setters (Codex 20261102T194326Z): materialize the default
+        -- row, so a concurrent first writer waits on it and every writer locks and
+        -- re-reads an existing row. A refusal below rolls this provisional row back.
+        INSERT INTO shared.tenant_auth_settings AS st (tenant_id, idle_timeout_minutes,
+            mfa_required, updated_at, updated_by_kind, updated_by)
+        VALUES (p_tenant, 15, false, clock_timestamp(), c_kind, v_actor)
+        ON CONFLICT (tenant_id) DO NOTHING;
         SELECT st.idle_timeout_minutes, st.mfa_required INTO v_old_idle, v_old_mfa
             FROM shared.tenant_auth_settings st WHERE st.tenant_id = p_tenant FOR UPDATE;
-        v_old_idle := coalesce(v_old_idle, 15);
-        v_old_mfa := coalesce(v_old_mfa, false);
         v_new_idle := v_old_idle;
         v_new_mfa := v_old_mfa;
         IF p_setting = 'idle_timeout_minutes' THEN

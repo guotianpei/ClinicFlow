@@ -310,3 +310,81 @@ def test_sp08_grant_revoked_while_waiting_on_the_anchor_is_not_used(
     assert env.one(
         "SELECT revoked_at FROM shared.staff_identity_bindings WHERE tenant_id = %s"
         " AND staff_id = %s", (b.tenant, b.staff)) == (None,)
+
+
+# ---- SET-01..03: first setters on a missing settings row (Codex 20261102T194326Z) ----
+
+
+def _settings_log(env: db.L1WEnv, tenant: str) -> list[tuple[Any, ...]]:
+    return env.all(
+        "SELECT setting, old_value, new_value, actor_kind FROM shared.tenant_auth_settings_log"
+        " WHERE tenant_id = %s ORDER BY log_id", (tenant,))
+
+
+def test_set01_concurrent_first_setters_of_different_settings_keep_both_values(
+    env: db.L1WEnv, bind: Callable[..., Bound]
+) -> None:
+    b = bind()
+    assert _settings(env, b.tenant) is None
+    with env.connect("staff_owner") as first, env.connect("staff_owner") as second:
+        holder, waiter = db.backend_pid(first), db.backend_pid(second)
+        first.commit()
+        second.commit()
+        assert db.admin_set(first, b.tenant, "mfa_required", "true", b.actor,
+                            commit=False) == "SET"
+        job = db.Background(lambda: db.admin_set(second, b.tenant, "idle_timeout_minutes",
+                                                 "30", b.actor)).start()
+        db.wait_blocked_by(env, waiter, holder)
+        first.commit()
+        assert job.join() == "SET"
+    assert _settings(env, b.tenant) == (30, True)
+    assert _settings_log(env, b.tenant) == [
+        ("mfa_required", "false", "true", "clinic_admin"),
+        ("idle_timeout_minutes", "15", "30", "clinic_admin"),
+    ]
+
+
+def test_set02_concurrent_first_setters_of_one_setting_log_an_accurate_chain(
+    env: db.L1WEnv, bind: Callable[..., Bound]
+) -> None:
+    b = bind()
+    with env.connect("staff_owner") as first, env.connect("staff_owner") as second:
+        holder, waiter = db.backend_pid(first), db.backend_pid(second)
+        first.commit()
+        second.commit()
+        assert db.admin_set(first, b.tenant, "idle_timeout_minutes", "20", b.actor,
+                            commit=False) == "SET"
+        job = db.Background(lambda: db.admin_set(second, b.tenant, "idle_timeout_minutes",
+                                                 "30", b.actor)).start()
+        db.wait_blocked_by(env, waiter, holder)
+        first.commit()
+        assert job.join() == "SET"
+    assert _settings(env, b.tenant) == (30, False)
+    assert _settings_log(env, b.tenant) == [
+        ("idle_timeout_minutes", "15", "20", "clinic_admin"),
+        ("idle_timeout_minutes", "20", "30", "clinic_admin"),
+    ]
+
+
+def test_set03_support_grant_revoked_while_waiting_on_the_first_row_is_refused(
+    env: db.L1WEnv, bind: Callable[..., Bound]
+) -> None:
+    b = bind()
+    key, actor = _support(env, "set03")
+    grant_id, _ = env.support_grant(actor, b.tenant, [SETTINGS_CAP])
+    with env.connect("staff_owner") as first, env.connect(key) as support:
+        holder, waiter = db.backend_pid(first), db.backend_pid(support)
+        first.commit()
+        support.commit()
+        assert db.admin_set(first, b.tenant, "mfa_required", "true", b.actor,
+                            commit=False) == "SET"
+        job = db.Background(lambda: db.support_call(
+            support, "l1w_support_set_setting", b.tenant, "idle_timeout_minutes", "30")).start()
+        db.wait_blocked_by(env, waiter, holder)
+        with env.connect("admin", autocommit=True) as gate:
+            gate.execute("UPDATE shared.support_access_grants SET state = 'revoked'"
+                         " WHERE grant_id = %s", (grant_id,))
+        first.commit()
+        assert job.join() == "SUPPORT_NOT_AUTHORIZED"
+    assert _settings(env, b.tenant) == (15, True)
+    assert _settings_log(env, b.tenant) == [("mfa_required", "false", "true", "clinic_admin")]

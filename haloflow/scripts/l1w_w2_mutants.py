@@ -130,6 +130,11 @@ SPECS: tuple[tuple[str, str, str, str], ...] = (
     ("WM-CAP", "support capability not required",
      "          AND '{capability}' = ANY (g.capabilities)\n",
      "          AND cardinality(g.capabilities) >= 0\n"),
+    ("WM-SETROW", "first setters not serialized on a materialized default row",
+     "        VALUES (p_tenant, 15, false, clock_timestamp(), c_kind, v_actor)\n"
+     "        ON CONFLICT (tenant_id) DO NOTHING;\n",
+     "        SELECT p_tenant, 15, false, clock_timestamp(), c_kind, v_actor WHERE false\n"
+     "        ON CONFLICT (tenant_id) DO NOTHING;\n"),
     ("WM-BOUNDS", "idle bounds widened to 1..99",
      "        IF p_value::integer NOT BETWEEN 5 AND 60 THEN\n",
      "        IF p_value::integer NOT BETWEEN 1 AND 99 THEN\n"),

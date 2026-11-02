@@ -25,6 +25,7 @@ W2_IDS: Final = (
     "SP-07d", "SP-08", "LG-01", "LG-02", "LG-03", "LG-04", "N-01", "X-01",
     "PRIV-01", "PRIV-02", "FX-01", "FX-02",
     "PF-01", "PF-02", "PF-03", "PF-04", "PF-05",
+    "SET-01", "SET-02", "SET-03",
 )
 
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them

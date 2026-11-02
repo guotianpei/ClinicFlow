@@ -391,12 +391,14 @@ def admin_unbind(
 
 
 def admin_set(
-    conn: psycopg.Connection[Any], tenant: str, setting: str, value: str, actor: uuid.UUID
+    conn: psycopg.Connection[Any], tenant: str, setting: str, value: str, actor: uuid.UUID,
+    *, commit: bool = True,
 ) -> str:
     row = conn.execute(
         "SELECT shared.l1w_admin_set_setting(%s, %s, %s, %s)", (tenant, setting, value, actor)
     ).fetchone()
-    conn.commit()
+    if commit:
+        conn.commit()
     assert row is not None
     return str(row[0])
 
