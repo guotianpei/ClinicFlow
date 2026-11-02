@@ -771,7 +771,12 @@ def provision_sync(*args: Any, **kwargs: Any) -> Any:
 # provisioning passes this explicitly; the `provision` default stays range(1, 4)
 # for M01-only and mutant registries. P-a held it at range(3, 4) until t004-t011
 # were composed; P-b moves it in the composing commit.
-PRODUCTION_SUPPORTED: Final = range(11, 12)
+#
+# UC1 part B B5 (harness migration H4, Codex 319b5f3): the production registry
+# composes t012-t025, so its target is 25 and this moves to range(25, 26) in the
+# composing commit. Historical version-11 compatibility fixtures pass their own
+# range explicitly and are not affected.
+PRODUCTION_SUPPORTED: Final = range(25, 26)
 
 
 def production_registry() -> Any:

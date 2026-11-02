@@ -459,12 +459,17 @@ def test_2b_d20_control_the_same_bare_schema_route_installs_on_clean_defaults(
     gw.prepare_bare_schema(m02_ids, m02_tenant)
     outcomes = gw.run_migrations(m02_ids, m02.production_registry(), m02_tenant)
     # UC1 part A (P-b, Codex ALIGN 20261031T131639Z): the production registry now
-    # continues through t011.
+    # continues through t011. UC1 part B B5 (H5): and through t025.
     assert [o.migration_id for o in outcomes if o.applied] == [
         "t001_m01_baseline", "t002_m02_operation_registry", T003,
         "t004_m02_reference", "t005_m02_events", "t006_m02_outbox",
         "t007_m02_envelope_allowlist", "t008_m02_canon", "t009_m02_append",
         "t010_m02_enqueue", "t011_m02_envelope_read",
+        "t012_m05_tables", "t013_m05_seed", "t014_m05_create_item",
+        "t015_m05_prepare_action", "t016_m05_apply_action", "t017_m05_get_item",
+        "t018_m05_list_items", "t019_m05_get_history", "t020_m05_read_note",
+        "t021_m01_staff_directory", "t022_m01_staff_assignable", "t023_m01_staff_admin",
+        "t024_m01_staff_display", "t025_m01_staff_followup_reader",
     ]
     assert gw.gateway_acl(m02_ids, m02_tenant[1]) == gw.EXPECTED_ACL
 

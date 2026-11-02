@@ -379,6 +379,8 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
         "src/haloflow/m02",
         "src/haloflow/m05",
         "src/haloflow/composition.py",
+        # UC1 part B B5 (v2r1 section 5): the trusted startup factory.
+        "src/haloflow/startup.py",
     }
     for required in checked:
         assert required in ruff_line, f"{required} not linted by CI"
