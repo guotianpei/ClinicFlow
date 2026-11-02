@@ -34,6 +34,10 @@ jobs:
     env:
       HALOFLOW_TEST_DATABASE_URL: >-
         postgresql://postgres:postgres@localhost:5432/haloflow_test_m01
+      # L-1W W2: the postgres:17 service above is a fresh container per run, so the
+      # L-1W harness may create its token-named synthetic LOGIN roles here
+      # (Codex final disposition pin 4; tests/platform/l1w_db_support.py).
+      HALOFLOW_TEST_DISPOSABLE_CLUSTER: "1"
 
     steps:
       - uses: actions/checkout@v4

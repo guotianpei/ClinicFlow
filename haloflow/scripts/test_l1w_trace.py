@@ -19,6 +19,8 @@ sys.path.insert(0, str(HERE.parent / "tests" / "platform"))
 
 import l1w_trace_inventory as inv  # noqa: E402
 
+IDS = (*inv.W1_IDS, *inv.W2_IDS)
+
 
 def _script() -> Any:
     spec = importlib.util.spec_from_file_location("_l1w_trace", HERE / "l1w_trace.py")
@@ -35,28 +37,28 @@ def _nodes(trace: dict[str, list[str]]) -> set[str]:
 
 def test_l1w_trace_t01_ids_match_the_inventory() -> None:
     script = _script()
-    script.check(script.TRACE, inv.W1_IDS, _nodes(script.TRACE))
+    script.check(script.TRACE, IDS, _nodes(script.TRACE))
 
 
 def test_l1w_trace_t02_missing_id_refused() -> None:
     script = _script()
     trace = {k: v for k, v in script.TRACE.items() if k != "V-01"}
     with pytest.raises(script.TraceRefused):
-        script.check(trace, inv.W1_IDS, _nodes(script.TRACE))
+        script.check(trace, IDS, _nodes(script.TRACE))
 
 
 def test_l1w_trace_t03_empty_row_refused() -> None:
     script = _script()
     trace = {**script.TRACE, "K-00": []}
     with pytest.raises(script.TraceRefused):
-        script.check(trace, inv.W1_IDS, _nodes(script.TRACE))
+        script.check(trace, IDS, _nodes(script.TRACE))
 
 
 def test_l1w_trace_t04_dangling_node_refused() -> None:
     script = _script()
     trace = {**script.TRACE, "K-00": [*script.TRACE["K-00"], "tests/platform/x.py::gone"]}
     with pytest.raises(script.TraceRefused):
-        script.check(trace, inv.W1_IDS, _nodes(script.TRACE))
+        script.check(trace, IDS, _nodes(script.TRACE))
 
 
 def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
@@ -70,7 +72,20 @@ def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
     assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
     collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
     assert collected, "nothing collected"
-    script.check(script.TRACE, inv.W1_IDS, collected)
+    script.check(script.TRACE, IDS, collected)
     # ... and the mapped nodes must be exactly the collected tests/platform nodes, so an
     # unmapped new test fails here instead of passing silently.
     assert _nodes(script.TRACE) == collected, sorted(collected ^ _nodes(script.TRACE))[:10]
+
+
+def test_l1w_trace_t06_deferred_and_retired_rows_stay_explicit() -> None:
+    """Codex W2 plan disposition: deferred W3/W4 rows stay listed and are never
+    satisfied by W2 SQL-tier evidence; retired rows point at mapped W2 rows."""
+
+    script = _script()
+    assert set(inv.DEFERRED).isdisjoint(IDS)
+    assert set(inv.DEFERRED).isdisjoint(script.TRACE)
+    assert set(inv.RETIRED).isdisjoint(script.TRACE)
+    assert {"W3", "W4"} <= set(inv.DEFERRED.values())
+    for carriers in inv.RETIRED.values():
+        assert set(carriers) <= set(inv.W2_IDS)
