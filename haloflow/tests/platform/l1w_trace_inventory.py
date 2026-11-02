@@ -37,6 +37,7 @@ W3A_IDS: Final = (
     "PIN2-01", "PRIV-W3-01",
     # Implementation-time rows (Codex 224307Z support profile (d); 222540Z service).
     "SUP-01", "SUP-02", "SUP-03", "SUP-04", "SVC-01", "GB-01", "L-07",
+    "SUP-05", "SUP-06", "SUP-07", "SUP-08",  # Codex 225500Z stage-1 profile check
 )
 
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them

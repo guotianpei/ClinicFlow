@@ -359,6 +359,24 @@ async def assert_execution_roles_safe(
         if refusal is not None:
             raise ExecutionRoleUnavailable(reason_code=refusal)
 
+    # L-1W W3a (Codex 225500Z): every manifest profile that receives tenant-schema
+    # privileges is checked live as well, even when no registry unit runs as it --
+    # the USAGE-only support profile is the case: it can execute no unit, but the
+    # provisioner grants it schema access, so a drifted (LOGIN, SUPERUSER, ...)
+    # support role must be refused before that grant or any runner work. Same read
+    # and assess functions; registry roles keep their order and their
+    # missing-profile refusal above.
+    schema_privileged = sorted(
+        role
+        for role in loaded.tenant_schema_role_privileges  # type: ignore[attr-defined]
+        if role in profiles and role not in declared_roles
+    )
+    for role in schema_privileged:
+        observed = await read_execution_role(connection, role)
+        refusal = assess_execution_role(observed=observed, declared=profiles[role])
+        if refusal is not None:
+            raise ExecutionRoleUnavailable(reason_code=refusal)
+
     # R-P1B.2 applies to the infrastructure migrator even when no execution
     # role is declared. Read live state on every entry; never normalize a role
     # that may have been created by a different deployment authority.

@@ -51,6 +51,7 @@ TEST_FILES: tuple[str, ...] = (
 
 STAFF_TARGET = Path("src/haloflow/m01/staff/l1w_units.py")
 M05_TARGET = Path("src/haloflow/m05/gateways_v2.py")
+ROLE_SAFETY_TARGET = Path("src/haloflow/m01/provisioning/role_safety.py")
 
 # target -> (module, ((SHA literal name, body attribute), ...))
 SHA_LITERALS: dict[Path, tuple[str, tuple[tuple[str, str], ...]]] = {
@@ -140,6 +141,12 @@ M05_SPECS: tuple[tuple[str, str, str, str], ...] = (
      "\"        AND true;\\n\""),
 )
 
+ROLE_SAFETY_SPECS: tuple[tuple[str, str, str, str], ...] = (
+    ("R-PROFILES", "stage 1 skips profiles no registry unit runs as (support unchecked)",
+     "        if role in profiles and role not in declared_roles\n",
+     "        if False\n"),
+)
+
 _A = "tests/m05/test_l1w_w3a_authority_postgres.py::"
 _B = "tests/m05/test_l1w_w3a_bootstrap_postgres.py::"
 _L = "tests/m05/test_l1w_w3a_locks_grants_postgres.py::"
@@ -196,6 +203,12 @@ KILLS: dict[str, frozenset[str]] = {
         _A + "test_c03_caller_flag_only_narrows",
         _A + "test_r02_supervisor_removed_is_refused_at_the_next_call",
     }),
+    "R-PROFILES": frozenset({
+        _U + "test_sup08_every_schema_privileged_profile_is_read_after_registry_roles",
+        _U + "test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[login]",
+        _U + "test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[bypassrls]",
+        _U + "test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[missing]",
+    }),
     "M-FLAG": frozenset({
         _A + "test_c03_caller_flag_only_narrows",
     }),
@@ -251,7 +264,7 @@ def _runner(checker: Any, target: Path) -> Any:
     admin = conninfo_to_dict(base)
 
     def runner(pytest: str, label: str, evidence: Path) -> Any:
-        if label != "control":
+        if label != "control" and target in SHA_LITERALS:
             sync_sha_literals(target)
         name = "haloflow_test_l1w_w3a_mut_" + "".join(
             ch if ch.isalnum() else "_" for ch in label.lower())
@@ -301,7 +314,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     code = 0
     for target, specs, tag in ((STAFF_TARGET, STAFF_SPECS, "staff"),
-                               (M05_TARGET, M05_SPECS, "m05")):
+                               (M05_TARGET, M05_SPECS, "m05"),
+                               (ROLE_SAFETY_TARGET, ROLE_SAFETY_SPECS, "role-safety")):
         checker = _load_checker()
         _expand_test_files(checker)
         checker.TARGET = target

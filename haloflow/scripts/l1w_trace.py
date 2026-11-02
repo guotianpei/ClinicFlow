@@ -563,6 +563,26 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[deactivate-v1-four-keys-only]",  # noqa: E501
         "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_the_public_operation_set_is_unchanged",
     ],
+    "SUP-05": [
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup05_provisioner_refuses_drifted_support_before_any_mutation[bypassrls]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup05_provisioner_refuses_drifted_support_before_any_mutation[login]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup05_provisioner_refuses_drifted_support_before_any_mutation[missing]",  # noqa: E501
+    ],
+    "SUP-06": [
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup06_runner_refuses_drifted_support_ledger_unchanged[bypassrls]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup06_runner_refuses_drifted_support_ledger_unchanged[login]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup06_runner_refuses_drifted_support_ledger_unchanged[missing]",  # noqa: E501
+    ],
+    "SUP-07": [
+        "tests/m05/test_l1w_w3a_support_safety_postgres.py::test_sup07_safe_support_with_a_login_member_provisions",  # noqa: E501
+    ],
+    "SUP-08": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup08_every_schema_privileged_profile_is_read_after_registry_roles",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[login]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[bypassrls]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry[missing]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_sup08_a_registry_role_without_a_profile_is_still_refused",  # noqa: E501
+    ],
     "L-07": [
         "tests/m05/test_l1w_w3a_impl_units.py::test_l07_guard_precedes_every_membership_lock[t029_m01_staff_admin_v2]",  # noqa: E501
         "tests/m05/test_l1w_w3a_impl_units.py::test_l07_guard_precedes_every_membership_lock[t032_m01_staff_bootstrap_admin]",  # noqa: E501

@@ -29,7 +29,8 @@ def _script() -> Any:
 def test_mutants_apply_exactly_once_and_change_the_target() -> None:
     script = _script()
     for target, specs in ((script.STAFF_TARGET, script.STAFF_SPECS),
-                          (script.M05_TARGET, script.M05_SPECS)):
+                          (script.M05_TARGET, script.M05_SPECS),
+                          (script.ROLE_SAFETY_TARGET, script.ROLE_SAFETY_SPECS)):
         text = (HERE.parent / target).read_text(encoding="utf-8")
         for mid, _desc, old, new in specs:
             assert text.count(old) == 1, mid
@@ -38,7 +39,8 @@ def test_mutants_apply_exactly_once_and_change_the_target() -> None:
 
 def test_ids_unique_and_every_mutant_has_a_w3a_kill_set() -> None:
     script = _script()
-    ids = [spec[0] for spec in (*script.STAFF_SPECS, *script.M05_SPECS)]
+    ids = [spec[0] for spec in (*script.STAFF_SPECS, *script.M05_SPECS,
+                                *script.ROLE_SAFETY_SPECS)]
     assert len(ids) == len(set(ids))
     assert set(script.KILLS) == set(ids)
     for mid in ids:

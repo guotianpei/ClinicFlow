@@ -164,6 +164,23 @@ async def expired_context() -> TenantContext:
 # supplies a conflicting answer explicitly rather than relying on omission.
 STAGE_ONE_ANSWERS = (recording.SHIPPED_CONTROLLED_EDGES, recording.MIGRATOR_SAFE)
 
+# L-1W W3a (Codex 225500Z): stage 1 now also reads the live attributes and SET
+# capability of every manifest profile that receives tenant-schema privileges, even
+# when no registry unit runs as it (the USAGE-only support profile). Safe defaults
+# are supplied only when the test declares no answer of its own for those reads, so
+# a test reasoning about them (or wanting a refusal) still states them explicitly.
+PROFILE_ATTRIBUTES_SAFE = recording.Answer(
+    markers=("select rolcanlogin", "pg_roles"), rows=((False,) * 6,))
+PROFILE_SETTABLE = recording.Answer(markers=("pg_has_role",), rows=((True,),))
+
+
+def _profile_defaults(answers: Any) -> list[Any]:
+    declared = [tuple(m.casefold() for m in a.markers) for a in answers]
+    return [
+        default for default in (PROFILE_ATTRIBUTES_SAFE, PROFILE_SETTABLE)
+        if tuple(m.casefold() for m in default.markers) not in declared
+    ]
+
 
 @pytest.fixture
 def harness():
@@ -201,7 +218,8 @@ def recording_connection(shared_clock):
 
     def build(*answers, name: str = "connection") -> recording.RecordingConnection:
         return recording.RecordingConnection(
-            answers=[*STAGE_ONE_ANSWERS, *answers], name=name, clock=shared_clock
+            answers=[*STAGE_ONE_ANSWERS, *_profile_defaults(answers), *answers],
+            name=name, clock=shared_clock,
         )
 
     return build
@@ -352,7 +370,7 @@ def typed_driver(shared_clock):
         labels = tuple(names) or tuple(f"c{index}" for index in range(len(answer_sets)))
         connections = tuple(
             typed_recording.TypedConnection(
-                answers=[*STAGE_ONE_ANSWERS, *answers],
+                answers=[*STAGE_ONE_ANSWERS, *_profile_defaults(answers), *answers],
                 name=label,
                 clock=shared_clock,
             )

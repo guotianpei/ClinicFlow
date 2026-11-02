@@ -10,6 +10,11 @@ Rows:
 - SUP-03: the controlled membership graph refuses an undeclared edge touching
   support, a missing support edge and a support edge with different options; the
   exact shipped graph passes.
+- SUP-08: stage 1 reads the live attributes of every tenant-schema-privileged
+  profile not run by a registry unit (support included), AFTER the registry roles,
+  with the existing reads; an unsafe or missing support refuses with
+  EXECUTION_ROLE_UNAVAILABLE even for an empty registry; a registry role without a
+  profile is still refused; the migrator check still runs (Codex 225500Z).
 - L-07: source order: in t029 and t032 the role guard is referenced before every
   membership row lock (FROM m01_staff ... FOR UPDATE / FOR SHARE); the static half of
   guard-before-membership (the dynamic half is BS-08 and L-06).
@@ -132,6 +137,94 @@ def test_sup03_the_controlled_graph_refuses_unsafe_support_edges(case: str) -> N
             observed.add(_edge(SUPPORT, MIGRATOR, admin=True))
     assert assess_membership_graph(observed=frozenset(observed), declared=declared) == (
         "EXECUTION_ROLE_UNAVAILABLE")
+
+
+# ---- SUP-08 --------------------------------------------------------------------------
+
+
+class _Cursor:
+    def __init__(self, log: list[tuple[str, Any]], rows: dict[str, Any]) -> None:
+        self.log, self.rows, self.last = log, rows, ("", None)
+
+    async def __aenter__(self) -> _Cursor:
+        return self
+
+    async def __aexit__(self, *args: Any) -> bool:
+        return False
+
+    async def execute(self, statement: str, params: Any) -> None:
+        kind = ("attributes" if "rolcanlogin" in statement else "set"
+                if "pg_has_role" in statement else "migrator"
+                if "rolcreaterole" in statement else "graph")
+        self.last = (kind, params)
+        self.log.append(self.last)
+
+    async def fetchall(self) -> list[tuple[Any, ...]]:
+        return [(role, MIGRATOR, True, False, False) for role in SHIPPED_PROFILE_EDGES]
+
+    async def fetchone(self) -> Any:
+        kind, params = self.last
+        if kind == "attributes":
+            return self.rows.get(params[0], (False,) * 6)
+        if kind == "set":
+            return (True,)
+        return (False,)
+
+
+class _Connection:
+    def __init__(self, rows: dict[str, Any] | None = None) -> None:
+        self.log: list[tuple[str, Any]] = []
+        self.rows = rows or {}
+
+    def cursor(self) -> _Cursor:
+        return _Cursor(self.log, self.rows)
+
+
+def _unit(role: str | None) -> Any:
+    return type("Unit", (), {"execution_role": role})()
+
+
+def test_sup08_every_schema_privileged_profile_is_read_after_registry_roles() -> None:
+    import asyncio
+
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    conn = _Connection()
+    asyncio.run(assert_execution_roles_safe(conn, [_unit("haloflow_staff_owner"), _unit(None)]))
+    attribute_reads = [p[0] for k, p in conn.log if k == "attributes"]
+    assert attribute_reads[0] == "haloflow_staff_owner"
+    assert sorted(attribute_reads[1:]) == sorted(
+        r for r in SHIPPED_PROFILE_EDGES if r != "haloflow_staff_owner")
+    assert SUPPORT in attribute_reads
+    assert conn.log[0][0] == "graph" and conn.log[-1] == ("migrator", (MIGRATOR,))
+
+
+@pytest.mark.parametrize("row", [(True, False, False, False, False, False),
+                                 (False, False, False, False, False, True), None],
+                         ids=["login", "bypassrls", "missing"])
+def test_sup08_unsafe_or_missing_support_refuses_even_for_an_empty_registry(row: Any) -> None:
+    import asyncio
+
+    from haloflow.m01.errors import ExecutionRoleUnavailable
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    conn = _Connection({SUPPORT: row})
+    with pytest.raises(ExecutionRoleUnavailable) as refused:
+        asyncio.run(assert_execution_roles_safe(conn, []))
+    assert refused.value.reason_code == "EXECUTION_ROLE_UNAVAILABLE"
+    assert ("migrator", (MIGRATOR,)) not in conn.log  # refused before the migrator read
+
+
+def test_sup08_a_registry_role_without_a_profile_is_still_refused() -> None:
+    import asyncio
+
+    from haloflow.m01.errors import ExecutionRoleUnavailable
+    from haloflow.m01.provisioning.role_safety import assert_execution_roles_safe
+
+    conn = _Connection()
+    with pytest.raises(ExecutionRoleUnavailable):
+        asyncio.run(assert_execution_roles_safe(conn, [_unit("haloflow_unprofiled_owner")]))
+    assert not [p for k, p in conn.log if k == "attributes"]
 
 
 # ---- L-07 ---------------------------------------------------------------------------

@@ -2655,7 +2655,10 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
 
         async def execute(self, statement, params):
             assert statement.lstrip().startswith("SELECT")
-            if "rolcreaterole" in statement:
+            self.last = statement
+            # L-1W W3a: profile attribute reads (rolcanlogin ...) precede the migrator
+            # read; only the migrator's own rolcreaterole read is this row's subject.
+            if "rolcreaterole" in statement and "rolcanlogin" not in statement:
                 assert params == ("haloflow_migrator",)
 
         async def fetchall(self):
@@ -2675,6 +2678,12 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
             ]
 
         async def fetchone(self):
+            # Safe, settable profiles (L-1W W3a profile check); the migrator row is
+            # the parameter.
+            if "rolcanlogin" in self.last:
+                return (False,) * 6
+            if "pg_has_role" in self.last:
+                return (True,)
             return attribute_row
 
     class Connection:
@@ -2706,7 +2715,8 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
 
         async def execute(self, statement, params):
             assert statement.lstrip().startswith("SELECT")
-            if "rolcreaterole" in statement:
+            self.last = statement
+            if "rolcreaterole" in statement and "rolcanlogin" not in statement:
                 seen.append(params)
 
         async def fetchall(self):
@@ -2726,6 +2736,10 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
             ]
 
         async def fetchone(self):
+            if "rolcanlogin" in self.last:
+                return (False,) * 6  # safe profiles (L-1W W3a profile check)
+            if "pg_has_role" in self.last:
+                return (True,)
             return (False,)
 
     class Connection:
