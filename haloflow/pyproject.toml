@@ -43,6 +43,8 @@ dependencies = [
     "python-dateutil>=2.9.0",
     "openpyxl>=3.1.0",              # payer care-gap list XLSX ingestion
     "python-jose[cryptography]>=3.3.0",  # JWT for webhook signatures
+    # L-1W access-token verification (library note v1r1; Codex 6e73e350). Not python-jose.
+    "pyjwt[crypto]==2.15.1",
 ]
 
 [project.optional-dependencies]

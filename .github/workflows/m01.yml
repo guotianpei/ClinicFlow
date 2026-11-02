@@ -63,12 +63,12 @@ jobs:
       # commands from these markers and fails closed if one is missing,
       # duplicated or does not start with the expected tool (CP2-2a I-9, 2A-C10).
       # gate-reachability: lint
-      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 alembic
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform alembic
       # gate-reachability: type
-      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/composition.py src/haloflow/startup.py
+      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
-      - run: $VENV/bin/pytest tests/m01 tests/m02 tests/m05 -q -rA
+      - run: $VENV/bin/pytest tests/m01 tests/m02 tests/m05 tests/platform -q -rA
         id: pytest
         # The JUnit report and the session record (ci/ci_pytest_session.py: pytest's
         # own final exit status and collected count) are requested through this
@@ -101,7 +101,7 @@ jobs:
       # UC1 B5 closeout trace controls (Codex 24f9221d R5: measured in CI). They
       # run even when pytest failed, so a red tranche measures them too.
       - if: ${{ !cancelled() }}
-        run: $VENV/bin/pytest scripts/test_uc1_trace.py -q -rA -p no:cacheprovider
+        run: $VENV/bin/pytest scripts/test_uc1_trace.py scripts/test_l1w_trace.py -q -rA -p no:cacheprovider
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.
@@ -149,6 +149,13 @@ jobs:
           python3 -I scripts/b5_startup_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b5-startup-mutation"
+      # L-1W W1: 28 predeclared security mutants of the verifier and the key-set
+      # client, two groups, judged by the same checker. Static controls first.
+      - run: $VENV/bin/pytest scripts/test_l1w_w1_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/l1w_w1_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w1-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
