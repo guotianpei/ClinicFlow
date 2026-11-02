@@ -46,10 +46,9 @@ M01_PACKAGE = "haloflow.m01"
 COMPOSITION_ROOT = "src/haloflow/composition.py"
 DEFINITION_SET_NAME = re.compile(r"^M\d{2}_STATEMENTS$")
 DEFINITION_SET_LOCATION = re.compile(r"^src/haloflow/m\d{2}/statements\.py$")
-# B3b (package v2 section 6, v2r1): one additional, exactly named, uncomposed set.
-# No pattern widening: this name is legal in this one file only.
-STAFF_DEFINITION_SET = "STAFF_STATEMENTS"
-STAFF_DEFINITION_LOCATION = "src/haloflow/m01/statements.py"
+# B3b's STAFF_STATEMENTS exemption is retired in B5 (P-1(a)): the staff keys now live
+# in M01_STATEMENTS, the one canonical mapping, and B5-C02 pins that
+# STAFF_STATEMENTS no longer exists.
 
 PROTECTED_MODULES = frozenset({"haloflow.m01.pool"})
 PROTECTED_NAMES = frozenset(
@@ -154,8 +153,6 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
             if not isinstance(target, ast.Name):
                 continue
             if DEFINITION_SET_NAME.fullmatch(target.id) and not module_location:
-                violations.append(f"{path}: defines {target.id}")
-            if target.id == STAFF_DEFINITION_SET and path != STAFF_DEFINITION_LOCATION:
                 violations.append(f"{path}: defines {target.id}")
     return violations
 
@@ -330,25 +327,6 @@ def test_an_application_module_cannot_compose_or_define_an_unpinned_catalogue() 
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_import) == []
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_call) == []
     assert _definition_set_violations_in("src/haloflow/m07/statements.py", rogue_definitions) == []
-
-
-def test_staff_definition_set_is_legal_only_in_the_m01_statement_file() -> None:
-    """B3b ST-1/ST-2: STAFF_STATEMENTS is named exactly and allowed in one file; the
-    same name anywhere else, including another module's statement file, is refused."""
-
-    rogue = 'STAFF_STATEMENTS = {"m01.staff.x": (None, "c", "SELECT 1")}\n'
-    assert _definition_set_violations_in(STAFF_DEFINITION_LOCATION, rogue) == []
-    for elsewhere in (
-        "src/haloflow/m05/statements.py",
-        "src/haloflow/m01/staff/statements.py",
-        "src/haloflow/m01/staff/service.py",
-        "src/haloflow/composition.py",
-    ):
-        assert _definition_set_violations_in(elsewhere, rogue), elsewhere
-    # A similarly named set does not inherit the exemption.
-    assert _definition_set_violations_in(
-        "src/haloflow/m01/staff/units.py", 'M01_STATEMENTS = {}\n'
-    )
 
 
 def test_compiled_catalog_write_capabilities_cannot_be_supplied_or_drift() -> None:
@@ -984,7 +962,7 @@ def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]
     ]
 
 
-def _is_literal_frozenset_of_eleven(value: ast.expr | None) -> bool:
+def _is_literal_frozenset_of_twenty_five(value: ast.expr | None) -> bool:
     return (
         isinstance(value, ast.Call)
         and isinstance(value.func, ast.Name)
@@ -995,7 +973,7 @@ def _is_literal_frozenset_of_eleven(value: ast.expr | None) -> bool:
         and len(value.args[0].elts) == 1
         and isinstance(value.args[0].elts[0], ast.Constant)
         and type(value.args[0].elts[0].value) is int
-        and value.args[0].elts[0].value == 11
+        and value.args[0].elts[0].value == 25
     )
 
 
@@ -1019,7 +997,8 @@ def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
 
 def _declaration_violations(path: str, source: str) -> list[str]:
     """L1-A4. The composition root assigns the declaration exactly once, at
-    module level, to the literal `frozenset({11})`; no other module assigns it."""
+    module level, to the literal `frozenset({25})` (B5; `frozenset({11})` before it);
+    no other module assigns it."""
 
     assigned = _declaration_assignments_in(source)
     if path != COMPOSITION_ROOT:
@@ -1045,8 +1024,8 @@ def _declaration_violations(path: str, source: str) -> list[str]:
         violations.append(
             f"{path}: {len(assigned)} assignments, {len(module_level)} module-level"
         )
-    if not all(_is_literal_frozenset_of_eleven(value) for value in assigned):
-        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{11}})")
+    if not all(_is_literal_frozenset_of_twenty_five(value) for value in assigned):
+        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{25}})")
     return violations
 
 
@@ -1130,7 +1109,7 @@ def test_l1_a4_the_supported_set_is_declared_once_as_the_literal_three() -> None
 
 
 def test_l1_a4_negative_control() -> None:
-    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({11})\n"
+    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({25})\n"
     assert _declaration_violations(COMPOSITION_ROOT, good) == []
     assert _declaration_violations(COMPOSITION_ROOT, good + good)
     assert _declaration_violations(
@@ -1140,16 +1119,18 @@ def test_l1_a4_negative_control() -> None:
     wrongs = (
         "frozenset({3})",
         "frozenset({10})",
-        "frozenset({11, 2})",
+        "frozenset({11})",
+        "frozenset({24})",
+        "frozenset({25, 2})",
         "frozenset({True})",
-        "{11}",
-        "frozenset([11])",
+        "{25}",
+        "frozenset([25])",
     )
     for wrong in wrongs:
         source = f"APPROVED_SUPPORTED_SCHEMA_VERSIONS = {wrong}\n"
         assert _declaration_violations(COMPOSITION_ROOT, source), wrong
     assert _declaration_violations(
-        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({11})\n"
+        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({25})\n"
     )
     assert _declaration_violations("src/haloflow/m01/runtime.py", good)
 

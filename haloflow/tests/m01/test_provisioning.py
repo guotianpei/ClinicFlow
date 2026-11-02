@@ -361,7 +361,9 @@ def test_a_test_only_unit_is_accepted_only_when_explicitly_allowed() -> None:
 def test_the_production_registry_contains_no_test_units() -> None:
     """TC-E21, over the real composition root rather than a constructed example."""
 
+    from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     registry = build_production_tenant_migrations()
 
@@ -378,9 +380,29 @@ def test_the_production_registry_contains_no_test_units() -> None:
         "t009_m02_append",
         "t010_m02_enqueue",
         "t011_m02_envelope_read",
+        # UC1 part B B5 (package v2 section 1, Codex 4b0a5448): M05, then staff.
+        "t012_m05_tables",
+        "t013_m05_seed",
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t021_m01_staff_directory",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
     )
     assert not any(unit.is_test_unit for unit in registry)
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
+    assert APPROVED_TENANT_MIGRATIONS == (
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        STAFF_TENANT_MIGRATIONS,
+    )
 
 
 def test_the_production_baseline_targets_the_supported_schema_version() -> None:
@@ -395,9 +417,13 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     UC1 part A (D2, Codex ALIGN 20261031T015048Z; C1 20261031T131639Z) extends it
     through `t011_m02_envelope_read`: the production target is version 11. The
     number only; no production tenant at versions 1-10 and no upgrade path is claimed.
+
+    UC1 part B B5 (package v2 section 1, Codex 4b0a5448) extends it through
+    `t025_m01_staff_followup_reader`: the production target is version 25. The
+    number only; no upgrade path from version 11 is claimed (L-6).
     """
 
-    assert build_production_tenant_migrations().target_version == 11
+    assert build_production_tenant_migrations().target_version == 25
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1201,7 +1227,9 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
     makes that change -- and any further one -- visible rather than silent.
     """
 
+    from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     registry = build_production_tenant_migrations()
 
@@ -1219,8 +1247,29 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
         "haloflow_m02_append_owner",
         "haloflow_m02_projection_owner",
         "haloflow_m02_read_owner",
+        # UC1 part B B5: t012/t013 and t021 are migrator-owned ordinary units; the
+        # M05 owner runs t014-t020 and the staff owner t022-t025.
+        None,
+        None,
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        None,
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
     ]
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
+    assert APPROVED_TENANT_MIGRATIONS == (
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        STAFF_TENANT_MIGRATIONS,
+    )
 
 
 def test_changing_the_execution_role_changes_the_checksum() -> None:
@@ -1293,6 +1342,21 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
         "t009_m02_append",
         "t010_m02_enqueue",
         "t011_m02_envelope_read",
+        # UC1 part B B5 (package v2 section 1, Codex 4b0a5448): M05, then staff.
+        "t012_m05_tables",
+        "t013_m05_seed",
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t021_m01_staff_directory",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
     )
     assert len(registry.units[0].checksum) == 64
 

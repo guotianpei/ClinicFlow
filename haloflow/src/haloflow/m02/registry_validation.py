@@ -19,9 +19,23 @@ UC1 part B, B2 (Codex ALIGN 20261031T233740Z and 20261031T234337Z):
   missing required relation, permission failure or malformed row refuses
   ``GENERATION_UNREADABLE``; it never returns an empty accepted generation.
 
-What this is NOT: startup enforcement. No production caller loads and validates a
-generation before serving tenant traffic yet; that trusted caller and its
-refusal-before-traffic proof are a mandatory B5 obligation (D3 end-to-end open).
+UC1 part B, B5 (package v2 section 4 and v2r1, Codex-aligned; red gate PASS 0673dab):
+- The generation gains the action-family rows (``FamilyRow``). Validation precedence
+  is total: (1) linkage, in either deployment: when the generation carries any of
+  the M05 family ``m05_followup``, contract type ``m05_followup_resolution_asserted``
+  or resolver ``m05_followup_item_v1``, all three must be present with one equal
+  activation flag, else ``ROUTE_NOT_INSTALLED`` (a Part A generation with none of
+  them is not judged by this rule); (2) M05-A1, production only: all three active
+  refuses ``M05_ACTIVATION_NOT_AUTHORIZED``; (3) the existing production rules in
+  their existing order; (4) the existing route checks.
+- ``load_generation_in`` performs the same strict reads inside a transaction the
+  caller already opened (the startup factory's single READ ONLY, REPEATABLE READ
+  snapshot over its migrator connection); ``load_generation`` opens its own such
+  transaction and delegates. With M05 installed (any ``m05_*`` relation), a missing
+  M05 family, type/contract or resolver row refuses ``GENERATION_UNREADABLE``; it is
+  never defaulted to inactive.
+
+The trusted startup caller is ``haloflow.startup.start_production_services``.
 """
 
 from collections.abc import Mapping
@@ -36,11 +50,13 @@ from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
 __all__ = [
     "ContractRow",
+    "FamilyRow",
     "IntakeRow",
     "LoadedGeneration",
     "RegistryRefused",
     "ResolverRow",
     "load_generation",
+    "load_generation_in",
     "validate_loaded_generation",
 ]
 
@@ -48,6 +64,10 @@ _DEPLOYMENTS: Final = frozenset({"production", "non_production"})
 _TEST_FAMILIES: Final = ("m02_test_", "m05_test_")
 _SUPPORTED_SIGNAL: Final = ("event_signal", "m02.event.appended")
 _SYNTHETIC_KIND: Final = "synthetic_fixture"
+# The M05 activation linkage (B5 section 4): family, contract type and resolver.
+M05_FAMILY: Final = "m05_followup"
+M05_EVENT_TYPE: Final = "m05_followup_resolution_asserted"
+M05_RESOLVER: Final = "m05_followup_item_v1"
 
 
 class RegistryRefused(Exception):
@@ -82,12 +102,20 @@ class IntakeRow:
 
 
 @dataclass(frozen=True, slots=True)
+class FamilyRow:
+    action_family: str
+    is_active: bool
+
+
+@dataclass(frozen=True, slots=True)
 class LoadedGeneration:
     contracts: tuple[ContractRow, ...]
     resolvers: tuple[ResolverRow, ...]
     test_targets_present: bool
     # Default empty: every part A constructor keeps its meaning (no intake).
     intake_rows: tuple[IntakeRow, ...] = ()
+    # Default empty: every existing constructor keeps its meaning (no families).
+    families: tuple[FamilyRow, ...] = ()
 
 
 def _operation_must_be_null(constraints: Mapping[str, Any]) -> bool:
@@ -109,11 +137,33 @@ def _check_route(contract: ContractRow) -> None:
         raise RegistryRefused("ROUTE_NOT_INSTALLED")
 
 
+def _m05_activation(generation: LoadedGeneration) -> bool | None:
+    """The single M05 activation flag, or None for a generation without M05 rows.
+
+    Linkage: family, contract (``event_types.is_active``, every version) and resolver
+    must all be present and carry one equal flag; anything else is a partial
+    activation, refused ``ROUTE_NOT_INSTALLED`` in either deployment.
+    """
+
+    family = [row.is_active for row in generation.families if row.action_family == M05_FAMILY]
+    contract = [row.is_active for row in generation.contracts if row.event_type == M05_EVENT_TYPE]
+    resolver = [row.is_active for row in generation.resolvers if row.resolver_id == M05_RESOLVER]
+    if not (family or contract or resolver):
+        return None
+    flags = {*family, *contract, *resolver}
+    if not (family and contract and resolver) or len(flags) != 1:
+        raise RegistryRefused("ROUTE_NOT_INSTALLED")
+    return flags.pop()
+
+
 def validate_loaded_generation(generation: LoadedGeneration, *, deployment: str) -> None:
     """Return None, or raise ``RegistryRefused``; ``ValueError`` for an unknown deployment."""
 
     if deployment not in _DEPLOYMENTS:
         raise ValueError("unknown deployment label")
+    m05_active = _m05_activation(generation)
+    if deployment == "production" and m05_active is True:
+        raise RegistryRefused("M05_ACTIVATION_NOT_AUTHORIZED")
     active = [contract for contract in generation.contracts if contract.is_active]
     if deployment == "production":
         if any(contract.event_type.startswith(_TEST_FAMILIES) for contract in active):
@@ -133,7 +183,12 @@ def validate_loaded_generation(generation: LoadedGeneration, *, deployment: str)
 # Loader (B2). Read-only; the caller owns the connection and its credentials.
 # ---------------------------------------------------------------------------
 
-_REQUIRED_RELATIONS: Final = ("event_types", "event_contracts", "m02_link_resolvers")
+_REQUIRED_RELATIONS: Final = (
+    "ref_action_families",
+    "event_types",
+    "event_contracts",
+    "m02_link_resolvers",
+)
 _TEST_TARGETS: Final = "m02_test_link_targets"
 _INTAKE: Final = "m05_intake_map"
 _UNREADABLE: Final = "GENERATION_UNREADABLE"
@@ -204,6 +259,12 @@ def _resolver(row: tuple[Any, ...]) -> ResolverRow:
     )
 
 
+def _family(row: tuple[Any, ...]) -> FamilyRow:
+    if len(row) != 2:
+        raise _unreadable()
+    return FamilyRow(action_family=_text(row[0]), is_active=_bool(row[1]))
+
+
 def _intake(row: tuple[Any, ...]) -> IntakeRow:
     if len(row) != 3:
         raise _unreadable()
@@ -214,6 +275,107 @@ def _intake(row: tuple[Any, ...]) -> IntakeRow:
     )
 
 
+def _schema_key(schema_key: object) -> str:
+    if type(schema_key) is not str or not SCHEMA_KEY_PATTERN.fullmatch(schema_key):
+        raise RegistryRefused("SCHEMA_KEY_INVALID")
+    return schema_key
+
+
+async def _fetch(connection: AsyncConnection[Any], query: sql.Composed) -> list[tuple[Any, ...]]:
+    return [tuple(row) for row in await (await connection.execute(query)).fetchall()]
+
+
+async def load_generation_in(
+    connection: AsyncConnection[Any], schema_key: str
+) -> LoadedGeneration:
+    """Read one tenant's loaded generation inside the caller's open transaction.
+
+    The caller has already begun the transaction that fixes the snapshot (for the
+    B5 startup factory: ``BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY`` on its
+    migrator connection, shared with its ``shared.tenants`` read and the installed-
+    state comparison). Nothing here begins, commits or rolls back, sources
+    credentials, changes role or infers the deployment; a connection not inside a
+    transaction refuses ``GENERATION_UNREADABLE`` before any statement. Refusals as
+    for ``load_generation``. When M05 is installed (any ``m05_*`` relation), the
+    intake table and the M05 family, type/contract and resolver rows are required;
+    a missing one refuses ``GENERATION_UNREADABLE`` and is never read as inactive.
+    A driver error leaves the caller's transaction failed; the caller owns cleanup.
+    """
+
+    schema_key = _schema_key(schema_key)
+    if connection.info.transaction_status != TransactionStatus.INTRANS:
+        raise _unreadable()
+    schema = sql.Identifier(schema_key)
+    try:
+        relations = {
+            str(name)
+            for (name,) in await (
+                await connection.execute(
+                    "SELECT c.relname FROM pg_catalog.pg_class AS c"
+                    " JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace"
+                    " WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v')",
+                    (schema_key,),
+                )
+            ).fetchall()
+        }
+        if not set(_REQUIRED_RELATIONS) <= relations:
+            raise _unreadable()
+        m05_present = any(name.startswith("m05_") for name in relations)
+        if m05_present and _INTAKE not in relations:
+            raise _unreadable()
+        family_rows = await _fetch(
+            connection,
+            sql.SQL(
+                "SELECT action_family, is_active FROM {}.ref_action_families"
+                " ORDER BY action_family"
+            ).format(schema),
+        )
+        contract_rows = await _fetch(
+            connection,
+            sql.SQL(
+                "SELECT c.event_type, c.version, c.event_level, t.is_active,"
+                " c.projection_rule_id, c.signal_rule, c.value_constraints"
+                " FROM {}.event_contracts AS c JOIN {}.event_types AS t"
+                " ON t.event_type = c.event_type ORDER BY c.event_type, c.version"
+            ).format(schema, schema),
+        )
+        resolver_rows = await _fetch(
+            connection,
+            sql.SQL(
+                "SELECT resolver_id, resolver_kind, is_active"
+                " FROM {}.m02_link_resolvers ORDER BY resolver_id"
+            ).format(schema),
+        )
+        intake_rows: list[tuple[Any, ...]] = []
+        if _INTAKE in relations:
+            intake_rows = await _fetch(
+                connection,
+                sql.SQL(
+                    "SELECT source_event_type, source_contract_version,"
+                    " active_in_production FROM {}.m05_intake_map"
+                    " ORDER BY source_event_type, source_contract_version,"
+                    " active_in_production"
+                ).format(schema),
+            )
+    except psycopg.Error:
+        raise _unreadable() from None
+    generation = LoadedGeneration(
+        contracts=tuple(_contract(row) for row in contract_rows),
+        resolvers=tuple(_resolver(row) for row in resolver_rows),
+        test_targets_present=_TEST_TARGETS in relations,
+        intake_rows=tuple(_intake(row) for row in intake_rows),
+        families=tuple(_family(row) for row in family_rows),
+    )
+    if m05_present and not (
+        any(row.action_family == M05_FAMILY for row in generation.families)
+        # A contract row implies its event_types row (inner join, foreign key).
+        and any(row.event_type == M05_EVENT_TYPE for row in generation.contracts)
+        and any(row.resolver_id == M05_RESOLVER for row in generation.resolvers)
+    ):
+        raise _unreadable()
+    return generation
+
+
 async def load_generation(connection: AsyncConnection[Any], schema_key: str) -> LoadedGeneration:
     """Read one tenant's loaded generation in a single READ ONLY snapshot.
 
@@ -222,70 +384,18 @@ async def load_generation(connection: AsyncConnection[Any], schema_key: str) -> 
     key outside the tenant schema grammar; ``GENERATION_UNREADABLE`` for anything
     that cannot be read completely and decoded strictly. The intake table may be
     absent only when the schema has no ``m05_*`` relation at all (a pre-M05
-    generation).
+    generation). Opens its own READ ONLY, REPEATABLE READ transaction and delegates
+    every read to ``load_generation_in``; the connection is idle again afterwards.
     """
 
-    if type(schema_key) is not str or not SCHEMA_KEY_PATTERN.fullmatch(schema_key):
-        raise RegistryRefused("SCHEMA_KEY_INVALID")
+    schema_key = _schema_key(schema_key)
     if connection.info.transaction_status != TransactionStatus.IDLE:
         raise _unreadable()
-    schema = sql.Identifier(schema_key)
     try:
         async with connection.transaction():
             # Must be the transaction's first statement; the snapshot is taken by the
-            # next one, and every read below shares it.
+            # next one, and every read in load_generation_in shares it.
             await connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            relations = {
-                str(name)
-                for (name,) in await (
-                    await connection.execute(
-                        "SELECT c.relname FROM pg_catalog.pg_class AS c"
-                        " JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace"
-                        " WHERE n.nspname = %s AND c.relkind IN ('r', 'p', 'v')",
-                        (schema_key,),
-                    )
-                ).fetchall()
-            }
-            if not set(_REQUIRED_RELATIONS) <= relations:
-                raise _unreadable()
-            m05_present = any(name.startswith("m05_") for name in relations)
-            if m05_present and _INTAKE not in relations:
-                raise _unreadable()
-            contract_rows = await (
-                await connection.execute(
-                    sql.SQL(
-                        "SELECT c.event_type, c.version, c.event_level, t.is_active,"
-                        " c.projection_rule_id, c.signal_rule, c.value_constraints"
-                        " FROM {}.event_contracts AS c JOIN {}.event_types AS t"
-                        " ON t.event_type = c.event_type ORDER BY c.event_type, c.version"
-                    ).format(schema, schema)
-                )
-            ).fetchall()
-            resolver_rows = await (
-                await connection.execute(
-                    sql.SQL(
-                        "SELECT resolver_id, resolver_kind, is_active"
-                        " FROM {}.m02_link_resolvers ORDER BY resolver_id"
-                    ).format(schema)
-                )
-            ).fetchall()
-            intake_rows: list[tuple[Any, ...]] = []
-            if _INTAKE in relations:
-                intake_rows = await (
-                    await connection.execute(
-                        sql.SQL(
-                            "SELECT source_event_type, source_contract_version,"
-                            " active_in_production FROM {}.m05_intake_map"
-                            " ORDER BY source_event_type, source_contract_version,"
-                            " active_in_production"
-                        ).format(schema)
-                    )
-                ).fetchall()
+            return await load_generation_in(connection, schema_key)
     except psycopg.Error:
         raise _unreadable() from None
-    return LoadedGeneration(
-        contracts=tuple(_contract(tuple(row)) for row in contract_rows),
-        resolvers=tuple(_resolver(tuple(row)) for row in resolver_rows),
-        test_targets_present=_TEST_TARGETS in relations,
-        intake_rows=tuple(_intake(tuple(row)) for row in intake_rows),
-    )

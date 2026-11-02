@@ -56,7 +56,8 @@
       "replication": false,
       "bypassrls": false,
       "tenant_schema_privileges": [
-        "USAGE"
+        "USAGE",
+        "CREATE"
       ]
     },
     "haloflow_staff_owner": {
@@ -67,7 +68,8 @@
       "replication": false,
       "bypassrls": false,
       "tenant_schema_privileges": [
-        "USAGE"
+        "USAGE",
+        "CREATE"
       ]
     }
   },
