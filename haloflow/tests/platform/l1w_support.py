@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -155,6 +155,7 @@ class JwksServer:
     redirect_to: str | None = None
     requests: list[httpx.Request] = field(default_factory=list)
     on_request: Callable[[], Any] | None = None
+    respond: Callable[[httpx.Request], Awaitable[httpx.Response]] | None = None
 
     def set_keys(self, *keys: dict[str, Any]) -> None:
         self.body = {"keys": list(keys)}
@@ -166,6 +167,8 @@ class JwksServer:
             result = self.on_request()
             if hasattr(result, "__await__"):
                 await result
+        if self.respond is not None:
+            return await self.respond(request)
         if self.fail is not None:
             raise self.fail
         if self.redirect_to is not None:

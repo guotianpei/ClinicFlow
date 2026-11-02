@@ -112,7 +112,8 @@ def _forged_hs256() -> str:
 
 
 V02_CASES: dict[str, tuple[Any, str]] = {
-    "alg-none": (lambda: ls.token(RSA, header={"alg": "none"}, signature=b""), "ALG_NOT_ALLOWED"),
+    # non-empty signature segment: an empty one is MALFORMED first (Codex 42cd14a5)
+    "alg-none": (lambda: ls.token(RSA, header={"alg": "none"}, signature=b"x"), "ALG_NOT_ALLOWED"),
     "alg-hs256-jwk-secret": (_forged_hs256, "ALG_NOT_ALLOWED"),
     "alg-not-allowlisted": (lambda: ls.token(RSA, header={"alg": "RS384"}), "ALG_NOT_ALLOWED"),
     "alg-missing": (lambda: ls.token(RSA, header={"alg": ls.DROP}), "ALG_NOT_ALLOWED"),
@@ -147,7 +148,7 @@ async def test_v02_header_refusals_make_no_key_lookup() -> None:
     keys = ls.FakeKeys({RSA.kid: RSA})
     verifier = _verifier(keys)
     for build in (lambda: ls.token(RSA, header={"crit": ["x"]}),
-                  lambda: ls.token(RSA, header={"alg": "none"}, signature=b"")):
+                  lambda: ls.token(RSA, header={"alg": "none"}, signature=b"x")):
         with pytest.raises(AuthRefused):
             await verifier.verify(build())
     assert keys.calls == []
@@ -169,7 +170,13 @@ V03_CASES: dict[str, tuple[dict[str, Any], str]] = {
     "jti-missing": ({"jti": ls.DROP}, "CLAIMS_INVALID"),
     "sid-missing": ({"sid": ls.DROP}, "CLAIMS_INVALID"),
     "auth-time-missing": ({"auth_time": ls.DROP}, "CLAIMS_INVALID"),
+    "exp-missing": ({"exp": ls.DROP}, "CLAIMS_INVALID"),
     "exp-string": ({"exp": str(ls.NOW + 300)}, "CLAIMS_INVALID"),
+    # JSON true/false are not integers even though Python bool subclasses int
+    "exp-boolean": ({"exp": True}, "CLAIMS_INVALID"),
+    "iat-boolean": ({"iat": True}, "CLAIMS_INVALID"),
+    "nbf-boolean": ({"nbf": False}, "CLAIMS_INVALID"),
+    "auth-time-boolean": ({"auth_time": True}, "CLAIMS_INVALID"),
     "auth-time-float": ({"auth_time": ls.NOW - 60.5}, "CLAIMS_INVALID"),
     "sub-number": ({"sub": 123}, "CLAIMS_INVALID"),
     "amr-not-list": ({"amr": "mfa"}, "CLAIMS_INVALID"),

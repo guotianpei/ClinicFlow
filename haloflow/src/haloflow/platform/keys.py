@@ -4,7 +4,11 @@ Contract (pinned by tests/platform/test_l1w_keyset_units.py):
 - keys are fetched only from the configured ``jwks_url``, over the injected httpx
   transport; redirects are never followed; a response is refused if it exceeds
   ``max_bytes``, holds more than ``max_keys`` keys, is not a JSON object with a
-  ``keys`` array, or takes longer than ``timeout_s``;
+  ``keys`` array, or the fetch takes longer than ``timeout_s``;
+- ``timeout_s`` bounds the WHOLE fetch (connect, headers and body) by the client's own
+  deadline, independent of any transport timeout; the body is read as a stream and
+  abandoned as soon as more than ``max_bytes`` have arrived (it is never buffered whole
+  first);
 - the whole set is validated before it is installed: every key needs a string
   ``kid``, a ``kty`` coherent with an allowed algorithm, ``use`` absent or ``sig``,
   ``key_ops`` absent or containing ``verify``, ``alg`` absent or allowed, and only

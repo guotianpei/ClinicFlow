@@ -112,18 +112,41 @@ async def test_k01_rejected_refresh_keeps_old_set_and_does_not_reset_age() -> No
     assert caught.value.reason_code == "KEYSET_STALE"
 
 
-async def test_k01_valid_refresh_resets_age_and_drops_removed_keys() -> None:
+async def test_k01_valid_refresh_resets_age() -> None:
+    """Codex 42cd14a5: after the intended install no fetch can succeed, so only the
+    age reset can keep the set served past the OLD boundary."""
+
+    server, clock = _served(RSA.jwk())
+    client = _client(server, clock)
+    await client.key_for("rsa-1", "RS256")  # install 1 at t0
+    clock.now += 700  # past TTL: refresh succeeds -> install 2 at t0 + 700
+    await client.key_for("rsa-1", "RS256")
+    assert len(server.requests) == 2
+    server.fail = httpx.ConnectError("down")  # no successful fetch from here on
+    clock.now += 1150  # t0 + 1850: past the OLD boundary (t0 + 1800)
+    assert await client.key_for("rsa-1", "RS256") is not None
+    clock.now += 649  # t0 + 2499: last second before the NEW boundary
+    assert await client.key_for("rsa-1", "RS256") is not None
+    clock.now += 1  # t0 + 2500 = install 2 + max_age
+    with pytest.raises(KeySetUnavailable) as caught:
+        await client.key_for("rsa-1", "RS256")
+    assert caught.value.reason_code == "KEYSET_STALE"
+
+
+async def test_k01_valid_refresh_drops_removed_keys() -> None:
+    """The removed kid is unknown in the newly installed set itself: checked inside the
+    refresh interval, so no further fetch can be what removes it."""
+
     server, clock = _served(RSA.jwk(), RSA2.jwk())
     client = _client(server, clock)
     await client.key_for("rsa-2", "RS256")
     server.set_keys(RSA.jwk())  # rsa-2 rotated out
     clock.now += 700
-    await client.key_for("rsa-1", "RS256")  # triggers the TTL refresh; new set installed
-    clock.now += 61  # past the refresh interval, so an unknown kid may refresh once
+    await client.key_for("rsa-1", "RS256")  # TTL refresh installs the rotated set
+    fetches = len(server.requests)
     with pytest.raises(UnknownKey):
-        await client.key_for("rsa-2", "RS256")
-    clock.now += 1700  # still < max_age since the last installed set
-    assert await client.key_for("rsa-1", "RS256") is not None
+        await client.key_for("rsa-2", "RS256")  # same instant: rate-limited, no fetch
+    assert len(server.requests) == fetches
 
 
 # --- K-02 redirects are never followed ----------------------------------------------
@@ -177,6 +200,56 @@ async def test_k03_transport_failure_with_no_set_is_unavailable(failure: Excepti
     with pytest.raises(KeySetUnavailable) as caught:
         await _client(server, ls.Clock()).key_for("rsa-1", "RS256")
     assert caught.value.reason_code == "KEYSET_UNAVAILABLE"
+
+
+async def test_k03_fetch_bounded_by_total_timeout() -> None:
+    """A hanging endpoint is abandoned at timeout_s (whole fetch: connect, headers and
+    body), not merely when the transport raises its own timeout (Codex 42cd14a5)."""
+
+    import time
+
+    async def hang(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)
+        return httpx.Response(200, json={"keys": [RSA.jwk()]})
+
+    server = ls.JwksServer(respond=hang)
+    client = _client(server, ls.Clock(), timeout_s=0.2)
+    started = time.monotonic()
+    with pytest.raises(KeySetUnavailable) as caught:
+        await client.key_for("rsa-1", "RS256")
+    assert time.monotonic() - started < 1.5
+    assert caught.value.reason_code == "KEYSET_UNAVAILABLE"
+
+
+async def test_k03_fetch_within_timeout_succeeds() -> None:
+    async def slowish(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={"keys": [RSA.jwk()]})
+
+    server = ls.JwksServer(respond=slowish)
+    assert await _client(server, ls.Clock(), timeout_s=1.0).key_for("rsa-1", "RS256")
+
+
+async def test_k03_streamed_body_read_stops_at_max_bytes() -> None:
+    """The body is read as a stream and abandoned once max_bytes is exceeded; a client
+    that buffers the whole response first would consume every chunk."""
+
+    yielded: list[int] = []
+
+    async def chunks() -> Any:
+        yield b'{"keys": ['
+        for i in range(20):
+            yielded.append(i)
+            yield b" " * 8192
+
+    async def stream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/json"},
+                              content=chunks())
+
+    server = ls.JwksServer(respond=stream)
+    with pytest.raises(KeySetUnavailable):
+        await _client(server, ls.Clock()).key_for("rsa-1", "RS256")
+    assert len(yielded) <= 9  # 65536 / 8192 = 8 chunks, +1 crossing the limit
 
 
 async def test_k03_non_json_body_rejected() -> None:

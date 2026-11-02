@@ -54,7 +54,8 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_keyset_units.py::test_k01_invalid_set_rejected_whole_on_first_fetch[rsa-missing-n]",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k01_invalid_set_rejected_whole_on_first_fetch[use-enc]",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k01_rejected_refresh_keeps_old_set_and_does_not_reset_age",  # noqa: E501
-        "tests/platform/test_l1w_keyset_units.py::test_k01_valid_refresh_resets_age_and_drops_removed_keys",  # noqa: E501
+        "tests/platform/test_l1w_keyset_units.py::test_k01_valid_refresh_resets_age",
+        "tests/platform/test_l1w_keyset_units.py::test_k01_valid_refresh_drops_removed_keys",
     ],
     "K-02": [
         "tests/platform/test_l1w_keyset_units.py::test_k02_redirect_not_followed",
@@ -69,6 +70,9 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_keyset_units.py::test_k03_transport_failure_with_no_set_is_unavailable[read-timeout]",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k03_transport_failure_with_no_set_is_unavailable[connect-error]",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k03_transport_failure_with_no_set_is_unavailable[connect-timeout]",  # noqa: E501
+        "tests/platform/test_l1w_keyset_units.py::test_k03_fetch_bounded_by_total_timeout",
+        "tests/platform/test_l1w_keyset_units.py::test_k03_fetch_within_timeout_succeeds",
+        "tests/platform/test_l1w_keyset_units.py::test_k03_streamed_body_read_stops_at_max_bytes",
         "tests/platform/test_l1w_keyset_units.py::test_k03_non_json_body_rejected",
     ],
     "K-04": [
@@ -119,15 +123,20 @@ TRACE: dict[str, list[str]] = {
     "V-03": [
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[amr-not-list]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[aud-cross-environment]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[auth-time-boolean]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[auth-time-float]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[auth-time-missing]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[client-id-missing]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[exp-at-skew-edge]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[exp-boolean]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[exp-missing]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[exp-past]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[exp-string]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[iat-boolean]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[iat-missing]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[iss-prefix-only]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[jti-missing]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[nbf-boolean]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[nbf-future]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[sid-missing]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[sub-missing]",
