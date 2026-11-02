@@ -300,11 +300,15 @@ class TokenVerifier:
         if "nbf" in claims and claims["nbf"] > now + cfg.skew_s:
             _refuse("NOT_YET_VALID")
 
+        try:
+            auth_time = datetime.fromtimestamp(claims["auth_time"], tz=UTC)
+        except (OverflowError, ValueError, OSError):
+            _refuse("CLAIMS_INVALID")  # outside the representable range (Codex 039eff80)
         return VerifiedIdentity(
             issuer=claims["iss"],
             subject=claims["sub"],
             sid=claims["sid"],
-            auth_time=datetime.fromtimestamp(claims["auth_time"], tz=UTC),
+            auth_time=auth_time,
             assured=bool(set(amr) & cfg.assurance_amr),
             client_id=claims["client_id"],
             jti=claims["jti"],

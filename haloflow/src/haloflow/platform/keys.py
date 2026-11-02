@@ -140,14 +140,14 @@ class KeySetClient:
     async def key_for(self, kid: str, alg: str) -> Any:
         now = self._clock()
         if self._keys is None:
-            await self._refresh(now, force=True)
+            await self._refresh(now)
             if self._keys is None:
                 raise KeySetUnavailable("KEYSET_UNAVAILABLE")
         else:
             assert self._installed_at is not None
             age = now - self._installed_at
             if age >= self._config.ttl_s:
-                await self._refresh(now, force=False)
+                await self._refresh(now)
                 assert self._installed_at is not None
                 if self._clock() - self._installed_at >= self._config.max_age_s:
                     raise KeySetUnavailable("KEYSET_STALE")
@@ -155,7 +155,7 @@ class KeySetClient:
         assert keys is not None
         key = keys.get(kid)
         if key is None:
-            await self._refresh(self._clock(), force=False)
+            await self._refresh(self._clock())
             assert self._keys is not None
             key = self._keys.get(kid)
             if key is None:
@@ -173,17 +173,19 @@ class KeySetClient:
             raise KeyMismatch()
         return key.public_key
 
-    async def _refresh(self, now: float, *, force: bool) -> None:
+    async def _refresh(self, now: float) -> None:
         """Single-flight, rate-limited refresh. Never raises for fetch problems."""
 
         if self._inflight is not None and not self._inflight.done():
             await asyncio.shield(self._inflight)
             return
         if (
-            not force
-            and self._last_attempt is not None
+            self._last_attempt is not None
             and now - self._last_attempt < self._config.refresh_min_interval_s
         ):
+            # Every attempt is rate-limited, the initial one included: with no set
+            # installed, a failed first fetch is not retried on every request (Codex
+            # 039eff80). The very first attempt (no previous attempt) always runs.
             return
         self._last_attempt = now
         self._inflight = asyncio.ensure_future(self._fetch_and_install(now))
@@ -276,8 +278,12 @@ class KeySetClient:
                 raise _Rejected()
         except ValueError:
             raise _Rejected() from None
-        if alg is not None and SUPPORTED_ALGORITHMS[alg][0] != kty:
-            raise _Rejected()
+        if alg is not None:
+            # full coherence of a declared alg with the key itself (Codex 039eff80): family
+            # AND curve, so an incoherent key rejects the whole set before install
+            family_kty, family_crv = SUPPORTED_ALGORITHMS[alg]
+            if family_kty != kty or (family_crv is not None and family_crv != crv):
+                raise _Rejected()
         return kid, _Key(kty=kty, crv=crv, alg=alg, public_key=public_key)
 
     async def aclose(self) -> None:

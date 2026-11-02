@@ -149,6 +149,34 @@ async def test_k01_valid_refresh_drops_removed_keys() -> None:
     assert len(server.requests) == fetches
 
 
+EC384 = ls.SigningKey.ec("ec-384")  # P-256 key material; declared ES384 below
+
+
+async def test_k01_alg_curve_incoherence_rejects_whole_set_on_first_fetch() -> None:
+    """Declared W1-implementation addition (Codex 039eff80): with ES256 and ES384 both
+    allowed, a P-256 key declaring ES384 makes the WHOLE set invalid."""
+
+    server, clock = _served(EC.jwk(), EC384.jwk(alg="ES384"))
+    client = _client(server, clock, allowed_algorithms=frozenset({"ES256", "ES384"}))
+    with pytest.raises(KeySetUnavailable):
+        await client.key_for("ec-1", "ES256")
+
+
+async def test_k01_alg_curve_incoherent_refresh_keeps_old_set_and_age() -> None:
+    server, clock = _served(EC.jwk())
+    client = _client(server, clock, allowed_algorithms=frozenset({"ES256", "ES384"}))
+    await client.key_for("ec-1", "ES256")  # install at t0
+    server.set_keys(EC.jwk(), EC384.jwk(alg="ES384"))
+    clock.now += 700  # TTL refresh: incoherent set refused, old set kept
+    assert await client.key_for("ec-1", "ES256") is not None
+    with pytest.raises(UnknownKey):
+        await client.key_for("ec-384", "ES384")  # never installed
+    clock.now += 1100  # t0 + 1800: age not reset by the refused set
+    with pytest.raises(KeySetUnavailable) as caught:
+        await client.key_for("ec-1", "ES256")
+    assert caught.value.reason_code == "KEYSET_STALE"
+
+
 # --- K-02 redirects are never followed ----------------------------------------------
 
 
@@ -300,6 +328,28 @@ async def test_k04_concurrent_first_fetch_is_single_flight() -> None:
     results = await asyncio.gather(*tasks)
     assert all(r is not None for r in results)
     assert len(server.requests) == 1
+
+
+async def test_k04_failed_initial_fetch_is_rate_limited() -> None:
+    """Declared W1-implementation addition (Codex 039eff80): with no set installed, a
+    failed first fetch is not retried on every request."""
+
+    server = ls.JwksServer(fail=httpx.ConnectError("down"))
+    clock = ls.Clock()
+    client = _client(server, clock)
+    for _ in range(3):
+        with pytest.raises(KeySetUnavailable):
+            await client.key_for("rsa-1", "RS256")
+    assert len(server.requests) == 1
+    clock.now += 59
+    with pytest.raises(KeySetUnavailable):
+        await client.key_for("rsa-1", "RS256")
+    assert len(server.requests) == 1
+    server.fail = None
+    server.set_keys(RSA.jwk())
+    clock.now += 1  # 60 s after the first attempt
+    assert await client.key_for("rsa-1", "RS256") is not None
+    assert len(server.requests) == 2
 
 
 async def test_k04_refresh_rate_limited_then_allowed_after_interval() -> None:

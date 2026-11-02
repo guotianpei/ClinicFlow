@@ -192,6 +192,19 @@ async def test_v03_claim_refusals(case: str) -> None:
     await _refused(_verifier(), raw, code)
 
 
+@pytest.mark.parametrize(
+    "auth_time",
+    [253_402_300_800, 10**100, -(10**100), -62_135_596_801],
+    ids=["year-10000", "googol", "minus-googol", "before-year-1"],
+)
+async def test_v03_auth_time_outside_datetime_range_is_claims_invalid(auth_time: int) -> None:
+    """Declared W1-implementation addition (Codex 039eff80): an integer auth_time that
+    cannot be represented is a fixed, redacted refusal, never an uncaught error."""
+
+    raw = ls.token(RSA, ls.claims(auth_time=auth_time, x_canary=ls.CANARY))
+    await _refused(_verifier(), raw, "CLAIMS_INVALID")
+
+
 async def test_v03_skew_tolerated_inside_window() -> None:
     raw = ls.token(RSA, ls.claims(exp=ls.NOW - 59, nbf=ls.NOW + 59))
     assert (await _verifier().verify(raw)).subject == ls.SUBJECT

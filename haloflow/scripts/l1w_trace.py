@@ -56,6 +56,8 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_keyset_units.py::test_k01_rejected_refresh_keeps_old_set_and_does_not_reset_age",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k01_valid_refresh_resets_age",
         "tests/platform/test_l1w_keyset_units.py::test_k01_valid_refresh_drops_removed_keys",
+        "tests/platform/test_l1w_keyset_units.py::test_k01_alg_curve_incoherence_rejects_whole_set_on_first_fetch",  # noqa: E501
+        "tests/platform/test_l1w_keyset_units.py::test_k01_alg_curve_incoherent_refresh_keeps_old_set_and_age",  # noqa: E501
     ],
     "K-02": [
         "tests/platform/test_l1w_keyset_units.py::test_k02_redirect_not_followed",
@@ -78,6 +80,7 @@ TRACE: dict[str, list[str]] = {
     "K-04": [
         "tests/platform/test_l1w_keyset_units.py::test_k04_concurrent_unknown_kids_share_one_refresh",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k04_concurrent_first_fetch_is_single_flight",
+        "tests/platform/test_l1w_keyset_units.py::test_k04_failed_initial_fetch_is_rate_limited",
         "tests/platform/test_l1w_keyset_units.py::test_k04_refresh_rate_limited_then_allowed_after_interval",  # noqa: E501
         "tests/platform/test_l1w_keyset_units.py::test_k04_unknown_kid_right_after_first_install_does_not_refetch",  # noqa: E501
     ],
@@ -144,6 +147,10 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[sub-number]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[wrong-aud]",
         "tests/platform/test_l1w_verifier_units.py::test_v03_claim_refusals[wrong-iss]",
+        "tests/platform/test_l1w_verifier_units.py::test_v03_auth_time_outside_datetime_range_is_claims_invalid[year-10000]",  # noqa: E501
+        "tests/platform/test_l1w_verifier_units.py::test_v03_auth_time_outside_datetime_range_is_claims_invalid[googol]",  # noqa: E501
+        "tests/platform/test_l1w_verifier_units.py::test_v03_auth_time_outside_datetime_range_is_claims_invalid[minus-googol]",  # noqa: E501
+        "tests/platform/test_l1w_verifier_units.py::test_v03_auth_time_outside_datetime_range_is_claims_invalid[before-year-1]",  # noqa: E501
         "tests/platform/test_l1w_verifier_units.py::test_v03_skew_tolerated_inside_window",
         "tests/platform/test_l1w_verifier_units.py::test_v03_id_token_shape_refused",
     ],
