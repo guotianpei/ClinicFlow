@@ -159,13 +159,28 @@ def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledC
     return CompiledCatalog(catalog=_build_statement_catalog(merged))
 
 
-# M01 owns no tenant-schema SQL of its own: its only shared-control read runs on
-# the control connection in `control_store`, outside this catalogue. The empty
-# set exists so the composition root has an M01 entry to compose and so the
-# convention is visible where a future M01 statement would be added.
+# M01's tenant-schema statements. Its shared-control read runs on the control
+# connection in `control_store`, outside this catalogue. Since UC1 part B tranche B5
+# (P-1(a), Codex fd6cd794) this one canonical mapping holds the staff-directory
+# service statements, composed into production through `haloflow.composition`.
+# There is no statement for m01_staff_assignable: it is reachable only from M05 SQL.
 #
 # Production definition sets are named `M<NN>_STATEMENTS` and live only in
 # `haloflow.mNN.statements`. Both facts are enforced by repository-control tests,
 # because the statement-catalogue manifest is only a review gate if there is
 # exactly one composition path it can pin.
-M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({})
+M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
+    {
+        "m01.staff.admin": (
+            StatementMode.WRITE, "m01.staff.admin", "SELECT m01_staff_admin(%(command)s)",
+        ),
+        "m01.staff.display": (
+            StatementMode.READ, "m01.staff.display", "SELECT m01_staff_display(%(query)s)",
+        ),
+        "m01.staff.followup_reader": (
+            StatementMode.READ,
+            "m05.followup.read",
+            "SELECT m01_staff_followup_reader(%(staff_id)s)",
+        ),
+    }
+)

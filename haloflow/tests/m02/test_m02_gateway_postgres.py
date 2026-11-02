@@ -392,9 +392,11 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 11
-    # One installed-state verification per profiled typed unit: t003 and t008-t011.
-    assert calls == [m02_tenant[1]] * 5
+    assert outcome.schema_version == 25  # B5 (H5): production target; 11 in part A
+    # One installed-state verification per profiled typed unit. B5 declared change:
+    # t003, t008-t011 (5), the M05 gateways t014-t020 (7) and the staff gateways
+    # t022-t025 (4), 16 in total.
+    assert calls == [m02_tenant[1]] * 16
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
 
@@ -459,12 +461,17 @@ def test_2b_d20_control_the_same_bare_schema_route_installs_on_clean_defaults(
     gw.prepare_bare_schema(m02_ids, m02_tenant)
     outcomes = gw.run_migrations(m02_ids, m02.production_registry(), m02_tenant)
     # UC1 part A (P-b, Codex ALIGN 20261031T131639Z): the production registry now
-    # continues through t011.
+    # continues through t011. UC1 part B B5 (H5): and through t025.
     assert [o.migration_id for o in outcomes if o.applied] == [
         "t001_m01_baseline", "t002_m02_operation_registry", T003,
         "t004_m02_reference", "t005_m02_events", "t006_m02_outbox",
         "t007_m02_envelope_allowlist", "t008_m02_canon", "t009_m02_append",
         "t010_m02_enqueue", "t011_m02_envelope_read",
+        "t012_m05_tables", "t013_m05_seed", "t014_m05_create_item",
+        "t015_m05_prepare_action", "t016_m05_apply_action", "t017_m05_get_item",
+        "t018_m05_list_items", "t019_m05_get_history", "t020_m05_read_note",
+        "t021_m01_staff_directory", "t022_m01_staff_assignable", "t023_m01_staff_admin",
+        "t024_m01_staff_display", "t025_m01_staff_followup_reader",
     ]
     assert gw.gateway_acl(m02_ids, m02_tenant[1]) == gw.EXPECTED_ACL
 
@@ -519,19 +526,26 @@ def test_2b_d24b_installed_state_drift_is_not_detected_on_skip(
 def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
-    assert provision_production(m02_ids, m02_tenant).schema_version == 11
+    # B5 (H5): the production target is 25 (11 in part A).
+    assert provision_production(m02_ids, m02_tenant).schema_version == 25
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
+    """B5 declared fixture change (Codex D29a ruling 1605c2c6, option (a)). The
+    interrupted provisioning row is seeded at the production target 25 (an
+    independent literal), so this stays a SAME-target resume. A stale-target resume
+    is now refused by the P-4 guard (tests/m05/test_b5_startup_postgres.py P4 rows).
+    The node name is kept unchanged so that it appears plainly in the node delta."""
+
     with m02.connect_admin(m02_ids) as conn:
         conn.execute(
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version)"
-            " VALUES (%s, %s, 'provisioning', 1)",
+            " VALUES (%s, %s, 'provisioning', 25)",
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 11
+    assert provision_production(m02_ids, m02_tenant).schema_version == 25
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(

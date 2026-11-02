@@ -56,7 +56,20 @@
       "replication": false,
       "bypassrls": false,
       "tenant_schema_privileges": [
-        "USAGE"
+        "USAGE",
+        "CREATE"
+      ]
+    },
+    "haloflow_staff_owner": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE",
+        "CREATE"
       ]
     }
   },
@@ -91,6 +104,13 @@
     },
     {
       "role": "haloflow_m05_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
+      "role": "haloflow_staff_owner",
       "member": "haloflow_migrator",
       "set": true,
       "inherit": false,

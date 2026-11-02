@@ -63,12 +63,12 @@ jobs:
       # commands from these markers and fails closed if one is missing,
       # duplicated or does not start with the expected tool (CP2-2a I-9, 2A-C10).
       # gate-reachability: lint
-      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 alembic
       # gate-reachability: type
-      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
+      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/composition.py src/haloflow/startup.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
-      - run: $VENV/bin/pytest tests/m01 tests/m02 -q -rA
+      - run: $VENV/bin/pytest tests/m01 tests/m02 tests/m05 -q -rA
         id: pytest
         # The JUnit report and the session record (ci/ci_pytest_session.py: pytest's
         # own final exit status and collected count) are requested through this
@@ -98,6 +98,10 @@ jobs:
           --pytest-outcome "$PYTEST_OUTCOME"
           --source-sha "$GITHUB_SHA"
           --head-sha "$HEAD_SHA"
+      # UC1 B5 closeout trace controls (Codex 24f9221d R5: measured in CI). They
+      # run even when pytest failed, so a red tranche measures them too.
+      - if: ${{ !cancelled() }}
+        run: $VENV/bin/pytest scripts/test_uc1_trace.py -q -rA -p no:cacheprovider
       # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
       # in this job, executing the resolved gate commands against run-time
       # specimens. Nothing is committed; its log is uploaded with the evidence.
@@ -122,6 +126,29 @@ jobs:
           python3 -I scripts/m02_observation_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/mutation"
+      # UC1 part B, B2 (Codex 20261101T003810Z): four named mutants of
+      # m05_create_item, judged by the part A checker's rules (predeclared kill
+      # sets, structured evidence, restored source). Its static controls first.
+      - run: $VENV/bin/pytest scripts/test_m05_create_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/m05_create_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/m05-mutation"
+      # UC1 part B, B4 (package v2 7): nine named mutants of the resolve SQL and
+      # service, in four groups, judged by the same checker. Static controls first.
+      - run: $VENV/bin/pytest scripts/test_m05_resolve_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/m05_resolve_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/m05-resolve-mutation"
+      # UC1 part B, B5 (package v2 + v2r1): ten predeclared SU mutants of the
+      # trusted startup and the activation validator, in four groups, judged by
+      # the same checker. Static controls first.
+      - run: $VENV/bin/pytest scripts/test_b5_startup_mutants.py -q -p no:cacheprovider
+      - run: >-
+          python3 -I scripts/b5_startup_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/b5-startup-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

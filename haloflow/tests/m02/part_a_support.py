@@ -260,6 +260,9 @@ READ_OWNER_SELECT: Final[Mapping[str, tuple[str, ...]]] = {
         "causation_event_id",
         "producer_dedupe_key",
         "metadata",
+        # B4 (v2r1 A1, ruling 4f51be67): the envelope's two time fields, nothing else.
+        "occurred_at",
+        "source_time_quality",
     ),
     "patient_event_links": LINK_COLUMNS,
     "m02_envelope_path_allowlist": (

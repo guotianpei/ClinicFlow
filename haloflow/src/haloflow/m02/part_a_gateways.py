@@ -606,8 +606,12 @@ BEGIN
         SELECT r.relationship, r.resolver_kind, r.is_active INTO v_resolver
           FROM {schema}.m02_link_resolvers AS r
          WHERE r.resolver_id = v_link OPERATOR(pg_catalog.->>) 'link_type';
+        -- B4 resolver (a): the one module-owned link type has exactly that kind; every
+        -- other link type stays a part A synthetic fixture.
         IF NOT FOUND OR v_resolver.is_active IS DISTINCT FROM true
-           OR v_resolver.resolver_kind IS DISTINCT FROM 'synthetic_fixture'
+           OR v_resolver.resolver_kind IS DISTINCT FROM (CASE
+                  WHEN (v_link OPERATOR(pg_catalog.->>) 'link_type') = 'm05_followup_item_v1'
+                  THEN 'module_owned' ELSE 'synthetic_fixture' END)
            OR v_resolver.relationship IS DISTINCT FROM v_link
                OPERATOR(pg_catalog.->>) 'relationship'
            OR NOT ((v_link OPERATOR(pg_catalog.->>) 'link_type') = ANY (v_declared)) THEN
@@ -616,6 +620,22 @@ BEGIN
         v_link_types := v_link_types || (v_link OPERATOR(pg_catalog.->>) 'link_type');
     END LOOP;
     FOR v_link IN SELECT e.value FROM pg_catalog.jsonb_array_elements(v_links) AS e(value) LOOP
+        -- B4 resolver (a), module_owned: the target is a follow-up item of THIS tenant
+        -- schema whose patient is the event's patient. The table check is a separate
+        -- statement so the item query is planned only where M05 is installed.
+        IF (v_link OPERATOR(pg_catalog.->>) 'link_type') = 'm05_followup_item_v1' THEN
+            IF pg_catalog.to_regclass('{schema}.m05_followup_items') IS NULL
+               OR v_patient_id IS NULL THEN
+                RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'LINK_INVALID';
+            END IF;
+            IF NOT EXISTS (
+                SELECT 1 FROM {schema}.m05_followup_items AS i
+                 WHERE i.item_id = (v_link OPERATOR(pg_catalog.->>) 'link_id')::uuid
+                   AND i.patient_id = v_patient_id) THEN
+                RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'LINK_INVALID';
+            END IF;
+            CONTINUE;
+        END IF;
         IF pg_catalog.to_regclass('{schema}.m02_test_link_targets') IS NULL THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'LINK_INVALID';
         END IF;
@@ -730,7 +750,7 @@ BEGIN
         'handoff_state', v_handoff_state);
 END;
 """
-_T009_BODY_SHA256: Final = "5358f2e2ba26419dcad64b89a4fd9d52abf76ba609802e6f06bd0c5c019633f3"
+_T009_BODY_SHA256: Final = "9f910a8e7cf7dc6d9cca1a352ef9334b39be32d151049609a23b4cc633e708ac"
 T009_DEFINITION: Final = _definition(
     name=_T009_NAME,
     params=_T009_PARAMS,
@@ -897,7 +917,8 @@ BEGIN
     END IF;
     SELECT e.event_id, e.event_type, e.contract_version, e.event_level, e.status,
            e.operation_id, e.patient_id, e.actor_id, e.workload_id,
-           e.causation_event_id, e.producer_dedupe_key, e.metadata
+           e.causation_event_id, e.producer_dedupe_key, e.metadata,
+           e.occurred_at, e.source_time_quality
       INTO v_event
       FROM {schema}.patient_events AS e
      WHERE e.event_id = p_event_id;
@@ -947,11 +968,14 @@ BEGIN
         'workload_id', v_event.workload_id::text,
         'causation_event_id', v_event.causation_event_id::text,
         'producer_dedupe_key', v_event.producer_dedupe_key,
+        'occurred_at', pg_catalog.to_char(pg_catalog.timezone('UTC', v_event.occurred_at),
+                                          'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+        'source_time_quality', v_event.source_time_quality,
         'links', v_links,
         'metadata_paths', v_paths);
 END;
 """
-_T011_BODY_SHA256: Final = "1364e2a7222afe9664a14db72408b9386d87d075fd7f08dadb18912b137324ea"
+_T011_BODY_SHA256: Final = "16f43027436a79f00b6822e2920ed6a3cbf691d635a28a0db638bb76ed480daf"
 T011_DEFINITION: Final = _definition(
     name=_T011_NAME,
     params=_T011_PARAMS,
