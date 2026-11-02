@@ -20,7 +20,7 @@ confirmed by the PG17 CI run; a CI difference is reported, never edited away.
 
 Usage (from haloflow/, with HALOFLOW_TEST_DATABASE_URL and
 HALOFLOW_TEST_DISPOSABLE_CLUSTER=1 set):
-    python3 -I scripts/l1w_w2_mutants.py --pytest "$VENV/bin/pytest" \\
+    "$VENV/bin/python" -I scripts/l1w_w2_mutants.py --pytest "$VENV/bin/pytest" \\
         --evidence "$RUNNER_TEMP/verify-evidence/l1w-w2-mutation"
 """
 
@@ -189,8 +189,170 @@ SPECS: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
-# Predeclared kill sets: mutant id -> exact failing nodes, measured before CI.
-KILLS: dict[str, frozenset[str]] = {}
+# Predeclared kill sets: mutant id -> exact failing nodes, measured before CI on the
+# a72d833 tree (local PostgreSQL 16 scaffolding, fresh database per run; control 243
+# cases, restored). CI on PostgreSQL 17 confirms; a difference is reported, not edited.
+KILLS: dict[str, frozenset[str]] = {
+    "AM-ANCHOR": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b08_unbind_rereads_after_the_anchor_lock_and_never_revokes_another_binding",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp08_grant_revoked_while_waiting_on_the_anchor_is_not_used",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_b07d_rebind_and_admission_serialize_on_the_anchor",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t5_admission_waits_for_unbind_then_is_unbound_without_a_row",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t6_unbind_waits_for_an_inflight_admission_then_both_sids_unbound",  # noqa: E501
+    }),
+    "AM-BINDING": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b02_unbind_then_rebind_creates_a_new_binding_and_keeps_the_anchor",  # noqa: E501
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_s10_unbind_revokes_every_active_session_of_the_identity",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t5_admission_waits_for_unbind_then_is_unbound_without_a_row",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t6_unbind_waits_for_an_inflight_admission_then_both_sids_unbound",  # noqa: E501
+    }),
+    "AM-FUTURE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s07_auth_time_inside_skew_allowed_beyond_skew_refused",  # noqa: E501
+    }),
+    "AM-ABSPRE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s08_absolute_lifetime_existing_row_revoked_absent_row_not_created",  # noqa: E501
+    }),
+    "AM-CLOCK": frozenset({
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_s13_t8_idle_decided_with_the_post_wait_clock",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_s14_absolute_decided_with_the_post_wait_clock",  # noqa: E501
+    }),
+    "AM-REVOKED": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b02_unbind_then_rebind_creates_a_new_binding_and_keeps_the_anchor",  # noqa: E501
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b07c_rebind_to_other_staff_old_sid_revoked_new_sid_admitted",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_lg01_logout_of_a_never_admitted_sid_leaves_a_tombstone",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s01_logout_is_per_device",
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s02_refreshed_token_cannot_revive_a_revoked_sid",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s04_idle_expiry_is_revoked_and_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t3_logout_waits_for_an_inflight_admission_then_revokes",  # noqa: E501
+    }),
+    "AM-MISMATCH": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b07c_unrevoked_row_for_another_binding_is_binding_mismatch_and_revoked",  # noqa: E501
+    }),
+    "AM-SID": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s03_same_sid_other_auth_time_is_sid_mismatch_and_row_unchanged",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t1_concurrent_create_other_auth_time_is_sid_mismatch",  # noqa: E501
+    }),
+    "AM-ABS": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s08_absolute_lifetime_existing_row_revoked_absent_row_not_created",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_s14_absolute_decided_with_the_post_wait_clock",  # noqa: E501
+    }),
+    "AM-IDLE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s04_idle_expiry_is_revoked_and_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a03_idle_change_applies_to_existing_sessions",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a07_new_tenant_uses_the_owner_defaults",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_s13_t8_idle_decided_with_the_post_wait_clock",  # noqa: E501
+    }),
+    "AM-IDLEDEF": frozenset({
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a07_new_tenant_uses_the_owner_defaults",  # noqa: E501
+    }),
+    "AM-MFANULL": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_n01_null_assured_with_mfa_on_is_mfa_required_and_off_is_admitted",  # noqa: E501
+    }),
+    "AM-COALESCE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s06_activity_is_coalesced_to_one_write_per_60s",  # noqa: E501
+    }),
+    "AM-INPUT": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_x01_invalid_input_is_a_fixed_refusal_and_errors_carry_no_identifiers",  # noqa: E501
+    }),
+    "LM-TOMBSTONE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_lg01_logout_of_a_never_admitted_sid_leaves_a_tombstone",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t3_logout_waits_for_an_inflight_admission_then_revokes",  # noqa: E501
+    }),
+    "WM-REREAD": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b08_unbind_rereads_after_the_anchor_lock_and_never_revokes_another_binding",  # noqa: E501
+    }),
+    "WM-SESSIONS": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b02_unbind_then_rebind_creates_a_new_binding_and_keeps_the_anchor",  # noqa: E501
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b07c_rebind_to_other_staff_old_sid_revoked_new_sid_admitted",  # noqa: E501
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_s10_unbind_revokes_every_active_session_of_the_identity",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_b07d_rebind_and_admission_serialize_on_the_anchor",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t6_unbind_waits_for_an_inflight_admission_then_both_sids_unbound",  # noqa: E501
+    }),
+    "WM-POST": frozenset({
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set03_support_grant_revoked_while_waiting_on_the_first_row_is_refused",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp08_grant_revoked_while_waiting_on_the_anchor_is_not_used",  # noqa: E501
+    }),
+    "WM-LOGINNAME": frozenset({
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp02_renamed_login_no_longer_matches_the_allowlist",  # noqa: E501
+    }),
+    "WM-CAP": frozenset({
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp03_capabilities_are_separate",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp03_grant_must_be_active_current_for_the_tenant_and_capable[missing-capability]",  # noqa: E501
+    }),
+    "WM-SETROW": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_n01_null_assured_with_mfa_on_is_mfa_required_and_off_is_admitted",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s04_idle_expiry_is_revoked_and_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_logs_are_append_only[staff_identity_log]",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_logs_are_append_only[tenant_auth_settings_log]",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a01_mfa_on_refuses_unassured_without_revoking",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a03_idle_change_applies_to_existing_sessions",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a04_bounds_are_inclusive",
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a05_admin_and_support_changes_are_logged_with_attribution",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set01_concurrent_first_setters_of_different_settings_keep_both_values",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set02_concurrent_first_setters_of_one_setting_log_an_accurate_chain",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set03_support_grant_revoked_while_waiting_on_the_first_row_is_refused",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_sp03_capabilities_are_separate",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_s13_t8_idle_decided_with_the_post_wait_clock",  # noqa: E501
+        "tests/platform/test_l1w_w2_timelines_postgres.py::test_t7_waiting_admission_sees_the_refresh_made_by_the_holder",  # noqa: E501
+    }),
+    "WM-BOUNDS": frozenset({
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a04_out_of_bounds_or_unknown_setting_refused_without_writes[idle_timeout_minutes-4-INVALID_VALUE]",  # noqa: E501
+        "tests/platform/test_l1w_w2_settings_support_postgres.py::test_a04_out_of_bounds_or_unknown_setting_refused_without_writes[idle_timeout_minutes-61-INVALID_VALUE]",  # noqa: E501
+    }),
+    "WM-IDBOUND": frozenset({
+        "tests/platform/test_l1w_w2_bindings_postgres.py::test_b03_one_active_binding_per_identity_and_per_staff",  # noqa: E501
+    }),
+    "TM-SID": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_trigger_refuses_forbidden_session_updates[sid]",  # noqa: E501
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_x01_invalid_input_is_a_fixed_refusal_and_errors_carry_no_identifiers",  # noqa: E501
+    }),
+    "TM-FINAL": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_trigger_allows_the_single_revocation_and_then_freezes_it",  # noqa: E501
+    }),
+    "TM-INSERT": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_trigger_refuses_delete_and_non_logout_revoked_insert",  # noqa: E501
+    }),
+    "TM-DELETE": frozenset({
+        "tests/platform/test_l1w_w2_sessions_postgres.py::test_s12_trigger_refuses_delete_and_non_logout_revoked_insert",  # noqa: E501
+    }),
+    "GM-PUBLIC": frozenset({
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_priv01_function_execute_grantees_are_exact",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[runtime-l1w_admin_bind]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[runtime-l1w_support_unbind]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[staff_owner-l1w_admit]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[staff_owner-l1w_support_bind]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[support-l1w_admin_set_setting]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp05_sp07a_cross_role_calls_are_permission_denied[support-l1w_admit]",  # noqa: E501
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_sp07a_runtime_has_no_execute_on_admin_or_support_definers",  # noqa: E501
+    }),
+    "GM-COLUMNS": frozenset({
+        "tests/platform/test_l1w_w2_inventory_postgres.py::test_priv01_identity_owner_reads_exactly_eight_grant_columns",  # noqa: E501
+    }),
+    "PM-ATTR": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_identity_owner-BYPASSRLS]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf02_unsafe_attribute_refused_before_any_mutation[haloflow_support-BYPASSRLS]",  # noqa: E501
+    }),
+    "PM-OUT": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf04_extra_outgoing_membership_refused[haloflow_identity_owner]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf04_extra_outgoing_membership_refused[haloflow_support]",  # noqa: E501
+    }),
+    "PM-OWNERIN": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_identity_owner-group-role]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_identity_owner-superuser-login]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_identity_owner_refuses_even_a_plain_login_member",  # noqa: E501
+    }),
+    "PM-SUPPORTIN": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf03_extra_incoming_membership_refused[haloflow_support-group-role]",  # noqa: E501
+    }),
+    "PM-EDGE": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_identity_owner]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_support]",  # noqa: E501
+    }),
+    "PM-ORDER": frozenset({
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_identity_owner]",  # noqa: E501
+        "tests/platform/test_l1w_w2_preflight_postgres.py::test_pf05_migrator_edge_with_other_options_refused[haloflow_support]",  # noqa: E501
+    }),
+}
 
 
 def _load_checker() -> Any:

@@ -160,6 +160,13 @@ jobs:
           python3 -I scripts/l1w_w1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w1-mutation"
+      # L-1W W2: 35 predeclared security mutants of alembic 008, each run on its own
+      # fresh database in this disposable cluster, judged by the same checker.
+      - run: $VENV/bin/pytest scripts/test_l1w_w2_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/l1w_w2_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w2-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
