@@ -54,41 +54,47 @@ GRANT_COLUMNS: Final = frozenset(
 )
 
 
-def _shared_functions(env: db.L1WEnv) -> dict[str, tuple[Any, ...]]:
-    rows = env.all(
+def _shared_function_rows(env: db.L1WEnv) -> list[tuple[Any, ...]]:
+    """One row per pg_proc entry (overloads are separate rows, never collapsed):
+    (name, identity arguments, owner, security definer, config, oid)."""
+
+    return env.all(
         "SELECT p.proname, pg_get_function_identity_arguments(p.oid),"
         " pg_get_userbyid(p.proowner), p.prosecdef, p.proconfig, p.oid"
         " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
         " WHERE n.nspname = 'shared' AND p.proname LIKE 'l1w\\_%'")
-    return {row[0]: row[1:] for row in rows}
+
+
+def _installed(env: db.L1WEnv, name: str) -> bool:
+    return any(row[0] == name for row in _shared_function_rows(env))
 
 
 def test_sp06_definer_signatures_are_exact(env: db.L1WEnv) -> None:
-    functions = _shared_functions(env)
-    assert {name: row[0] for name, row in functions.items()} == SIGNATURES
+    pairs = [(row[0], row[1]) for row in _shared_function_rows(env)]
+    assert len(pairs) == len(SIGNATURES), "extra or missing l1w_* entries (overloads count)"
+    assert sorted(pairs) == sorted(SIGNATURES.items())
 
 
 def test_priv02_every_l1w_function_is_a_pinned_security_definer(env: db.L1WEnv) -> None:
-    functions = _shared_functions(env)
-    assert set(functions) == set(SIGNATURES)
-    for name, (_, owner, secdef, config, _oid) in functions.items():
-        assert owner == OWNER, name
-        assert secdef is True, name
-        assert config == ["search_path=pg_catalog, pg_temp"], name
+    rows = _shared_function_rows(env)
+    assert sorted((row[0], row[1]) for row in rows) == sorted(SIGNATURES.items())
+    for name, args, owner, secdef, config, _oid in rows:
+        assert owner == OWNER, (name, args)
+        assert secdef is True, (name, args)
+        assert config == ["search_path=pg_catalog, pg_temp"], (name, args)
 
 
 def test_priv01_function_execute_grantees_are_exact(env: db.L1WEnv) -> None:
-    rows = env.all(
-        "SELECT p.proname, CASE WHEN x.grantee = 0 THEN 'PUBLIC'"
-        " ELSE pg_get_userbyid(x.grantee) END, x.privilege_type"
-        " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,"
-        " LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x"
-        " WHERE n.nspname = 'shared' AND p.proname LIKE 'l1w\\_%'")
-    actual: dict[str, set[str]] = {}
-    for name, grantee, privilege in rows:
-        assert privilege == "EXECUTE"
-        actual.setdefault(name, set()).add(grantee)
-    assert actual == {name: grantees | {OWNER} for name, grantees in EXECUTE.items()}
+    rows = _shared_function_rows(env)
+    assert sorted((row[0], row[1]) for row in rows) == sorted(SIGNATURES.items())
+    for name, args, _owner, _secdef, _config, oid in rows:
+        acl = env.all(
+            "SELECT CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,"
+            " x.privilege_type, x.is_grantable FROM pg_proc p,"
+            " LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x"
+            " WHERE p.oid = %s", (oid,))
+        assert sorted(acl) == sorted(
+            (grantee, "EXECUTE", False) for grantee in EXECUTE[name] | {OWNER}), (name, args)
 
 
 def test_priv01_tables_have_no_grant_beyond_the_owner(env: db.L1WEnv) -> None:
@@ -131,12 +137,26 @@ def test_priv01_schema_usage_and_role_attributes(env: db.L1WEnv) -> None:
             "SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole, rolreplication,"
             " rolbypassrls FROM pg_roles WHERE rolname = %s", (role,)
         ) == (False, False, False, False, False, False), role
+        # Exclude only the exact fixture logins this environment created; any other
+        # member, whatever its name, must be the migrator edge (Codex 192346Z).
+        fixtures = sorted(env.logins.values())
         edges = env.all(
             "SELECT m.rolname, a.inherit_option, a.set_option, a.admin_option"
             " FROM pg_auth_members a JOIN pg_roles r ON r.oid = a.roleid"
             " JOIN pg_roles m ON m.oid = a.member"
-            " WHERE r.rolname = %s AND m.rolname NOT LIKE 'haloflow\\_test\\_%%'", (role,))
+            " WHERE r.rolname = %s AND NOT (m.rolname = ANY(%s)) ORDER BY 1", (role, fixtures))
         assert edges == [("haloflow_migrator", False, True, False)], role
+        # The fixture logins' own edges, asserted separately: support fixture logins are
+        # plain LOGIN members (CREATE ROLE ... IN ROLE); nothing joins the identity owner.
+        fixture_edges = env.all(
+            "SELECT m.rolname, m.rolcanlogin, m.rolsuper, a.admin_option"
+            " FROM pg_auth_members a JOIN pg_roles r ON r.oid = a.roleid"
+            " JOIN pg_roles m ON m.oid = a.member"
+            " WHERE r.rolname = %s AND m.rolname = ANY(%s) ORDER BY 1", (role, fixtures))
+        if role == OWNER:
+            assert fixture_edges == [], role
+        else:
+            assert all(edge[1:] == (True, False, False) for edge in fixture_edges), fixture_edges
         assert env.all(
             "SELECT r.rolname FROM pg_auth_members a JOIN pg_roles r ON r.oid = a.roleid"
             " JOIN pg_roles m ON m.oid = a.member WHERE m.rolname = %s", (role,)) == [], role
@@ -181,7 +201,7 @@ def test_sp05_sp07a_cross_role_calls_are_permission_denied(
     # The definer must exist (so a tree without 008 fails here rather than passing on
     # a missing schema privilege), and the cross-role call must still be refused.
     assert function in SIGNATURES
-    assert function in _shared_functions(env), f"{function} is not installed"
+    assert _installed(env, function), f"{function} is not installed"
     if role_key == "support":
         env.login("sp05support", db.SUPPORT)
         role_key = "sp05support"
