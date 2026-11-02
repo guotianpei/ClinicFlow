@@ -123,7 +123,8 @@ STAFF_SPECS: tuple[tuple[str, str, str, str], ...] = (
      "     ORDER BY g.expires_at DESC, g.grant_id\n     LIMIT 1;\n    IF false THEN\n"),
     ("B-EXISTS", "t032 ignores an existing active clinic_admin",
      "    ELSIF EXISTS (SELECT 1\n                    FROM {schema}.m01_staff_roles AS r\n",
-     "    ELSIF false AND EXISTS (SELECT 1\n                    FROM {schema}.m01_staff_roles AS r\n"),
+     "    ELSIF false AND EXISTS (SELECT 1\n"
+     "                    FROM {schema}.m01_staff_roles AS r\n"),
 )
 
 M05_SPECS: tuple[tuple[str, str, str, str], ...] = (
