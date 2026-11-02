@@ -432,4 +432,99 @@ TRACE: dict[str, list[str]] = {
     "SET-03": [
         "tests/platform/test_l1w_w2_settings_support_postgres.py::test_set03_support_grant_revoked_while_waiting_on_the_first_row_is_refused",  # noqa: E501
     ],
+    # ---- W3a (tenant units t026-t032; v1 still callable until W3b) ----
+    "COMP-W3A": [
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u01_production_unit_ids_and_target",
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u02_unit_kinds_and_execution_roles",
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u03_profiles_exist_for_every_typed_w3a_unit_with_exact_acl",  # noqa: E501
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u04_supported_version_literal_is_32",
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u06_v1_functions_stay_installed_in_w3a",  # noqa: E501
+    ],
+    "C-03": [
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c03_forged_supervise_without_role_row_is_refused_state_unchanged",  # noqa: E501
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c03p_real_supervisor_assign_and_reassign_are_applied",  # noqa: E501
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c03p_real_supervisor_acts_on_another_members_item",  # noqa: E501
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c03_caller_flag_only_narrows",
+    ],
+    "C-04": [
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c04_forged_staff_admin_without_role_row_is_refused",  # noqa: E501
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_c04p_real_clinic_admin_grants_a_role",
+    ],
+    "C-05": [
+        "tests/m05/test_l1w_w3a_composition_units.py::test_w3a_u05_repointed_and_new_statements",
+    ],
+    "R-02": [
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_r02_supervisor_removed_is_refused_at_the_next_call",  # noqa: E501
+    ],
+    "R-03": [
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_r03_self_change_of_clinic_admin_is_refused[grant_role]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_authority_postgres.py::test_r03_self_change_of_clinic_admin_is_refused[revoke_role]",  # noqa: E501
+    ],
+    "L-01": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l01_l02_reciprocal_admin_revoke_serializes_on_the_guard[a-first]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l01_l02_reciprocal_admin_revoke_serializes_on_the_guard[b-first]",  # noqa: E501
+    ],
+    "L-02": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l01_l02_reciprocal_admin_revoke_serializes_on_the_guard[a-first]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l01_l02_reciprocal_admin_revoke_serializes_on_the_guard[b-first]",  # noqa: E501
+    ],
+    "L-03": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l03_m05_assign_and_deactivate_of_the_assignee_serialize",  # noqa: E501
+    ],
+    "L-04": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l04_self_claim_takes_the_actor_row_once",  # noqa: E501
+    ],
+    "L-05": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l05_v2_bodies_take_every_membership_lock_before_the_item",  # noqa: E501
+    ],
+    "L-06": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l06_bootstrap_waits_on_an_admin_role_change_then_sees_the_admin",  # noqa: E501
+    ],
+    "BS-01": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs01_real_bootstrap_path",
+    ],
+    "BS-02": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[unlisted]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[renamed]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[no-grant]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[other-tenant]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[no-capability]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs02_identity_and_grant_refusals_write_nothing[expired]",  # noqa: E501
+    ],
+    "BS-03": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs03_admin_exists_and_inactive_target",
+    ],
+    "BS-04": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs04_concurrent_bootstraps_for_different_targets_serialize",  # noqa: E501
+    ],
+    "BS-05": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs05_grant_revoked_while_waiting_on_the_guard",  # noqa: E501
+    ],
+    "BS-06": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs06_replay_returns_the_stored_outcome_after_reauthorization",  # noqa: E501
+    ],
+    "BS-07": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs07_bootstrap_privileges_are_exact",
+    ],
+    "BS-08": [
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_every_role_or_status_change_takes_the_guard_first",  # noqa: E501
+    ],
+    "B-05": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_b05_self_bind_and_foreign_target_are_refused",  # noqa: E501
+    ],
+    "A-06": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_a06_sp07c_writes_land_on_this_schemas_tenant_only",  # noqa: E501
+    ],
+    "SP-07b": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_sp07b_admin_v2_takes_no_tenant_argument",  # noqa: E501
+    ],
+    "SP-07c": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_a06_sp07c_writes_land_on_this_schemas_tenant_only",  # noqa: E501
+    ],
+    "PIN2-01": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_pin201_m05_owner_reads_staff_standing_only_through_two_gateways",  # noqa: E501
+    ],
+    "PRIV-W3-01": [
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_privw301_staff_owner_shared_column_grants_are_exact",  # noqa: E501
+    ],
 }

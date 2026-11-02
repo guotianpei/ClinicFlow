@@ -28,14 +28,24 @@ W2_IDS: Final = (
     "SET-01", "SET-02", "SET-03",
 )
 
+# W3a (contract v1; Codex 213713Z/214312Z/214930Z/215519Z). v1 m01_staff_admin and
+# m05 prepare/apply stay runtime-callable until W3b; W3a is not closure evidence.
+W3A_IDS: Final = (
+    "COMP-W3A", "C-03", "C-04", "C-05", "R-02", "R-03", "L-01", "L-02",
+    "L-03", "L-04", "L-05", "L-06", "BS-01", "BS-02", "BS-03", "BS-04",
+    "BS-05", "BS-06", "BS-07", "BS-08", "B-05", "A-06", "SP-07b", "SP-07c",
+    "PIN2-01", "PRIV-W3-01",
+)
+
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them
 # (Codex W2 plan disposition). id -> tranche.
 DEFERRED: Final = {
-    "B-05": "W3", "A-06": "W3", "SP-07b": "W3", "SP-07c": "W3",
-    "C-01": "W3", "C-02": "W3", "C-03": "W3", "C-04": "W3", "C-05": "W3",
-    "R-01": "W3", "R-02": "W3", "R-03": "W3",
-    "L-01": "W3", "L-02": "W3", "L-03": "W3", "L-04": "W3", "L-05": "W3",
-    "M05-ROLES-SELECT": "W3",  # Codex final disposition pin 2
+    # W3b (Codex 214930Z staging): closure of the v1 runtime paths.
+    "C-01": "W3b", "C-02": "W3b", "CLOSURE-UNITS": "W3b", "HARNESS-MIGRATION": "W3b",
+    "AM-01": "W3b", "AM-02": "W3b", "AM-03": "W3b", "AM-04": "W3b", "AM-05": "W3b",
+    "AM-06": "W3b", "AM-07": "W3b", "AM-08": "W3b",
+    "CL-01": "W3b", "CL-02": "W3b", "CL-03": "W3b", "CL-04": "W3b",
+    "R-01": "W4",  # the capability matrix literal belongs to the adapter
     "ADMIT-COMMIT-FAILURE": "W4",  # Codex final disposition pin 3
     "S-04-HTTP": "W4", "S-08-HTTP": "W4",
     "E-L1": "W4", "E-L2": "W4", "E-L3": "W4",
@@ -48,6 +58,7 @@ DEFERRED: Final = {
 # Replaced or superseded package rows: id -> the rows that now carry it.
 RETIRED: Final = {
     "S-09": ("T-3", "T-4"),
+    "M05-ROLES-SELECT": ("PIN2-01",),
     "B-07a": ("T-5",),
     "B-07b": ("T-6",),
     "B-06": ("SP-03", "SP-04"),
