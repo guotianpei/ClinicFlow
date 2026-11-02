@@ -4,10 +4,11 @@ The session database fixtures come from tests/conftest.py. M05 reuses the M02
 harness (`m02_support`: identities, provisioning, tenant reset) by putting
 tests/m02 on the import path; nothing in tests/m02 is modified.
 
-M05 is installed through a TEST registry (production units + the M05 units) and a
+B1..B4 installed M05 through a TEST registry (part A units + the M05 units) and a
 TEST provisioning manifest (production + the M05 owner at USAGE+CREATE) until every
-M05 route exists (Codex 20261031T190524Z). Production composition, the production
-target (11) and `provisioning.json` stay at their part A values until B5.
+M05 route existed (Codex 20261031T190524Z). B5 composes M05 and the staff directory
+into production (target 25, both owners at USAGE+CREATE); the isolated target-20
+M05 registry stays as an explicit test fixture (harness migration H2).
 
 Installation is deferred into the test body (`M05Install.require()`), never fixture
 setup, so a missing M05 implementation makes each row FAIL in its own body rather

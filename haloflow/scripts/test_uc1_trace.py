@@ -107,7 +107,9 @@ def test_trace_t08_every_mapped_node_is_collected_in_this_tree() -> None:
 
     script = _script()
     output = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+        # -I: with `python -m`, the cwd (haloflow/) would precede site-packages and the
+        # local alembic/ package would shadow the installed one (declared test defect).
+        [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
          "tests/m01", "tests/m02", "tests/m05"],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
     ).stdout

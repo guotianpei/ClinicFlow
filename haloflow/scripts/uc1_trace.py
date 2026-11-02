@@ -119,7 +119,7 @@ def collect() -> set[str]:
     """Node ids from `pytest --collect-only -q` over the UC1 suites, run from haloflow/."""
 
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+        [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
          *COLLECT_TARGETS],
         capture_output=True, text=True, check=False, cwd=ROOT,
     )
@@ -1371,43 +1371,43 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_m05_catalog_postgres.py::test_mx02_no_ehr_state_column_and_staff_assertion_check",  # noqa: E501
         ],
     },
-    "B5-C01": {
+    "B5-C-01": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c01_production_statement_set_is_exact",
         ],
     },
-    "B5-C02": {
+    "B5-C-02": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c02_staff_keys_live_in_m01_statements_only",  # noqa: E501
         ],
     },
-    "B5-C03": {
+    "B5-C-03": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c03_production_registry_units_and_target",  # noqa: E501
         ],
     },
-    "B5-C04": {
+    "B5-C-04": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c04_execution_roles_are_exact",
         ],
     },
-    "B5-C05": {
+    "B5-C-05": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c05_every_typed_unit_has_a_profile_and_nothing_else_does",  # noqa: E501
         ],
     },
-    "B5-C06": {
+    "B5-C-06": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c06_supported_set_is_the_literal_25",
         ],
     },
-    "B5-C07": {
+    "B5-C-07": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c07_control_the_production_registry_satisfies_the_rule",  # noqa: E501
@@ -1416,25 +1416,25 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_composition_units.py::test_b5_c07_generalized_profile_rule_refuses_a_profile_less_typed_unit[t022_m01_staff_assignable]",  # noqa: E501
         ],
     },
-    "B5-C08": {
+    "B5-C-08": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c08_provisioning_manifest_changes_exactly_two_values",  # noqa: E501
         ],
     },
-    "B5-C09": {
+    "B5-C-09": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c09_statement_catalogue_manifest_pins_the_exact_set",  # noqa: E501
         ],
     },
-    "B5-C10": {
+    "B5-C-10": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_c10_ci_and_makefile_cover_startup",
         ],
     },
-    "B5-I01": {
+    "B5-I-01": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i01_deployment_must_be_the_exact_enum[bool]",  # noqa: E501
@@ -1446,31 +1446,31 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_composition_units.py::test_b5_i01_deployment_must_be_the_exact_enum[str]",  # noqa: E501
         ],
     },
-    "B5-I02": {
+    "B5-I-02": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i02_deployment_has_no_default",
         ],
     },
-    "B5-I03": {
+    "B5-I-03": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i03_signature_takes_no_override_parameters",  # noqa: E501
         ],
     },
-    "B5-I04": {
+    "B5-I-04": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i04_empty_tenant_set_refused",
         ],
     },
-    "B5-I05": {
+    "B5-I-05": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i05_duplicate_tenant_refused_not_deduplicated",  # noqa: E501
         ],
     },
-    "B5-I06": {
+    "B5-I-06": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i06_tenant_collection_and_elements_must_be_exact[bare-str]",  # noqa: E501
@@ -1480,7 +1480,7 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_composition_units.py::test_b5_i06_tenant_collection_and_elements_must_be_exact[str-subclass-element]",  # noqa: E501
         ],
     },
-    "B5-I07": {
+    "B5-I-07": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i07_tenant_id_grammar_enforced[-tenant]",  # noqa: E501
@@ -1490,49 +1490,49 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_composition_units.py::test_b5_i07_tenant_id_grammar_enforced[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",  # noqa: E501
         ],
     },
-    "B5-I08": {
+    "B5-I-08": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_i08_dependencies_must_be_the_exact_dataclass",  # noqa: E501
         ],
     },
-    "B5-K01": {
+    "B5-K-01": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_k01_services_are_constructed_only_in_startup",  # noqa: E501
         ],
     },
-    "B5-K02": {
+    "B5-K-02": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_k02_startup_fixes_the_producer_literal",  # noqa: E501
         ],
     },
-    "B5-K03": {
+    "B5-K-03": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_k03_startup_wires_only_the_fail_closed_key_provider",  # noqa: E501
         ],
     },
-    "B5-K04": {
+    "B5-K-04": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_k04_startup_and_composition_import_nothing_from_tests",  # noqa: E501
         ],
     },
-    "B5-V01": {
+    "B5-V-01": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v01_full_activation_in_production_refused",  # noqa: E501
         ],
     },
-    "B5-V02": {
+    "B5-V-02": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v02_full_activation_in_non_production_accepted",  # noqa: E501
         ],
     },
-    "B5-V03": {
+    "B5-V-03": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v03_partial_activation_is_route_not_installed[non_production-001]",  # noqa: E501
@@ -1549,49 +1549,49 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_composition_units.py::test_b5_v03_partial_activation_is_route_not_installed[production-110]",  # noqa: E501
         ],
     },
-    "B5-V04": {
+    "B5-V-04": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v04_partial_with_test_family_in_production_is_linkage_first",  # noqa: E501
         ],
     },
-    "B5-V05": {
+    "B5-V-05": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v05_full_with_test_family_in_production_is_m05_a1_first",  # noqa: E501
         ],
     },
-    "B5-V06": {
+    "B5-V-06": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v06_full_with_synthetic_resolver_in_production_is_m05_a1_first",  # noqa: E501
         ],
     },
-    "B5-V07": {
+    "B5-V-07": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v07_all_inactive_in_production_accepted",  # noqa: E501
         ],
     },
-    "B5-V08": {
+    "B5-V-08": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v08_part_a_fixture_without_m05_rows_keeps_its_outcome",  # noqa: E501
         ],
     },
-    "B5-V09": {
+    "B5-V-09": {
         "status": "covered", "evidence_level": "unit",
         "nodes": [
             "tests/m05/test_b5_composition_units.py::test_b5_v09_inactive_m05_with_test_family_keeps_the_existing_refusal",  # noqa: E501
         ],
     },
-    "B5-S01": {
+    "B5-S-01": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_s01_two_valid_tenants_start_and_serve",
         ],
     },
-    "B5-S02": {
+    "B5-S-02": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_s02_one_bad_tenant_refuses_startup[function-config-drift-first]",  # noqa: E501
@@ -1618,13 +1618,13 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_startup_postgres.py::test_b5_s02_one_bad_tenant_refuses_startup[version-11-last]",  # noqa: E501
         ],
     },
-    "B5-S03": {
+    "B5-S-03": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_s03_non_production_accepts_full_m05_activation",  # noqa: E501
         ],
     },
-    "B5-S04": {
+    "B5-S-04": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_s04_served_set_is_captured_once",
@@ -1638,49 +1638,49 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_startup_postgres.py::test_b5_s15_commit_after_tenant_row_read_is_invisible[generation-row]",  # noqa: E501
         ],
     },
-    "B5-A01": {
+    "B5-A-01": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_a01_independent_context_for_unserved_tenant_refused_on_every_service",  # noqa: E501
         ],
     },
-    "B5-A02": {
+    "B5-A-02": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_a02_facade_refuses_unserved_and_unknown_before_resolver_io",  # noqa: E501
         ],
     },
-    "B5-A03": {
+    "B5-A-03": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_a03_held_context_after_version_bump_observed_gateway_refusal",  # noqa: E501
         ],
     },
-    "B5-A04": {
+    "B5-A-04": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_a04_bundle_exposes_only_the_facade_and_admitted_services",  # noqa: E501
         ],
     },
-    "B5-E01": {
+    "B5-E-01": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_e01_cleanup_failure_without_prior_failure_refuses",  # noqa: E501
         ],
     },
-    "B5-E02": {
+    "B5-E-02": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_e02_non_idle_connection_refused_not_adopted",  # noqa: E501
         ],
     },
-    "B5-E03": {
+    "B5-E-03": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_e03_factory_failure_is_sanitized",
         ],
     },
-    "B5-E04": {
+    "B5-E-04": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_e04_cancellation_propagates_and_cleans_up",  # noqa: E501

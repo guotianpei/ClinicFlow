@@ -542,20 +542,19 @@ def _pre_b4_registry() -> Any:
         APPROVED_TENANT_MIGRATIONS,
     )
     from haloflow.m01.provisioning.units import build_tenant_migration_registry
-    from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
-    from haloflow.m05.gateways import M05_GATEWAY_PROFILES
-    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     def frozen(group: Any) -> dict[str, Any]:
         return {k: pre.PRE_B4_UNITS.get(k, v) for k, v in group.items()}
 
+    # B5 (H1 mechanics only): the production declarations now hold the M01, M02,
+    # M05 and staff groups, roles and profiles, so they are used once instead of
+    # being extended (which would compose M05 and staff twice). PRE_B4_UNITS holds
+    # no staff key, so the staff group passes through `frozen` unchanged: the
+    # fixture's units, checksums and target are as before.
     return build_tenant_migration_registry(
         *(frozen(g) for g in APPROVED_TENANT_MIGRATIONS),
-        frozen(M05_TENANT_MIGRATIONS),
-        STAFF_TENANT_MIGRATIONS,
-        approved_execution_roles=APPROVED_EXECUTION_ROLES | {m05.M05_OWNER, st.STAFF_OWNER},
-        installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES,
-                                  **M05_GATEWAY_PROFILES, **STAFF_GATEWAY_PROFILES},
+        approved_execution_roles=APPROVED_EXECUTION_ROLES,
+        installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
     )
 
 
