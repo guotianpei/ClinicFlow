@@ -1335,7 +1335,7 @@ TRACE: dict[str, TraceRow] = {
     "ME-03": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
-            "tests/m02/test_m02_part_a_m05_access_postgres.py::test_a4_m05_owner_executes_only_the_envelope",  # noqa: E501
+            "tests/m02/test_m02_part_a_m05_access_postgres.py::test_b5_m05_owner_exact_ownership_and_effective_execute",  # noqa: E501
             "tests/m05/test_m05_catalog_postgres.py::test_me03_m05_owner_executes_exactly_the_envelope",  # noqa: E501
             "tests/m05/test_m05_resolve_binding_postgres.py::test_gb4_me03_and_resolver_registration",  # noqa: E501
         ],
