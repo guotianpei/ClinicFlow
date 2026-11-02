@@ -479,6 +479,8 @@ TRACE: dict[str, list[str]] = {
     ],
     "L-06": [
         "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l06_bootstrap_waits_on_an_admin_role_change_then_sees_the_admin",  # noqa: E501
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l06_bootstrap_waits_on_a_status_change_of_an_admin[deactivate]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_l06_bootstrap_waits_on_a_status_change_of_an_admin[activate]",  # noqa: E501
     ],
     "BS-01": [
         "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs01_real_bootstrap_path",
@@ -507,7 +509,13 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs07_bootstrap_privileges_are_exact",
     ],
     "BS-08": [
-        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_every_role_or_status_change_takes_the_guard_first",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[grant_role-True]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[revoke_role-True]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[deactivate-True]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[activate-True]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[rename-False]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths[grant-False]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_bootstrap_postgres.py::test_bs08_bootstrap_blocks_on_the_guard",
     ],
     "B-05": [
         "tests/m05/test_l1w_w3a_locks_grants_postgres.py::test_b05_self_bind_and_foreign_target_are_refused",  # noqa: E501

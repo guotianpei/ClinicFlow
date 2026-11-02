@@ -275,24 +275,79 @@ def test_bs07_bootstrap_privileges_are_exact(env: db.L1WEnv, staff_install: st.S
         st.call(install, w3.BOOTSTRAP, _command(m05.S1))
 
 
-def test_bs08_every_role_or_status_change_takes_the_guard_first(
-    staff_install: st.StaffInstall,
+def _guard_holder(install: st.StaffInstall) -> psycopg.Connection[Any]:
+    """FIXTURE SETUP: an admin connection holding the tenant-local guard row."""
+
+    conn = psycopg.connect(install.ids.admin)
+    row = conn.execute(sql.SQL("SELECT id FROM {}.m01_staff_role_guard FOR UPDATE").format(
+        sql.Identifier(install.schema))).fetchone()
+    assert row == (True,)
+    return conn
+
+
+@pytest.mark.parametrize(
+    ("operation", "takes_guard"),
+    [("grant_role", True), ("revoke_role", True), ("deactivate", True), ("activate", True),
+     ("rename", False), ("grant", False)],
+)
+def test_bs08_guard_is_taken_by_exactly_the_role_and_status_changing_paths(
+    staff_install: st.StaffInstall, operation: str, takes_guard: bool
 ) -> None:
-    """Static inventory over the installed bodies: t029's role- and status-changing
-    branches and t032 lock m01_staff_role_guard before any membership row."""
+    """Dynamic oracle (Codex 221349Z): with the guard row held elsewhere, every
+    role- or status-changing t029 branch BLOCKS on it (blocker proven); the other
+    branches complete without waiting."""
 
     install = _setup(staff_install)
-    bodies = dict(st.admin_rows(install, sql.SQL(
-        "SELECT p.proname, p.prosrc FROM pg_proc p JOIN pg_namespace n"
-        " ON n.oid = p.pronamespace WHERE n.nspname = %s AND p.proname = ANY(%s)"),
-        (install.schema, [w3.ADMIN_V2, w3.BOOTSTRAP])))
-    assert set(bodies) == {w3.ADMIN_V2, w3.BOOTSTRAP}
-    for name, body in bodies.items():
-        guard = body.find("m01_staff_role_guard")
-        member = body.find("m01_staff")
-        assert guard != -1, name
-        first_member_lock = body.find("FOR UPDATE", body.find(".m01_staff "))
-        assert guard < first_member_lock or first_member_lock == -1, name
-        assert member != -1, name
-    for operation in ("grant_role", "revoke_role", "deactivate", "activate"):
-        assert f"'{operation}'" in bodies[w3.ADMIN_V2], operation
+    w3.seed_role(install, st.ADMIN, "clinic_admin")  # FIXTURE SETUP
+    target = "00000000-0000-4000-8000-0000000c8b01"
+    w3.ensure_staff(install, target)
+    if operation == "activate":
+        st.admin_op(install, st.admin_command("deactivate", target))
+    if operation == "revoke_role":
+        w3.seed_role(install, target, "supervisor")  # FIXTURE SETUP
+    extra = {"role": "supervisor"} if operation in ("grant_role", "revoke_role") else {}
+    if operation == "rename":
+        extra = {"display_name": "Renamed Staff"}
+    if operation == "grant":
+        extra = {"access": "read"}
+        st.admin_op(install, st.admin_command("revoke", target, access="read"))
+    command = st.admin_command(operation, target, extra=extra)
+    holder = _guard_holder(install)
+    waiter = st.runtime_connection(install)
+    try:
+        holder_pid = int(holder.execute("SELECT pg_backend_pid()").fetchone()[0])  # type: ignore[index]
+        waiter_pid = int(waiter.execute("SELECT pg_backend_pid()").fetchone()[0])  # type: ignore[index]
+        waiter.commit()
+        st.set_tenant(waiter, install)
+        job = db.Background(lambda: st.call_on(waiter, install, w3.ADMIN_V2, command)).start()
+        if takes_guard:
+            st.wait_until_blocked_by(install, waiter_pid, holder_pid)
+            holder.rollback()
+            assert job.join()["outcome"] == "applied"
+        else:
+            assert job.join(timeout_s=10)["outcome"] == "applied"
+            holder.rollback()
+        waiter.commit()
+    finally:
+        holder.close()
+        waiter.close()
+
+
+def test_bs08_bootstrap_blocks_on_the_guard(env: db.L1WEnv, staff_install: st.StaffInstall
+                                            ) -> None:
+    install = _setup(staff_install)
+    key, actor = _support(env, "bs08")
+    _grant(env, install, actor)
+    holder = _guard_holder(install)
+    try:
+        holder_pid = int(holder.execute("SELECT pg_backend_pid()").fetchone()[0])  # type: ignore[index]
+        with env.connect(key) as support:
+            waiter_pid = db.backend_pid(support)
+            support.commit()
+            job = db.Background(lambda: (_bootstrap_on(support, install, _command(m05.S1)),
+                                         support.commit())[0]).start()
+            st.wait_until_blocked_by(install, waiter_pid, holder_pid)
+            holder.rollback()
+            assert job.join()["outcome"] == "BOOTSTRAPPED"
+    finally:
+        holder.close()

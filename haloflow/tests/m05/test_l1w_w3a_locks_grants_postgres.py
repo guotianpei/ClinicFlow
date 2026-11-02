@@ -191,6 +191,59 @@ def test_l06_bootstrap_waits_on_an_admin_role_change_then_sees_the_admin(
     assert [s for s, r in w3.roles(install) if r == "clinic_admin"] == [A]
 
 
+@pytest.mark.parametrize("change", ["deactivate", "activate"])
+def test_l06_bootstrap_waits_on_a_status_change_of_an_admin(
+    staff_install: st.StaffInstall, migrated_database: str, change: str
+) -> None:
+    """Status changes move the active-admin predicate, so they take the guard too.
+    A (admin) deactivates or activates B (also a role holder) while a support
+    bootstrap waits; afterwards A is still an active admin -> ADMIN_EXISTS.
+
+    The reverse ordering (bootstrap holding the guard while a status change waits)
+    needs an ACTIVE admin actor to issue the v2 change, which contradicts the
+    bootstrap precondition (no active admin); through v1, which takes no guard, it is
+    the explicit W3b hold (v1 bypass)."""
+
+    install = _setup(staff_install)
+    for staff_id in (A, B):
+        w3.seed_role(install, staff_id, "clinic_admin")  # FIXTURE SETUP
+    if change == "activate":
+        st.admin_op(install, st.admin_command("deactivate", B))
+    with db.l1w_environment(migrated_database) as env:
+        actor = f"support-{env.token}-l06{change}"
+        env.login(f"l06{change}", db.SUPPORT)
+        env.allowlist_support(f"l06{change}", actor)
+        env.support_grant(actor, install.tenant[0], ["l1w.roles.bootstrap"])
+        holder = _held(install)
+        try:
+            holder_pid = _pid(holder)
+            st.call_on(holder, install, w3.ADMIN_V2, st.admin_command(change, B, actor=A))
+            with env.connect(f"l06{change}") as support:
+                waiter_pid = db.backend_pid(support)
+                support.commit()
+
+                def bootstrap() -> Any:
+                    support.execute("SELECT set_config('app.tenant_id', %s, true)",
+                                    (install.tenant[0],))
+                    row = support.execute(sql.SQL("SELECT {}.{}(%s)").format(
+                        sql.Identifier(install.schema), sql.Identifier(w3.BOOTSTRAP)),
+                        (psycopg.types.json.Jsonb({"schema_version": 1,
+                                                   "client_action_id": str(uuid.uuid4()),
+                                                   "staff_id": m05.S1}),)).fetchone()
+                    support.commit()
+                    return row[0] if row else None
+
+                job = db.Background(bootstrap).start()
+                st.wait_until_blocked_by(install, waiter_pid, holder_pid)
+                holder.commit()
+                assert job.join() == {"schema_version": 1, "outcome": "ADMIN_EXISTS"}
+        finally:
+            holder.close()
+            with env.connect("admin", autocommit=True) as conn:
+                conn.execute("DELETE FROM shared.support_access_grants WHERE tenant_id = %s"
+                             " AND actor_id = %s", (install.tenant[0], actor))
+
+
 # ---- identity writes go only to this schema's tenant --------------------------------
 
 
@@ -287,3 +340,12 @@ def test_privw301_staff_owner_shared_column_grants_are_exact(
         assert st.admin_rows(install, "SELECT has_table_privilege(%s, %s,"
                              " 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')",
                              (st.STAFF_OWNER, f"shared.{table}")) == [(False,)], table
+        # Effective privilege per live column (Codex 221349Z): inherited and PUBLIC
+        # grants count too. SELECT exactly on the expected set; no write anywhere.
+        effective = st.admin_rows(install, sql.SQL(
+            "SELECT a.attname, has_column_privilege(%s, a.attrelid, a.attname, 'SELECT'),"
+            " has_column_privilege(%s, a.attrelid, a.attname, 'INSERT,UPDATE,REFERENCES')"
+            " FROM pg_attribute a WHERE a.attrelid = %s::regclass AND a.attnum > 0"
+            " AND NOT a.attisdropped"), (st.STAFF_OWNER, st.STAFF_OWNER, f"shared.{table}"))
+        assert {name for name, select, _ in effective if select} == columns, table
+        assert [name for name, _, write in effective if write] == [], table
