@@ -167,6 +167,13 @@ jobs:
           $VENV/bin/python -I scripts/l1w_w2_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w2-mutation"
+      # L-1W W3a: targeted mutants of t029/t032 and the M05 v2 actions (guard before
+      # membership, membership before item, role authority), fresh database per run.
+      - run: $VENV/bin/pytest scripts/test_l1w_w3a_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/l1w_w3a_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3a-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

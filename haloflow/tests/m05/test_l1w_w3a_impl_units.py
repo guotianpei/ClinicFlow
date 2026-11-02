@@ -10,6 +10,9 @@ Rows:
 - SUP-03: the controlled membership graph refuses an undeclared edge touching
   support, a missing support edge and a support edge with different options; the
   exact shipped graph passes.
+- L-07: source order: in t029 and t032 the role guard is referenced before every
+  membership row lock (FROM m01_staff ... FOR UPDATE / FOR SHARE); the static half of
+  guard-before-membership (the dynamic half is BS-08 and L-06).
 - SVC-01: StaffService binds the v2 admin result strictly: exactly the v1 keys plus
   "outcome" in {applied, replayed}; the public `reactivate` is sent as `activate` and
   bound back; the public AdminResult keeps the v1 four-key shape.
@@ -20,6 +23,7 @@ Every expected value is written out here, never derived from the code under test
 from __future__ import annotations
 
 import dataclasses
+import re
 import uuid
 from typing import Any, Final
 
@@ -128,6 +132,23 @@ def test_sup03_the_controlled_graph_refuses_unsafe_support_edges(case: str) -> N
             observed.add(_edge(SUPPORT, MIGRATOR, admin=True))
     assert assess_membership_graph(observed=frozenset(observed), declared=declared) == (
         "EXECUTION_ROLE_UNAVAILABLE")
+
+
+# ---- L-07 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("migration_id",
+                         ["t029_m01_staff_admin_v2", "t032_m01_staff_bootstrap_admin"])
+def test_l07_guard_precedes_every_membership_lock(migration_id: str) -> None:
+    from haloflow.m01.staff.l1w_units import L1W_STAFF_UNITS
+
+    body = L1W_STAFF_UNITS[migration_id].template
+    guard = body.find("m01_staff_role_guard AS g WHERE g.id FOR UPDATE")
+    locks = [m.start() for m in re.finditer(
+        r"FROM \{schema\}\.m01_staff AS s\s+WHERE[^;]*FOR (?:UPDATE|SHARE)", body)]
+    assert guard != -1, migration_id
+    assert locks, migration_id
+    assert all(guard < start for start in locks), migration_id
 
 
 # ---- SVC-01 -------------------------------------------------------------------------

@@ -563,6 +563,10 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_result_validation_stays_strict[deactivate-v1-four-keys-only]",  # noqa: E501
         "tests/m05/test_l1w_w3a_impl_units.py::test_svc01_the_public_operation_set_is_unchanged",
     ],
+    "L-07": [
+        "tests/m05/test_l1w_w3a_impl_units.py::test_l07_guard_precedes_every_membership_lock[t029_m01_staff_admin_v2]",  # noqa: E501
+        "tests/m05/test_l1w_w3a_impl_units.py::test_l07_guard_precedes_every_membership_lock[t032_m01_staff_bootstrap_admin]",  # noqa: E501
+    ],
     "GB-01": [
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[136-True]",
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[137-False]",
