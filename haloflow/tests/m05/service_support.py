@@ -1,8 +1,9 @@
 """B3b service test support (package v2 + v2r1, Claude/Codex aligned 2026-11-01).
 
 Every PostgreSQL row reaches SQL only through the composed runtime and the real M01
-gateway: the staff test registry (target 25), and a TEST statement catalogue =
-production module statements + M05_STATEMENTS + STAFF_STATEMENTS. No direct SET ROLE.
+gateway: the staff test registry (target 25), and the statement catalogue. Since B5
+(harness migration H3, Codex 319b5f3) both are the production ones: the production
+catalogue composes M01 (staff), M02 and M05 statements. No direct SET ROLE.
 
 `Recorder` wraps the real gateway to count route calls, trace statement keys and
 parameters, and (test-only) substitute the rows a statement returns AFTER the real
@@ -34,7 +35,7 @@ STAFF_CAPS: Final = frozenset({READ, PREPARE, APPLY})
 SUPERVISOR_CAPS: Final = STAFF_CAPS | {SUPERVISE}
 READ_ONLY_CAPS: Final = frozenset({READ})
 
-# Statement keys (m05/statements.py, m01/statements.py STAFF_STATEMENTS).
+# Statement keys (m05/statements.py, m01/statements.py M01_STATEMENTS).
 K_PREPARE: Final = "m05.followup.prepare"
 K_APPLY: Final = "m05.followup.apply"
 K_GET: Final = "m05.followup.get"
@@ -48,11 +49,11 @@ SERVICE_TARGET: Final = frozenset({st.STAFF_TEST_TARGET})
 
 
 def service_catalog() -> Any:
-    from haloflow.composition import APPROVED_MODULE_STATEMENTS
-    from haloflow.m01.statements import STAFF_STATEMENTS, build_statement_catalog
-    from haloflow.m05.statements import M05_STATEMENTS
+    """The production catalogue (B5 H3), never a second composition on top of it."""
 
-    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS, M05_STATEMENTS, STAFF_STATEMENTS)
+    from haloflow.composition import build_production_catalog
+
+    return build_production_catalog()
 
 
 def _factory(conninfo: str) -> Callable[[], Awaitable[AsyncConnection[Any]]]:

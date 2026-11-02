@@ -5,12 +5,13 @@ Rows (ids are B1-local; package ids where one exists):
 - MB1-S02 installed-state profiles for every typed M05 unit, exact values;
 - MB1-S03 the M05 test registry: production ids + M05 ids, target 20;
 - MB1-S04 the M05 statement definitions, exact;
-- MB1-S05 production composition is unchanged in B1..B4 (target 11, no M05 units,
-  role, statements or CREATE) — Codex 20261031T190524Z: the production target and
-  composition advance only when every M05 route is installed;
+- MB1-S05 retired in B5: it pinned production unchanged in B1..B4 (Codex
+  20261031T190524Z); B5 composes M05 into production, pinned by B5-C01..C10
+  (test_b5_composition_units.py);
 - MB1-S06 part A checksum pins for t004/t009 (the resolver change in B4 must move
   them together with the retained-installation compatibility case);
-- MB1-S07 the M05 test manifest differs from production in exactly one value.
+- MB1-S07 retired in B5: the M05 test manifest differed from production in exactly
+  one value; B5 makes that change in production (B5-C08 pins the manifest).
 
 Expected values come from tests/m05/m05_support.py, never from the code under test.
 """
@@ -20,7 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 import m05_support as m05
-from m05_harness import m05_manifest_document, m05_registry, production_manifest_document
+from m05_harness import m05_registry
 
 TYPED_KIND = "typed_function_v3"
 ORDINARY_UNITS = ("t012_m05_tables", "t013_m05_seed")
@@ -110,59 +111,12 @@ def test_mb1_s04_statement_definitions_exact() -> None:
     assert actual == m05.STATEMENTS
 
 
-def test_mb1_s05_production_composition_unchanged_until_b5() -> None:
-    from haloflow import composition
-
-    production = composition.build_production_tenant_migrations()
-    assert production.migration_ids == m05.PART_A_UNIT_IDS
-    assert production.target_version == m05.PRODUCTION_TARGET_UNTIL_B5
-    supported = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert supported == {m05.PRODUCTION_TARGET_UNTIL_B5}
-    assert m05.M05_OWNER not in composition.APPROVED_EXECUTION_ROLES
-    assert not any(
-        migration_id in m05.M05_TYPED_UNITS
-        for migration_id in composition.APPROVED_INSTALLED_STATE_PROFILES
-    )
-    statement_keys = {key for group in composition.APPROVED_MODULE_STATEMENTS for key in group}
-    assert not any(key.startswith("m05.") for key in statement_keys)
-    catalog = composition.build_production_catalog()
-    assert not any(key.startswith("m05.") for key in _catalog_keys(catalog))
-    profile = production_manifest_document()["execution_role_profiles"][m05.M05_OWNER]
-    assert profile["tenant_schema_privileges"] == ["USAGE"]
-
-
-def _catalog_keys(catalog: Any) -> set[str]:
-    """Keys of the compiled production catalogue and of the pinned
-    statement_catalog.json (both must be free of M05 until B5)."""
-
-    import json
-    from importlib import resources
-
-    pinned = json.loads(
-        resources.files("haloflow.m01.manifests").joinpath("statement_catalog.json").read_text()
-    )
-    return {statement.key for statement in catalog.catalog.statements()} | set(
-        pinned["statements"]
-    )
-
-
 def test_mb1_s06_part_a_checksum_pins() -> None:
     from haloflow.composition import build_production_tenant_migrations
 
     checksums = {unit.migration_id: unit.checksum for unit in build_production_tenant_migrations()}
     for migration_id, expected in m05.PART_A_CHECKSUMS.items():
         assert checksums[migration_id] == expected, migration_id
-
-
-def test_mb1_s07_test_manifest_differs_in_exactly_one_value() -> None:
-    production = production_manifest_document()
-    test = m05_manifest_document()
-    assert test["execution_role_profiles"][m05.M05_OWNER]["tenant_schema_privileges"] == [
-        "USAGE",
-        "CREATE",
-    ]
-    test["execution_role_profiles"][m05.M05_OWNER]["tenant_schema_privileges"] = ["USAGE"]
-    assert test == production
 
 
 def test_mb1_s08_ci_gate_covers_m05() -> None:

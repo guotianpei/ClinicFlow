@@ -130,8 +130,8 @@ M05_TYPED_UNITS: Final = {
 }
 M05_TEST_TARGET: Final = 20
 M05_TEST_SUPPORTED: Final = range(M05_TEST_TARGET, M05_TEST_TARGET + 1)
-# The production target is NOT advanced in B1..B4 (Codex 20261031T190524Z).
-PRODUCTION_TARGET_UNTIL_B5: Final = 11
+# B1..B4 kept the production target at 11 (Codex 20261031T190524Z); B5 advances
+# it to 25, pinned independently as b5_support.PRODUCTION_TARGET.
 
 # Installed-state profile values for the typed M05 units (B1 proposal, Codex gate):
 # plpgsql, SECURITY DEFINER, not strict, not set-returning, PARALLEL UNSAFE; the

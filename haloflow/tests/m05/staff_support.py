@@ -2,11 +2,12 @@
 
 Package v1 + v1r1 delta + v1r2 adoption (Claude/Codex aligned 2026-11-01).
 
-The directory is installed through its OWN test registry: production units + M05
+The directory was installed through its OWN test registry: part A units + M05
 units + the directory units t021..t025 (target 25), approving the M05 owner and
-the staff owner. The existing M05 harness (target 20) is deliberately unchanged
-in the red tranche, so rows that already pass keep their exact pinned unit lists;
-the implementation tranche moves it over when M05 starts calling the directory.
+the staff owner. B5 composes exactly that into production, so (harness migration
+H1, Codex 319b5f3) `staff_registry()` and `staff_manifest()` ARE the production
+registry and manifest, never a second composition on top of them. The M05
+harness keeps its isolated target-20 registry (H2).
 
 Every gateway call takes the intended path: runtime login shim, SET ROLE runtime,
 `app.tenant_id` set transaction-locally. Snapshots and seeding faults use the
@@ -27,7 +28,6 @@ from typing import Any, Final
 import m02_support
 import m05_support as m05
 import psycopg
-from m05_harness import m05_manifest_document
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
@@ -172,41 +172,42 @@ def admin_digest(*parts: Any) -> bytes:
 
 
 def staff_registry() -> Any:
-    from haloflow.composition import (
-        APPROVED_EXECUTION_ROLES,
-        APPROVED_INSTALLED_STATE_PROFILES,
-        APPROVED_TENANT_MIGRATIONS,
-    )
-    from haloflow.m01.provisioning.units import build_tenant_migration_registry
-    from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
-    from haloflow.m05.gateways import M05_GATEWAY_PROFILES
-    from haloflow.m05.units import M05_TENANT_MIGRATIONS
+    """The production registry (B5 H1): part A + M05 + staff, target 25."""
 
-    return build_tenant_migration_registry(
-        *APPROVED_TENANT_MIGRATIONS,
-        M05_TENANT_MIGRATIONS,
-        STAFF_TENANT_MIGRATIONS,
-        approved_execution_roles=APPROVED_EXECUTION_ROLES | {M05_OWNER, STAFF_OWNER},
-        installed_state_profiles={
-            **APPROVED_INSTALLED_STATE_PROFILES,
-            **M05_GATEWAY_PROFILES,
-            **STAFF_GATEWAY_PROFILES,
-        },
-    )
+    from haloflow.composition import build_production_tenant_migrations
+
+    return build_production_tenant_migrations()
 
 
 def staff_manifest() -> Any:
-    """The M05 test manifest plus the staff owner at USAGE+CREATE (it creates its
-    three functions; production stays USAGE until B5, as for the M05 owner)."""
+    """The production manifest (B5 H1). B3b's test manifest gave the M05 and staff
+    owners USAGE+CREATE (they create their functions); B5 makes exactly those two
+    changes in production, so the two documents are equal (measured)."""
 
     from haloflow.m01.provisioning.manifest import load_provisioning_manifest
 
-    document = m05_manifest_document()
-    document["execution_role_profiles"][STAFF_OWNER]["tenant_schema_privileges"] = [
-        "USAGE",
-        "CREATE",
-    ]
-    return load_provisioning_manifest(document)
+    return load_provisioning_manifest()
+
+
+def _production_registry_with(
+    m05_units: Any, staff_units: Any
+) -> Any:
+    """The production unit sets, roles and profiles, with the M05 and staff unit
+    sets replaced (mutant registries). The profiles are keyed by migration id, so a
+    mutated body keeps its unit's profile."""
+
+    from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_INSTALLED_STATE_PROFILES
+    from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
+    from haloflow.m02.units import M02_TENANT_MIGRATIONS
+
+    return build_tenant_migration_registry(
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        m05_units,
+        staff_units,
+        approved_execution_roles=APPROVED_EXECUTION_ROLES,
+        installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+    )
 
 
 class StaffInstall:
@@ -762,14 +763,7 @@ def expect_immediate_code(
 
 
 def mutant_registry(replacements: tuple[tuple[str, str], ...]) -> Any:
-    from haloflow.composition import (
-        APPROVED_EXECUTION_ROLES,
-        APPROVED_INSTALLED_STATE_PROFILES,
-        APPROVED_TENANT_MIGRATIONS,
-    )
-    from haloflow.m01.provisioning.units import build_tenant_migration_registry
     from haloflow.m01.staff import units
-    from haloflow.m05.gateways import M05_GATEWAY_PROFILES
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     body = units._ADMIN_BODY
@@ -782,17 +776,7 @@ def mutant_registry(replacements: tuple[tuple[str, str], ...]) -> Any:
     mutated["t023_m01_staff_admin"] = units._definition(
         "m01_staff_admin", (("p_command", "jsonb"),), "jsonb", "volatile", RUNTIME, body, sha
     )
-    return build_tenant_migration_registry(
-        *APPROVED_TENANT_MIGRATIONS,
-        M05_TENANT_MIGRATIONS,
-        mutated,
-        approved_execution_roles=APPROVED_EXECUTION_ROLES | {M05_OWNER, STAFF_OWNER},
-        installed_state_profiles={
-            **APPROVED_INSTALLED_STATE_PROFILES,
-            **M05_GATEWAY_PROFILES,
-            **units.STAFF_GATEWAY_PROFILES,
-        },
-    )
+    return _production_registry_with(M05_TENANT_MIGRATIONS, mutated)
 
 
 class MutantInstall(StaffInstall):
@@ -876,12 +860,6 @@ def _mutated(body: str, replacements: tuple[tuple[str, str], ...]) -> str:
 def unit_mutant_registry(mutations: dict[str, tuple[tuple[str, str], ...]]) -> Any:
     """The staff test registry with each named unit's body mutated."""
 
-    from haloflow.composition import (
-        APPROVED_EXECUTION_ROLES,
-        APPROVED_INSTALLED_STATE_PROFILES,
-        APPROVED_TENANT_MIGRATIONS,
-    )
-    from haloflow.m01.provisioning.units import build_tenant_migration_registry
     from haloflow.m01.staff import units as staff_units
     from haloflow.m05 import gateways
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
@@ -903,17 +881,7 @@ def unit_mutant_registry(mutations: dict[str, tuple[tuple[str, str], ...]]) -> A
             body = _mutated(gateways._BODIES[name][0], replacements)
             sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
             m05_units[migration_id] = gateways._definition(name, params, volatility, body, sha)
-    return build_tenant_migration_registry(
-        *APPROVED_TENANT_MIGRATIONS,
-        m05_units,
-        staff,
-        approved_execution_roles=APPROVED_EXECUTION_ROLES | {M05_OWNER, STAFF_OWNER},
-        installed_state_profiles={
-            **APPROVED_INSTALLED_STATE_PROFILES,
-            **gateways.M05_GATEWAY_PROFILES,
-            **staff_units.STAFF_GATEWAY_PROFILES,
-        },
-    )
+    return _production_registry_with(m05_units, staff)
 
 
 class UnitMutantInstall(StaffInstall):

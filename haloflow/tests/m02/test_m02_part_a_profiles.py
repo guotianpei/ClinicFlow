@@ -63,7 +63,22 @@ def test_pr1_every_m02_typed_unit_is_exactly_the_profiled_set() -> None:
         for u in registry
         if registry.installed_state_requirement(u.migration_id).required
     }
-    assert typed == profiled == {"t003_m02_lock_operation", *PART_A_TYPED}
+    # UC1 part B B5: production also composes the typed M05 and staff-directory
+    # units, each profiled (generalized rule); the M02 typed set is unchanged.
+    b5_typed = {
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
+    }
+    assert typed == profiled == {"t003_m02_lock_operation", *PART_A_TYPED, *b5_typed}
 
 
 @pytest.mark.parametrize("migration_id", sorted(PART_A_TYPED))

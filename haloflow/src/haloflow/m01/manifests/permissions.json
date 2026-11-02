@@ -17,7 +17,11 @@
     ]
   },
   "haloflow_migrator": {
-    "allow": ["tenant_schema:checksummed_ddl", "shared.schema_migrations:controlled_write"],
+    "allow": [
+      "tenant_schema:checksummed_ddl",
+      "shared.schema_migrations:controlled_write",
+      "shared.tenants:select(tenant_id,schema_key,lifecycle_state,schema_version)"
+    ],
     "deny": [
       "database:login",
       "tenant_schema:business_runtime",

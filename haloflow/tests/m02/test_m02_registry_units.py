@@ -46,8 +46,23 @@ def test_2a_u01_production_registry_ids_and_target_version() -> None:
         "t009_m02_append",
         "t010_m02_enqueue",
         "t011_m02_envelope_read",
+        # UC1 part B B5 (package v2 section 1): M05, then the staff directory.
+        "t012_m05_tables",
+        "t013_m05_seed",
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t021_m01_staff_directory",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
     )
-    assert registry.target_version == 11
+    assert registry.target_version == 25
 
 
 def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
@@ -59,6 +74,7 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
 
     from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_TENANT_MIGRATIONS
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS
+    from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02 import part_a_gateways as gw
     from haloflow.m02 import part_a_units as pa
     from haloflow.m02.units import (
@@ -68,8 +84,15 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
         T003_DEFINITION,
         T003_MIGRATION_ID,
     )
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
+    # UC1 part B B5: M05 and the staff directory follow M02; their owners are approved.
+    assert APPROVED_TENANT_MIGRATIONS == (
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        STAFF_TENANT_MIGRATIONS,
+    )
     assert (
         frozenset(
             {
@@ -77,6 +100,8 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
                 "haloflow_m02_append_owner",
                 "haloflow_m02_projection_owner",
                 "haloflow_m02_read_owner",
+                "haloflow_m05_owner",
+                "haloflow_staff_owner",
             }
         )
         == APPROVED_EXECUTION_ROLES
@@ -126,6 +151,21 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
         ("t009_m02_append", "haloflow_m02_append_owner", True),
         ("t010_m02_enqueue", "haloflow_m02_projection_owner", True),
         ("t011_m02_envelope_read", "haloflow_m02_read_owner", True),
+        # UC1 part B B5: t012/t013/t021 ordinary, the rest typed gateway units.
+        ("t012_m05_tables", None, False),
+        ("t013_m05_seed", None, False),
+        ("t014_m05_create_item", "haloflow_m05_owner", True),
+        ("t015_m05_prepare_action", "haloflow_m05_owner", True),
+        ("t016_m05_apply_action", "haloflow_m05_owner", True),
+        ("t017_m05_get_item", "haloflow_m05_owner", True),
+        ("t018_m05_list_items", "haloflow_m05_owner", True),
+        ("t019_m05_get_history", "haloflow_m05_owner", True),
+        ("t020_m05_read_note", "haloflow_m05_owner", True),
+        ("t021_m01_staff_directory", None, False),
+        ("t022_m01_staff_assignable", "haloflow_staff_owner", True),
+        ("t023_m01_staff_admin", "haloflow_staff_owner", True),
+        ("t024_m01_staff_display", "haloflow_staff_owner", True),
+        ("t025_m01_staff_followup_reader", "haloflow_staff_owner", True),
     ]
 
 

@@ -13,24 +13,35 @@ import m05_support
 
 
 def m05_registry() -> Any:
-    """Production unit sets + the M05 set, composed through the one M01 builder,
-    with the M05 owner approved and the M05 installed-state profiles added. No
-    `allow_test_units`: the M05 units are module units, not test units."""
+    """The isolated M05 test registry (target 20): the part A unit sets (M01 + M02)
+    + the M05 set, composed through the one M01 builder, with the M02 owners and the
+    M05 owner approved and the part A + M05 installed-state profiles. No
+    `allow_test_units`: the M05 units are module units, not test units.
 
-    from haloflow.composition import (
-        APPROVED_EXECUTION_ROLES,
-        APPROVED_INSTALLED_STATE_PROFILES,
-        APPROVED_TENANT_MIGRATIONS,
-    )
-    from haloflow.m01.provisioning.units import build_tenant_migration_registry
+    B5 harness migration H2 (Codex 319b5f3 ruling: retain an explicit target-20
+    isolated M05 fixture). Since B5 the production declarations already contain
+    M05 and staff, so this registry names its unit sets, roles and profiles
+    explicitly instead of extending `APPROVED_TENANT_MIGRATIONS` (which would
+    compose M05 twice). Its units, target and meaning are unchanged."""
+
+    from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
+    from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
+    from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
+    from haloflow.m02.roles import M02_EXECUTION_ROLES
+    from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
     from haloflow.m05.gateways import M05_GATEWAY_PROFILES
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     return build_tenant_migration_registry(
-        *APPROVED_TENANT_MIGRATIONS,
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
         M05_TENANT_MIGRATIONS,
-        approved_execution_roles=APPROVED_EXECUTION_ROLES | {m05_support.M05_OWNER},
-        installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES, **M05_GATEWAY_PROFILES},
+        approved_execution_roles=M02_EXECUTION_ROLES | {m05_support.M05_OWNER},
+        installed_state_profiles={
+            T003_MIGRATION_ID: LOCK_OPERATION_PROFILE,
+            **PART_A_GATEWAY_PROFILES,
+            **M05_GATEWAY_PROFILES,
+        },
     )
 
 
@@ -43,15 +54,12 @@ def production_manifest_document() -> dict[str, Any]:
 
 
 def m05_manifest_document() -> dict[str, Any]:
-    """The production document with exactly one change: the M05 owner's tenant
-    schema privileges move from USAGE (part A amendment A4) to USAGE+CREATE."""
+    """The M05 test manifest document. B1..B4 used the production document with the
+    M05 owner moved from USAGE to USAGE+CREATE. B5 makes exactly that change (and
+    the same one for the staff owner) in production, so this is now the production
+    document itself (measured equal; MB1-S07 retired with B5)."""
 
-    document = production_manifest_document()
-    document["execution_role_profiles"][m05_support.M05_OWNER]["tenant_schema_privileges"] = [
-        "USAGE",
-        "CREATE",
-    ]
-    return document
+    return production_manifest_document()
 
 
 def m05_manifest() -> Any:
@@ -65,10 +73,10 @@ class M05Install:
 
     MA-10 tranche 2 (deliberate harness migration, package v1 section 5 step 3):
     prepare/apply now call `m01_staff_assignable`, so the behaviour rows install
-    through the staff test registry (production + M05 + directory units t021..t024,
-    target 25 since B3b t025) and the staff test manifest. `m05_registry()` / `m05_manifest()`
-    above stay as they were: the static and refusal-path rows still pin the M05
-    unit set by itself.
+    through the staff test registry (target 25 since B3b t025; since B5 harness
+    migration H1 this is the production registry and manifest).
+    `m05_registry()` / `m05_manifest()` above keep the isolated target-20 M05
+    fixture: the static and refusal-path rows still pin the M05 unit set by itself.
 
     The outcome (result or exception) is memoised per module, so a failing install
     is attempted once and reported in every row that needs it."""

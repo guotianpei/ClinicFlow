@@ -506,9 +506,10 @@ def test_l1_g3_a_fixture_widened_set_cannot_reach_the_declaration(
             provisioner_connect=object(),  # type: ignore[arg-type]
         )
     )
-    assert runtime.supported_schema_versions == frozenset({11})
-    assert runtime.resolver._supported_schema_versions == frozenset({11})
-    assert runtime.gateway._supported_schema_versions == frozenset({11})
-    assert runtime.provisioner._supported_schema_versions == frozenset({11})
+    # UC1 part B B5: the production declaration is {25} (was {11} in part A).
+    assert runtime.supported_schema_versions == frozenset({25})
+    assert runtime.resolver._supported_schema_versions == frozenset({25})
+    assert runtime.gateway._supported_schema_versions == frozenset({25})
+    assert runtime.provisioner._supported_schema_versions == frozenset({25})
     declared = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert declared == frozenset({11})
+    assert declared == frozenset({25})

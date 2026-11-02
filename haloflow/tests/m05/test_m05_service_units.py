@@ -4,8 +4,11 @@
 - SV-02  every malformed public value raises CommandMalformed at construction
          (before any gateway can be reached); exact types (bool is not int, str is
          not UUID).
-- ST-3   no m01.staff.* key in production composition, catalogue or manifest.
-- ST-4   m01_staff_assignable has no statement.
+- ST-3   retired in B5 (P-1(a)): the staff keys are now production statements;
+         the exact production set is pinned by B5-C01/C02/C09
+         (test_b5_composition_units.py).
+- ST-4   the staff statements are exactly the three keys, defined in
+         M01_STATEMENTS since B5; m01_staff_assignable has no statement.
 - LS-1   no M05 body takes a non-shared lock on a directory relation; directory
          bodies other than the reader are unchanged in the red tranche.
 
@@ -14,12 +17,10 @@ RED TRANCHE: SV-02 fails until the implementation validates commands.
 
 from __future__ import annotations
 
-import json
 import re
 import uuid
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta, timezone
-from importlib import resources
 from typing import Any
 
 import pytest
@@ -186,28 +187,17 @@ def test_sv02_admin_controls() -> None:
     _admin(operation="deactivate", display_name=None)
 
 
-def test_st3_no_staff_statement_in_production() -> None:
-    from haloflow.composition import APPROVED_MODULE_STATEMENTS, build_production_catalog
-    from haloflow.m01.provisioning.manifest import MANIFEST_PACKAGE
-
-    for definitions in APPROVED_MODULE_STATEMENTS:
-        assert not [k for k in definitions if k.startswith("m01.staff.")]
-    compiled = build_production_catalog()
-    assert not [s.key for s in compiled.catalog.statements() if s.key.startswith("m01.staff.")]
-    text = resources.files(MANIFEST_PACKAGE).joinpath("statement_catalog.json").read_text()
-    assert "m01.staff." not in json.dumps(json.loads(text))
-
-
 def test_st4_staff_statements_exact_and_no_assignable_statement() -> None:
-    from haloflow.m01.statements import M01_STATEMENTS, STAFF_STATEMENTS, StatementMode
+    from haloflow.m01.statements import M01_STATEMENTS, StatementMode
 
-    assert dict(M01_STATEMENTS) == {}
-    assert {k: (m, c) for k, (m, c, _) in STAFF_STATEMENTS.items()} == {
+    # B5 (P-1(a)): the three staff keys moved from STAFF_STATEMENTS into
+    # M01_STATEMENTS, which held nothing else before and holds nothing else now.
+    assert {k: (m, c) for k, (m, c, _) in M01_STATEMENTS.items()} == {
         "m01.staff.admin": (StatementMode.WRITE, "m01.staff.admin"),
         "m01.staff.display": (StatementMode.READ, "m01.staff.display"),
         "m01.staff.followup_reader": (StatementMode.READ, "m05.followup.read"),
     }
-    assert not [q for _, _, q in STAFF_STATEMENTS.values() if "m01_staff_assignable" in q]
+    assert not [q for _, _, q in M01_STATEMENTS.values() if "m01_staff_assignable" in q]
 
 
 def test_ls1_m05_bodies_take_no_exclusive_directory_lock() -> None:
