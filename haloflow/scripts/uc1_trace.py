@@ -883,13 +883,15 @@ TRACE: dict[str, TraceRow] = {
         ],
     },
     # supervisor resolve allowed = MA-03s (Shared Workspace 2026-11-01/claude_uc1-b4-resolve-
-    # package-v1-2026-11-01.md s4). NOTE: the "history actor = supervisor" assertion is pinned by
-    # MA-04b (start_progress) only; MA-03s asserts the supervisor resolve succeeds
+    # package-v1-2026-11-01.md s4). B5 acceptance review r1 R1(1) (Codex 54f259e1): the
+    # supervisor-resolve "history actor = supervisor" assertion is test_ma05_supervisor_resolve_
+    # history_event_and_action_actor (history, M02 event and action row, assignee distinct)
     "MA-05": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_m05_actions_postgres.py::test_ma04_start_progress_on_anothers_item",
             "tests/m05/test_m05_resolve_postgres.py::test_ma03s_others_item_needs_supervise",
+            "tests/m05/test_m05_resolve_postgres.py::test_ma05_supervisor_resolve_history_event_and_action_actor",  # noqa: E501
         ],
     },
     "MA-06": {
@@ -1018,13 +1020,21 @@ TRACE: dict[str, TraceRow] = {
         ],
     },
     # supervise does not imply act: MA-13 case {read, supervise, not act} -> NOT_AUTHORIZED (SQL)
-    # and the route check refuses any action context lacking prepare/apply. NOTE: no row builds a
-    # context holding ONLY m05.followup.supervise; the invariant is evidenced by these two nodes
+    # and the route check refuses any action context lacking prepare/apply. B5 acceptance review
+    # r1 R1(3) (Codex 54f259e1): the exact context holding ONLY m05.followup.supervise is
+    # test_ma16_supervise_only_context_route_denied (B3b semantics: pre-gateway RouteDenied
+    # CAPABILITY_DENIED, zero gateway calls, full state unchanged), on every action and read route
     "MA-16": {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_m05_actions_postgres.py::test_ma13_permission_shapes_not_authorized",
             "tests/m05/test_m05_service_postgres.py::test_sv05_route_denied_before_any_gateway_call[act-no-apply]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[act-assign]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[act-claim]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[act-resolve]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[get]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[history]",  # noqa: E501
+            "tests/m05/test_m05_service_postgres.py::test_ma16_supervise_only_context_route_denied[list]",  # noqa: E501
         ],
     },
     "MR-01": {
@@ -1199,11 +1209,16 @@ TRACE: dict[str, TraceRow] = {
     },
     # = NH variants + D11-1..7 (Shared Workspace 2026-11-01/claude_uc1-b4-resolve-
     # package-v2-2026-11-01.md s1.1/s7): NFC/NFD, CRLF/LF and trailing-space variants give one
-    # digest; REPLAY by equal digest is the RP-1/2 path (not mapped here, so the evidence level
-    # stays unit)
+    # digest. B5 acceptance review r1 R1(2) (Codex 54f259e1): the REPLAY half is
+    # test_mn02_normalized_note_variants_replay (real service, PG17, same client action id,
+    # saved result, full state unchanged)
     "MN-02": {
-        "status": "covered", "evidence_level": "unit",
+        "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
+            "tests/m05/test_m05_resolve_postgres.py::test_mn02_normalized_note_variants_replay[crlf]",  # noqa: E501
+            "tests/m05/test_m05_resolve_postgres.py::test_mn02_normalized_note_variants_replay[nfd]",  # noqa: E501
+            "tests/m05/test_m05_resolve_postgres.py::test_mn02_normalized_note_variants_replay[trailing-space]",  # noqa: E501
+
             "tests/m05/test_m05_notes_units.py::test_d11_normalization[500-code-points]",
             "tests/m05/test_m05_notes_units.py::test_d11_normalization[bare-cr]",
             "tests/m05/test_m05_notes_units.py::test_d11_normalization[crlf]",
@@ -1630,6 +1645,13 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_b5_startup_postgres.py::test_b5_s04_served_set_is_captured_once",
         ],
     },
+    # added to the inventory by B5 acceptance review r1 (Codex 54f259e1, nonblocking maintenance)
+    "B5-S-05": {
+        "status": "covered", "evidence_level": "integration_pg17",
+        "nodes": [
+            "tests/m05/test_b5_startup_postgres.py::test_b5_s05_static_composition_failure_refused_before_any_connection",  # noqa: E501
+        ],
+    },
     # SU-SNAPSHOT barrier, rows a (generation-row) and b (comparator-config)
     "B5-S15": {
         "status": "covered", "evidence_level": "integration_pg17",
@@ -1684,6 +1706,25 @@ TRACE: dict[str, TraceRow] = {
         "status": "covered", "evidence_level": "integration_pg17",
         "nodes": [
             "tests/m05/test_b5_startup_postgres.py::test_b5_e04_cancellation_propagates_and_cleans_up",  # noqa: E501
+        ],
+    },
+    # B5-E-05..07: added to the inventory by B5 acceptance review r1 (Codex 54f259e1, nonblocking)
+    "B5-E-05": {
+        "status": "covered", "evidence_level": "integration_pg17",
+        "nodes": [
+            "tests/m05/test_b5_startup_postgres.py::test_b5_e05_query_time_driver_error_maps_to_generation_unreadable",  # noqa: E501
+        ],
+    },
+    "B5-E-06": {
+        "status": "covered", "evidence_level": "integration_pg17",
+        "nodes": [
+            "tests/m05/test_b5_startup_postgres.py::test_b5_e06_cleanup_failure_after_refusal_keeps_the_original_reason",  # noqa: E501
+        ],
+    },
+    "B5-E-07": {
+        "status": "covered", "evidence_level": "integration_pg17",
+        "nodes": [
+            "tests/m05/test_b5_startup_postgres.py::test_b5_e07_cancellation_during_refusal_cleanup_wins",  # noqa: E501
         ],
     },
     # observation only: nothing it observes is approved behaviour (test module docstring)

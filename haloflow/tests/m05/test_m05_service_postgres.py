@@ -187,6 +187,41 @@ async def test_sv05_route_denied_before_any_gateway_call(staff_install, case):
     _untouched(staff_install, before)
 
 
+SUPERVISE_ONLY_ROUTES = ("act-assign", "act-claim", "act-resolve", "get", "history", "list")
+
+
+@pytest.mark.parametrize("route", SUPERVISE_ONLY_ROUTES)
+async def test_ma16_supervise_only_context_route_denied(staff_install, route):
+    """B5 acceptance review R1(3) (Codex 54f259e1; interface package v1r1 line 146):
+    supervise does not imply act or read. A public context holding exactly
+    {m05.followup.supervise}, with otherwise valid commands, is refused by the B3b
+    pre-gateway route check (RouteDenied CAPABILITY_DENIED): zero gateway calls and no
+    state change anywhere (directory, M05 and M02)."""
+
+    import resolve_support as rs
+
+    item = await _aitem(staff_install)
+    before = sv.full_state(staff_install)
+    async with _service(staff_install) as (rt, rec):
+        ctx = await sv.context(rt, staff_install, m05.SUP, frozenset({sv.SUPERVISE}))
+        assert ctx.capabilities == frozenset({sv.SUPERVISE})
+        service = rs.service(rt, sv.TestNoteKeys(), rec)
+        call = {
+            "act-assign": lambda: service.act(ctx, _action(item, 1, "assign", assignee=S2)),
+            "act-claim": lambda: service.act(ctx, _action(item, 1, "claim")),
+            "act-resolve": lambda: service.act(
+                ctx, rs.resolve_action(item, 1, "claim_and_resolve", note="Called.")),
+            "get": lambda: service.get(ctx, item),
+            "history": lambda: service.history(ctx, item),
+            "list": lambda: service.list_items(ctx, _svc().ListQuery(limit=5)),
+        }[route]
+        with pytest.raises(_svc().RouteDenied) as caught:
+            await call()
+        assert caught.value.reason_code == "CAPABILITY_DENIED"
+        assert rec.calls == 0
+    assert sv.full_state(staff_install) == before
+
+
 @pytest.mark.parametrize(
     ("caps", "kind", "assignee"),
     [

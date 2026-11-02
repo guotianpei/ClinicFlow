@@ -32,10 +32,10 @@ B5_TESTS: Final = (
     + _range("B5-I", 1, 8)
     + _range("B5-K", 1, 4)
     + _range("B5-V", 1, 9)
-    + _range("B5-S", 1, 4)
+    + _range("B5-S", 1, 5)
     + ("B5-S15",)
     + _range("B5-A", 1, 4)
-    + _range("B5-E", 1, 4)
+    + _range("B5-E", 1, 7)
     + ("COMPAT-B5a", "COMPAT-B5b", "P4-1", "P4-2", "P4-3",
        "MR-05a", "MR-05b", "MR-05c", "MR-06a", "MR-06b", "MR-07a", "MR-07b", "MR-RC")
 )

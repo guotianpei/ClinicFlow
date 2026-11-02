@@ -151,6 +151,37 @@ async def test_ma03s_others_item_needs_supervise(staff_install):
     assert (result.snapshot["assignee_id"], result.snapshot["state"]) == (m05.S2, "resolved")
 
 
+async def test_ma05_supervisor_resolve_history_event_and_action_actor(staff_install):
+    """B5 acceptance review R1(1) (Codex 54f259e1; interface package v1 line 212): a
+    supervisor resolving another staff member's item is the attributed actor in the
+    committed history, the M02 resolution event and the action row. The assignee (S2)
+    stays distinct, so attribution to the assignee is caught."""
+
+    item = await _claimed(staff_install, m05.S2)
+    action = _resolve(item, 2)
+    async with sv.runtime(staff_install) as rt:
+        sup = await sv.context(rt, staff_install, m05.SUP, sv.SUPERVISOR_RESOLVE_CAPS)
+        result = await _service(rt, sv.TestNoteKeys()).act(sup, action)
+    assert m05.SUP != m05.S2
+    assert result.outcome == "applied"
+    assert (result.snapshot["assignee_id"], result.snapshot["state"]) == (m05.S2, "resolved")
+    (event,) = _events_for(staff_install, item)
+    assert (event["event_type"], event["actor_id"]) == (sv.RESOLUTION_TYPE, m05.SUP)
+    history = sorted((r[0] for r in _rows(staff_install, "m05_followup_history", item)),
+                     key=lambda h: h["seq"])
+    resolves = [h for h in history if h["action"] == "resolve"]
+    assert resolves == [history[-1]]
+    last = history[-1]
+    assert (last["actor_id"], last["assertion_kind"], last["resolution_event_id"],
+            last["item_id"]) == (m05.SUP, "staff", event["event_id"], str(item))
+    assert last["after"] == {"state": "resolved", "assignee_id": m05.S2,
+                             "outcome_code": "rescheduled"}
+    (action_row,) = [r[0] for r in _rows(staff_install, "m05_followup_actions", item)
+                     if r[0]["client_action_id"] == str(action.client_action_id)]
+    assert (action_row["actor_id"], action_row["event_id"], action_row["requested_action"],
+            action_row["item_id"]) == (m05.SUP, event["event_id"], "resolve", str(item))
+
+
 async def test_ma07r_resolved_item_refused_no_reopen(staff_install):
     item = await _claimed(staff_install)
     async with sv.runtime(staff_install) as rt:
@@ -211,6 +242,37 @@ async def test_rp1_rp2_exact_retry_replays(staff_install, note):
                 else [sv.K_PREPARE, sv.K_PREPARE, sv.K_APPLY])
     assert rec.statements == expected  # no append on replay
     assert keys.uses == ([] if note is None else [("hmac_key", 1)])  # no current key
+
+
+MN02_VARIANTS = {
+    "nfd": "Café called.\nLeft voicemail.",
+    "crlf": "Café called.\r\nLeft voicemail.",
+    "trailing-space": "Café called.\nLeft voicemail.  ",
+}
+
+
+@pytest.mark.parametrize("variant", sorted(MN02_VARIANTS))
+async def test_mn02_normalized_note_variants_replay(staff_install, variant):
+    """B5 acceptance review R1(2) (Codex 54f259e1; interface package v1 line 241): a
+    retry with the same client action id whose note differs from the applied one only
+    by NFC/NFD, CRLF/LF or trailing whitespace is a REPLAY through the real service on
+    PostgreSQL: the saved result comes back and nothing is written (no event, link,
+    outbox, history, action, note or item-version change)."""
+
+    original = "Café called.\nLeft voicemail."  # NFC, LF, no trailing space
+    assert MN02_VARIANTS[variant] != original
+    item = await _claimed(staff_install)
+    keys = sv.TestNoteKeys()
+    key = uuid4()
+    first = await _resolve_once(staff_install, keys, _resolve(item, 2, note=original, key=key))
+    assert first.outcome == "applied"
+    before = sv.full_state(staff_install)
+    retry, rec = await _retry(staff_install, keys,
+                              _resolve(item, 2, note=MN02_VARIANTS[variant], key=key))
+    assert not isinstance(retry, BaseException), retry
+    assert (retry.outcome, dict(retry.snapshot)) == ("replayed", dict(first.snapshot))
+    assert sv.full_state(staff_install) == before
+    assert rec.statements == [sv.K_PREPARE, sv.K_PREPARE, sv.K_APPLY]  # no append on replay
 
 
 @pytest.mark.parametrize("change", ["text", "added", "removed", "outcome", "type"])
