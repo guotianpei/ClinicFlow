@@ -60,7 +60,7 @@ def _drop_test_grants(env: db.L1WEnv, staff_install: st.StaffInstall) -> Iterato
 
 def _setup(install: st.StaffInstall) -> st.StaffInstall:
     w3.ready_with_staff(install)
-    for staff_id in (m05.S1, m05.S2, m05.SUP):
+    for staff_id in (m05.S1, m05.S2, m05.SUP, st.ADMIN):
         w3.drop_role(install, staff_id, "clinic_admin")  # FIXTURE SETUP: no admin yet
     return install
 

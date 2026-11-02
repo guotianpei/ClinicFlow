@@ -815,14 +815,18 @@ async def test_sv12_admin_unknown_commit_then_recovery(staff_install, mode):
         assert fired == [mode]
     after_retry = st.state(staff_install)
     if COMMITTED[mode]:
-        assert dict(retry.result) == original
+        # L-1W W3a: the v2 SQL result adds "outcome"; the bound public result is the
+        # v1 four-key shape (SVC-01).
+        assert original["outcome"] == "applied"
+        assert dict(retry.result) == {k: v for k, v in original.items() if k != "outcome"}
         assert after_retry == after_fault
         st.check_admin_delta(st.Delta(before, after_fault), before, staff_install, sql_command,
-                             original)
+                             original, v2=True)
     else:
         assert after_fault == before
         st.check_admin_delta(st.Delta(before, after_retry), before, staff_install,
-                             rec.sent(sv.K_ADMIN)[1], dict(retry.result))
+                             rec.sent(sv.K_ADMIN)[1],
+                             {**dict(retry.result), "outcome": "applied"}, v2=True)
     st.Delta(before, after_retry).untouched(st.M05_CONTENT_TABLES)
 
 

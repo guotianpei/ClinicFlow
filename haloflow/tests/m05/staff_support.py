@@ -166,6 +166,21 @@ def admin_digest(*parts: Any) -> bytes:
     return hashlib.sha256(admin_digest_preimage(*parts).encode("utf-8")).digest()
 
 
+def admin_digest_v2(
+    tenant: str, key: str, actor: str, operation: str, staff: str,
+    display_name: str | None, access: str | None,
+) -> bytes:
+    """L-1W W3a m01_staff_admin_v2 key digest (written out independently): the v1
+    elements plus role, issuer, subject, setting and value, which a v1-operation
+    command never carries (null)."""
+
+    elements = ["m01.staff_admin/v2", tenant, key, actor, operation, staff, display_name, access,
+                None, None, None, None, None]
+    preimage = "[" + ",".join(
+        json.dumps(e, ensure_ascii=False, separators=(",", ":")) for e in elements) + "]"
+    return hashlib.sha256(preimage.encode("utf-8")).digest()
+
+
 # ---------------------------------------------------------------------------
 # Registry, manifest, install
 # ---------------------------------------------------------------------------
@@ -564,9 +579,13 @@ def check_admin_delta(
     install: StaffInstall,
     command: dict[str, Any],
     result: dict[str, Any],
+    *,
+    v2: bool = False,
 ) -> None:
     """Exactly the intended directory change for one admitted admin command; the
-    caller asserts the M05 tables separately."""
+    caller asserts the M05 tables separately. ``v2`` (L-1W W3a): the command went
+    through m01_staff_admin_v2 (the service route), whose key digest is v2 and whose
+    SQL result adds "outcome" to the logged four-key result."""
 
     staff, operation = command["staff_id"], command["operation"]
     key, actor = command["client_action_id"], command["attribution"]["principal_id"]
@@ -625,10 +644,13 @@ def check_admin_delta(
     )
     assert snap["access"] == after_access
     # keys and log
-    digest = admin_digest(
+    digest = (admin_digest_v2 if v2 else admin_digest)(
         install.tenant[0], key, actor, operation, staff,
         command.get("display_name"), command.get("access"),
     )
+    if v2:
+        assert result.get("outcome") in ("applied", "replayed")
+        result = {k: v for k, v in result.items() if k != "outcome"}
     assert not delta.changed["m01_staff_action_keys"] and not delta.removed["m01_staff_action_keys"]
     (key_row,) = delta.added["m01_staff_action_keys"]
     assert (key_row["client_action_id"], key_row["staff_id"], key_row["actor_id"],
