@@ -10,8 +10,14 @@ rather than the catalogue the application actually runs.
 L-1: this module also declares the supported schema-version set and is the only
 production caller of `compose_tenant_runtime`, through
 `build_production_tenant_runtime`. No application entry point calls that yet
-(L-1W). Since UC1 part A the production statement catalogue holds one statement,
-the M02 observation append, used by `haloflow.m02.observation` (L-1S).
+(L-1W).
+
+UC1 part B tranche B5 (package v2 + v2r1, Codex 4b0a5448) composes M05 and the
+staff directory into production: the catalogue holds the M02 observation append
+(used by `haloflow.m02.observation`, L-1S), the three staff-directory statements
+and the seven M05 follow-up statements; the registry holds t001-t025 (target 25).
+This module stays declarative policy. The trusted startup procedure that consumes
+it lives in `haloflow.startup`.
 """
 
 from collections.abc import Mapping
@@ -31,6 +37,7 @@ from haloflow.m01.runtime import (
     TenantRuntimeDependencies,
     compose_tenant_runtime,
 )
+from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
 from haloflow.m01.statements import (
     M01_STATEMENTS,
     CompiledCatalog,
@@ -39,17 +46,24 @@ from haloflow.m01.statements import (
 )
 from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
 from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
-from haloflow.m02.roles import M02_EXECUTION_ROLES
 from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
+from haloflow.m05.gateways import M05_GATEWAY_PROFILES
+from haloflow.m05.statements import M05_STATEMENTS
+from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
 # Approved module definition sets, in composition order. A new module is added
 # here and nowhere else, and doing so forces a manifest update in the same
 # commit because the manifest test composes through this tuple.
 #
 # UC1 part A (Codex ALIGN 20261031T142215Z item 6): M02 contributes exactly the
-# observation append statement.
-APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS, M02_STATEMENTS)
+# observation append statement. UC1 part B B5 (P-1(a)): M01 contributes the three
+# staff-directory statements and M05 its seven follow-up statements.
+APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (
+    M01_STATEMENTS,
+    M02_STATEMENTS,
+    M05_STATEMENTS,
+)
 
 # Approved per-tenant migration definition sets. Same rule, same reason: one
 # composition path, so what a tenant schema receives is reviewable in one place.
@@ -61,10 +75,14 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (M01_STATEMENTS, 
 # which makes the production target version 3. Version 3 says nothing about
 # upgrading active version-2 tenants, which have no path in 2b (L-6). UC1 part A
 # adds t004-t011 (target version 11); no upgrade path from version 3 is claimed
-# either. Runtime acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
+# either. UC1 part B B5 adds the M05 units t012-t020 and the staff-directory units
+# t021-t025 (target version 25); no upgrade path from version 11 is claimed (L-6).
+# Runtime acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     TENANT_MIGRATIONS,
     M02_TENANT_MIGRATIONS,
+    M05_TENANT_MIGRATIONS,
+    STAFF_TENANT_MIGRATIONS,
 )
 
 # Execution roles this deployment approves for per-tenant migrations (R-P1.2).
@@ -78,13 +96,16 @@ APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
 # every member of `PROVISIONING_ROLES` on its own (R-P1B.22(a), D23).
 #
 # UC1 part A (Codex ALIGN 20261031T131639Z, C1; delta v1r1 Delta4): the append,
-# projection and read owners run t008-t011. The M05 owner runs no unit in part A.
+# projection and read owners run t008-t011. UC1 part B B5: the M05 owner runs the
+# typed M05 gateway units and the staff owner the typed staff-directory units.
 APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset(
     {
         "haloflow_m02_lock_owner",
         "haloflow_m02_append_owner",
         "haloflow_m02_projection_owner",
         "haloflow_m02_read_owner",
+        "haloflow_m05_owner",
+        "haloflow_staff_owner",
     }
 )
 
@@ -93,18 +114,25 @@ APPROVED_EXECUTION_ROLES: frozenset[str] = frozenset(
 # composition and refuses any disagreement with the unit's declaration.
 #
 # UC1 part A (C1): every typed M02 unit carries a profile, t008-t011 included.
+# UC1 part B B5: so does every typed M05 and staff-directory unit.
 APPROVED_INSTALLED_STATE_PROFILES: Mapping[str, InstalledStateProfile] = MappingProxyType(
-    {T003_MIGRATION_ID: LOCK_OPERATION_PROFILE, **PART_A_GATEWAY_PROFILES}
+    {
+        T003_MIGRATION_ID: LOCK_OPERATION_PROFILE,
+        **PART_A_GATEWAY_PROFILES,
+        **M05_GATEWAY_PROFILES,
+        **STAFF_GATEWAY_PROFILES,
+    }
 )
 
 
 # L-1 (requirements v2, L1-D2 = M1). The schema versions the production runtime
-# admits: exactly {11} since UC1 part A composed t004-t011 (P-b, Codex ALIGN
-# 20261031T130451Z; previously {3}). The one declaration -- resolver, gateway, provisioner and the
-# bundle all receive this object. A literal, never derived from the registry: a
-# derived set would make the coordination check vacuous and silently admit a future
-# target. Version 3 means "the M01 infrastructure baseline through t003" (R-E11).
-APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({11})
+# admits: exactly {25} since UC1 part B B5 composed t012-t025 (previously {11} from
+# UC1 part A, P-b, Codex ALIGN 20261031T130451Z; before that {3}). The one
+# declaration -- resolver, gateway, provisioner, the bundle and startup all receive
+# this object. A literal, never derived from the registry: a derived set would make
+# the coordination check vacuous and silently admit a future target. Version 3 means
+# "the M01 infrastructure baseline through t003" (R-E11).
+APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({25})
 
 
 def build_production_catalog() -> CompiledCatalog:
@@ -113,30 +141,37 @@ def build_production_catalog() -> CompiledCatalog:
     return build_statement_catalog(*APPROVED_MODULE_STATEMENTS)
 
 
-def require_m02_installed_state_profiles(registry: TenantMigrationRegistry) -> None:
-    """The M02 rule (architecture v3 section 5.1(1); widened by UC1 part A, C1).
+def require_installed_state_profiles(registry: TenantMigrationRegistry) -> None:
+    """The generalized profile rule (B5 package v2 section 1).
 
-    The set of typed units whose execution role is an M02 execution role (the lock
-    owner and the part-A append, projection and read owners) must EQUAL the set of
-    units the registry holds a required installed-state profile for. So no M02
-    gateway composes without its profile, and no M02 typed unit can escape one.
-    Static: no database access.
+    The set of typed units whose execution role is an approved execution role (the
+    M02 lock, append, projection and read owners, the M05 owner and the staff owner)
+    must EQUAL the set of units the registry holds a required installed-state
+    profile for. So no gateway composes without its profile, and no typed unit run
+    by an approved role can escape one. Static: no database access.
     """
 
-    m02_typed = {
+    typed = {
         unit.migration_id
         for unit in registry
-        if unit.is_typed and unit.execution_role in M02_EXECUTION_ROLES
+        if unit.is_typed and unit.execution_role in APPROVED_EXECUTION_ROLES
     }
     profiled = {
         unit.migration_id
         for unit in registry
         if registry.installed_state_requirement(unit.migration_id).required
     }
-    if m02_typed != profiled:
+    if typed != profiled:
         raise MigrationUnitRejected(
             reason_code=PreconditionCode.INSTALLED_STATE_PROFILE_INVALID.value
         )
+
+
+# The CP2-2b / UC1 part A name, kept as an alias because existing M02 rows
+# (2B-U05, PR1-PR4) import it. Since B5 the M02-only rule would refuse the
+# production registry (it profiles M05 and staff units too), so the alias is the
+# generalized rule, which covers every M02 typed unit as before.
+require_m02_installed_state_profiles = require_installed_state_profiles
 
 
 def build_production_tenant_migrations() -> TenantMigrationRegistry:
@@ -147,7 +182,7 @@ def build_production_tenant_migrations() -> TenantMigrationRegistry:
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
     )
-    require_m02_installed_state_profiles(registry)
+    require_installed_state_profiles(registry)
     return registry
 
 
