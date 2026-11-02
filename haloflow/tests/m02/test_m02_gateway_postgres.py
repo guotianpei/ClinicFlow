@@ -392,7 +392,7 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 11
+    assert outcome.schema_version == 25  # B5 (H5): production target; 11 in part A
     # One installed-state verification per profiled typed unit: t003 and t008-t011.
     assert calls == [m02_tenant[1]] * 5
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
@@ -524,7 +524,8 @@ def test_2b_d24b_installed_state_drift_is_not_detected_on_skip(
 def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
-    assert provision_production(m02_ids, m02_tenant).schema_version == 11
+    # B5 (H5): the production target is 25 (11 in part A).
+    assert provision_production(m02_ids, m02_tenant).schema_version == 25
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(

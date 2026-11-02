@@ -37,6 +37,20 @@ ORDER = (
     "t004_m02_reference", "t005_m02_events", "t006_m02_outbox",
     "t007_m02_envelope_allowlist", "t008_m02_canon", "t009_m02_append",
     "t010_m02_enqueue", "t011_m02_envelope_read",
+    # UC1 part B B5 (H5): the production registry continues through t025.
+    "t012_m05_tables", "t013_m05_seed", "t014_m05_create_item",
+    "t015_m05_prepare_action", "t016_m05_apply_action", "t017_m05_get_item",
+    "t018_m05_list_items", "t019_m05_get_history", "t020_m05_read_note",
+    "t021_m01_staff_directory", "t022_m01_staff_assignable", "t023_m01_staff_admin",
+    "t024_m01_staff_display", "t025_m01_staff_followup_reader",
+)
+# B5 (H5): the typed M05 and staff functions the production registry verifies
+# after t011, in install order (frozen, not read from the profiles).
+B5_VERIFIED = (
+    "m05_create_item", "m05_prepare_action", "m05_apply_action", "m05_get_item",
+    "m05_list_items", "m05_get_history", "m05_read_note",
+    "m01_staff_assignable", "m01_staff_admin", "m01_staff_display",
+    "m01_staff_followup_reader",
 )
 # Frozen from the part-A manifest (amendment C1), not read from the profiles.
 TYPED = {
@@ -136,6 +150,7 @@ def test_fint1_m1_control_the_unaltered_seam_installs_every_unit(
     assert record == [
         ("m02_lock_operation", "verified"),
         *[(TYPED[u][0], "verified") for u in sorted(TYPED)],
+        *[(name, "verified") for name in B5_VERIFIED],
     ]
     for unit in sorted(TYPED):
         assert not _absent(m02_ids, schema, *TYPED[unit]), unit

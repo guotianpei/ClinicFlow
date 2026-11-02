@@ -339,6 +339,10 @@ def test_b5_k03_startup_wires_only_the_fail_closed_key_provider() -> None:
         for tree in _src_trees().values()
         for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef)
+        # The structural interface itself (typing.Protocol) is not a provider. This
+        # is a declared test-defect fix at implementation: the red census failed
+        # earlier, at the unpack, which hid it.
+        and not any(isinstance(base, ast.Name) and base.id == "Protocol" for base in node.bases)
         and {"current_hmac", "current_encryption"}
         <= {item.name for item in node.body if isinstance(item, ast.FunctionDef)}
     }
