@@ -531,13 +531,19 @@ def test_2b_d29_a_fresh_tenant_reaches_version_three(
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
+    """B5 declared fixture change (Codex D29a ruling 1605c2c6, option (a)). The
+    interrupted provisioning row is seeded at the production target 25 (an
+    independent literal), so this stays a SAME-target resume. A stale-target resume
+    is now refused by the P-4 guard (tests/m05/test_b5_startup_postgres.py P4 rows).
+    The node name is kept unchanged so that it appears plainly in the node delta."""
+
     with m02.connect_admin(m02_ids) as conn:
         conn.execute(
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version)"
-            " VALUES (%s, %s, 'provisioning', 1)",
+            " VALUES (%s, %s, 'provisioning', 25)",
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 11
+    assert provision_production(m02_ids, m02_tenant).schema_version == 25
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(
