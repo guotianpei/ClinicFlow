@@ -666,7 +666,9 @@ def test_dt13_manifest_declares_role_and_edge():
 
     document = production_manifest_document()
     profile = document["execution_role_profiles"][st.STAFF_OWNER]
-    assert profile["tenant_schema_privileges"] == ["USAGE"]  # production: USAGE until B5
+    # B5 declared change: production composes the staff gateways, so the owner holds
+    # USAGE+CREATE (it creates its functions); USAGE only until B5.
+    assert profile["tenant_schema_privileges"] == ["USAGE", "CREATE"]
     assert {
         "role": st.STAFF_OWNER, "member": st.MIGRATOR,
         "set": True, "inherit": False, "admin": False,
