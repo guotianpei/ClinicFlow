@@ -226,7 +226,7 @@ def _load_checker() -> Any:
     return module
 
 
-def sync_sha_literals(target: Path) -> None:
+def sync_sha_literals(target: Path, python: str | None = None) -> None:
     """Rewrite the target's body SHA literals to its CURRENT (mutated) bodies."""
 
     key = target.relative_to(HERE.parent) if target.is_absolute() else target
@@ -238,7 +238,8 @@ def sync_sha_literals(target: Path) -> None:
         "print(json.dumps({lit: hashlib.sha256(getattr(m, body).encode()).hexdigest()"
         f" for lit, body in {list(pairs)!r}}}))\n"
     )
-    completed = subprocess.run([sys.executable, "-I", "-c", script], capture_output=True,
+    completed = subprocess.run([python or sys.executable, "-I", "-c", script],
+                               capture_output=True,
                                text=True, check=True, cwd=HERE.parent)
     import json
     shas: dict[str, str] = json.loads(completed.stdout)

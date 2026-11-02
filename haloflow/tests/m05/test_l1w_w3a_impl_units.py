@@ -10,8 +10,8 @@ Rows:
 - SUP-03: the controlled membership graph refuses an undeclared edge touching
   support, a missing support edge and a support edge with different options; the
   exact shipped graph passes.
-- SUP-08: stage 1 reads the live attributes of every tenant-schema-privileged
-  profile not run by a registry unit (support included), AFTER the registry roles,
+- SUP-08: stage 1 reads the live attributes of every grant-only (USAGE-only,
+  never a unit's role) profile -- support -- AFTER the registry roles,
   with the existing reads; an unsafe or missing support refuses with
   EXECUTION_ROLE_UNAVAILABLE even for an empty registry; a registry role without a
   profile is still refused; the migrator check still runs (Codex 225500Z).
@@ -192,10 +192,10 @@ def test_sup08_every_schema_privileged_profile_is_read_after_registry_roles() ->
     conn = _Connection()
     asyncio.run(assert_execution_roles_safe(conn, [_unit("haloflow_staff_owner"), _unit(None)]))
     attribute_reads = [p[0] for k, p in conn.log if k == "attributes"]
-    assert attribute_reads[0] == "haloflow_staff_owner"
-    assert sorted(attribute_reads[1:]) == sorted(
-        r for r in SHIPPED_PROFILE_EDGES if r != "haloflow_staff_owner")
-    assert SUPPORT in attribute_reads
+    # The registry role first, then exactly the grant-only (USAGE-only) profiles:
+    # support. Unused execution profiles (USAGE+CREATE) are not read here; their
+    # pre-unit drift stays the in-SQL guards' case (Codex ruling on CI #226).
+    assert attribute_reads == ["haloflow_staff_owner", SUPPORT]
     assert conn.log[0][0] == "graph" and conn.log[-1] == ("migrator", (MIGRATOR,))
 
 

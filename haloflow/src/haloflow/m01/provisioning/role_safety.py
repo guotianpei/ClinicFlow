@@ -359,17 +359,20 @@ async def assert_execution_roles_safe(
         if refusal is not None:
             raise ExecutionRoleUnavailable(reason_code=refusal)
 
-    # L-1W W3a (Codex 225500Z): every manifest profile that receives tenant-schema
-    # privileges is checked live as well, even when no registry unit runs as it --
-    # the USAGE-only support profile is the case: it can execute no unit, but the
-    # provisioner grants it schema access, so a drifted (LOGIN, SUPERUSER, ...)
-    # support role must be refused before that grant or any runner work. Same read
-    # and assess functions; registry roles keep their order and their
-    # missing-profile refusal above.
+    # L-1W W3a (Codex 225500Z, scope ruled 234928Z): a USAGE-only profile -- one that
+    # receives tenant-schema privileges but not CREATE (the support profile; that it
+    # is never a unit's role is proven separately, not by this predicate) -- is
+    # checked live as well: the provisioner grants
+    # it schema access, so a drifted (LOGIN, SUPERUSER, ...) role must be refused
+    # before that grant or any runner work. An execution profile (USAGE+CREATE) is
+    # checked above whenever a registry unit runs as it; its drift when none does is
+    # the case the in-SQL unit guards (G-1) cover. Same read and assess functions;
+    # registry roles keep their order and their missing-profile refusal above.
     schema_privileged = sorted(
         role
-        for role in loaded.tenant_schema_role_privileges  # type: ignore[attr-defined]
+        for role, entry in loaded.tenant_schema_role_privileges.items()  # type: ignore[attr-defined]
         if role in profiles and role not in declared_roles
+        and "CREATE" not in entry.privileges
     )
     for role in schema_privileged:
         observed = await read_execution_role(connection, role)

@@ -243,6 +243,35 @@ def build_service_mutants(text: str, mutant_class: Any,
     return tuple(mutants)
 
 
+V2_GATEWAYS = Path("src/haloflow/m05/gateways_v2.py")
+
+
+def _v2_synced_runner(checker: Any) -> Any:
+    """L-1W W3a: the v2 action bodies (gateways_v2.py, t030/t031) are rendered from
+    THIS template, so a mutated gateways.py also changes them. While a mutant is
+    applied, the v2 body hash literals are re-synchronised to the mutated bodies
+    (scripts/l1w_w3a_mutants.sync_sha_literals) so the production registry still
+    composes and the mutated SQL is what the service routes reach; gateways_v2.py is
+    restored byte for byte after every run. Judging is unchanged (the checker's)."""
+
+    spec = importlib.util.spec_from_file_location("_l1w_w3a_mutants",
+                                                  HERE / "l1w_w3a_mutants.py")
+    assert spec is not None and spec.loader is not None
+    w3a = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(w3a)
+
+    def runner(pytest: str, label: str, evidence: Path) -> Any:
+        original = V2_GATEWAYS.read_bytes()
+        try:
+            if label != "control":
+                w3a.sync_sha_literals(V2_GATEWAYS, str(Path(pytest).with_name("python")))
+            return checker.run_pytest(pytest, label, evidence)
+        finally:
+            V2_GATEWAYS.write_bytes(original)
+
+    return runner
+
+
 GROUPS = (
     ("sql-binding", GATEWAYS, BINDING),
     ("sql-resolve", GATEWAYS, RESOLVE),
@@ -270,8 +299,13 @@ def main(argv: list[str] | None = None) -> int:
             checker.MUTANTS = build_service_mutants(text, checker.Mutant, only=tests)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = int(checker.main(["--pytest", args.pytest,
-                                     "--evidence", str(evidence / label)]))
+            if target == GATEWAYS:
+                code = int(checker.main(["--pytest", args.pytest,
+                                         "--evidence", str(evidence / label)],
+                                        runner=_v2_synced_runner(checker)))
+            else:
+                code = int(checker.main(["--pytest", args.pytest,
+                                         "--evidence", str(evidence / label)]))
         sys.stdout.write(buffer.getvalue().replace(f"title={TITLE_FROM}",
                                                    f"title=m05-resolve-mutants {label}"))
         status = status or code
