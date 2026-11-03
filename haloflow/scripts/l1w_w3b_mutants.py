@@ -68,6 +68,24 @@ _KEY_INSERT = (
     "        staff_id, outcome, created_at, operation)\n"
     "    VALUES (v_key, v_digest, v_actor, v_staff, v_outcome, v_now, 'create_first_admin');\n"
 )
+_GRANT_RECHECK = (
+    "    v_grant := NULL;\n"
+    "    SELECT g.grant_id, g.ticket_reference INTO v_grant, v_ticket\n"
+    "      FROM shared.support_access_grants AS g\n"
+    "     WHERE g.actor_id = v_actor AND g.tenant_id = v_tenant AND g.state = 'active'\n"
+    "       AND g.starts_at <= pg_catalog.clock_timestamp()\n"
+    "       AND pg_catalog.clock_timestamp() < g.expires_at\n"
+    "       AND 'l1w.roles.bootstrap' = ANY (g.capabilities)\n"
+    "     ORDER BY g.expires_at DESC, g.grant_id\n"
+    "     LIMIT 1;\n"
+    "    IF v_grant IS NULL THEN\n"
+)
+_GRANT_RECHECK_KEEP = (
+    "    SELECT g.ticket_reference INTO v_ticket\n"
+    "      FROM shared.support_access_grants AS g\n"
+    "     WHERE g.grant_id = v_grant;\n"
+    "    IF false THEN\n"
+)
 _ROLE_VALUES = "            VALUES (v_staff, 'clinic_admin', 'support:' || v_actor, v_now);\n"
 
 FIRST_MEMBER_SPECS: tuple[Spec, ...] = (
@@ -80,7 +98,14 @@ FIRST_MEMBER_SPECS: tuple[Spec, ...] = (
     ("F-RECHECK-GRANT", "t034 does not re-check the grant after the guard",
      "     ORDER BY g.expires_at DESC, g.grant_id\n     LIMIT 1;\n    IF v_grant IS NULL THEN\n",
      "     ORDER BY g.expires_at DESC, g.grant_id\n     LIMIT 1;\n    IF false THEN\n"),
-    ("F-RECHECK-LOGIN", "t034 does not re-check the login (OID and name) after the guard",
+    # Codex 173009Z: F-RECHECK-GRANT is caught by the log's grant_id NOT NULL (an
+    # error-contract change). This focused mutant skips ONLY the post-wait rejection
+    # and keeps the grant selected before the wait (and its ticket) for the audit
+    # insert, so every constraint holds and only forbidden success can kill it.
+    ("F-RECHECK-GRANT-KEEP", "t034 skips the post-wait revoked-grant rejection, keeping the "
+     "pre-wait grant for the audit row",
+     _GRANT_RECHECK, _GRANT_RECHECK_KEEP),
+    ("F-RECHECK-LOGIN","t034 does not re-check the login (OID and name) after the guard",
      "                            WHERE r.rolname = session_user);\n    IF NOT FOUND THEN\n",
      "                            WHERE r.rolname = session_user);\n    IF false THEN\n"),
     ("F-KEY", "t034 writes no action key on ADMIN_EXISTS",
@@ -234,7 +259,10 @@ KILLS: dict[str, frozenset[str]] = {
                    "test_fm07_concurrent_first_members_one_wins"),
     "F-GUARD": _n(FM_FILE, *_FM05B, "test_fm07_concurrent_first_members_one_wins",
                   "test_fm07b_first_member_and_t032_serialize_on_the_guard"),
+    # Error-contract kill (log grant_id NOT NULL), retained and labelled as such.
     "F-RECHECK-GRANT": _n(FM_FILE, _FM05B[1]),
+    # Behavioral: the revoked-grant race must not succeed (pre-measurement analysis).
+    "F-RECHECK-GRANT-KEEP": _n(FM_FILE, _FM05B[1]),
     "F-RECHECK-LOGIN": _n(FM_FILE, _FM05B[0]),
     "F-KEY": _n(FM_FILE, "test_fm03_active_admin_exists_writes_only_the_key"),
     "F-ACCESS": _n(FM_FILE, "test_fm01_empty_clinic_gets_member_and_admin_in_one_step"),
