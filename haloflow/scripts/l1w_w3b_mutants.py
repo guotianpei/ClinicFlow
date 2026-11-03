@@ -58,6 +58,7 @@ CL_FILE = "tests/m05/test_l1w_w3b_closure_postgres.py"
 CU_FILE = "tests/m01/test_l1w_w3b_acl_closure_units.py"
 RI_FILE = "tests/m05/test_l1w_w3b_replay_integrity_postgres.py"
 EL_FILE = "tests/m05/test_m05_assignee_eligibility_postgres.py"
+DIR_FILE = "tests/m05/test_m05_staff_directory_postgres.py"
 
 Spec = tuple[str, str, str, str]  # (id, description, old, new)
 
@@ -174,6 +175,41 @@ STAFF_SPECS: tuple[Spec, ...] = (
                               "WHERE s.staff_id = v_staff;")),
 )
 
+# --- t029 against the directory suite: v2 equivalents of t023 AM-1/AM-2 (Codex 182053Z)
+
+_T029_GUARD_REF = '    + _ISOLATION_GUARD\n    + r"""\n    -- 1c. Composition'
+_T029_AUTHORITY = "    -- 6. Authority from the actor's current standing"
+_GUARD_SQL = (
+    "    IF pg_catalog.current_setting('transaction_isolation') <> 'read committed' THEN\n"
+    "        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ISOLATION_UNSUPPORTED';\n"
+    "    END IF;\n"
+)
+
+
+def _t029_guard_after_membership() -> tuple[str, str]:
+    """(old, new) for AM-1-V2. _ISOLATION_GUARD is shared by t027, t028, t029, t032
+    and t034, so the span runs from t029's own reference to the step-6 marker. It
+    drops that reference and writes the same guard SQL after the step-5 membership
+    locks. The marker lies inside an open raw string, so the source stays valid."""
+
+    text = (HERE.parent / STAFF_TARGET).read_text(encoding="utf-8")
+    start, end = text.index(_T029_GUARD_REF), text.index(_T029_AUTHORITY)
+    old = text[start:end]
+    new = old.replace("    + _ISOLATION_GUARD\n", "", 1) + _GUARD_SQL + "\n"
+    return old, new
+
+
+_AM1_OLD, _AM1_NEW = _t029_guard_after_membership()
+
+STAFF_DIRECTORY_SPECS: tuple[Spec, ...] = (
+    ("AM-1-V2", "t029 isolation guard moved after the membership locks (AM-1 on v2)",
+     _AM1_OLD, _AM1_NEW),
+    ("AM-2-V2", "t029 key admission without ON CONFLICT (AM-2 on v2)",
+     "    ON CONFLICT (client_action_id) DO NOTHING\n"
+     "    RETURNING client_action_id INTO v_admitted;\n",
+     "    RETURNING client_action_id INTO v_admitted;\n"),
+)
+
 # --- M05 v2 (t030/t031) ------------------------------------------------------------------
 
 _ISOLATION = (
@@ -254,6 +290,69 @@ _R_REVOKE = (
 )
 _INELIGIBLE = ("unknown", "inactive", "foreign", "no_read", "no_act")
 
+_AM1_KILLS = (
+    "test_dt08_isolation_guard_precedes_shape",
+    "test_dt08_isolation_guard_takes_no_lock_first[REPEATABLE READ]",
+    "test_dt08_isolation_guard_takes_no_lock_first[SERIALIZABLE]",
+)
+_AM2_KILLS = (
+    "test_dad2_transport_change_replays[auth_method]",
+    "test_dad2_transport_change_replays[execution_id]",
+    "test_dad2_transport_change_replays[purpose_code]",
+    "test_dad2_transport_change_replays[request_id]",
+    "test_dad3_integrity_key_without_log_fails_closed",
+    "test_dad4_replay_after_intervening_changes_returns_original",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[codex_counterexample]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[key_staff_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[log_actor_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[log_digest_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[log_operation_rename]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[log_staff_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_key_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_operation_wrong]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_schema_version_999]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_staff_differs_from_after]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_staff_not_object]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[result_staff_null]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_access_granted_on_add]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_access_invalid]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_name_not_command]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_name_null]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_schema_version_2]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_staff_id_other]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_status_bogus]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_status_inactive_for_add]",
+    "test_dad7_constraint_valid_corrupt_log_never_replays[snapshot_timestamp_format]",
+    "test_dad7_impossible_timestamp_never_replays[add-feb_29_non_leap]",
+    "test_dad7_impossible_timestamp_never_replays[add-feb_30]",
+    "test_dad7_impossible_timestamp_never_replays[add-hour_25]",
+    "test_dad7_impossible_timestamp_never_replays[add-minute_60]",
+    "test_dad7_impossible_timestamp_never_replays[add-month_13]",
+    "test_dad7_impossible_timestamp_never_replays[deactivate-feb_29_non_leap]",
+    "test_dad7_impossible_timestamp_never_replays[deactivate-feb_30]",
+    "test_dad7_impossible_timestamp_never_replays[deactivate-hour_25]",
+    "test_dad7_impossible_timestamp_never_replays[deactivate-minute_60]",
+    "test_dad7_impossible_timestamp_never_replays[deactivate-month_13]",
+    "test_dad7_non_add_snapshot_name_rule[81_code_points]",
+    "test_dad7_non_add_snapshot_name_rule[control_inside]",
+    "test_dad7_non_add_snapshot_name_rule[leading_space]",
+    "test_dad7_non_add_snapshot_name_rule[line_separator]",
+    "test_dad7_non_add_snapshot_name_rule[not_nfc]",
+    "test_dad7_non_add_snapshot_name_rule[trailing_nbsp]",
+    "test_dad8_valid_controls_leap_day_and_non_add[add_leap_day]",
+    "test_dad8_valid_controls_leap_day_and_non_add[deactivate_leap_day_end]",
+    "test_dad8_valid_controls_leap_day_and_non_add[deactivate_ordinary]",
+    "test_dad8_valid_historical_replay_control",
+    "test_dak1_concurrent_identical_requests_replay",
+    "test_dak2_dak3_concurrent_conflicting_requests[display_name]",
+    "test_dak2_dak3_concurrent_conflicting_requests[operation]",
+    "test_dak2_dak3_concurrent_conflicting_requests[staff_id]",
+    "test_dak5_different_actor_same_key[False]",
+    "test_dak5_different_actor_same_key[True]",
+    "test_dt01_add_creates_active_member_without_access_and_replays",
+    "test_dt07_same_key_different_digest_conflict",
+)
+
 KILLS: dict[str, frozenset[str]] = {
     "F-EXISTS": _n(FM_FILE, "test_fm03_active_admin_exists_writes_only_the_key",
                    "test_fm07_concurrent_first_members_one_wins"),
@@ -294,6 +393,10 @@ KILLS: dict[str, frozenset[str]] = {
                   *_p("test_r2_change_uncommitted_apply_waits",
                       *(f"{c}-commit" for c in _CHANGES)),
                   *_p("test_r6_split_prepare_apply_change_between", *_CHANGES)),
+    # AM-1-V2/AM-2-V2 (Codex 182053Z): measured locally after the analysis written at
+    # 18:25:19Z; AM-2-V2 fails every same-key path (concurrent and sequential).
+    "AM-1-V2": _n(DIR_FILE, *_AM1_KILLS),
+    "AM-2-V2": _n(DIR_FILE, *_AM2_KILLS),
 }
 
 
@@ -311,6 +414,7 @@ GROUPS: tuple[Group, ...] = (
     Group("closure-runner", RUNNER_TARGET, RUNNER_SPECS, (CL_FILE, CU_FILE)),
     Group("t029", STAFF_TARGET, STAFF_SPECS, (RI_FILE, EL_FILE)),
     Group("m05-v2", M05_TARGET, M05_SPECS, (EL_FILE,)),
+    Group("t029-directory", STAFF_TARGET, STAFF_DIRECTORY_SPECS, (DIR_FILE,)),
 )
 TEST_FILES: tuple[str, ...] = tuple(sorted({f for g in GROUPS for f in g.test_files}))
 
