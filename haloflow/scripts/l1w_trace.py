@@ -592,78 +592,7 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[137-False]",
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[0-False]",
     ],
-    # L-1W W3b (plan v1r1 + addendum 1; Codex 150630Z/151751Z): red tranche.
-    "AM-01": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am01_unknown_target_is_refused",
-    ],
-    "AM-02": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am02_removal_outside_the_target_profile_acl_is_refused",  # noqa: E501
-    ],
-    "AM-03": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am03_owner_entry_removal_is_refused",
-    ],
-    "AM-04": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am04_a_closure_unit_carrying_a_template_is_refused",  # noqa: E501
-    ],
-    "AM-05": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t034_m01_staff_bootstrap_first_admin]",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t033_m01_staff_bootstrap_first_admin_schema]",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t036_m01_staff_v1_runtime_closure]",  # noqa: E501
-    ],
-    "AM-06": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am06_two_amendments_on_one_target_are_refused",  # noqa: E501
-    ],
-    "AM-07": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am07_activator_version_not_above_the_target_is_refused",  # noqa: E501
-    ],
-    "AM-08": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[empty-removes]",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[duplicate-removes]",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[closure-without-amendment]",  # noqa: E501
-    ],
-    "AM-09": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am09_before_activation_the_accepted_profile_applies_unchanged",  # noqa: E501
-    ],
-    "AM-10": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am10_every_non_acl_field_is_unchanged_after_activation",  # noqa: E501
-    ],
-    "AM-11": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am11_grantee_outside_the_role_vocabulary_is_refused",  # noqa: E501
-    ],
-    "AM-12": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12_the_closure_checksum_covers_the_declared_targets",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12b_the_closure_checksum_is_stable_and_differs_per_unit",  # noqa: E501
-    ],
-    "AM-13": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_am13_changed_closure_declaration_after_install_is_ledger_drift",  # noqa: E501
-    ],
-    "C-01": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c01_runtime_execute_inventory_is_exact",
-    ],
-    "C-02": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_prepare_action(jsonb)]",  # noqa: E501
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_apply_action(jsonb)]",  # noqa: E501
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m01_staff_admin(jsonb)]",  # noqa: E501
-    ],
-    "CG-REV-01": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
-    ],
-    "CLOSURE-UNITS": [
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00_w3b_units_kinds_and_declared_amendments",  # noqa: E501
-        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00b_closure_statements_are_rendered_from_the_declaration_only",  # noqa: E501
-    ],
-    "CL-01": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl01_exact_acl_after_provisioning_and_startup_is_green",  # noqa: E501
-    ],
-    "CL-02": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl02_restored_runtime_grant_is_drift_at_startup",  # noqa: E501
-    ],
-    "CL-03": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl03_partial_closure_fails_verification_and_is_not_applied",  # noqa: E501
-    ],
-    "CL-04": [
-        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl04_a_registry_below_36_is_refused_by_the_supported_set",  # noqa: E501
-    ],
+    # L-1W W3b (plan v1r1 + addendum 1; Codex 150630Z/151751Z/154906Z): red tranche.
     "FM-01": [
         "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm01_empty_clinic_gets_member_and_admin_in_one_step",  # noqa: E501
     ],
@@ -738,5 +667,82 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[bootstrap_admin-Has A Name-False]",  # noqa: E501
         "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[create_first_admin-Has A Name-True]",  # noqa: E501
         "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[bootstrap_admin-None-True]",  # noqa: E501
+    ],
+    "CLOSURE-UNITS": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00_w3b_units_kinds_and_declared_amendments",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00b_closure_statements_are_rendered_from_the_declaration_only",  # noqa: E501
+    ],
+    "AM-01": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am01_unknown_target_is_refused",
+    ],
+    "AM-02": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am02_removal_outside_the_target_profile_acl_is_refused",  # noqa: E501
+    ],
+    "AM-03": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am03_owner_entry_removal_is_refused",
+    ],
+    "AM-04": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am04_a_closure_unit_carrying_a_template_is_refused",  # noqa: E501
+    ],
+    "AM-05": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t034_m01_staff_bootstrap_first_admin]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t033_m01_staff_bootstrap_first_admin_schema]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t036_m01_staff_v1_runtime_closure]",  # noqa: E501
+    ],
+    "AM-06": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am06_two_amendments_on_one_target_are_refused",  # noqa: E501
+    ],
+    "AM-07": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am07_activator_version_not_above_the_target_is_refused",  # noqa: E501
+    ],
+    "AM-08": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[empty-removes]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[duplicate-removes]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[closure-without-amendment]",  # noqa: E501
+    ],
+    "AM-09": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am09_before_activation_the_accepted_profile_applies_unchanged",  # noqa: E501
+    ],
+    "AM-10": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_am10b_non_acl_drift_on_a_closed_function_is_still_refused_at_startup[m05_prepare_action(jsonb)-SET work_mem = '64kB'-RESET work_mem]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_am10b_non_acl_drift_on_a_closed_function_is_still_refused_at_startup[m01_staff_admin(jsonb)-STABLE-VOLATILE]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am10_every_non_acl_field_is_unchanged_after_activation",  # noqa: E501
+    ],
+    "AM-11": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am11_grantee_outside_the_role_vocabulary_is_refused",  # noqa: E501
+    ],
+    "AM-12": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12_closure_checksum_payload_is_exact[t035_m05_v1_runtime_closure]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12_closure_checksum_payload_is_exact[t036_m01_staff_v1_runtime_closure]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12b_checksum_is_the_pinned_digest_and_every_field_is_bound[t035_m05_v1_runtime_closure]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12b_checksum_is_the_pinned_digest_and_every_field_is_bound[t036_m01_staff_v1_runtime_closure]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12c_amendment_declaration_order_is_normalized",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12d_target_set_change_changes_only_that_units_checksum",  # noqa: E501
+    ],
+    "AM-13": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_am13_changed_closure_declaration_after_install_is_ledger_drift",  # noqa: E501
+    ],
+    "CL-01": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl01_exact_acl_after_provisioning_and_startup_is_green",  # noqa: E501
+    ],
+    "CL-02": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl02_restored_runtime_grant_is_drift_at_startup",  # noqa: E501
+    ],
+    "CL-03": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl03_partial_closure_fails_verification_and_is_not_applied",  # noqa: E501
+    ],
+    "CL-04": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl04_a_registry_below_36_is_refused_by_the_supported_set",  # noqa: E501
+    ],
+    "C-01": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c01_runtime_execute_inventory_is_exact",
+    ],
+    "C-02": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_prepare_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_apply_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m01_staff_admin(jsonb)]",  # noqa: E501
+    ],
+    "CG-REV-01": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
     ],
 }

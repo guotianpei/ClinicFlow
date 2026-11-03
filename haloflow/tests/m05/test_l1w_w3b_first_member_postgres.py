@@ -557,9 +557,12 @@ def test_fm10_fresh_production_tenant_onboards_through_production_units_only(
         "grant", A2, actor=A1, access="read"))["outcome"] == "applied"
     assert st.call(install, admin, st.admin_command(
         "grant", A1, actor=A1, access="read"))["outcome"] == "applied"
-    refused = st.call(install, admin, st.admin_command(
-        "revoke_role", A1, actor=A1, extra={"role": "clinic_admin"}))
-    assert refused["outcome"] != "applied"
+    # Existing t029 contract (Codex 154906Z): a self clinic_admin change raises P0001
+    # NOT_AUTHORIZED and changes nothing.
+    before = w3b.snapshot(install)
+    st.expect_code("NOT_AUTHORIZED", lambda: st.call(install, admin, st.admin_command(
+        "revoke_role", A1, actor=A1, extra={"role": "clinic_admin"})))
+    assert w3b.snapshot(install) == before
     assert _admins(install) == [A1]
 
 

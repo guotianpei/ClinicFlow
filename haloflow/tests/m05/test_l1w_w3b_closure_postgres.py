@@ -173,11 +173,14 @@ def test_cl03_partial_closure_fails_verification_and_is_not_applied(
     with pytest.raises(Exception) as caught:
         _provision(m02_ids, tenant)
     assert getattr(caught.value, "reason_code", None) == "VERIFICATION_FAILED"
-    ledger = dict(m02.admin_all(m02_ids, (
-        "SELECT migration_id, state FROM shared.schema_migrations WHERE tenant_id = %s"),
-        (tenant[0],)))
-    assert ledger.get("t034_m01_staff_bootstrap_first_admin") == "applied"
-    assert ledger.get("t035_m05_v1_runtime_closure") != "applied"
+    ledger = {m: (st_, code) for m, st_, code in m02.admin_all(m02_ids, (
+        "SELECT migration_id, state, sanitized_error_code FROM shared.schema_migrations"
+        " WHERE tenant_id = %s"), (tenant[0],))}
+    assert ledger.get("t034_m01_staff_bootstrap_first_admin") == ("applied", None)
+    # The runner's existing failure contract: verification and mark_applied share the
+    # unit transaction, which rolls back; the ledger row then records the failure.
+    assert ledger.get("t035_m05_v1_runtime_closure") == ("failed", "VERIFICATION_FAILED")
+    assert "t036_m01_staff_v1_runtime_closure" not in ledger
     # Nothing was revoked by the failed unit: both runtime grants are still present.
     for signature in ("m05_prepare_action(jsonb)", "m05_apply_action(jsonb)"):
         assert (RUNTIME, "EXECUTE", "haloflow_m05_owner", False) in _acl(
@@ -257,3 +260,31 @@ def test_am13_changed_closure_declaration_after_install_is_ledger_drift(
         "SELECT checksum FROM shared.schema_migrations"
         " WHERE tenant_id = %s AND migration_id = %s"),
         (tenant[0], "t035_m05_v1_runtime_closure")) == stored
+
+
+@pytest.mark.parametrize(("signature", "tamper", "restore"), [
+    ("m05_prepare_action(jsonb)", "SET work_mem = '64kB'", "RESET work_mem"),
+    ("m01_staff_admin(jsonb)", "STABLE", "VOLATILE"),
+])
+def test_am10b_non_acl_drift_on_a_closed_function_is_still_refused_at_startup(
+    m02_ids: m02.Identities, tenant: tuple[str, str], signature: str, tamper: str,
+    restore: str,
+) -> None:
+    """Codex 154906Z item 3: after closure the comparator still checks every non-ACL
+    field of an amended profile. Green baseline first; then one installed non-ACL
+    tamper on a closed v1 function refuses startup with INSTALLED_STATE_DRIFT."""
+
+    from haloflow.startup import ProductionServices
+
+    _provision(m02_ids, tenant)
+    assert type(_start(m02_ids, (tenant[0],))) is ProductionServices  # green baseline
+    target = sql.SQL("{}.{}").format(sql.Identifier(tenant[1]), sql.SQL(signature))
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        conn.execute(sql.SQL("ALTER FUNCTION {} " + tamper).format(target))
+    refused = _start(m02_ids, (tenant[0],))
+    assert type(refused) is not ProductionServices
+    assert getattr(refused, "reason_code", None) == "INSTALLED_STATE_DRIFT"
+    assert refused.tenant_index == 0
+    with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+        conn.execute(sql.SQL("ALTER FUNCTION {} " + restore).format(target))
+    assert type(_start(m02_ids, (tenant[0],))) is ProductionServices  # restored control

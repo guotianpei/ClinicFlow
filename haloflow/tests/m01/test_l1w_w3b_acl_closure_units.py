@@ -17,6 +17,8 @@ Interface pinned by these rows (red packet §2):
 * ``TenantMigrationRegistry.closure_statements(migration_id, schema_key)`` returns the
   exact statements the runner executes for a closure unit, rendered from the
   declaration only.
+* ``TenantMigrationRegistry.closure_checksum_payload(migration_id)`` returns the canonical
+  payload the closure unit's checksum digests (SHA-256 hex of canonical JSON).
 * ``installed_state.effective_profile(profile, amendment, activator_version=…,
   checked_version=…)``.
 * composition: ``L1W_W3B_TENANT_MIGRATIONS`` (t033-t036), ``APPROVED_ACL_AMENDMENTS``.
@@ -238,25 +240,110 @@ def _checksum(registry: Any, migration_id: str) -> str:
     return str(next(u for u in registry if u.migration_id == migration_id).checksum)
 
 
-def test_am12_the_closure_checksum_covers_the_declared_targets() -> None:
-    """The only composable variation of t035's declaration is its target set (every
-    removal must lie inside the target profile's ACL): dropping the t016 amendment
-    leaves t035 amending t015 alone, and its checksum must change. An identical
-    declaration composed twice gives the identical checksum (control)."""
+def _canonical_sha(payload: Any) -> str:
+    """The pinned closure checksum formula (red packet r1 §2): SHA-256, lowercase hex,
+    over canonical JSON (sort_keys, compact separators, UTF-8, no NaN)."""
 
-    base = _checksum(_compose(_approved()), T035)
-    assert len(base) == 64
-    assert _checksum(_compose(_approved()), T035) == base
-    narrowed = tuple(a for a in _approved() if a.target_unit != T016)
-    assert _checksum(_compose(narrowed), T035) != base
-    # t036 is untouched by a t035 change.
-    assert _checksum(_compose(narrowed), T036) == _checksum(_compose(_approved()), T036)
+    import hashlib
+    import json
+
+    text = json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                      separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def test_am12b_the_closure_checksum_is_stable_and_differs_per_unit() -> None:
-    first, second = _compose(_approved()), _compose(_approved())
-    assert _checksum(first, T035) == _checksum(second, T035)
-    assert _checksum(first, T035) != _checksum(first, T036)
+def _expected_payloads() -> dict[str, dict[str, Any]]:
+    """Written out (Codex 154906Z item 2). The only values not literal here are the
+    target profile digests, taken from the ACCEPTED profiles through the existing,
+    already-accepted ``installed_state.profile_digest`` (an independent oracle: it
+    does not belong to the closure mechanism under test)."""
+
+    from haloflow.composition import APPROVED_INSTALLED_STATE_PROFILES
+    from haloflow.m01.provisioning.installed_state import profile_digest
+
+    def amendment(target: str, version: int, signature: str, owner: str) -> dict[str, Any]:
+        return {
+            "target_unit": target,
+            "target_version": version,
+            "target_signature": signature,
+            "target_profile_digest": profile_digest(APPROVED_INSTALLED_STATE_PROFILES[target]),
+            "removes": [[RUNTIME, "EXECUTE", owner, False]],
+        }
+
+    return {
+        T035: {
+            "checksum_version": 2,
+            "kind": CLOSURE_KIND,
+            "migration_id": T035,
+            "version": 35,
+            "execution_role": M05_OWNER,
+            "amendments": [
+                amendment(T015, 15, "m05_prepare_action(jsonb)", M05_OWNER),
+                amendment(T016, 16, "m05_apply_action(jsonb)", M05_OWNER),
+            ],
+        },
+        T036: {
+            "checksum_version": 2,
+            "kind": CLOSURE_KIND,
+            "migration_id": T036,
+            "version": 36,
+            "execution_role": STAFF_OWNER,
+            "amendments": [amendment(T023, 23, "m01_staff_admin(jsonb)", STAFF_OWNER)],
+        },
+    }
+
+
+@pytest.mark.parametrize("unit", [T035, T036])
+def test_am12_closure_checksum_payload_is_exact(unit: str) -> None:
+    """The registry exposes the canonical payload it digests, and it equals the
+    written-out payload field for field (kind, version, id, owner, each target's unit,
+    version, signature and accepted-profile digest, the removal tuples, ordering)."""
+
+    registry = _compose(_approved())
+    assert dict(registry.closure_checksum_payload(unit)) == _expected_payloads()[unit]
+
+
+@pytest.mark.parametrize("unit", [T035, T036])
+def test_am12b_checksum_is_the_pinned_digest_and_every_field_is_bound(unit: str) -> None:
+    """The unit checksum equals the pinned formula over the expected payload, and
+    differs from the formula over the payload with ANY single field omitted (top level
+    and inside each amendment), so a checksum that skipped a field cannot pass."""
+
+    expected = _expected_payloads()[unit]
+    checksum = _checksum(_compose(_approved()), unit)
+    assert checksum == _canonical_sha(expected)
+    for key in expected:
+        reduced = {k: v for k, v in expected.items() if k != key}
+        assert checksum != _canonical_sha(reduced), key
+    for index, amendment in enumerate(expected["amendments"]):
+        for key in amendment:
+            reduced_amendments = [dict(a) for a in expected["amendments"]]
+            del reduced_amendments[index][key]
+            assert checksum != _canonical_sha(dict(expected, amendments=reduced_amendments)), (
+                index, key)
+
+
+def test_am12c_amendment_declaration_order_is_normalized() -> None:
+    """Amendments are ordered by target version in the payload: declaring them in
+    reverse gives the identical payload and checksum."""
+
+    forward = _compose(_approved())
+    reverse = _compose(tuple(reversed(_approved())))
+    for unit in (T035, T036):
+        assert dict(reverse.closure_checksum_payload(unit)) == dict(
+            forward.closure_checksum_payload(unit))
+        assert _checksum(reverse, unit) == _checksum(forward, unit)
+
+
+def test_am12d_target_set_change_changes_only_that_units_checksum() -> None:
+    """Dropping the t016 amendment changes t035's checksum and payload, not t036's."""
+
+    base = _compose(_approved())
+    narrowed = _compose(tuple(a for a in _approved() if a.target_unit != T016))
+    assert _checksum(narrowed, T035) != _checksum(base, T035)
+    assert _checksum(narrowed, T036) == _checksum(base, T036)
+    assert [a["target_unit"] for a in narrowed.closure_checksum_payload(T035)["amendments"]] == [
+        T015]
 
 
 def test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused() -> None:
