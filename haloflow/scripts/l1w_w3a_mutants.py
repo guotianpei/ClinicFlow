@@ -255,6 +255,20 @@ def sync_sha_literals(target: Path, python: str | None = None) -> None:
         if count != 1:
             raise SystemExit(f"SHA literal {literal} not found exactly once")
     target.write_text(text, encoding="utf-8")
+    drop_bytecode(target)
+
+
+def drop_bytecode(target: Path) -> None:
+    """Remove the target's cached bytecode (CI #229 measured stale literals).
+
+    A literal rewrite keeps the file size, and the sync subprocess has just
+    compiled the pre-rewrite text, so a rewrite in the same second leaves a
+    timestamp-valid .pyc that still holds the OLD literals: the next import then
+    pairs a mutated body with a stale hash (INSTALLED_STATE_PROFILE_INVALID).
+    Deleting the .pyc makes the next import compile the file as written."""
+
+    for cached in (target.parent / "__pycache__").glob(f"{target.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
 
 
 def _runner(checker: Any, target: Path) -> Any:

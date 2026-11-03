@@ -292,6 +292,14 @@ def _pytest_failure_excerpt(label: str, evidence: Path) -> None:
     sys.stderr.write(f"pytest-excerpt {label}:\n{excerpt}\n")
 
 
+def _drop_bytecode(target: Path) -> None:
+    """The restore keeps the synced file's size; drop its .pyc so no later import
+    can reuse bytecode compiled from the synced (or mutated) text (CI #229)."""
+
+    for cached in (target.parent / "__pycache__").glob(f"{target.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
+
+
 def _composition_probe(python: str, label: str, evidence: Path) -> None:
     """Diagnostic only (CI #228): does the production registry compose with the
     mutated template and the re-synchronised v2 literals? Printed and saved."""
@@ -340,6 +348,7 @@ def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
             return result
         finally:
             target.write_bytes(original)
+            _drop_bytecode(target)
             after = hashlib.sha256(target.read_bytes()).hexdigest()
             records.append((label, before, after))
             if after != before:

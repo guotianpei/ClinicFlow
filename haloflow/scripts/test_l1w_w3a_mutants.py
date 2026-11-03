@@ -75,3 +75,22 @@ def test_sha_sync_rewrites_only_the_declared_literals(tmp_path: Path) -> None:
             assert path.read_bytes() == backup.read_bytes(), target
         finally:
             shutil.copyfile(backup, path)
+
+
+def test_sync_drops_the_targets_stale_bytecode(tmp_path: Path) -> None:
+    """CI #229 measured stale literals: a same-size rewrite within the same second as
+    a compile leaves a timestamp-valid .pyc. drop_bytecode removes the target's
+    cached bytecode (and only the target's)."""
+
+    script = _script()
+    package = tmp_path / "pkg"
+    cache = package / "__pycache__"
+    cache.mkdir(parents=True)
+    (package / "gateways_v2.py").write_text("X = 1\n")
+    stale = cache / "gateways_v2.cpython-312.pyc"
+    other = cache / "gateways.cpython-312.pyc"
+    stale.write_bytes(b"stale")
+    other.write_bytes(b"keep")
+    script.drop_bytecode(package / "gateways_v2.py")
+    assert not stale.exists()
+    assert other.exists()
