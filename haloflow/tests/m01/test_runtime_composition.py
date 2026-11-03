@@ -587,7 +587,8 @@ def test_l1_g4_generic_test_composition_does_not_touch_the_declaration() -> None
         registry=composition.build_production_tenant_migrations(),
         catalog=composition.build_production_catalog(),
         # The wider test set must still contain the production target (36 since L-1W
-        # W3b; 32 at W3a; 25 at B5; 11 in part A); the row is about the declaration staying untouched.
+        # W3b; 32 at W3a; 25 at B5; 11 in part A); the row is about the declaration
+        # staying untouched.
         supported_schema_versions=frozenset({1, 2, 3, 36}),
     )
     production = composition.build_production_tenant_runtime(_dependencies(Counters()))

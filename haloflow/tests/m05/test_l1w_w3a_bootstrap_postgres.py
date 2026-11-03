@@ -162,6 +162,9 @@ def test_bs03_admin_exists_and_inactive_target(
     _grant(env, install, actor)
     w3.ensure_staff(install, "00000000-0000-4000-8000-0000000c3a01")
     st.admin_op(install, st.admin_command("deactivate", "00000000-0000-4000-8000-0000000c3a01"))
+    # L-1W W3b (H-c): that setup ran on v2, whose fixture admin actor holds
+    # clinic_admin; this row needs no active admin yet (FIXTURE SETUP).
+    w3.drop_role(install, st.ADMIN, "clinic_admin")
     assert _bootstrap(env, key, install, _command("00000000-0000-4000-8000-0000000c3a01")) == {
         "schema_version": 1, "outcome": "TARGET_NOT_ACTIVE"}
     w3.seed_role(install, m05.SUP, "clinic_admin")  # FIXTURE SETUP: an admin exists
@@ -253,12 +256,13 @@ def test_bs07_bootstrap_privileges_are_exact(env: db.L1WEnv, staff_install: st.S
         " WHERE n.nspname = %s AND p.proname = %s"), (install.schema, w3.BOOTSTRAP))
     assert sorted(acl) == sorted([(st.STAFF_OWNER, "EXECUTE"), (db.SUPPORT, "EXECUTE")])
     # Support reaches nothing else in the tenant schema: no other function, no table.
+    # L-1W W3b: except t034, the first-member bootstrap (OD-FM1; pinned by FM-08).
     others = st.admin_rows(install, sql.SQL(
         "SELECT p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
         " WHERE n.nspname = %s AND p.proname <> %s"
         " AND has_function_privilege(%s, p.oid, 'EXECUTE')"),
         (install.schema, w3.BOOTSTRAP, db.SUPPORT))
-    assert others == []
+    assert others == [("m01_staff_bootstrap_first_admin",)]
     tables = st.admin_rows(install, sql.SQL(
         "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
         " WHERE n.nspname = %s AND c.relkind IN ('r','v','m','p')"

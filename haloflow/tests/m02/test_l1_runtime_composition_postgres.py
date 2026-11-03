@@ -335,7 +335,8 @@ async def test_l1_e3b_a_missing_registry_row_is_refused_before_the_callback(
             m02,
             m02_ids,
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version) "
-            "VALUES (%s, %s, 'active', 36)",  # L-1W W3b: the supported version (32 at W3a, 25 at B5)
+            # L-1W W3b: the supported version (32 at W3a, 25 at B5).
+            "VALUES (%s, %s, 'active', 36)",
             (tenant_id, schema_key),
         )
         == 1

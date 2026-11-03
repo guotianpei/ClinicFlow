@@ -57,11 +57,14 @@ AMENDMENTS: Final = {
 }
 CLOSURE_STATEMENTS: Final = {
     T035: (
-        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_prepare_action(jsonb) FROM haloflow_runtime;',
-        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_apply_action(jsonb) FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_prepare_action(jsonb)'
+        ' FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_apply_action(jsonb)'
+        ' FROM haloflow_runtime;',
     ),
     T036: (
-        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m01_staff_admin(jsonb) FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m01_staff_admin(jsonb)'
+        ' FROM haloflow_runtime;',
     ),
 }
 

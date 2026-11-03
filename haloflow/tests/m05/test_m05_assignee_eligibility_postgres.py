@@ -32,6 +32,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import l1w_w3a_support as w3
 import m05_support as m05
 import psycopg
 import pytest
@@ -47,6 +48,10 @@ CHANGES = ("deactivate", "revoke_read", "revoke_act")
 
 def _setup(install: st.StaffInstall) -> None:
     _ready(install)  # installs through the staff registry, then the M05 test profiles
+    # L-1W W3b harness H-c (Codex 162405Z): directory changes run on
+    # m01_staff_admin_v2 as runtime; the fixture clinic admin is ensured before any
+    # snapshot (FIXTURE SETUP).
+    st.ensure_admin(install)
     rows = st.admin_rows(
         install,
         sql.SQL("SELECT count(*) FROM {}.m01_staff WHERE staff_id = %s")
@@ -180,7 +185,9 @@ def test_ma10g_assignable_not_executable_fails_closed(staff_install):
     _setup(staff_install)
     target = _eligible(staff_install)
     item = _item(staff_install)
-    function = sql.SQL("{}.m01_staff_assignable(uuid)").format(
+    # L-1W W3b (H-c): the v2 actions read standing through t028
+    # m01_staff_member_standing (t022 m01_staff_assignable is the v1 actions' path).
+    function = sql.SQL("{}.m01_staff_member_standing(uuid)").format(
         sql.Identifier(staff_install.schema))
     st.admin_rows(staff_install, sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM {}").format(
         function, sql.Identifier(st.M05_OWNER)))
@@ -273,11 +280,46 @@ def test_ma10k_isolation_guard(staff_install, isolation, function, action):
 # ---------------------------------------------------------------------------
 
 
-def _admin_open(install: st.StaffInstall, command: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+def _admin_open(install: st.StaffInstall, command: dict[str, Any], *,
+                v1_owner: bool = False) -> tuple[Any, dict[str, Any]]:
+    if v1_owner:
+        # Historical v1 mutant rows only (L-1W W3b H-c): the closed v1 gateway as
+        # its owner (FIXTURE).
+        conn = _owner_conn(install, st.STAFF_OWNER)
+        st.set_tenant(conn, install)
+        return conn, st.call_on(conn, install, "m01_staff_admin", command)
+    st.ensure_admin(install)  # FIXTURE SETUP (H-c): the v2 admin actor
     conn = st.runtime_connection(install)
     st.set_tenant(conn, install)
-    result = st.call_on(conn, install, "m01_staff_admin", command)
+    result = st.public_result(st.call_on(conn, install, "m01_staff_admin_v2", command))
     return conn, result
+
+
+def _owner_conn(install: st.StaffInstall, role: str) -> psycopg.Connection[Any]:
+    """FIXTURE (historical v1 mutant rows only; L-1W W3b H-c, Codex 162405Z): a
+    connection acting as the owner of a closed v1 gateway. These rows discriminate
+    mutants of the v1 bodies (t015/t016/t022/t023), which runtime can no longer call;
+    the v2 equivalents are covered by the W3b mutation harness."""
+
+    conn = psycopg.connect(install.ids.admin)
+    conn.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
+    conn.commit()
+    return conn
+
+
+def _actions(v1_owner: bool) -> tuple[str, str]:
+    return ("m05_apply_action", "m05_prepare_action") if v1_owner else (
+        "m05_apply_action_v2", "m05_prepare_action_v2")
+
+
+def _apply_as(install: st.StaffInstall, command: Any, *, v1_owner: bool) -> dict[str, Any]:
+    if not v1_owner:
+        return _apply(install, command)
+    with _owner_conn(install, st.M05_OWNER) as conn:
+        st.set_tenant(conn, install)
+        result: dict[str, Any] = st.call_on(conn, install, "m05_apply_action", command)
+        conn.commit()
+        return result
 
 
 @pytest.mark.parametrize("change", CHANGES)
@@ -346,7 +388,7 @@ def test_r4_r5_apply_first_admin_waits(staff_install, change, same_txn_prepare):
         else:
             applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
         st.set_tenant(admin_conn, staff_install)
-        with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin",
+        with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin_v2",
                                               change_command)) as box:
             st.wait_until_blocked_by(staff_install, admin_conn.info.backend_pid,
                                      apply_conn.info.backend_pid)
@@ -439,7 +481,7 @@ def test_rc1_admin_then_m05_and_reverse(staff_install):
     item = _item(staff_install)
     _refused_without_waiting(
         staff_install,
-        lambda c: st.call_on(c, staff_install, "m01_staff_admin",
+        lambda c: st.call_on(c, staff_install, "m01_staff_admin_v2",
                              st.admin_command("rename", other, display_name="Renamed")),
         [("m01_staff", "staff_id", other)],
         lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(item, target)),
@@ -450,7 +492,7 @@ def test_rc1_admin_then_m05_and_reverse(staff_install):
         staff_install,
         lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(item, target)),
         [("m05_followup_items", "item_id", item)],
-        lambda c: st.call_on(c, staff_install, "m01_staff_admin",
+        lambda c: st.call_on(c, staff_install, "m01_staff_admin_v2",
                              st.admin_command("deactivate", other)),
         [("m01_staff", "staff_id", other)],
     )
@@ -484,10 +526,10 @@ def test_rc2_changed_target_and_reused_admin_key(staff_install):
     admin_key = st.new_uuid()
     _refused_without_waiting(
         staff_install,
-        lambda c: st.call_on(c, staff_install, "m01_staff_admin",
+        lambda c: st.call_on(c, staff_install, "m01_staff_admin_v2",
                              st.admin_command("deactivate", x, key=admin_key)),
         [("m01_staff", "staff_id", x)],
-        lambda c: st.call_on(c, staff_install, "m01_staff_admin",
+        lambda c: st.call_on(c, staff_install, "m01_staff_admin_v2",
                              st.admin_command("deactivate", y, key=admin_key)),
         [("m01_staff", "staff_id", y)],
     )
@@ -567,19 +609,24 @@ def _blocked_by(install: st.StaffInstall, waiter: int, blocker: int, box: dict[s
     return False
 
 
-def _r2_observation(install: st.StaffInstall, change: str) -> tuple[bool, str]:
+def _r2_observation(install: st.StaffInstall, change: str, *,
+                    v1_owner: bool = True) -> tuple[bool, str]:
     """The R-2 scenario: the admin change is open; apply(assign -> target) runs.
     Returns (apply was blocked by the admin, apply outcome after the admin commits).
-    The apply transaction is always rolled back."""
+    The apply transaction is always rolled back. L-1W W3b (H-c): the R-M rows
+    discriminate v1 directory mutants, so by default the scenario runs the closed v1
+    gateways as their owners (historical v1 contract)."""
 
     _setup(install)
     target = _eligible(install)
     item = _item(install)
-    admin_conn, _ = _admin_open(install, _change_command(change, target))
-    apply_conn = st.runtime_connection(install)
+    admin_conn, _ = _admin_open(install, _change_command(change, target), v1_owner=v1_owner)
+    apply_conn = (_owner_conn(install, st.M05_OWNER) if v1_owner
+                  else st.runtime_connection(install))
+    apply_fn = _actions(v1_owner)[0]
     try:
         st.set_tenant(apply_conn, install)
-        with st.background(lambda: st.call_on(apply_conn, install, "m05_apply_action_v2",
+        with st.background(lambda: st.call_on(apply_conn, install, apply_fn,
                                               _assign(item, target))) as box:
             blocked = _blocked_by(install, apply_conn.info.backend_pid,
                                   admin_conn.info.backend_pid, box)
@@ -638,16 +685,17 @@ def test_rm3_merged_statements_are_caught(unit_mutant, staff_install):
 
 
 def _apply_rr_with_item_holder(install: st.StaffInstall) -> psycopg.Error:
+    # L-1W W3b (H-c): GM-1 discriminates a v1 apply-body mutant -> v1 as its owner.
     _setup(install)
     item = _item(install)
     command = _assign(item, _eligible(install))
     with st.holder(install, [("m05_followup_items", "item_id", item)]), \
-            st.runtime_connection(install) as conn:
+            _owner_conn(install, st.M05_OWNER) as conn:
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         st.set_tenant(conn, install)
         conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
         with pytest.raises(psycopg.Error) as caught:
-            st.call_on(conn, install, "m05_apply_action_v2", command)
+            st.call_on(conn, install, "m05_apply_action", command)
         conn.rollback()
     return caught.value
 
@@ -667,14 +715,15 @@ def _second_item_with_holder(install: st.StaffInstall) -> psycopg.Error:
     first_item, second_item = _item(install), _item(install)
     first = _assign(first_item, _eligible(install))
     second = _assign(second_item, _eligible(install))
-    conn = st.runtime_connection(install)
+    # L-1W W3b (H-c): GM-2 discriminates a v1 apply-body mutant -> v1 as its owner.
+    conn = _owner_conn(install, st.M05_OWNER)
     try:
         st.set_tenant(conn, install)
-        st.call_on(conn, install, "m05_apply_action_v2", first)
+        st.call_on(conn, install, "m05_apply_action", first)
         with st.holder(install, [("m05_followup_items", "item_id", second_item)]):
             conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
             with pytest.raises(psycopg.Error) as caught:
-                st.call_on(conn, install, "m05_apply_action_v2", second)
+                st.call_on(conn, install, "m05_apply_action", second)
     finally:
         conn.rollback()
         conn.close()
@@ -712,6 +761,10 @@ def _x_setup(install: st.StaffInstall, action: str) -> tuple[str, str, str, int]
 
     _setup(install)
     actor, target = _eligible(install), _eligible(install)
+    # L-1W W3b harness H-c: X acts as a supervisor (SUPERVISOR_PERMISSIONS); on the v2
+    # actions supervise comes from the supervisor role row, so X holds one (FIXTURE
+    # SETUP). The rows' subject -- X's standing changing -- is unchanged.
+    w3.seed_role(install, actor, "supervisor")
     item = _item(install)
     if action == "reassign":
         _apply(install, _assign(item, _eligible(install)))  # by SUP, so version 2
@@ -798,7 +851,7 @@ def test_ra4_ra5_apply_first_actor_change_waits(staff_install, change, same_txn_
         else:
             applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
         st.set_tenant(admin_conn, staff_install)
-        with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin",
+        with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin_v2",
                                               change_command)) as box:
             st.wait_until_blocked_by(staff_install, admin_conn.info.backend_pid,
                                      apply_conn.info.backend_pid)
@@ -872,7 +925,9 @@ def _ra1_outcome(install: st.StaffInstall) -> str:
     item, actor, target, _ = _x_setup(install, "assign")
     st.admin_op(install, _change_command("deactivate", actor))
     try:
-        return str(_apply(install, _x_command(item, actor, target))["outcome"])
+        # L-1W W3b (H-c): SM-1 discriminates a v1 body mutant -> v1 as its owner.
+        return str(_apply_as(install, _x_command(item, actor, target),
+                             v1_owner=True)["outcome"])
     except psycopg.Error as error:
         return str(error.diag.message_primary)
 
@@ -889,7 +944,9 @@ def _inactive_target_outcome(install: st.StaffInstall) -> str:
     target = st.new_uuid()
     st.seed_staff(install, target, active=False)
     try:
-        return str(_apply(install, _assign(_item(install), target))["outcome"])
+        # L-1W W3b (H-c): SM-2 discriminates a v1 body mutant -> v1 as its owner.
+        return str(_apply_as(install, _assign(_item(install), target),
+                             v1_owner=True)["outcome"])
     except psycopg.Error as error:
         return str(error.diag.message_primary)
 

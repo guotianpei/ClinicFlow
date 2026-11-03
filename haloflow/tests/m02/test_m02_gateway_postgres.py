@@ -395,8 +395,10 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
     assert outcome.schema_version == 36  # B5 (H5): production target; 11 in part A
     # One installed-state verification per profiled typed unit. B5 declared change:
     # t003, t008-t011 (5), the M05 gateways t014-t020 (7) and the staff gateways
-    # t022-t025 (4), 16 in total; L-1W W3a adds t027-t032 (6), 22 in total.
-    assert calls == [m02_tenant[1]] * 22
+    # t022-t025 (4), 16 in total; L-1W W3a adds t027-t032 (6), 22 in total. L-1W W3b
+    # adds t034 (1) and the closure units' re-verification of their amended targets
+    # (t035: 2, t036: 1), 26 in total.
+    assert calls == [m02_tenant[1]] * 26
     assert m02.ledger(m02_ids, m02_tenant[0])[T003] == ("applied", None, True)
 
 

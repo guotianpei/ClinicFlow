@@ -402,6 +402,26 @@ def admin_op(install: StaffInstall, command: dict[str, Any], **kwargs: Any) -> d
     return result
 
 
+def owner_connection(install: StaffInstall) -> psycopg.Connection[Any]:
+    """FIXTURE (historical v1 contract only; L-1W W3b H-c): a connection acting as
+    haloflow_staff_owner, the owner of the closed v1 m01_staff_admin."""
+
+    conn = psycopg.connect(install.ids.admin)
+    conn.execute(f"SET ROLE {STAFF_OWNER}")
+    conn.commit()
+    return conn
+
+
+def public_result(result: dict[str, Any]) -> dict[str, Any]:
+    """The v2 SQL result mapped to the public four-key result (SVC-01): "outcome" is
+    checked to be applied/replayed and removed."""
+
+    if isinstance(result, dict) and "outcome" in result:
+        assert result["outcome"] in ("applied", "replayed"), result
+        return {k: v for k, v in result.items() if k != "outcome"}
+    return result
+
+
 def admin_op_v1_as_owner(
     install: StaffInstall, command: dict[str, Any], **kwargs: Any
 ) -> dict[str, Any]:
@@ -641,14 +661,19 @@ def check_admin_delta(
     command: dict[str, Any],
     result: dict[str, Any],
     *,
-    v2: bool = False,
+    v2: bool = True,
 ) -> None:
     """Exactly the intended directory change for one admitted admin command; the
     caller asserts the M05 tables separately. ``v2`` (L-1W W3a): the command went
     through m01_staff_admin_v2 (the service route), whose key digest is v2 and whose
-    SQL result adds "outcome" to the logged four-key result."""
+    SQL result adds "outcome" to the logged four-key result. L-1W W3b (H-c): v2 is
+    the default -- routine administration runs on v2 once the v1 runtime path is
+    closed; a result without "outcome" (already mapped by `admin_op`) is accepted,
+    and the v1 name "reactivate" is v2's "activate"."""
 
     staff, operation = command["staff_id"], command["operation"]
+    if v2 and operation == "reactivate":
+        operation = "activate"
     key, actor = command["client_action_id"], command["attribution"]["principal_id"]
     snap = result["staff"]
     # m01_staff
@@ -673,7 +698,8 @@ def check_admin_delta(
     # Expected values derived from the command and the pre-state, not only from the
     # returned snapshot (Codex gate 24e463b, non-blocking hardening).
     pre = staff_snapshot_from(before, staff)
-    expected_status = {"add": "active", "deactivate": "inactive", "reactivate": "active"}.get(
+    expected_status = {"add": "active", "deactivate": "inactive", "reactivate": "active",
+                       "activate": "active"}.get(
         operation, pre["status"] if pre else None
     )
     expected_name = (
@@ -709,8 +735,8 @@ def check_admin_delta(
         install.tenant[0], key, actor, operation, staff,
         command.get("display_name"), command.get("access"),
     )
-    if v2:
-        assert result.get("outcome") in ("applied", "replayed")
+    if v2 and "outcome" in result:
+        assert result["outcome"] in ("applied", "replayed")
         result = {k: v for k, v in result.items() if k != "outcome"}
     assert not delta.changed["m01_staff_action_keys"] and not delta.removed["m01_staff_action_keys"]
     (key_row,) = delta.added["m01_staff_action_keys"]

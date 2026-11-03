@@ -999,7 +999,8 @@ def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
 
 def _declaration_violations(path: str, source: str) -> list[str]:
     """L1-A4. The composition root assigns the declaration exactly once, at
-    module level, to the literal `frozenset({36})` (L-1W W3b; `frozenset({32})` at W3a, `frozenset({25})` at B5,
+    module level, to the literal `frozenset({36})` (L-1W W3b; `frozenset({32})` at W3a,
+    `frozenset({25})` at B5,
     `frozenset({11})` before it);
     no other module assigns it."""
 

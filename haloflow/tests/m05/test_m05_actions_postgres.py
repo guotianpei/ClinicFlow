@@ -367,7 +367,7 @@ def test_ma08_stale_version(m05_install: M05Install) -> None:
 
 def test_ma09_concurrent_claim(m05_install: M05Install) -> None:
     item = _new_item(m05_install)
-    call = sql.SQL("SELECT {}.m05_apply_action(%s)").format(sql.Identifier(m05_install.schema))
+    call = sql.SQL("SELECT {}.m05_apply_action_v2(%s)").format(sql.Identifier(m05_install.schema))
     first, second = _cmd(item, 1, "claim"), _cmd(item, 1, "claim", actor=m05.S2)
     outcome: list[Any] = []
     holder = psycopg.connect(m05_install.ids.logins[m05.RUNTIME])
@@ -599,7 +599,7 @@ def test_mb3_p_prepare_classifies_and_holds_the_lock(m05_install: M05Install) ->
         holder.execute(f"SET ROLE {m05.RUNTIME}")
         holder.execute("SELECT set_config('app.tenant_id', %s, true)", (m05_install.tenant[0],))
         holder.execute(
-            sql.SQL("SELECT {}.m05_prepare_action(%s)").format(sql.Identifier(m05_install.schema)),
+            sql.SQL("SELECT {}.m05_prepare_action_v2(%s)").format(sql.Identifier(m05_install.schema)),
             (Jsonb(_cmd(item, 1, "claim")),),
         )
         with (
