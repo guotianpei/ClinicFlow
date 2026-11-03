@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -246,29 +247,42 @@ def build_service_mutants(text: str, mutant_class: Any,
 V2_GATEWAYS = Path("src/haloflow/m05/gateways_v2.py")
 
 
-def _v2_synced_runner(checker: Any) -> Any:
+def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
+                      sync: Any = None) -> Any:
     """L-1W W3a: the v2 action bodies (gateways_v2.py, t030/t031) are rendered from
     THIS template, so a mutated gateways.py also changes them. While a mutant is
     applied, the v2 body hash literals are re-synchronised to the mutated bodies
     (scripts/l1w_w3a_mutants.sync_sha_literals) so the production registry still
     composes and the mutated SQL is what the service routes reach; gateways_v2.py is
-    restored byte for byte after every run. Judging is unchanged (the checker's)."""
+    restored byte for byte after every run, success or failure, and its SHA-256 is
+    re-checked (Codex 000140Z). Judging is unchanged (the checker's).
 
-    spec = importlib.util.spec_from_file_location("_l1w_w3a_mutants",
-                                                  HERE / "l1w_w3a_mutants.py")
-    assert spec is not None and spec.loader is not None
-    w3a = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(w3a)
+    ``runner.records`` holds (label, sha256 before, sha256 after restore) per run."""
+
+    if sync is None:
+        spec = importlib.util.spec_from_file_location("_l1w_w3a_mutants",
+                                                      HERE / "l1w_w3a_mutants.py")
+        assert spec is not None and spec.loader is not None
+        w3a = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(w3a)
+        sync = w3a.sync_sha_literals
+    records: list[tuple[str, str, str]] = []
 
     def runner(pytest: str, label: str, evidence: Path) -> Any:
-        original = V2_GATEWAYS.read_bytes()
+        original = target.read_bytes()
+        before = hashlib.sha256(original).hexdigest()
         try:
             if label != "control":
-                w3a.sync_sha_literals(V2_GATEWAYS, str(Path(pytest).with_name("python")))
+                sync(target, str(Path(pytest).with_name("python")))
             return checker.run_pytest(pytest, label, evidence)
         finally:
-            V2_GATEWAYS.write_bytes(original)
+            target.write_bytes(original)
+            after = hashlib.sha256(target.read_bytes()).hexdigest()
+            records.append((label, before, after))
+            if after != before:
+                raise SystemExit(f"{target} not restored after {label}")
 
+    runner.records = records  # type: ignore[attr-defined]
     return runner
 
 
@@ -300,9 +314,19 @@ def main(argv: list[str] | None = None) -> int:
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             if target == GATEWAYS:
+                v2_runner = _v2_synced_runner(checker)
+                v2_initial = hashlib.sha256(V2_GATEWAYS.read_bytes()).hexdigest()
                 code = int(checker.main(["--pytest", args.pytest,
                                          "--evidence", str(evidence / label)],
-                                        runner=_v2_synced_runner(checker)))
+                                        runner=v2_runner))
+                v2_final = hashlib.sha256(V2_GATEWAYS.read_bytes()).hexdigest()
+                restored = v2_final == v2_initial and all(
+                    b == a == v2_initial for _, b, a in v2_runner.records)
+                print(f"secondary={V2_GATEWAYS} sha256_before={v2_initial}"
+                      f" sha256_after={v2_final} runs={len(v2_runner.records)}"
+                      f" restored={restored}")
+                if not restored:
+                    code = 1
             else:
                 code = int(checker.main(["--pytest", args.pytest,
                                          "--evidence", str(evidence / label)]))
