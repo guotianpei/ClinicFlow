@@ -248,17 +248,48 @@ V2_GATEWAYS = Path("src/haloflow/m05/gateways_v2.py")
 
 
 _PROBE = """
-import sys
+import glob, hashlib, os, sys
 sys.path.insert(0, "src")
+for f in sorted(glob.glob("src/haloflow/m05/__pycache__/gateways*.pyc")):
+    st = os.stat(f)
+    print("pyc", f, st.st_size, int(st.st_mtime))
+for f in ("src/haloflow/m05/gateways.py", "src/haloflow/m05/gateways_v2.py"):
+    st = os.stat(f)
+    print("src", f, st.st_size, int(st.st_mtime),
+          hashlib.sha256(open(f, "rb").read()).hexdigest()[:16])
 import haloflow.m05.gateways as g, haloflow.m05.gateways_v2 as v2
-from haloflow.composition import build_production_tenant_migrations
 print("modules", g.__file__, v2.__file__)
+h = lambda s: hashlib.sha256(s.encode()).hexdigest()[:16]
+print("v1 literal/recomputed prepare", g._PREPARE_BODY_SHA256[:16], h(g._PREPARE_BODY),
+      "apply", g._APPLY_BODY_SHA256[:16], h(g._APPLY_BODY))
+print("v2 literal/recomputed prepare", v2._PREPARE_V2_BODY_SHA256[:16], h(v2._PREPARE_V2_BODY),
+      "apply", v2._APPLY_V2_BODY_SHA256[:16], h(v2._APPLY_V2_BODY))
+from haloflow.composition import build_production_tenant_migrations
 try:
     build_production_tenant_migrations()
     print("composition ok")
 except Exception as error:
+    import traceback
     print("composition refused", type(error).__name__, getattr(error, "reason_code", None))
+    print("".join(traceback.format_exception(error)[-6:]))
 """
+
+
+def _pytest_failure_excerpt(label: str, evidence: Path) -> None:
+    """Diagnostic only: the ACTUAL pytest process's first MigrationUnitRejected (or
+    first error) traceback from the checker's <label>.log, copied to the CI log."""
+
+    log = evidence / f"{label}.log"
+    if not log.exists():
+        return
+    lines = log.read_text(errors="replace").splitlines()
+    marks = [i for i, line in enumerate(lines)
+             if "MigrationUnitRejected" in line or "reason_code" in line]
+    if not marks:
+        return
+    i = marks[0]
+    excerpt = "\n".join(lines[max(0, i - 45): i + 8])
+    sys.stderr.write(f"pytest-excerpt {label}:\n{excerpt}\n")
 
 
 def _composition_probe(python: str, label: str, evidence: Path) -> None:
@@ -303,7 +334,10 @@ def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
                 sync(target, python)
                 if sync_probe:
                     _composition_probe(python, label, evidence)
-            return checker.run_pytest(pytest, label, evidence)
+            result = checker.run_pytest(pytest, label, evidence)
+            if sync_probe and label != "control":
+                _pytest_failure_excerpt(label, evidence)
+            return result
         finally:
             target.write_bytes(original)
             after = hashlib.sha256(target.read_bytes()).hexdigest()
