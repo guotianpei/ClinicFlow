@@ -91,6 +91,13 @@ def _reject(code: PreconditionCode) -> MigrationUnitRejected:
 def requires_content_check(unit: TenantMigrationUnit) -> bool:
     """CG4-R0. The ONLY definition of scope: not typed, and role-bearing."""
 
+    # L-1W W3b: an ``acl_closure_v1`` unit is neither typed nor ordinary. It has no
+    # authored template (refused non-empty at construction) and the runner executes
+    # only statements rendered from its validated declaration, so there is no text
+    # for this check to see. Read through getattr so a duck-typed CP1 definition
+    # without the attribute stays ordinary.
+    if getattr(unit, "is_closure", False):
+        return False
     return (not unit.is_typed) and unit.execution_role is not None
 
 

@@ -328,7 +328,19 @@ def _build_static_plan() -> _StaticPlan:
         requirement = registry.installed_state_requirement(unit.migration_id)
         if not requirement.required or requirement.profile is None:
             raise _CompositionInvalid
-        checks.append(_function_check(unit, requirement.profile))
+        # L-1W W3b: a served tenant is at the target version, so a profile amended by
+        # an `acl_closure_v1` unit is compared in its amended form (exactly the
+        # declared removals leave the ACL; every other field stays the accepted one).
+        amended = registry.acl_amendment(unit.migration_id)
+        profile = requirement.profile
+        if amended is not None:
+            amendment, activator_version = amended
+            profile = installed_state.effective_profile(
+                profile, amendment,
+                activator_version=activator_version,
+                checked_version=registry.target_version,
+            )
+        checks.append(_function_check(unit, profile))
     return _StaticPlan(supported=cast("frozenset[int]", supported), functions=tuple(checks))
 
 

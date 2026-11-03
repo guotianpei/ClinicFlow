@@ -140,7 +140,7 @@ def test_fm01_empty_clinic_gets_member_and_admin_in_one_step(
     assert w3b.rows(install, "m01_staff_followup_access") == []
     roles = w3b.rows(install, "m01_staff_roles")
     assert [(r["staff_id"], r["role"], r["granted_by"]) for r in roles] == [
-        (A1, "clinic_admin", actor)]
+        (A1, "clinic_admin", f"support:{actor}")]
     log = w3b.rows(install, "m01_staff_bootstrap_log")
     assert len(log) == 1
     assert {k: log[0][k] for k in ("client_action_id", "staff_id", "support_actor_id",

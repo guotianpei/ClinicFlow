@@ -57,11 +57,11 @@ AMENDMENTS: Final = {
 }
 CLOSURE_STATEMENTS: Final = {
     T035: (
-        'REVOKE EXECUTE ON FUNCTION "tenant_x".m05_prepare_action(jsonb) FROM haloflow_runtime;',
-        'REVOKE EXECUTE ON FUNCTION "tenant_x".m05_apply_action(jsonb) FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_prepare_action(jsonb) FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m05_apply_action(jsonb) FROM haloflow_runtime;',
     ),
     T036: (
-        'REVOKE EXECUTE ON FUNCTION "tenant_x".m01_staff_admin(jsonb) FROM haloflow_runtime;',
+        'REVOKE EXECUTE ON FUNCTION "tenant_abcdef01".m01_staff_admin(jsonb) FROM haloflow_runtime;',
     ),
 }
 
@@ -125,7 +125,7 @@ def test_cl00_w3b_units_kinds_and_declared_amendments() -> None:
 def test_cl00b_closure_statements_are_rendered_from_the_declaration_only() -> None:
     registry = _compose(_approved())
     for unit, expected in CLOSURE_STATEMENTS.items():
-        assert registry.closure_statements(unit, "tenant_x") == expected
+        assert registry.closure_statements(unit, "tenant_abcdef01") == expected
 
 
 # --- AM-01..AM-08, AM-11: refusals ------------------------------------------------------

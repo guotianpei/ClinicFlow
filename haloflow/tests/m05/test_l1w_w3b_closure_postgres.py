@@ -200,10 +200,15 @@ def test_cl04_a_registry_below_36_is_refused_by_the_supported_set(
     from haloflow.m01.provisioning.units import build_tenant_migration_registry
 
     assert frozenset({TARGET}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
+    sets = [s for s in APPROVED_TENANT_MIGRATIONS if s is not L1W_W3B_TENANT_MIGRATIONS]
+    ids = {mid for s in sets for mid in s}
     without = build_tenant_migration_registry(
-        *[s for s in APPROVED_TENANT_MIGRATIONS if s is not L1W_W3B_TENANT_MIGRATIONS],
+        *sets,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
-        installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+        # A profile must name a unit of the registry, so the W3b profile (t034) goes
+        # with its unit.
+        installed_state_profiles={k: v for k, v in APPROVED_INSTALLED_STATE_PROFILES.items()
+                                  if k in ids},
     )
     assert without.target_version == 32
     with pytest.raises(Exception) as caught:
