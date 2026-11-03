@@ -27,6 +27,7 @@ from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning import TenantMigrationRegistry
 from haloflow.m01.provisioning.codes import PreconditionCode
 from haloflow.m01.provisioning.installed_state import AclAmendment, InstalledStateProfile
+from haloflow.m01.provisioning.roles import RUNTIME_ROLE
 from haloflow.m01.provisioning.units import (
     ACL_CLOSURE_KIND,
     TENANT_MIGRATIONS,
@@ -44,7 +45,11 @@ from haloflow.m01.staff.l1w_w3b_units import (
     L1W_W3B_STAFF_PROFILES,
     L1W_W3B_STAFF_TENANT_MIGRATIONS,
 )
-from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
+from haloflow.m01.staff.units import (
+    STAFF_GATEWAY_PROFILES,
+    STAFF_OWNER_ROLE,
+    STAFF_TENANT_MIGRATIONS,
+)
 from haloflow.m01.statements import (
     M01_STATEMENTS,
     CompiledCatalog,
@@ -53,6 +58,7 @@ from haloflow.m01.statements import (
 )
 from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
 from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
+from haloflow.m02.roles import M05_OWNER_ROLE
 from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 from haloflow.m05.gateways import M05_GATEWAY_PROFILES
@@ -93,10 +99,10 @@ L1W_W3B_TENANT_MIGRATIONS: UnitDefinitions = MappingProxyType(
     {
         **L1W_W3B_STAFF_TENANT_MIGRATIONS,
         T035_MIGRATION_ID: UnitDefinition(
-            template="", kind=ACL_CLOSURE_KIND, execution_role="haloflow_m05_owner"
+            template="", kind=ACL_CLOSURE_KIND, execution_role=M05_OWNER_ROLE
         ),
         T036_MIGRATION_ID: UnitDefinition(
-            template="", kind=ACL_CLOSURE_KIND, execution_role="haloflow_staff_owner"
+            template="", kind=ACL_CLOSURE_KIND, execution_role=STAFF_OWNER_ROLE
         ),
     }
 )
@@ -104,17 +110,17 @@ APPROVED_ACL_AMENDMENTS: tuple[AclAmendment, ...] = (
     AclAmendment(
         target_unit="t015_m05_prepare_action",
         activated_by=T035_MIGRATION_ID,
-        removes=(("haloflow_runtime", "EXECUTE", "haloflow_m05_owner", False),),
+        removes=((RUNTIME_ROLE, "EXECUTE", M05_OWNER_ROLE, False),),
     ),
     AclAmendment(
         target_unit="t016_m05_apply_action",
         activated_by=T035_MIGRATION_ID,
-        removes=(("haloflow_runtime", "EXECUTE", "haloflow_m05_owner", False),),
+        removes=((RUNTIME_ROLE, "EXECUTE", M05_OWNER_ROLE, False),),
     ),
     AclAmendment(
         target_unit="t023_m01_staff_admin",
         activated_by=T036_MIGRATION_ID,
-        removes=(("haloflow_runtime", "EXECUTE", "haloflow_staff_owner", False),),
+        removes=((RUNTIME_ROLE, "EXECUTE", STAFF_OWNER_ROLE, False),),
     ),
 )
 

@@ -69,8 +69,13 @@ def test_2a_u01_production_registry_ids_and_target_version() -> None:
         "t030_m05_prepare_action_v2",
         "t031_m05_apply_action_v2",
         "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     )
-    assert registry.target_version == 32
+    assert registry.target_version == 36
 
 
 def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
@@ -84,6 +89,7 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
         APPROVED_EXECUTION_ROLES,
         APPROVED_TENANT_MIGRATIONS,
         L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
     )
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
@@ -105,6 +111,7 @@ def test_2a_u02_the_unit_set_and_the_one_role_are_approved() -> None:
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
         L1W_W3A_TENANT_MIGRATIONS,  # L-1W W3a
+        L1W_W3B_TENANT_MIGRATIONS,  # L-1W W3b
     )
     assert (
         frozenset(
@@ -188,6 +195,12 @@ def test_2a_u03_only_the_gateway_unit_is_role_bearing_and_it_is_typed() -> None:
         ("t030_m05_prepare_action_v2", "haloflow_m05_owner", True),
         ("t031_m05_apply_action_v2", "haloflow_m05_owner", True),
         ("t032_m01_staff_bootstrap_admin", "haloflow_staff_owner", True),
+        # L-1W W3b: t033 ordinary; t034 typed (staff owner); the acl_closure_v1 units
+        # carry an execution role but are not typed.
+        ("t033_m01_staff_bootstrap_first_admin_schema", None, False),
+        ("t034_m01_staff_bootstrap_first_admin", "haloflow_staff_owner", True),
+        ("t035_m05_v1_runtime_closure", "haloflow_m05_owner", False),
+        ("t036_m01_staff_v1_runtime_closure", "haloflow_staff_owner", False),
     ]
 
 

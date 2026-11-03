@@ -433,9 +433,9 @@ _TEST_INTAKE_ROW = m05.B2_NO_ALLOWLIST_PROFILE_SQL.replace("{schema}", "{s}").st
 BREAKS: dict[str, Break] = {
     "version-11": Break(
         (("UPDATE shared.tenants SET schema_version = 11"
-          " WHERE tenant_id = '{t}' AND schema_version = 32", 1),),  # L-1W W3a target
+          " WHERE tenant_id = '{t}' AND schema_version = 36", 1),),  # L-1W W3b target
         "SCHEMA_VERSION_UNSUPPORTED",
-        restore=("UPDATE shared.tenants SET schema_version = 32 WHERE tenant_id = '{t}'",),
+        restore=("UPDATE shared.tenants SET schema_version = 36 WHERE tenant_id = '{t}'",),
     ),
     "suspended": Break(
         (("UPDATE shared.tenants SET lifecycle_state = 'suspended'"

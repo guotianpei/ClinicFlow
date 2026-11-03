@@ -392,7 +392,7 @@ def test_2b_d19_a_clean_install_is_applied_and_the_adapter_ran(
 ) -> None:
     with gw.adapter_calls(monkeypatch) as calls:
         outcome = provision_production(m02_ids, m02_tenant)
-    assert outcome.schema_version == 32  # B5 (H5): production target; 11 in part A
+    assert outcome.schema_version == 36  # B5 (H5): production target; 11 in part A
     # One installed-state verification per profiled typed unit. B5 declared change:
     # t003, t008-t011 (5), the M05 gateways t014-t020 (7) and the staff gateways
     # t022-t025 (4), 16 in total; L-1W W3a adds t027-t032 (6), 22 in total.
@@ -476,6 +476,11 @@ def test_2b_d20_control_the_same_bare_schema_route_installs_on_clean_defaults(
         "t026_m01_staff_roles", "t027_m01_staff_self_standing", "t028_m01_staff_member_standing",
         "t029_m01_staff_admin_v2", "t030_m05_prepare_action_v2", "t031_m05_apply_action_v2",
         "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     ]
     assert gw.gateway_acl(m02_ids, m02_tenant[1]) == gw.EXPECTED_ACL
 
@@ -531,7 +536,7 @@ def test_2b_d29_a_fresh_tenant_reaches_version_three(
     m02_ids: Any, m02_tenant: tuple[str, str]
 ) -> None:
     # B5 (H5): the production target is 25 (11 in part A).
-    assert provision_production(m02_ids, m02_tenant).schema_version == 32
+    assert provision_production(m02_ids, m02_tenant).schema_version == 36
 
 
 def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
@@ -546,10 +551,10 @@ def test_2b_d29_a_resumed_provisioning_tenant_reaches_version_three(
     with m02.connect_admin(m02_ids) as conn:
         conn.execute(
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version)"
-            " VALUES (%s, %s, 'provisioning', 32)",  # L-1W W3a target
+            " VALUES (%s, %s, 'provisioning', 36)",  # L-1W W3b target
             m02_tenant,
         )
-    assert provision_production(m02_ids, m02_tenant).schema_version == 32
+    assert provision_production(m02_ids, m02_tenant).schema_version == 36
 
 
 def test_2b_d29_an_active_version_two_tenant_is_not_resumable(

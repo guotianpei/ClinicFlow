@@ -213,7 +213,7 @@ def test_pa32_staged_004_refused_then_005_provisions(
         assert _alembic_revision(ids) == "005"
         assert _guard(ids) is None  # positive control: the same guard now passes
         outcome = _provision(ids, m02.tenant_for("pa32-after-005"))
-        assert outcome.schema_version == 32  # B5 declared change (H5); 11 in part A
+        assert outcome.schema_version == 36  # B5 declared change (H5); 11 in part A
 
 
 def test_pa32_a_missing_required_column_grant_is_refused(
@@ -296,4 +296,4 @@ def test_pa32_the_guard_verifies_installed_state_not_the_revision_marker(
         assert _alembic_revision(ids) == "004"
         assert _guard(ids) is None
         outcome = _provision(ids, m02.tenant_for("pa32-hand-installed"))
-        assert outcome.schema_version == 32  # B5 declared change (H5); 11 in part A
+        assert outcome.schema_version == 36  # B5 declared change (H5); 11 in part A

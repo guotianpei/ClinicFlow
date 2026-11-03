@@ -24,6 +24,7 @@ PART_A_TYPED = {
 
 def _build(profiles: dict[str, Any]) -> Any:
     from haloflow.composition import (
+        APPROVED_ACL_AMENDMENTS,
         APPROVED_EXECUTION_ROLES,
         APPROVED_TENANT_MIGRATIONS,
         require_m02_installed_state_profiles,
@@ -34,6 +35,8 @@ def _build(profiles: dict[str, Any]) -> Any:
         *APPROVED_TENANT_MIGRATIONS,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=profiles,
+        # L-1W W3b: the closure units need their amendments (their whole declaration).
+        acl_amendments=APPROVED_ACL_AMENDMENTS,
     )
     require_m02_installed_state_profiles(registry)
     return registry
@@ -84,6 +87,7 @@ def test_pr1_every_m02_typed_unit_is_exactly_the_profiled_set() -> None:
         "t030_m05_prepare_action_v2",
         "t031_m05_apply_action_v2",
         "t032_m01_staff_bootstrap_admin",
+        "t034_m01_staff_bootstrap_first_admin",  # L-1W W3b typed unit
     }
     assert typed == profiled == {"t003_m02_lock_operation", *PART_A_TYPED, *b5_typed}
 

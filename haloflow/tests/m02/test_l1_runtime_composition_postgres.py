@@ -198,7 +198,7 @@ async def test_l1_e1a_e1b_a_version_three_tenant_is_resolved_and_admitted(
     async with _dependencies(m02_ids) as deps:
         runtime = build_production_tenant_runtime(deps)
         outcome = await _provision_through(runtime, m02_tenant)
-        assert outcome.schema_version == 32  # B5 (H6): production target; 11 in part A
+        assert outcome.schema_version == 36  # B5 (H6): production target; 11 in part A
 
         context = await _resolve(runtime, m02_tenant[0])  # E1a
         assert (context.tenant_id, context.schema_key) == m02_tenant
@@ -335,7 +335,7 @@ async def test_l1_e3b_a_missing_registry_row_is_refused_before_the_callback(
             m02,
             m02_ids,
             "INSERT INTO shared.tenants (tenant_id, schema_key, lifecycle_state, schema_version) "
-            "VALUES (%s, %s, 'active', 32)",  # L-1W W3a: the supported version (25 at B5)
+            "VALUES (%s, %s, 'active', 36)",  # L-1W W3b: the supported version (32 at W3a, 25 at B5)
             (tenant_id, schema_key),
         )
         == 1
@@ -417,7 +417,7 @@ async def test_l1_e3d_a_schema_key_mismatch_is_refused_before_the_callback(
             "FROM shared.tenants WHERE tenant_id = %s",
             (tenant_id,),
         )
-        assert row == (tenant_id, other_key, "active", 32)  # L-1W W3a target (25 at B5)
+        assert row == (tenant_id, other_key, "active", 36)  # L-1W W3b target (32 at W3a, 25 at B5)
         assert other_key != context.schema_key
 
         callback = Callback()
@@ -508,9 +508,9 @@ def test_l1_g3_a_fixture_widened_set_cannot_reach_the_declaration(
         )
     )
     # UC1 part B B5: the production declaration is {25} (was {11} in part A).
-    assert runtime.supported_schema_versions == frozenset({32})
-    assert runtime.resolver._supported_schema_versions == frozenset({32})
-    assert runtime.gateway._supported_schema_versions == frozenset({32})
-    assert runtime.provisioner._supported_schema_versions == frozenset({32})
+    assert runtime.supported_schema_versions == frozenset({36})
+    assert runtime.resolver._supported_schema_versions == frozenset({36})
+    assert runtime.gateway._supported_schema_versions == frozenset({36})
+    assert runtime.provisioner._supported_schema_versions == frozenset({36})
     declared = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert declared == frozenset({32})
+    assert declared == frozenset({36})

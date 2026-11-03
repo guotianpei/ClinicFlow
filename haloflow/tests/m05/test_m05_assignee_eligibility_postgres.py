@@ -73,12 +73,12 @@ def _assign(item: str, target: str, *, version: int = 1, key: str | None = None)
 
 
 def _apply(install: st.StaffInstall, command: Any) -> dict[str, Any]:
-    result: dict[str, Any] = st.call(install, "m05_apply_action", command)
+    result: dict[str, Any] = st.call(install, "m05_apply_action_v2", command)
     return result
 
 
 def _prepare(install: st.StaffInstall, command: Any) -> dict[str, Any]:
-    result: dict[str, Any] = st.call(install, "m05_prepare_action", command)
+    result: dict[str, Any] = st.call(install, "m05_prepare_action_v2", command)
     return result
 
 
@@ -244,7 +244,7 @@ def _action_command(install: st.StaffInstall, action: str, item: str) -> dict[st
 
 
 @pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
-@pytest.mark.parametrize("function", ["m05_prepare_action", "m05_apply_action"])
+@pytest.mark.parametrize("function", ["m05_prepare_action_v2", "m05_apply_action_v2"])
 @pytest.mark.parametrize("action", m05.NON_RESOLVE_ACTIONS)
 def test_ma10k_isolation_guard(staff_install, isolation, function, action):
     """After 22023 and before shape; prepare RAISES (environment fault, v1 3.5).
@@ -304,7 +304,7 @@ def test_r2_change_uncommitted_apply_waits(staff_install, change, rollback):
     apply_conn = st.runtime_connection(staff_install)
     try:
         st.set_tenant(apply_conn, staff_install)
-        with st.background(lambda: st.call_on(apply_conn, staff_install, "m05_apply_action",
+        with st.background(lambda: st.call_on(apply_conn, staff_install, "m05_apply_action_v2",
                                               assign)) as box:
             st.wait_until_blocked_by(staff_install, apply_conn.info.backend_pid,
                                      admin_conn.info.backend_pid)
@@ -341,17 +341,17 @@ def test_r4_r5_apply_first_admin_waits(staff_install, change, same_txn_prepare):
     try:
         st.set_tenant(apply_conn, staff_install)
         if same_txn_prepare:  # R-5: prepare holds the membership lock until commit
-            assert st.call_on(apply_conn, staff_install, "m05_prepare_action",
+            assert st.call_on(apply_conn, staff_install, "m05_prepare_action_v2",
                               command)["decision"] == "NEW"
         else:
-            applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+            applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
         st.set_tenant(admin_conn, staff_install)
         with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin",
                                               change_command)) as box:
             st.wait_until_blocked_by(staff_install, admin_conn.info.backend_pid,
                                      apply_conn.info.backend_pid)
             if same_txn_prepare:
-                applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+                applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
             apply_conn.commit()
         admin_conn.commit()
     finally:
@@ -390,7 +390,7 @@ def test_r8_lock_timeout_never_accepts(staff_install, change):
             apply_conn.execute("SET LOCAL lock_timeout = '300ms'")
             st.set_tenant(apply_conn, staff_install)
             with pytest.raises(psycopg.Error) as timed_out:
-                st.call_on(apply_conn, staff_install, "m05_apply_action", _assign(item, target))
+                st.call_on(apply_conn, staff_install, "m05_apply_action_v2", _assign(item, target))
             assert timed_out.value.sqlstate == "55P03"
             apply_conn.rollback()
         finally:
@@ -442,13 +442,13 @@ def test_rc1_admin_then_m05_and_reverse(staff_install):
         lambda c: st.call_on(c, staff_install, "m01_staff_admin",
                              st.admin_command("rename", other, display_name="Renamed")),
         [("m01_staff", "staff_id", other)],
-        lambda c: st.call_on(c, staff_install, "m05_apply_action", _assign(item, target)),
+        lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(item, target)),
         [("m05_followup_items", "item_id", item), ("m01_staff", "staff_id", target),
          ("m01_staff", "staff_id", m05.SUP)],
     )
     _refused_without_waiting(
         staff_install,
-        lambda c: st.call_on(c, staff_install, "m05_apply_action", _assign(item, target)),
+        lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(item, target)),
         [("m05_followup_items", "item_id", item)],
         lambda c: st.call_on(c, staff_install, "m01_staff_admin",
                              st.admin_command("deactivate", other)),
@@ -462,9 +462,9 @@ def test_rc1_two_items_in_one_txn(staff_install):
     first_item, second_item = _item(staff_install), _item(staff_install)
     _refused_without_waiting(
         staff_install,
-        lambda c: st.call_on(c, staff_install, "m05_apply_action", _assign(first_item, target)),
+        lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(first_item, target)),
         [("m05_followup_items", "item_id", first_item)],
-        lambda c: st.call_on(c, staff_install, "m05_apply_action", _assign(second_item, other)),
+        lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(second_item, other)),
         [("m05_followup_items", "item_id", second_item), ("m01_staff", "staff_id", other)],
     )
 
@@ -475,9 +475,9 @@ def test_rc2_changed_target_and_reused_admin_key(staff_install):
     item, key = _item(staff_install), st.new_uuid()
     _refused_without_waiting(
         staff_install,
-        lambda c: st.call_on(c, staff_install, "m05_prepare_action", _assign(item, a, key=key)),
+        lambda c: st.call_on(c, staff_install, "m05_prepare_action_v2", _assign(item, a, key=key)),
         [("m05_followup_items", "item_id", item)],
-        lambda c: st.call_on(c, staff_install, "m05_apply_action", _assign(item, b, key=key)),
+        lambda c: st.call_on(c, staff_install, "m05_apply_action_v2", _assign(item, b, key=key)),
         [("m01_staff", "staff_id", b)],
     )
     x, y = _eligible(staff_install), _eligible(staff_install)
@@ -579,7 +579,7 @@ def _r2_observation(install: st.StaffInstall, change: str) -> tuple[bool, str]:
     apply_conn = st.runtime_connection(install)
     try:
         st.set_tenant(apply_conn, install)
-        with st.background(lambda: st.call_on(apply_conn, install, "m05_apply_action",
+        with st.background(lambda: st.call_on(apply_conn, install, "m05_apply_action_v2",
                                               _assign(item, target))) as box:
             blocked = _blocked_by(install, apply_conn.info.backend_pid,
                                   admin_conn.info.backend_pid, box)
@@ -647,7 +647,7 @@ def _apply_rr_with_item_holder(install: st.StaffInstall) -> psycopg.Error:
         st.set_tenant(conn, install)
         conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
         with pytest.raises(psycopg.Error) as caught:
-            st.call_on(conn, install, "m05_apply_action", command)
+            st.call_on(conn, install, "m05_apply_action_v2", command)
         conn.rollback()
     return caught.value
 
@@ -670,11 +670,11 @@ def _second_item_with_holder(install: st.StaffInstall) -> psycopg.Error:
     conn = st.runtime_connection(install)
     try:
         st.set_tenant(conn, install)
-        st.call_on(conn, install, "m05_apply_action", first)
+        st.call_on(conn, install, "m05_apply_action_v2", first)
         with st.holder(install, [("m05_followup_items", "item_id", second_item)]):
             conn.execute(f"SET LOCAL lock_timeout = '{st.SAFETY_LOCK_TIMEOUT}'")
             with pytest.raises(psycopg.Error) as caught:
-                st.call_on(conn, install, "m05_apply_action", second)
+                st.call_on(conn, install, "m05_apply_action_v2", second)
     finally:
         conn.rollback()
         conn.close()
@@ -758,7 +758,7 @@ def test_ra2_actor_change_uncommitted_apply_waits(staff_install, change, rollbac
     apply_conn = st.runtime_connection(staff_install)
     try:
         st.set_tenant(apply_conn, staff_install)
-        with st.background(lambda: st.call_on(apply_conn, staff_install, "m05_apply_action",
+        with st.background(lambda: st.call_on(apply_conn, staff_install, "m05_apply_action_v2",
                                               command)) as box:
             st.wait_until_blocked_by(staff_install, apply_conn.info.backend_pid,
                                      admin_conn.info.backend_pid)
@@ -793,17 +793,17 @@ def test_ra4_ra5_apply_first_actor_change_waits(staff_install, change, same_txn_
     try:
         st.set_tenant(apply_conn, staff_install)
         if same_txn_prepare:
-            assert st.call_on(apply_conn, staff_install, "m05_prepare_action",
+            assert st.call_on(apply_conn, staff_install, "m05_prepare_action_v2",
                               command)["decision"] == "NEW"
         else:
-            applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+            applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
         st.set_tenant(admin_conn, staff_install)
         with st.background(lambda: st.call_on(admin_conn, staff_install, "m01_staff_admin",
                                               change_command)) as box:
             st.wait_until_blocked_by(staff_install, admin_conn.info.backend_pid,
                                      apply_conn.info.backend_pid)
             if same_txn_prepare:
-                applied = st.call_on(apply_conn, staff_install, "m05_apply_action", command)
+                applied = st.call_on(apply_conn, staff_install, "m05_apply_action_v2", command)
             apply_conn.commit()
         admin_conn.commit()
     finally:
@@ -826,7 +826,7 @@ def test_ra8_actor_lock_timeout_never_accepts(staff_install, change):
             apply_conn.execute("SET LOCAL lock_timeout = '300ms'")
             st.set_tenant(apply_conn, staff_install)
             with pytest.raises(psycopg.Error) as timed_out:
-                st.call_on(apply_conn, staff_install, "m05_apply_action",
+                st.call_on(apply_conn, staff_install, "m05_apply_action_v2",
                            _x_command(item, actor, target))
             assert timed_out.value.sqlstate == "55P03"
             apply_conn.rollback()

@@ -101,7 +101,12 @@ def test_me01_function_owner_definer_search_path_acl(
         """,
         (_signature(schema, spec),),
     )
-    assert sorted(acl) == sorted(m05.FUNCTION_ACL), spec.name
+    expected_acl = m05.FUNCTION_ACL
+    if spec.name in ("m05_prepare_action", "m05_apply_action"):
+        # L-1W W3b: t035 (acl_closure_v1) removed exactly haloflow_runtime's EXECUTE
+        # on the v1 actions; the owner entry stays (C-01, CL-01).
+        expected_acl = tuple(e for e in m05.FUNCTION_ACL if e[0] != m05.RUNTIME)
+    assert sorted(acl) == sorted(expected_acl), spec.name
     for role in (*INFRASTRUCTURE, *M02_ROLES):
         assert m02.admin_one(
             m05_install.ids,
@@ -436,7 +441,7 @@ def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Inst
     """MA-10 tranche 2 harness migration: the behaviour tenant is installed with the
     directory units after M05 (target 25 since B3b); the unit list is otherwise unchanged."""
 
-    from b5_support import W3A_UNIT_IDS
+    from b5_support import W3A_UNIT_IDS, W3B_UNIT_IDS
     from staff_support import STAFF_TEST_TARGET, STAFF_UNIT_IDS
 
     result = m05_install.require()
@@ -446,6 +451,7 @@ def test_mb1_p01_tenant_reaches_test_target_with_every_unit(m05_install: M05Inst
         migration_id: "applied"
         for migration_id in m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + STAFF_UNIT_IDS
         + W3A_UNIT_IDS  # L-1W W3a
+        + W3B_UNIT_IDS  # L-1W W3b
     }
 
 
