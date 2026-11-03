@@ -944,22 +944,22 @@ TRACE: dict[str, TraceRow] = {
             "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10g_assignable_not_executable_fails_closed",  # noqa: E501
             "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10i_deactivated_assignee_item_visible_supervisor_reassigns",  # noqa: E501
             "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10j_replay_after_target_deactivated",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_apply_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_apply_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_prepare_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_prepare_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_apply_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_apply_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_prepare_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_prepare_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_apply_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_apply_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_prepare_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_prepare_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_apply_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_apply_action-SERIALIZABLE]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_prepare_action-REPEATABLE READ]",  # noqa: E501
-            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_prepare_action-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_apply_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_apply_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_prepare_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[assign-m05_prepare_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_apply_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_apply_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_prepare_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[claim-m05_prepare_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_apply_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_apply_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_prepare_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[reassign-m05_prepare_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_apply_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_apply_action_v2-SERIALIZABLE]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_prepare_action_v2-REPEATABLE READ]",  # noqa: E501
+            "tests/m05/test_m05_assignee_eligibility_postgres.py::test_ma10k_isolation_guard[start_progress-m05_prepare_action_v2-SERIALIZABLE]",  # noqa: E501
         ],
     },
     "MA-11": {
