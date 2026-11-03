@@ -5,8 +5,10 @@
 - `haloflow/` — the only Python package. **Run every command from `haloflow/`**, not the repo root.
   `alembic.ini` resolves `script_location` relative to the CWD, and the M01 test harness builds
   `Config("alembic.ini")` from a relative path.
-- `documentation/` — requirements, architecture, ADRs, session status. **Read this first**; check the
-  newest `track-b-session-*.md` for current status before starting work.
+- `documentation/` — requirements, architecture, ADRs. **Read this first.** Current status lives in
+  `documentation/HaloFlow_Module_Delivery_Tracker.md` ("Current position — read this first") and in the
+  newest `Work Session <date>` folder of the Shared Workspace (outside the repo). The `track-b-session-*.md`
+  files are historical (August 2026). Take `main` and branch refs from `git`, not from tracker prose.
 - `.github/workflows/m01.yml` — the CI gate. It is the source of truth for lint/type/test scope.
 
 ## Process — follow this before writing code
@@ -14,6 +16,21 @@
 For any new module or feature: **requirements review → architecture design → unit test cases →
 alignment → code.** Do not start implementing before those first three are reviewed together.
 Architecture decisions are recorded in `documentation/architecture/track-b-architecture-decisions.md`.
+
+**Who aligns (owner delegation, 2026-10-25):** technical decisions — plans, architecture, test cases,
+corrections, branches, commits, pushes and pull requests — are aligned between Claude (implementation
+lead) and Codex (independent reviewer) and need no separate owner approval. Ask the owner only for
+business clarification (product behaviour, clinical or patient-facing wording, real patient data,
+spending, priorities). **Merges to `main` are the owner's: ask her to merge.** Governing record:
+`TECHNICAL_DECISION_DELEGATION_2026-10-25.md` in the Shared Workspace.
+
+This delegation applies within approved work packages and established requirements; current owner
+restrictions and operational holds remain controlling, and actions outside that scope require the
+appropriate owner decision. Examples that stay separate decisions: production access or deployment,
+live patient messaging (SMS, calls), real EHR writes or real patient data, destructive actions,
+material scope changes, weakened acceptance criteria, and repository actions outside the approved
+package. The current holds are listed in the newest session-close note and the delivery tracker; this
+guide does not lift them.
 
 ## Local environment
 
@@ -47,23 +64,27 @@ make run        # uvicorn on :8000
 make migrate    # alembic upgrade head
 ```
 
-Equivalently, and this is exactly what CI runs:
+Equivalently — these are the three gate commands in `.github/workflows/m01.yml` (CI runs them from a
+locked environment and also runs a gate-reachability harness; the workflow file is authoritative):
 
 ```
-ruff check src/haloflow/m01 tests/m01 alembic
-mypy src/haloflow/m01
-pytest tests/m01 -q
+ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform alembic
+mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py
+pytest tests/m01 tests/m02 tests/m05 tests/platform -q -rA
 ```
 
 ## Constraints that will bite
 
-- **PostgreSQL 17+ is required.** The M01 suite fails (not skips) below server version 170000.
+- **PostgreSQL 17+ is required.** `tests/conftest.py` fails (not skips) below server version 170000.
 - The test database name **must start with `haloflow_test`**. The harness refuses anything else,
   because it drops schemas and roles inside it on every run.
 - The migration issues `CREATE ROLE`, so the migrating role needs `CREATEROLE`.
-- `ruff` and `mypy` currently cover **only** `src/haloflow/m01`, `tests/m01`, and `alembic`. Code
-  outside that scope — including `config.py` and everything under `src/haloflow/modules/` — is not
-  checked by CI. Run the tools manually on files you touch there.
+- `ruff` and `mypy` cover **only** the paths in the gate commands above (`m01`, `m02`, `m05`,
+  `platform`, `composition.py`, `startup.py`, their tests, `tests/conftest.py`, `alembic`). Beyond the
+  three gate commands, the workflow also runs trace checks and mutation harnesses; read it for the full
+  list. Code outside that scope — including
+  `config.py`, `main.py`, `scheduler.py` and everything under `src/haloflow/modules/` — is not checked
+  by CI. Run the tools manually on files you touch there.
 - `mypy` runs in `strict` mode.
 - `PRIORITY_PAYER_IDS` is comma-separated, not JSON. The field is annotated
   `Annotated[list[str], NoDecode]` so pydantic-settings hands the raw string to `parse_payer_ids`.
