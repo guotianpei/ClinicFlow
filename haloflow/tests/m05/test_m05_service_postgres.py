@@ -1017,7 +1017,8 @@ async def test_sv07e_revocation_interposed_in_service_transaction_waits(staff_in
 
             def run() -> None:
                 try:
-                    box["result"] = st.public_result(st.call_on(conn, staff_install, "m01_staff_admin_v2", change))
+                    box["result"] = st.public_result(
+                        st.call_on(conn, staff_install, "m01_staff_admin_v2", change))
                     conn.commit()
                 except Exception as error:  # noqa: BLE001 - asserted below
                     box["error"] = error

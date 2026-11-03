@@ -745,4 +745,23 @@ TRACE: dict[str, list[str]] = {
     "CG-REV-01": [
         "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
     ],
+    "RI-01": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[revoke_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[activate-None]",  # noqa: E501
+    ],
+    "RI-02": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri02_impossible_timestamp_never_replays[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri02_impossible_timestamp_never_replays[activate-None]",  # noqa: E501
+    ],
+    "RI-03": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri03_a_stored_result_with_outcome_is_unrepresentable",  # noqa: E501
+    ],
+    "RI-04": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri04_activate_with_inactive_snapshot_never_replays",  # noqa: E501
+    ],
+    "RI-05": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
+    ],
 }

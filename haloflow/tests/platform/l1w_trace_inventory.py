@@ -51,6 +51,7 @@ W3B_IDS: Final = (
     "CLOSURE-UNITS", "AM-01", "AM-02", "AM-03", "AM-04", "AM-05", "AM-06", "AM-07",
     "AM-08", "AM-09", "AM-10", "AM-11", "AM-12", "AM-13",
     "CL-01", "CL-02", "CL-03", "CL-04", "C-01", "C-02", "CG-REV-01",
+    "RI-01", "RI-02", "RI-03", "RI-04", "RI-05",
 )
 
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them

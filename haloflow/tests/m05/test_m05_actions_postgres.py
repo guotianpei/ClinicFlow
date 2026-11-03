@@ -599,7 +599,8 @@ def test_mb3_p_prepare_classifies_and_holds_the_lock(m05_install: M05Install) ->
         holder.execute(f"SET ROLE {m05.RUNTIME}")
         holder.execute("SELECT set_config('app.tenant_id', %s, true)", (m05_install.tenant[0],))
         holder.execute(
-            sql.SQL("SELECT {}.m05_prepare_action_v2(%s)").format(sql.Identifier(m05_install.schema)),
+            sql.SQL("SELECT {}.m05_prepare_action_v2(%s)").format(
+                sql.Identifier(m05_install.schema)),
             (Jsonb(_cmd(item, 1, "claim")),),
         )
         with (
