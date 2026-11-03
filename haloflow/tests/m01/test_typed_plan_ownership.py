@@ -88,14 +88,14 @@ def role_answers(harness: Any) -> tuple[Any, ...]:
 # literals so that a correction which "works" by changing tenants' ledger
 # identity cannot pass silently. Carried forward per Codex's v17 review.
 ADMITTED_BASELINES = {
-    "first": "6ef0819028a95867dee62685212cd7028400bce5d62e1ee19691dc4e6556c6be",
-    "second": "fb54de3b588f356fae739f8618353e8a993badefd9f113c6927bf6682fcb1302",
-    "second_body_drift": "cdca6609a357923e16e16353b897c457b16acc27b1c3ab466885b689e9ec25fa",
-    "annex": "b2c180430b5d8e41e26996cdf56cf13a3f97b877ced33b4634db5fb1db459565",
-    "body_drift": "d1fdb29da8d41800ad2621aca0672797d2d3aad8d6ad5b22b2605d20003e65c4",
-    "table": "83ef32f3091ebc05b975a1de0c70308720c628a5494bdd0ffb03ea054e09014b",
-    "unknown_select": "5144450b0025678a741687aa7e0522922e159f11125b91aa4f65dae269bfd4e2",
-    "payload_nul": "1b7163fdec1ce4b1e2b928a21fb9320027914e7c1f6ec25fda04d73e825caf04",
+    "first": "f2a4c104d71902f1bae1cafbdaf1863101497d20608b3e6a7a966b2fccd59d0b",
+    "second": "5f30a04a3a0405e3ac6a3cdea4409a2725805b0d1882adda10c7182c2f886977",
+    "second_body_drift": "7f3005fea5d5971e17258db7215011b141006163647ba72466e64b05e665defa",
+    "annex": "d8747e437b6ec06c2ecadeb0123d86c08f41160fb7e901bb38780e88c50defd0",
+    "body_drift": "19dbcff03675106872c1f5cf7157ef0e73c41beab35b713963d36fcdda856bf7",
+    "table": "b66bded6e8b5e395db411d63ff12c07eb1a51c4c5f0a62d767f10a322c41a91d",
+    "unknown_select": "896854bb4190f021545daa4c289120563f459e8b955cf86432d47aefba513978",
+    "payload_nul": "67e430a22cab7c7e1035e40430a52ac9ff74e33d5fa909e76c851baf5e88de65",
 }
 PRE_FIX_CHECKSUM = ADMITTED_BASELINES["first"]
 

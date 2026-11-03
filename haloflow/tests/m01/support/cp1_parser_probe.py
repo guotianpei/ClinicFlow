@@ -29,7 +29,7 @@ def main():
         }
         try:
             version = importlib.metadata.version("pglast")
-            if version != "7.17":
+            if version != "7.21":
                 raise RuntimeError("pglast version mismatch")
             from pglast import get_postgresql_version, parse_sql
             from pglast.parser import ParseError

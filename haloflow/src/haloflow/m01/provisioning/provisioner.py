@@ -188,7 +188,7 @@ class TenantProvisioner:
                     )
                     return False
 
-                schema_key, lifecycle_state, _ = row
+                schema_key, lifecycle_state, recorded_version = row
                 if lifecycle_state != LifecycleState.PROVISIONING.value:
                     # An active, suspended or archived tenant is not something a
                     # provisioning run may adopt. R-E2's resume window is exactly
@@ -202,6 +202,16 @@ class TenantProvisioner:
                     # refused rather than silently rebinding the tenant to a new
                     # schema and orphaning the first one.
                     raise ProvisioningFailed(reason_code=PreconditionCode.SCHEMA_KEY_CONFLICT.value)
+                if recorded_version != version:
+                    # UC1 part B, B5 P-4 (Codex-aligned v2r1): the row records the
+                    # target of the registry that started this provisioning
+                    # (inserted above as `version`). A run with a different target
+                    # would forward-apply a stale partial install, so it is refused
+                    # here, under the tenant lock and before any resumption write.
+                    # A same-target interrupted provisioning stays resumable.
+                    raise ProvisioningFailed(
+                        reason_code=PreconditionCode.TENANT_NOT_RESUMABLE.value
+                    )
                 return True
         except PsycopgError as error:
             raise ProvisioningFailed(

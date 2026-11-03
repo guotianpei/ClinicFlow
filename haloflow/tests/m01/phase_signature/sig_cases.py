@@ -137,34 +137,34 @@ class RowSpec:
 
 ROWS: Mapping[str, RowSpec] = types.MappingProxyType({r.case_id: r for r in (
     RowSpec('PC-01', 'A-wrong-create-schema', 'C01', _Q, _EC, 'O08', _L_QUALIFIED_FAIL,
-            '1f28837460eeab92a8ebda41c48e3d8e733c16aef383d2186335e1211b0b4112',
-            '81df3882e56f848813442c77ae273ef391da5fa7d9363e69a45897c79948b81e'),
+            'a9e9c3b226dc50c4d7a7c8a9d15b8462af984ec8b4b8399f086791117f9eb884',
+            '186df836ba2e9b0ce0d439bfd0d39e19c7973f79faf7b279c7ce0114c6283116'),
     RowSpec('PC-02', 'A-unqualified-create', 'C01', _Q, _EC, 'O08', _L_QUALIFIED_FAIL,
-            '3f0f59aa7f458d03017362c4eeddcdadca14c7ea41969b6a29da3e3eda0ff38d',
-            'd9db55bfc17877c5538b2aa9c3060da5c8861ad1f3af86935b9264dc5a590431'),
+            'cc4b1df4aa53b15735ebe2b99cbc19f0e88926f4dc95b10ca6bbb8ce33daa187',
+            'ce8daf6e25752ed8b5f933e92c1e05ad81db11509fe2f6b3c37c538e700c43ba'),
     RowSpec('PC-03', 'A-wrong-create-name', 'C01', _CN, None, 'O08', _L_NAME_FAIL,
-            'a1b5e5e095f5efcfcd81518b2875a3f840a7aa5cd31a69d2dc92aa972627236a',
-            'f3bce1918d55e9c2dc2f0807153a62e649dfa3567256bb67981320083427b252'),
+            '1b2f56605c4ade9c4cfbdb9850df738cf838acdfb55561c5cbbf54383e3d044c',
+            '0feef73f4f4b0670cd5e5d9e858fa39578107b80ebef4a955df93c3d8cabb320'),
     RowSpec('PC-04', 'A-input-type', 'C01', _CI, None, 'O09c', _L_IDENTITY_FAIL,
-            'fc87bc3611eba43353482ceaa6fa9f7ee24f95088d2c0549c3b93dcb521964af',
-            'fb253b3a19b81882b1711e28fa237534597a5f07071fdfc336dbdb487518a8fc'),
+            'e17dd6a3a9327ef5be5c565eec6b0aa02e4d053563c0f59e3165382a6e991039',
+            'a01df4a3950c81384ebcf92eedb53113d3781ec7b1e87218fac73620ff823a04'),
     RowSpec('PC-05', 'A-input-order', 'C01', _CI, None, 'O09c', _L_IDENTITY_FAIL,
-            'd772d1d7d014363c2ee3f6ff0c6ab4d0687c9ead005249130e7b7dea489db511',
-            '8781e2a5be4e930f55d6ed9fa74de60aa8281ae9d509c30e79762e1a92e2a6d9'),
+            '3fc2b87a9fbcd049a7c5411cfe7557de5a56196523ec83c6cf73ca6befa67d35',
+            '0673cd3c9b8d042fdf61dd8d6554ce44d2f6b67d3b6072903e41e1b111ffdf86'),
     RowSpec('PC-06', 'A-input-name', 'C01', _CC, None, 'O09c', _L_COMPARE_FAIL,
-            'be969ceba828c1aae46acb979e1d410cfea9dde12f4e65cb979ce479dde0108d',
-            '7749a96862d3a81fd644527f86eba7943684a14ade6e6615a375c1921142d7af'),
+            '483cfe1a0c0346cfbdbbf3cd2f55affefa41fb407f7a0a7e1aab8baae0eea9f4',
+            '6f9b096ac1f2104fcd0d3f179265f7539866c39a0562d97bf5e6f3087521d9f7'),
     RowSpec('PC-07', 'A-output-name', 'C02', _CC, None, 'O09c', _L_COMPARE_FAIL,
-            '4b91c16b971b8fe2847e0e161455d4393e84289fafe8d0d4954d80872d48d9ce',
-            '89c47edfb649a422f4cc239546049cc13fc32a8fa11a175d51a01e7260f39885'),
+            '33f0483a7b42893104f6d9d7353a3dfa5ef9697a328292afea389cb23cee16a3',
+            'f24fb067c6c33d4b12e5a0da07a536bf328b18573fedec7366e8b5ba083be075'),
     RowSpec('PC-08', 'A-output-order', 'C03', _CC, None, 'O09c', _L_COMPARE_FAIL,
-            'd15204d3457d94465b9c0b46199b368dede689b0f2f05ae2c0f775e359ec6e1a',
-            '65fc257d23b09c9c7a0de83672dffe99e2ea94cde9501215868a65b3fe9ee7e0'),
+            '58e7f0b3f67d87ab3ce3d62846e921831d5b57ee17f7287555ff0a9437cd97c3',
+            'd21ec8dc759be80ef32bd8e7fabdea7c4fb7955e7d8ca93ae718564d8bfb0ca7'),
     # PC-09: A7's 'O11' is the recorded pin and DOES NOT ESTABLISH O11 (flag 1). O11
     # comes only from the Part E call-chain witness (PE-01).
     RowSpec('PC-09', 'A-wrong-grant-signature', 'C01', _TM, None, 'O11', _L_MEMBERSHIP_FAIL,
-            '355a1b2098fd5bbe810f78fb628a292a527e280134f9b762a3b8f684b7743aa2',
-            '77acecf1f850eb6063f241ee921fc9027fd421138204b64f327907a5051bdfbc'),
+            'c2882e43efaaaed943b695cc797227b8d9692f92fcf7ec282942a0fa368ff465',
+            'bb0418651d62ad389f8701fdc91ca6b43b379635ceef442672d567ed0a945867'),
 )})
 
 # The variants' recorded X3b encoding, verbatim. X3b re-encodes under THIS and only this.
@@ -177,9 +177,9 @@ X3B_ENCODING_RECORDED = (
 # 4.1) and is deliberately never read here: "Do not silently convert it into a control
 # preflight assertion."
 CONTROL_X3C: Mapping[str, str] = types.MappingProxyType({
-    'C01': '02f39025475b8d9a66a7e698751c1d1e9905f093f5ac512794c3da76b52b3f66',
-    'C02': '7717d341f74a2f3643d2533e7412b15381f116ad91a8d04a0c0447943d7d9711',
-    'C03': '520b4e2ba00b761fe58e71282b5280e51a680a765457e7a1587afdcfa54846a2',
+    'C01': 'b923dc2073b3e468229c92ea493d43735d15bd4f425d1f3041f316cdaef58872',
+    'C02': 'c7ad9584050ccc72ddb2c760b08e5a7cdd174369166e7eef8b8633e6168512c8',
+    'C03': 'd51385cbc3b6fc0036de1dccb0436a33fec85a272fd5e8be0540b5e667b17037',
 })
 
 ROW_FILE = 'sql-fixtures.json'

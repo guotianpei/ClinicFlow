@@ -25,7 +25,7 @@ ORDER (architecture v2 section 4)
 0. scope guard (internal misuse -> the CL-2 exception, below);
 1. NUL byte -> unparseable. Load-bearing: pglast stops reading at a NUL, so
    `CREATE TABLE ...;<NUL> DROP ...` would otherwise parse as one CreateStmt;
-2. load and pin the parser (pglast 7.17, PostgreSQL grammar 17);
+2. load and pin the parser (pglast 7.21, PostgreSQL grammar 17);
 3. exactly ONE `parse_sql` call (CG4-R9);
 4. zero statements -> prohibited (CG4-R1b);
 5. per statement: RawStmt required, prohibited set first, then the allowed list.
@@ -80,7 +80,7 @@ ALLOWED_TOPLEVEL_KINDS: Final = ("CreateStmt",)
 PROHIBITED_TOPLEVEL_KINDS: Final = ("CreateFunctionStmt", "DoStmt")
 """CG4-R1: refused whatever the allowed list says."""
 
-_PINNED_PGLAST_VERSION: Final = "7.17"
+_PINNED_PGLAST_VERSION: Final = "7.21"
 _PINNED_GRAMMAR_MAJOR: Final = 17
 
 
@@ -91,6 +91,13 @@ def _reject(code: PreconditionCode) -> MigrationUnitRejected:
 def requires_content_check(unit: TenantMigrationUnit) -> bool:
     """CG4-R0. The ONLY definition of scope: not typed, and role-bearing."""
 
+    # L-1W W3b: an ``acl_closure_v1`` unit is neither typed nor ordinary. It has no
+    # authored template (refused non-empty at construction) and the runner executes
+    # only statements rendered from its validated declaration, so there is no text
+    # for this check to see. Read through getattr so a duck-typed CP1 definition
+    # without the attribute stays ordinary.
+    if getattr(unit, "is_closure", False):
+        return False
     return (not unit.is_typed) and unit.execution_role is not None
 
 

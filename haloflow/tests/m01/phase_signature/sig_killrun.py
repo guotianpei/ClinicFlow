@@ -113,10 +113,10 @@ EXIT_G2_ABSENT = 3
 CARRIED_SHA256: Mapping[str, str] = types.MappingProxyType({
     'conftest.py': 'f3679242d4aa26c326f89296f24408fbb371c0c67aadb88903c4c07e4969b3b9',
     'sig_child_plugin.py': '108c7128775316ed47c2ad4e829a4b26badaf38433534b81b6ff3153f552dd5c',
-    'sig_overlay.py': '36b38533c5dbf5d4264fb1519dc042950cafb04032c0805f36f3724653bd5914',
+    'sig_overlay.py': '5a2f6d76eba2f84c90de1f28fcc13a29231c4c1feeaf8d5fb7dca591149a8a26',
     'test_sig_part_a.py': '60bb473a641b694cd818f1acae01ddf405029ebd93351894b8423d6220d8f92c',
     'test_sig_part_b.py': 'eb9c02c3d2cd6e706b31aba38417e8ba9fdc292087bbf81348d7ada12554d53b',
-    'sig_cases.py': 'e797c624784160e751490658cf986216cc40fb4de0a0373974d5f3d4f1ea77ba',
+    'sig_cases.py': 'e5828aec68e4225c585ba3cd1949ef334349eeb03588b6c71e0c037794a85456',
     'test_sig_part_c.py': 'c8e53344ad06598bafa2462057121372056c67db85b5d95ad9b4b6d80843cefe',
     'test_sig_part_d.py': '4cb12f6a3c5b86b17e72661be705f040ebea14c49cb290a1495a6c51efbe6bac',
     'test_sig_part_e.py': 'f5e8b4bd1f2b9d454a2c7d0d9eec83c7ec229c05d01180fd5ee3a6cf9213d45a',

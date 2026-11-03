@@ -209,6 +209,36 @@ def _reset_tenants_in(conninfo: str, tenant_ids: Sequence[str], schema_keys: Seq
         for table, trigger in append_only:
             conn.execute(f"ALTER TABLE {table} DISABLE TRIGGER {trigger}")
         try:
+            # L-1W W3a: v2 admin and bootstrap paths write shared identity, settings
+            # and log rows for harness tenants. Those tables reference shared.tenants
+            # and two are append-only by trigger, so they are cleared the same way,
+            # USER triggers disabled as the table owner and re-enabled in a finally.
+            # Only tables that exist (a pre-008 database has none).
+            present = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT c.relname FROM pg_class c JOIN pg_namespace n"
+                    " ON n.oid = c.relnamespace WHERE n.nspname = 'shared' AND c.relkind = 'r'"
+                ).fetchall()
+            }
+            for l1w_table in ("staff_sessions", "staff_identity_bindings", "staff_identity_log",
+                              "tenant_auth_settings_log", "tenant_auth_settings"):
+                if l1w_table not in present:
+                    continue
+                ident = sql.Identifier(l1w_table)
+                conn.execute(sql.SQL("ALTER TABLE shared.{} DISABLE TRIGGER USER").format(ident))
+                try:
+                    conn.execute(
+                        sql.SQL("DELETE FROM shared.{} WHERE tenant_id = ANY(%s)").format(ident),
+                        (list(tenant_ids),),
+                    )
+                finally:
+                    conn.execute(
+                        sql.SQL("ALTER TABLE shared.{} ENABLE TRIGGER USER").format(ident))
+            conn.execute(
+                "DELETE FROM shared.support_access_grants WHERE tenant_id = ANY(%s)",
+                (list(tenant_ids),),
+            )
             for table in referencing:
                 conn.execute(
                     f"DELETE FROM {table} WHERE tenant_id = ANY(%s)", (list(tenant_ids),)

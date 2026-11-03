@@ -549,9 +549,9 @@ def slot_restored(state: dict[str, Any]) -> dict[str, bool]:
 
 # ================================================================ tests
 CONTROL_SHA256 = {
-    "C01": "2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7",
-    "C02": "2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9",
-    "C04": "660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b",
+    "C01": "e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d",
+    "C02": "d3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24",
+    "C04": "56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021",
 }
 
 

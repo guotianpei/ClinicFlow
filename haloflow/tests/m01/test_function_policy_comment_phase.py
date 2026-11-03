@@ -54,8 +54,8 @@ O12 = '_validate_statement_inventory'
 CHECKSUM = 'function_checksum'
 WRAPPED = (O11, O12, CHECKSUM)
 
-VARIANT_SHA256 = '09d43241e09d71b262aa929af3356f9af7deaad28b97cd226240a7ceaca6bb77'
-C01_SHA256 = '2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7'
+VARIANT_SHA256 = '8e044408ceb909653037dcd5c82357a26fd9f6585e4805b8a2d7ecb4251f16ad'
+C01_SHA256 = 'e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d'
 APPENDED = "\nCOMMENT ON FUNCTION {schema}.m02_annex_probe(text, uuid) IS '';"
 
 

@@ -227,6 +227,10 @@ class TenantMigrationRunner:
             # unit installed.
             deferred_render: MigrationUnitRejected | None = None
             for unit, _ in pending:
+                if unit.is_closure:
+                    # W3b: nothing to render or check here; pass 3 executes only the
+                    # registry's declaration-rendered statements for this unit.
+                    continue
                 if not unit.is_typed:
                     if ordinary_content.requires_content_check(unit):
                         try:
@@ -291,6 +295,42 @@ class TenantMigrationRunner:
         # unique.
         return tuple(outcomes[unit.migration_id] for unit in self._registry)
 
+    async def _verify_closure_targets(
+        self, connection: AsyncConnection, unit: TenantMigrationUnit, schema_key: str
+    ) -> None:
+        targets = self._registry.closure_targets(unit.migration_id)
+        if not targets:
+            raise VerificationMismatch("closure unit without targets")
+        version = int(unit.migration_id[1:4])
+        by_id = {u.migration_id: u for u in self._registry}
+        for target_id in targets:
+            requirement = self._registry.installed_state_requirement(target_id)
+            amended = self._registry.acl_amendment(target_id)
+            if requirement.profile is None or amended is None:
+                raise VerificationMismatch("closure target without profile")
+            amendment, activator_version = amended
+            profile = installed_state.effective_profile(
+                requirement.profile, amendment,
+                activator_version=activator_version, checked_version=version,
+            )
+            expected_config, expected_body = _installed_expectations(
+                by_id[target_id], requirement.profile, schema_key
+            )
+            rows = await (
+                await connection.execute(
+                    installed_state.INSTALLED_FUNCTION_QUERY,
+                    (list(profile.argument_types), profile.return_type,
+                     schema_key, profile.function_name),
+                )
+            ).fetchall()
+            installed_state.compare_installed_function(
+                profile,
+                schema_key=schema_key,
+                expected_config=expected_config,
+                expected_body=expected_body,
+                rows=rows,
+            )
+
     async def _apply_unit(
         self,
         connection: AsyncConnection,
@@ -305,6 +345,7 @@ class TenantMigrationRunner:
     ) -> MigrationOutcome:
         # CP2-2b: set only on the typed path, from the registry's own descriptor.
         profile: installed_state.InstalledStateProfile | None = None
+        closure_statements: tuple[str, ...] = ()
         expected_config: tuple[str, ...] = ()
         expected_body = ""
         if unit.is_typed:
@@ -341,6 +382,15 @@ class TenantMigrationRunner:
                 expected_config, expected_body = _installed_expectations(
                     unit, profile, schema_key
                 )
+        elif unit.is_closure:
+            # W3b plan v1r1 §4. Looked up on the registry at call time (CL-03 seam).
+            try:
+                closure_statements = self._registry.closure_statements(
+                    unit.migration_id, schema_key
+                )
+            except MigrationUnitRejected as error:
+                raise TenantMigrationFailed(reason_code=error.reason_code) from None
+            rendered = ""
         elif ordinary_content.requires_content_check(unit):
             # CG-4. Execute exactly the text pass 2 checked; never render again.
             if checked_text is None:
@@ -380,10 +430,21 @@ class TenantMigrationRunner:
                             sql.Identifier(unit.execution_role)
                         )
                     )
-                await connection.execute(rendered)
+                if unit.is_closure:
+                    for statement in closure_statements:
+                        await connection.execute(statement)
+                else:
+                    await connection.execute(rendered)
                 await connection.execute(
                     sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(MIGRATOR_ROLE))
                 )
+                if unit.is_closure:
+                    # Every target is verified against its AMENDED profile with the
+                    # existing comparator, inside this transaction: a partial closure
+                    # is VERIFICATION_FAILED and rolls back with the REVOKEs.
+                    stage = SanitizedErrorCode.VERIFICATION_FAILED
+                    await connection.execute("SET LOCAL search_path = pg_catalog, pg_temp")
+                    await self._verify_closure_targets(connection, unit, schema_key)
                 if unit.verification is not None:
                     stage = SanitizedErrorCode.VERIFICATION_FAILED
                     # Role return does not restore a path changed by the DDL.
@@ -403,7 +464,8 @@ class TenantMigrationRunner:
                     rows = await (
                         await connection.execute(
                             installed_state.INSTALLED_FUNCTION_QUERY,
-                            (schema_key, profile.function_name),
+                            (list(profile.argument_types), profile.return_type,
+                             schema_key, profile.function_name),
                         )
                     ).fetchall()
                     installed_state.compare_installed_function(

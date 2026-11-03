@@ -42,6 +42,8 @@ from typing import Final
 
 from haloflow.m01.provisioning.roles import MIGRATOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.provisioning.units import TYPED_FUNCTION_KIND, UnitDefinition, UnitDefinitions
+from haloflow.m02.part_a_gateways import PART_A_GATEWAY_UNITS
+from haloflow.m02.part_a_units import PART_A_ORDINARY_UNITS
 from haloflow.m02.roles import LOCK_OWNER_ROLE
 
 T002_MIGRATION_ID: Final = "t002_m02_operation_registry"
@@ -406,7 +408,7 @@ T003_DEFINITION: Final = UnitDefinition(
         "policy_format": 1,
         "semantic_version": 1,
         "parser_package": "pglast",
-        "parser_version": "7.17",
+        "parser_version": "7.21",
         "grammar_major": 17,
         "functions": [
             {
@@ -446,6 +448,14 @@ T003_DEFINITION: Final = UnitDefinition(
 )
 
 
+# UC1 part A (Codex ALIGN 20261031T131639Z, C1): four migrator-owned ordinary
+# units t004-t007, then four typed gateway units t008-t011, one function and one
+# execution role each. Composing them makes the production target version 11.
 M02_TENANT_MIGRATIONS: Final[UnitDefinitions] = MappingProxyType(
-    {T002_MIGRATION_ID: T002_SQL, T003_MIGRATION_ID: T003_DEFINITION}
+    {
+        T002_MIGRATION_ID: T002_SQL,
+        T003_MIGRATION_ID: T003_DEFINITION,
+        **PART_A_ORDINARY_UNITS,
+        **PART_A_GATEWAY_UNITS,
+    }
 )

@@ -74,7 +74,7 @@ _SLOTS = {
     'CreateFunctionStmt': 'is_procedure replace funcname parameters returnType options sql_body',
     'FunctionParameter': 'name argType mode defexpr',
     'TypeName': 'names setof pct_type typmods typemod arrayBounds location',
-    'DefElem': 'defnamespace defname arg defaction location',
+    'DefElem': 'defnamespace defname arg defaction location arg_location',
     'VariableSetStmt': 'kind name args is_local',
     'A_Const': 'isnull val', 'String': 'sval', 'Boolean': 'boolval', 'Integer': 'ival',
     'GrantStmt': ('is_grant targtype objtype objects privileges grantees '
@@ -230,7 +230,7 @@ def _declaration(payload: dict[str, Any]) -> _Declaration:
     policy = payload['policy']
     _require(payload['checksum_version'] == 3)
     _require((policy['policy_format'], policy['semantic_version'], policy['parser_package'],
-              policy['parser_version'], policy['grammar_major']) == (1, 1, 'pglast', '7.17', 17))
+              policy['parser_version'], policy['grammar_major']) == (1, 1, 'pglast', '7.21', 17))
     _require(bool(_ROLE.fullmatch(payload['execution_role'])), Code.EXECUTION_ROLE_INVALID)
     # Infrastructure membership comes from the existing role vocabulary.
     from .roles import PROVISIONING_ROLES
@@ -300,7 +300,7 @@ def _load_parser() -> Any:
     except (ImportError, importlib.metadata.PackageNotFoundError):
         _fail(Code.INSTALL_PARSER_UNAVAILABLE)
     try:
-        compatible = version == '7.17' and parser.get_postgresql_version()[0] == 17
+        compatible = version == '7.21' and parser.get_postgresql_version()[0] == 17
     except Exception:
         _fail(Code.INSTALL_PARSER_VERSION_MISMATCH)
     _require(compatible, Code.INSTALL_PARSER_VERSION_MISMATCH)

@@ -361,7 +361,10 @@ def test_a_test_only_unit_is_accepted_only_when_explicitly_allowed() -> None:
 def test_the_production_registry_contains_no_test_units() -> None:
     """TC-E21, over the real composition root rather than a constructed example."""
 
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS, L1W_W3B_TENANT_MIGRATIONS
+    from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     registry = build_production_tenant_migrations()
 
@@ -369,9 +372,53 @@ def test_the_production_registry_contains_no_test_units() -> None:
         "t001_m01_baseline",
         "t002_m02_operation_registry",
         "t003_m02_lock_operation",
+        # UC1 part A (P-b; Codex ALIGN 20261031T131639Z, C1).
+        "t004_m02_reference",
+        "t005_m02_events",
+        "t006_m02_outbox",
+        "t007_m02_envelope_allowlist",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
+        # UC1 part B B5 (package v2 section 1, Codex 4b0a5448): M05, then staff.
+        "t012_m05_tables",
+        "t013_m05_seed",
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t021_m01_staff_directory",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
+        # L-1W W3a (contract v1, Codex 215519Z): t026-t032.
+        "t026_m01_staff_roles",
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     )
     assert not any(unit.is_test_unit for unit in registry)
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
+    assert APPROVED_TENANT_MIGRATIONS == (
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        STAFF_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
+    )
 
 
 def test_the_production_baseline_targets_the_supported_schema_version() -> None:
@@ -382,9 +429,21 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     lock gateway". This pins the number only. It claims nothing about any runtime
     accepting version-3 tenants (L-1, a carried release prerequisite), nor about
     upgrading active version-2 tenants (L-6).
+
+    UC1 part A (D2, Codex ALIGN 20261031T015048Z; C1 20261031T131639Z) extends it
+    through `t011_m02_envelope_read`: the production target is version 11. The
+    number only; no production tenant at versions 1-10 and no upgrade path is claimed.
+
+    UC1 part B B5 (package v2 section 1, Codex 4b0a5448) extends it through
+    `t025_m01_staff_followup_reader`: the production target is version 25. The
+    number only; no upgrade path from version 11 is claimed (L-6).
+
+    L-1W W3a (contract v1, Codex 215519Z) extends it through
+    `t032_m01_staff_bootstrap_admin`: the production target is version 32. The number
+    only; no upgrade path from version 25 is claimed (L-6).
     """
 
-    assert build_production_tenant_migrations().target_version == 3
+    assert build_production_tenant_migrations().target_version == 36
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1188,16 +1247,67 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
     makes that change -- and any further one -- visible rather than silent.
     """
 
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS, L1W_W3B_TENANT_MIGRATIONS
+    from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
+    from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
     registry = build_production_tenant_migrations()
 
+    # UC1 part A adds three module roles, one per typed gateway unit t008-t011 (C1);
+    # t004-t007 are migrator-owned ordinary units.
     assert [unit.execution_role for unit in registry.units] == [
         None,
         None,
         "haloflow_m02_lock_owner",
+        None,
+        None,
+        None,
+        None,
+        "haloflow_m02_append_owner",
+        "haloflow_m02_append_owner",
+        "haloflow_m02_projection_owner",
+        "haloflow_m02_read_owner",
+        # UC1 part B B5: t012/t013 and t021 are migrator-owned ordinary units; the
+        # M05 owner runs t014-t020 and the staff owner t022-t025.
+        None,
+        None,
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        None,
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        # L-1W W3a: t026 migrator-owned; t030/t031 the M05 owner; the rest the staff
+        # owner.
+        None,
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_staff_owner",
+        "haloflow_m05_owner",
+        "haloflow_m05_owner",
+        "haloflow_staff_owner",
+        # L-1W W3b: t033 migrator-owned; t034 the staff owner; the closure units t035
+        # (M05 owner) and t036 (staff owner).
+        None,
+        "haloflow_staff_owner",
+        "haloflow_m05_owner",
+        "haloflow_staff_owner",
     ]
-    assert APPROVED_TENANT_MIGRATIONS == (TENANT_MIGRATIONS, M02_TENANT_MIGRATIONS)
+    assert APPROVED_TENANT_MIGRATIONS == (
+        TENANT_MIGRATIONS,
+        M02_TENANT_MIGRATIONS,
+        M05_TENANT_MIGRATIONS,
+        STAFF_TENANT_MIGRATIONS,
+        L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
+    )
 
 
 def test_changing_the_execution_role_changes_the_checksum() -> None:
@@ -1261,6 +1371,43 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
         "t001_m01_baseline",
         "t002_m02_operation_registry",
         "t003_m02_lock_operation",
+        # UC1 part A (P-b; Codex ALIGN 20261031T131639Z, C1).
+        "t004_m02_reference",
+        "t005_m02_events",
+        "t006_m02_outbox",
+        "t007_m02_envelope_allowlist",
+        "t008_m02_canon",
+        "t009_m02_append",
+        "t010_m02_enqueue",
+        "t011_m02_envelope_read",
+        # UC1 part B B5 (package v2 section 1, Codex 4b0a5448): M05, then staff.
+        "t012_m05_tables",
+        "t013_m05_seed",
+        "t014_m05_create_item",
+        "t015_m05_prepare_action",
+        "t016_m05_apply_action",
+        "t017_m05_get_item",
+        "t018_m05_list_items",
+        "t019_m05_get_history",
+        "t020_m05_read_note",
+        "t021_m01_staff_directory",
+        "t022_m01_staff_assignable",
+        "t023_m01_staff_admin",
+        "t024_m01_staff_display",
+        "t025_m01_staff_followup_reader",
+        # L-1W W3a (contract v1, Codex 215519Z): t026-t032.
+        "t026_m01_staff_roles",
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     )
     assert len(registry.units[0].checksum) == 64
 
@@ -2526,14 +2673,35 @@ async def test_cp9_migrator_createrole_is_refused_without_execution_roles(attrib
 
         async def execute(self, statement, params):
             assert statement.lstrip().startswith("SELECT")
-            if "rolcreaterole" in statement:
+            self.last = statement
+            # L-1W W3a: profile attribute reads (rolcanlogin ...) precede the migrator
+            # read; only the migrator's own rolcreaterole read is this row's subject.
+            if "rolcreaterole" in statement and "rolcanlogin" not in statement:
                 assert params == ("haloflow_migrator",)
 
         async def fetchall(self):
-            # Healthy shipped membership graph: the one declared edge (E-10b).
-            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
+            # Healthy shipped membership graph: every declared edge (E-10b; UC1 part A
+            # adds the append, projection, read and M05 owners, A4).
+            return [
+                (role, "haloflow_migrator", True, False, False)
+                for role in (
+                    "haloflow_m02_append_owner",
+                    "haloflow_m02_lock_owner",
+                    "haloflow_m02_projection_owner",
+                    "haloflow_m02_read_owner",
+                    "haloflow_m05_owner",
+                    "haloflow_staff_owner",
+                    "haloflow_support",  # L-1W W3a: USAGE-only profile
+                )
+            ]
 
         async def fetchone(self):
+            # Safe, settable profiles (L-1W W3a profile check); the migrator row is
+            # the parameter.
+            if "rolcanlogin" in self.last:
+                return (False,) * 6
+            if "pg_has_role" in self.last:
+                return (True,)
             return attribute_row
 
     class Connection:
@@ -2565,14 +2733,31 @@ async def test_cp9_safe_migrator_is_actually_read_without_execution_roles():
 
         async def execute(self, statement, params):
             assert statement.lstrip().startswith("SELECT")
-            if "rolcreaterole" in statement:
+            self.last = statement
+            if "rolcreaterole" in statement and "rolcanlogin" not in statement:
                 seen.append(params)
 
         async def fetchall(self):
-            # Healthy shipped membership graph: the one declared edge (E-10b).
-            return [("haloflow_m02_lock_owner", "haloflow_migrator", True, False, False)]
+            # Healthy shipped membership graph: every declared edge (E-10b; UC1 part A
+            # adds the append, projection, read and M05 owners, A4).
+            return [
+                (role, "haloflow_migrator", True, False, False)
+                for role in (
+                    "haloflow_m02_append_owner",
+                    "haloflow_m02_lock_owner",
+                    "haloflow_m02_projection_owner",
+                    "haloflow_m02_read_owner",
+                    "haloflow_m05_owner",
+                    "haloflow_staff_owner",
+                    "haloflow_support",  # L-1W W3a: USAGE-only profile
+                )
+            ]
 
         async def fetchone(self):
+            if "rolcanlogin" in self.last:
+                return (False,) * 6  # safe profiles (L-1W W3a profile check)
+            if "pg_has_role" in self.last:
+                return (True,)
             return (False,)
 
     class Connection:

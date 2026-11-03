@@ -15,6 +15,8 @@ same thing everywhere.
 """
 
 import copy
+import hashlib
+import json
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import InitVar, dataclass, field
@@ -30,9 +32,11 @@ from haloflow.m01.provisioning.function_checksum import (
 )
 from haloflow.m01.provisioning.installed_state import (
     NOT_REQUIRED,
+    AclAmendment,
     InstalledStateProfile,
     InstalledStateRequirement,
     check_profile_agreement,
+    profile_digest,
     requirement_for,
 )
 from haloflow.m01.provisioning.roles import (
@@ -61,6 +65,12 @@ _UNIT_ISSUER: Final = object()
 # else, including a kind of the wrong type, is refused rather than defaulted
 # (TP-R2b), because defaulting either way is inference.
 TYPED_FUNCTION_KIND: Final = "typed_function_v3"
+# L-1W W3b (plan v1r1 §4, Codex 150630Z/151751Z): a remove-only closure unit. It
+# carries NO authored template; the runner executes only the REVOKE statements
+# rendered from the composition-declared `AclAmendment` records naming it, under its
+# execution role (the targets' owner). CG4 and the typed policy are unchanged.
+ACL_CLOSURE_KIND: Final = "acl_closure_v1"
+ACL_CLOSURE_CHECKSUM_VERSION: Final = 2
 _POLICY_FIELDS: Final = frozenset(
     {
         "policy_format",
@@ -183,6 +193,15 @@ def _declaration_checks(
     """
 
     typed_fields = policy is not None or policy_verification is not None
+    if kind == ACL_CLOSURE_KIND:
+        # A closure unit is run by its targets' owner and declares nothing else:
+        # no typed policy, no legacy verification. Its template is checked empty by
+        # the definition and the unit, which receive it.
+        if execution_role is None:
+            raise _reject(PreconditionCode.MIGRATION_UNIT_ROLE_REQUIRED)
+        if typed_fields or verification is not None:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        return
     if kind is None:
         # TP-R2c. An ordinary definition carrying typed-only fields is refused,
         # never accepted with the policy silently unenforced.
@@ -229,6 +248,9 @@ class UnitDefinition:
     policy_verification: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        if self.kind == ACL_CLOSURE_KIND and self.template != "":
+            # W3b AM-04: a closure unit never carries authored SQL.
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
         validate_verification(self.verification)
         _declaration_checks(
             kind=self.kind,
@@ -256,6 +278,9 @@ class TenantMigrationUnit:
     policy_verification: Mapping[str, Any] | None = field(
         default=None, kw_only=True, repr=False
     )
+    closure_payload: Mapping[str, Any] | None = field(default=None, kw_only=True, repr=False)
+    """W3b: the canonical declaration an ``acl_closure_v1`` unit's checksum digests.
+    Built by the registry builder from the validated amendments; None otherwise."""
 
     def __post_init__(self, _issuer: object | None) -> None:
         if _issuer is not _UNIT_ISSUER:
@@ -270,9 +295,14 @@ class TenantMigrationUnit:
         )
         if not MIGRATION_ID_PATTERN.fullmatch(self.migration_id):
             raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_ID_INVALID.value)
-        if not self.template.strip():
+        if self.kind == ACL_CLOSURE_KIND:
+            if self.template != "" or self.closure_payload is None:
+                raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        elif self.closure_payload is not None:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        elif not self.template.strip():
             raise MigrationUnitRejected(reason_code=PreconditionCode.MIGRATION_TEMPLATE_EMPTY.value)
-        if _SCHEMA_PLACEHOLDER not in self.template:
+        if self.kind != ACL_CLOSURE_KIND and _SCHEMA_PLACEHOLDER not in self.template:
             # A unit that names no schema is either unqualified DDL, which would
             # land wherever search_path points, or shared-schema DDL, which is
             # Alembic's territory and not a per-tenant migration at all.
@@ -312,6 +342,12 @@ class TenantMigrationUnit:
     @property
     def is_test_unit(self) -> bool:
         return bool(_TEST_UNIT_PATTERN.match(self.migration_id))
+
+    @property
+    def is_closure(self) -> bool:
+        """W3b: an ``acl_closure_v1`` unit (declared, never inferred)."""
+
+        return self.kind == ACL_CLOSURE_KIND
 
     @property
     def is_typed(self) -> bool:
@@ -355,6 +391,13 @@ class TenantMigrationUnit:
         result -- known, intended, and gated by R-P4.4.
         """
 
+        if self.is_closure:
+            # W3b plan v1r1 §4: SHA-256 over the canonical closure declaration --
+            # kind, version, id, role, and per target its unit, version, signature,
+            # accepted-profile digest and removals. Any change is ledger drift.
+            if self.closure_payload is None:
+                raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+            return closure_checksum(self.closure_payload)
         if self.is_typed:
             # TP-R7. A typed unit's ledger identity is the function-v3 digest,
             # which covers the policy block; the v2 digest cannot see it, so a
@@ -382,7 +425,33 @@ class TenantMigrationUnit:
 
         if not SCHEMA_KEY_PATTERN.fullmatch(schema_key):
             raise MigrationUnitRejected(reason_code=PreconditionCode.SCHEMA_KEY_INVALID.value)
+        if self.is_closure:
+            # A closure unit has no template; its statements come from the registry.
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
         return self.template.replace(_SCHEMA_PLACEHOLDER, schema_key)
+
+
+def closure_checksum(payload: Mapping[str, Any]) -> str:
+    """SHA-256 hex over the canonical JSON of a closure payload (pinned formula)."""
+
+    text = json.dumps(
+        _thawed(payload), ensure_ascii=False, allow_nan=False, sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class _ClosureTarget:
+    """One validated amendment, as the registry keeps it."""
+
+    target_unit: str
+    target_version: int
+    function_name: str
+    argument_types: tuple[str, ...]
+    activated_by: str
+    activator_version: int
+    amendment: AclAmendment
 
 
 class TenantMigrationRegistry:
@@ -393,7 +462,7 @@ class TenantMigrationRegistry:
     declaration, the checksum or the ledger identity (R-B9.6).
     """
 
-    __slots__ = ("__units", "__requirements")
+    __slots__ = ("__units", "__requirements", "__closure_targets")
 
     def __init__(
         self,
@@ -401,6 +470,7 @@ class TenantMigrationRegistry:
         *,
         _issuer: object | None = None,
         _requirements: Mapping[str, InstalledStateRequirement] | None = None,
+        _closure_targets: tuple[_ClosureTarget, ...] = (),
     ) -> None:
         if _issuer is not _UNIT_ISSUER:
             raise MigrationUnitRejected(
@@ -410,6 +480,9 @@ class TenantMigrationRegistry:
         supplied = dict(_requirements or {})
         self.__requirements: Mapping[str, InstalledStateRequirement] = MappingProxyType(
             {unit.migration_id: supplied.get(unit.migration_id, NOT_REQUIRED) for unit in units}
+        )
+        self.__closure_targets: tuple[_ClosureTarget, ...] = tuple(
+            sorted(_closure_targets, key=lambda t: (t.activator_version, t.target_version))
         )
 
     def __iter__(self) -> Iterator[TenantMigrationUnit]:
@@ -443,12 +516,59 @@ class TenantMigrationRegistry:
 
         return self.__requirements[migration_id]
 
+    # -- W3b closure ---------------------------------------------------------
+
+    def acl_amendment(self, migration_id: str) -> tuple[AclAmendment, int] | None:
+        """The amendment of a typed target and its activator's version, or None."""
+
+        for target in self.__closure_targets:
+            if target.target_unit == migration_id:
+                return target.amendment, target.activator_version
+        return None
+
+    def closure_targets(self, migration_id: str) -> tuple[str, ...]:
+        """The typed units a closure unit amends, in target-version order."""
+
+        return tuple(
+            t.target_unit for t in self.__closure_targets if t.activated_by == migration_id
+        )
+
+    def closure_checksum_payload(self, migration_id: str) -> Mapping[str, Any]:
+        """The canonical payload a closure unit's checksum digests."""
+
+        unit = next((u for u in self.__units if u.migration_id == migration_id), None)
+        if unit is None or not unit.is_closure or unit.closure_payload is None:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        thawed: dict[str, Any] = _thawed(unit.closure_payload)
+        return thawed
+
+    def closure_statements(self, migration_id: str, schema_key: str) -> tuple[str, ...]:
+        """The exact statements a closure unit executes, rendered from its declaration
+        only: one REVOKE per removal, ordered by target version then grantee. Names
+        and argument types come from the target's accepted profile; grantees were
+        validated against the identifier pattern at composition."""
+
+        if not SCHEMA_KEY_PATTERN.fullmatch(schema_key):
+            raise MigrationUnitRejected(reason_code=PreconditionCode.SCHEMA_KEY_INVALID.value)
+        targets = [t for t in self.__closure_targets if t.activated_by == migration_id]
+        if not targets:
+            raise _reject(PreconditionCode.INSTALL_POLICY_INVALID)
+        statements: list[str] = []
+        for target in targets:
+            signature = f'{target.function_name}({",".join(target.argument_types)})'
+            for grantee, _privilege, _grantor, _grantable in sorted(target.amendment.removes):
+                statements.append(
+                    f'REVOKE EXECUTE ON FUNCTION "{schema_key}".{signature} FROM {grantee};'
+                )
+        return tuple(statements)
+
 
 def build_tenant_migration_registry(
     *definition_sets: UnitDefinitions,
     approved_execution_roles: frozenset[str] = frozenset(),
     allow_test_units: bool = False,
     installed_state_profiles: Mapping[str, InstalledStateProfile] = MappingProxyType({}),
+    acl_amendments: tuple[AclAmendment, ...] = (),
 ) -> TenantMigrationRegistry:
     """Compose approved per-tenant migration definition sets. Startup-only.
 
@@ -495,12 +615,16 @@ def build_tenant_migration_registry(
                 reason_code=PreconditionCode.EXECUTION_ROLE_NOT_APPROVED.value
             )
 
+    closure_targets, closure_payloads = _closure_declarations(
+        merged, installed_state_profiles, acl_amendments
+    )
     units = tuple(
         TenantMigrationUnit(
             migration_id,
             merged[migration_id].template,
             merged[migration_id].execution_role,
             _issuer=_UNIT_ISSUER,
+            closure_payload=closure_payloads.get(migration_id),
             verification=merged[migration_id].verification,
             # `getattr`, not attribute access: CP1's frozen composition tests
             # supply duck-typed definitions "independently of the new
@@ -522,7 +646,102 @@ def build_tenant_migration_registry(
         units,
         _issuer=_UNIT_ISSUER,
         _requirements=_installed_state_requirements(units, installed_state_profiles),
+        _closure_targets=closure_targets,
     )
+
+
+def _closure_declarations(
+    merged: Mapping[str, UnitDefinition],
+    profiles: Mapping[str, InstalledStateProfile],
+    amendments: Any,
+) -> tuple[tuple[_ClosureTarget, ...], dict[str, Mapping[str, Any]]]:
+    """W3b (plan v1r1 §4): validate the ACL amendments; build each closure payload.
+
+    Static, no database. Every refusal is INSTALLED_STATE_PROFILE_INVALID: an
+    unknown or untyped or unprofiled target; an activator that is not an
+    ``acl_closure_v1`` unit, is not later than the target, or does not run as the
+    target profile's owner; empty or duplicate removals; a removal outside the
+    profile's installed ACL, of the owner's own entry, of a non-EXECUTE privilege,
+    with grant option, or naming a grantee outside the identifier pattern; two
+    amendments on one target; a closure unit no amendment names.
+    """
+
+    refused = MigrationUnitRejected(
+        reason_code=PreconditionCode.INSTALLED_STATE_PROFILE_INVALID.value
+    )
+    if type(amendments) is not tuple or not isinstance(profiles, Mapping):
+        raise refused
+    profile_map = dict(profiles)
+    closure_ids = {m for m, d in merged.items() if getattr(d, "kind", None) == ACL_CLOSURE_KIND}
+    targets: list[_ClosureTarget] = []
+    seen: set[str] = set()
+    for amendment in amendments:
+        if type(amendment) is not AclAmendment:
+            raise refused
+        target_def = merged.get(amendment.target_unit)
+        activator_def = merged.get(amendment.activated_by)
+        profile = profile_map.get(amendment.target_unit)
+        if (
+            target_def is None
+            or getattr(target_def, "kind", None) != TYPED_FUNCTION_KIND
+            or type(profile) is not InstalledStateProfile
+            or activator_def is None
+            or amendment.activated_by not in closure_ids
+            or amendment.target_unit in seen
+        ):
+            raise refused
+        target_version = int(amendment.target_unit[1:4])
+        activator_version = int(amendment.activated_by[1:4])
+        if activator_version <= target_version:
+            raise refused
+        if activator_def.execution_role != profile.owner:
+            raise refused
+        removes = amendment.removes
+        if not removes or len(set(removes)) != len(removes):
+            raise refused
+        for grantee, privilege, grantor, grantable in removes:
+            if (
+                (grantee, privilege, grantor, grantable) not in profile.installed_acl
+                or grantee == profile.owner
+                or privilege != "EXECUTE"
+                or grantable is not False
+                or not EXECUTION_ROLE_PATTERN.fullmatch(grantee)
+            ):
+                raise refused
+        seen.add(amendment.target_unit)
+        targets.append(_ClosureTarget(
+            target_unit=amendment.target_unit,
+            target_version=target_version,
+            function_name=profile.function_name,
+            argument_types=profile.argument_types,
+            activated_by=amendment.activated_by,
+            activator_version=activator_version,
+            amendment=amendment,
+        ))
+    payloads: dict[str, Mapping[str, Any]] = {}
+    for closure_id in sorted(closure_ids):
+        own = sorted((t for t in targets if t.activated_by == closure_id),
+                     key=lambda t: t.target_version)
+        if not own:
+            raise refused
+        payloads[closure_id] = _frozen({
+            "checksum_version": ACL_CLOSURE_CHECKSUM_VERSION,
+            "kind": ACL_CLOSURE_KIND,
+            "migration_id": closure_id,
+            "version": int(closure_id[1:4]),
+            "execution_role": merged[closure_id].execution_role,
+            "amendments": [
+                {
+                    "target_unit": t.target_unit,
+                    "target_version": t.target_version,
+                    "target_signature": f'{t.function_name}({",".join(t.argument_types)})',
+                    "target_profile_digest": profile_digest(profile_map[t.target_unit]),
+                    "removes": [list(entry) for entry in sorted(t.amendment.removes)],
+                }
+                for t in own
+            ],
+        })
+    return tuple(targets), payloads
 
 
 def _installed_state_requirements(

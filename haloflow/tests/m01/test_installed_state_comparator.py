@@ -193,3 +193,142 @@ def test_2b_u38_acl_not_exactly_the_two_tuples_is_a_mismatch(
     row = with_("proacl_is_null", proacl_is_null)
     row[INDEX["acl"]] = acl
     assert_mismatch([row])
+
+
+# --- F-INT1 (Codex ALIGN 20261031T142215Z): profile-relative identity ---------
+#
+# Rows U30-U38 above are unchanged and remain the t003 (uuid -> uuid) regression.
+# The rows below are CONSTRUCTED observations for a two-argument jsonb profile. In
+# the query, `argtypes_match` (position 3, labelled "arg_is_uuid" above) and
+# `rettype_matches` (position 7, "rettype_is_uuid") are now relative to the profile.
+
+JSONB_NAME = "m02_append_shape"
+
+
+def jsonb_profile() -> Any:
+    from haloflow.m01.provisioning.installed_state import InstalledStateProfile
+
+    return InstalledStateProfile(
+        function_name=JSONB_NAME,
+        argument_types=("uuid", "jsonb"),
+        owner=OWNER,
+        execution_role=OWNER,
+        prokind="f",
+        return_type="jsonb",
+        returns_set=False,
+        language="plpgsql",
+        security_definer=True,
+        volatility="v",
+        parallel="u",
+        strict=False,
+        installed_acl=((OWNER, "EXECUTE", OWNER, False), (RUNTIME, "EXECUTE", OWNER, False)),
+    )
+
+
+def jsonb_row(oid: int = 71000) -> list[Any]:
+    row = good_row(oid)
+    row[INDEX["pronargs"]] = 2
+    return row
+
+
+def compare_jsonb(rows: list[list[Any]], profile_: Any = None) -> None:
+    from haloflow.m01.provisioning.installed_state import compare_installed_function
+
+    compare_installed_function(
+        profile_ if profile_ is not None else jsonb_profile(),
+        schema_key=SCHEMA,
+        expected_config=CONFIG,
+        expected_body=BODY,
+        rows=[tuple(row) for row in rows],
+    )
+
+
+def assert_jsonb_mismatch(rows: list[list[Any]], profile_: Any = None) -> None:
+    from haloflow.m01.provisioning.verification import VerificationMismatch
+
+    with pytest.raises(VerificationMismatch):
+        compare_jsonb(rows, profile_)
+
+
+def test_fint1_u30b_a_matching_two_argument_jsonb_row_is_accepted() -> None:
+    compare_jsonb([jsonb_row()])
+
+
+@pytest.mark.parametrize("pronargs", [0, 1, 3])
+def test_fint1_u31b_an_argument_count_other_than_the_profiles_is_no_identity(
+    pronargs: int,
+) -> None:
+    """Even with both type flags true, a row whose `pronargs` differs from the
+    profile's argument count is not the identity row, so zero identity rows."""
+
+    assert_jsonb_mismatch([with_("pronargs", pronargs, jsonb_row())])
+
+
+def test_fint1_u31b_control_the_same_row_at_the_profiles_count_is_accepted() -> None:
+    compare_jsonb([with_("pronargs", 2, jsonb_row())])
+
+
+@pytest.mark.parametrize("column", ["arg_is_uuid", "rettype_is_uuid"])
+def test_fint1_u34b_a_false_argument_or_return_flag_is_a_mismatch(column: str) -> None:
+    assert_jsonb_mismatch([with_(column, False, jsonb_row())])
+
+
+def test_fint1_u32b_a_well_formed_other_signature_overload_is_ignored() -> None:
+    other = with_("arg_is_uuid", False, jsonb_row(oid=71001))
+    compare_jsonb([other, jsonb_row()])
+
+
+def test_fint1_u30c_the_uuid_profile_rejects_the_two_argument_row() -> None:
+    """The t003 profile never accepts a row of another arity."""
+
+    assert_mismatch([jsonb_row()])
+
+
+_OUTSIDE_VOCABULARY = [
+    "public.t", "pg_catalog.uuid", "bytea", "json", "uuid[]", "void", "record",
+    "UUID", " uuid", "anyelement",
+]
+
+
+@pytest.mark.parametrize("type_name", _OUTSIDE_VOCABULARY)
+@pytest.mark.parametrize("position", ["argument", "return"])
+def test_fint1_u39_a_type_outside_the_closed_vocabulary_is_refused_at_construction(
+    type_name: str, position: str
+) -> None:
+    """Refused by the profile itself, before any name can reach `to_regtype`."""
+
+    import dataclasses
+
+    from haloflow.m01.errors import MigrationUnitRejected
+
+    change: dict[str, Any] = (
+        {"argument_types": ("uuid", type_name)}
+        if position == "argument"
+        else {"return_type": type_name}
+    )
+    with pytest.raises(MigrationUnitRejected) as caught:
+        dataclasses.replace(jsonb_profile(), **change)
+    assert caught.value.reason_code == "INSTALLED_STATE_PROFILE_INVALID"
+
+
+@pytest.mark.parametrize(
+    "type_name", ["text", "uuid", "jsonb", "bool", "int2", "int4", "int8", "timestamptz"]
+)
+def test_fint1_u39_control_every_vocabulary_type_constructs(type_name: str) -> None:
+    import dataclasses
+
+    dataclasses.replace(jsonb_profile(), argument_types=(type_name,), return_type=type_name)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("return_type", "bytea"), ("argument_types", ("uuid", "public.t")),
+     ("language", "sql"), ("prokind", "p")],
+)
+def test_fint1_u39b_the_comparator_stays_defensive(field: str, value: Any) -> None:
+    """A profile altered after construction (bypassing `__post_init__`, which no
+    production path can do) still fails closed in the comparator."""
+
+    altered = jsonb_profile()
+    object.__setattr__(altered, field, value)
+    assert_jsonb_mismatch([jsonb_row()], altered)

@@ -172,7 +172,10 @@ def _classify_live(ids: Any, schema: str) -> tuple[inv.Result, inv.Address]:
 
 
 def _provision(ids: Any, tenant: tuple[str, str]) -> None:
-    m02.provision_sync(ids, m02.production_registry(), tenant)
+    m02.provision_sync(
+        ids, m02.production_registry(), tenant,
+        supported=m02.PRODUCTION_SUPPORTED,
+    )
 
 
 @pytest.mark.postgres

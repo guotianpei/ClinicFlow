@@ -46,6 +46,9 @@ M01_PACKAGE = "haloflow.m01"
 COMPOSITION_ROOT = "src/haloflow/composition.py"
 DEFINITION_SET_NAME = re.compile(r"^M\d{2}_STATEMENTS$")
 DEFINITION_SET_LOCATION = re.compile(r"^src/haloflow/m\d{2}/statements\.py$")
+# B3b's STAFF_STATEMENTS exemption is retired in B5 (P-1(a)): the staff keys now live
+# in M01_STATEMENTS, the one canonical mapping, and B5-C02 pins that
+# STAFF_STATEMENTS no longer exists.
 
 PROTECTED_MODULES = frozenset({"haloflow.m01.pool"})
 PROTECTED_NAMES = frozenset(
@@ -139,8 +142,7 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
     """Production definition sets live only in `haloflow/mNN/statements.py`."""
 
     violations: list[str] = []
-    if DEFINITION_SET_LOCATION.fullmatch(path):
-        return violations
+    module_location = bool(DEFINITION_SET_LOCATION.fullmatch(path))
     for node in ast.walk(ast.parse(source)):
         targets: list[ast.expr] = []
         if isinstance(node, ast.Assign):
@@ -148,7 +150,9 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
         elif isinstance(node, ast.AnnAssign):
             targets = [node.target]
         for target in targets:
-            if isinstance(target, ast.Name) and DEFINITION_SET_NAME.fullmatch(target.id):
+            if not isinstance(target, ast.Name):
+                continue
+            if DEFINITION_SET_NAME.fullmatch(target.id) and not module_location:
                 violations.append(f"{path}: defines {target.id}")
     return violations
 
@@ -370,7 +374,14 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
     ruff_line = next(line for line in workflow.splitlines() if "ruff check" in line)
     mypy_line = next(line for line in workflow.splitlines() if "mypy " in line)
 
-    checked = {"src/haloflow/m01", "src/haloflow/m02", "src/haloflow/composition.py"}
+    checked = {
+        "src/haloflow/m01",
+        "src/haloflow/m02",
+        "src/haloflow/m05",
+        "src/haloflow/composition.py",
+        # UC1 part B B5 (v2r1 section 5): the trusted startup factory.
+        "src/haloflow/startup.py",
+    }
     for required in checked:
         assert required in ruff_line, f"{required} not linted by CI"
         assert required in mypy_line, f"{required} not type-checked by CI"
@@ -953,7 +964,7 @@ def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]
     ]
 
 
-def _is_literal_frozenset_of_three(value: ast.expr | None) -> bool:
+def _is_literal_frozenset_of_twenty_five(value: ast.expr | None) -> bool:
     return (
         isinstance(value, ast.Call)
         and isinstance(value.func, ast.Name)
@@ -964,7 +975,7 @@ def _is_literal_frozenset_of_three(value: ast.expr | None) -> bool:
         and len(value.args[0].elts) == 1
         and isinstance(value.args[0].elts[0], ast.Constant)
         and type(value.args[0].elts[0].value) is int
-        and value.args[0].elts[0].value == 3
+        and value.args[0].elts[0].value == 36
     )
 
 
@@ -988,7 +999,10 @@ def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
 
 def _declaration_violations(path: str, source: str) -> list[str]:
     """L1-A4. The composition root assigns the declaration exactly once, at
-    module level, to the literal `frozenset({3})`; no other module assigns it."""
+    module level, to the literal `frozenset({36})` (L-1W W3b; `frozenset({32})` at W3a,
+    `frozenset({25})` at B5,
+    `frozenset({11})` before it);
+    no other module assigns it."""
 
     assigned = _declaration_assignments_in(source)
     if path != COMPOSITION_ROOT:
@@ -1014,8 +1028,8 @@ def _declaration_violations(path: str, source: str) -> list[str]:
         violations.append(
             f"{path}: {len(assigned)} assignments, {len(module_level)} module-level"
         )
-    if not all(_is_literal_frozenset_of_three(value) for value in assigned):
-        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{3}})")
+    if not all(_is_literal_frozenset_of_twenty_five(value) for value in assigned):
+        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{36}})")
     return violations
 
 
@@ -1099,18 +1113,30 @@ def test_l1_a4_the_supported_set_is_declared_once_as_the_literal_three() -> None
 
 
 def test_l1_a4_negative_control() -> None:
-    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({3})\n"
+    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({36})\n"
     assert _declaration_violations(COMPOSITION_ROOT, good) == []
     assert _declaration_violations(COMPOSITION_ROOT, good + good)
     assert _declaration_violations(
         COMPOSITION_ROOT,
         "APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({registry.target_version})\n",
     )
-    for wrong in ("frozenset({3, 2})", "frozenset({True})", "{3}", "frozenset([3])"):
+    wrongs = (
+        "frozenset({3})",
+        "frozenset({10})",
+        "frozenset({11})",
+        "frozenset({24})",
+        "frozenset({25})",
+        "frozenset({32})",
+        "frozenset({36, 2})",
+        "frozenset({True})",
+        "{36}",
+        "frozenset([36])",
+    )
+    for wrong in wrongs:
         source = f"APPROVED_SUPPORTED_SCHEMA_VERSIONS = {wrong}\n"
         assert _declaration_violations(COMPOSITION_ROOT, source), wrong
     assert _declaration_violations(
-        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({3})\n"
+        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({36})\n"
     )
     assert _declaration_violations("src/haloflow/m01/runtime.py", good)
 

@@ -61,23 +61,23 @@ SNAPSHOT_PACKAGE = 'haloflow.m01.provisioning'
 # Bound to main = 0731b520b7ee740223cf606fefd2e7e61106512f. Printing a hash is not
 # binding it (A-26); these constants ARE the binding.
 
-EXPECTED_SNAPSHOT_SHA256 = 'ecf57cab4a3e0d6128047c9654d4605e47267d7ff7f6b424fc48a7541a5afdb0'
+EXPECTED_SNAPSHOT_SHA256 = 'f2636f0ca216b78c5a8a4dcbe576958f2ab618b90728c8022c81656aace677a1'
 
 # The ten inputs of A-26 / S2: four fixture JSONs and all six controls, keyed by
 # path relative to FIXTURE_DIR. Ordered so a diagnosis names the first mismatch
 # deterministically.
 EXPECTED_INPUT_SHA256: Mapping[str, str] = types.MappingProxyType({
-    'cases.json': '273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3',
-    'sql-fixtures.json': '3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805',
+    'cases.json': 'a0093f63f4bb2dbebfea7e4557771e5c0ccdbcea6ebd5cfe572b3fbd729d1932',
+    'sql-fixtures.json': '6a94578323fbf994093712ad604a4d9b026b16dd7c92f79759207c88c0cd56ea',
     'expected-refusals.json':
         '7c0fe15ca54ad356f2483b17ca194223ac3cbec485051973f74eafca833a8899',
-    'fixture-hashes.json': '9bae5c2ecd50d7077536348f7b2838d756af9a73d405e5b72f665e615991e29b',
-    'controls/C01.json': '2bdc9c52643cd6d994ddfc24be27c0b39bda808eec0b4c7fef3024bba69299a7',
-    'controls/C02.json': '2ad94899272b72ae02a6277cd1ae4f28d8c1414abad5aa57bae0dfdd6edd63d9',
-    'controls/C03.json': '5778391e947ce166b60ae71ef1f099d2c4c82a3f0d642eb9bfb46ba610cb6013',
-    'controls/C04.json': '660991a1d84820a3f2569ce2dd9ca276bd6b9928424346c1cef49ffcfd61b01b',
-    'controls/C05.json': 'c92f3b2a8cd173847a56b0b0afa910ed69c439fbcf0bd3c04d63531c44eb28c7',
-    'controls/C06.json': '76dd7ec1e0d3e798f189ee9a7144d7e53e7687b40e2b2593fe160aa684578573',
+    'fixture-hashes.json': 'd236428ec38ef94d495da5542a77468d043554c32fc251ae352274d040ca569d',
+    'controls/C01.json': 'e1fc589a3e2cc9f57b8b6b0a38d49e791f2265cd8b0d719997200fe9129d216d',
+    'controls/C02.json': 'd3fe58064de1ebb58294ddb7a41c5150e99a7b89d7ac17798a64697a1607ba24',
+    'controls/C03.json': 'd6b226be4e8238e1bd0b89549672629d6c3c4561eb55ff74687dea7e3b5f609b',
+    'controls/C04.json': '56c0715a60cb78663b7c21d8af44429dcf1a06e84708d17ce645c61ca2a83021',
+    'controls/C05.json': 'ee660bc3c8c9f8bd583d77adaa1d2923ebda05041610c890d1d6e295a3c3e3ac',
+    'controls/C06.json': 'bbf96773d8822d02dc2ebe9fedab3d391f4dc700f478555576b716c6d276558f',
 })
 
 # A-27: protected inputs. Paths relative to HALOFLOW_ROOT.
@@ -86,9 +86,9 @@ PROTECTED_SHA256: Mapping[str, str] = types.MappingProxyType({
     'tests/m01/fixtures/function_policy/expected-refusals.json':
         '7c0fe15ca54ad356f2483b17ca194223ac3cbec485051973f74eafca833a8899',
     'tests/m01/fixtures/function_policy/cases.json':
-        '273781f27b35affa288f3dec459d52c32a84faa95cd5e41db8c2cc6d8c48dbd3',
+        'a0093f63f4bb2dbebfea7e4557771e5c0ccdbcea6ebd5cfe572b3fbd729d1932',
     'tests/m01/fixtures/function_policy/sql-fixtures.json':
-        '3d695b5cbcbd3bf7576cbf59a28d323e5dfe4eceee10bb7b014266dab94bb805',
+        '6a94578323fbf994093712ad604a4d9b026b16dd7c92f79759207c88c0cd56ea',
     'tests/m01/test_function_policy.py':
         'df240e641f324c0084766b57a3db8a2bd16880c6075757e7973c1c25ed07bf45',
     'tests/m01/test_function_policy_phases.py':

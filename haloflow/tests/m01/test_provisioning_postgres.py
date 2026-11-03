@@ -59,7 +59,18 @@ SHARED_TABLES = (
     "support_access_grants",
     "access_audit_log",
     "isolation_alerts",
+    # L-1W W2 (alembic 008): owned by the identity owner; no permissions.json role
+    # holds any privilege on them (the definers are the only access path).
+    "staff_identity_anchor",
+    "staff_identity_bindings",
+    "staff_sessions",
+    "tenant_auth_settings",
+    "tenant_auth_settings_log",
+    "staff_identity_log",
+    "support_operator_logins",
 )
+L1W_SHARED_TABLES = SHARED_TABLES[6:]
+IDENTITY_OWNER_ROLE = "haloflow_identity_owner"
 TABLE_PRIVILEGES = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER")
 AUDIT_SEQUENCE = "shared.access_audit_log_audit_id_seq"
 
@@ -781,7 +792,7 @@ async def test_actual_shared_grants_match_the_permissions_manifest(
         owners = await (
             await admin.execute(
                 """
-                SELECT DISTINCT pg_get_userbyid(relowner)
+                SELECT relname, pg_get_userbyid(relowner)
                 FROM pg_class
                 WHERE relnamespace = 'shared'::regnamespace AND relkind = 'r'
                 """
@@ -799,7 +810,12 @@ async def test_actual_shared_grants_match_the_permissions_manifest(
 
     assert unexpected == set(), f"grants the manifest does not authorize: {sorted(unexpected)}"
     assert missing == set(), f"grants the manifest requires, database lacks: {sorted(missing)}"
-    assert [owner for (owner,) in owners] == [OWNER_ROLE]
+    # Per-table owners (L-1W W2): the original six tables keep haloflow_owner and the
+    # seven 008 tables are owned by haloflow_identity_owner. No other shared table.
+    assert dict(owners) == {
+        table: IDENTITY_OWNER_ROLE if table in L1W_SHARED_TABLES else OWNER_ROLE
+        for table in SHARED_TABLES
+    }
 
 
 async def test_shared_schema_usage_matches_the_manifest(
