@@ -745,6 +745,16 @@ TRACE: dict[str, list[str]] = {
     "CG-REV-01": [
         "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
     ],
+    "RI-06": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[bind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[unbind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[set_auth_setting]",  # noqa: E501
+    ],
+    "RI-07": [
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[bind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[unbind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[set_auth_setting]",  # noqa: E501
+    ],
     "RI-01": [
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[grant_role-supervisor]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[revoke_role-supervisor]",  # noqa: E501
