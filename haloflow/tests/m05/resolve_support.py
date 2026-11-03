@@ -66,7 +66,7 @@ async def claimed(install: st.StaffInstall, actor: str = m05.S1) -> UUID:
     from test_m05_service_postgres import _aitem
 
     item = await _aitem(install)
-    await asyncio.to_thread(st.call, install, "m05_apply_action",
+    await asyncio.to_thread(st.call, install, "m05_apply_action_v2",
                             _cmd(str(item), 1, "claim", actor=actor))
     return item
 

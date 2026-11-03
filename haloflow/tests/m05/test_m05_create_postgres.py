@@ -121,6 +121,13 @@ def _ready(install: M05Install, *, allowlist: bool = True) -> None:
         for staff, name in ((m05.S1, "Staff One"), (m05.S2, "Staff Two"),
                             (m05.SUP, "Supervisor")):
             staff_support.seed_staff(install, staff, name=name)  # type: ignore[arg-type]
+        # L-1W W3b harness H-c (Codex 162405Z): the action rows now run on the v2
+        # gateways, where supervise comes from the supervisor role row, so the B3a
+        # supervisor principal holds it. FIXTURE SETUP (escape hatch, admin connection).
+        _admin(install, sql.SQL(
+            "INSERT INTO {}.m01_staff_roles (staff_id, role, granted_by, granted_at)"
+            " VALUES (%s, 'supervisor', 'fixture', clock_timestamp())"
+            " ON CONFLICT DO NOTHING").format(sql.Identifier(schema)), (m05.SUP,))
 
 
 def _source(

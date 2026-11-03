@@ -1017,7 +1017,8 @@ async def test_sv07e_revocation_interposed_in_service_transaction_waits(staff_in
 
             def run() -> None:
                 try:
-                    box["result"] = st.call_on(conn, staff_install, "m01_staff_admin", change)
+                    box["result"] = st.public_result(
+                        st.call_on(conn, staff_install, "m01_staff_admin_v2", change))
                     conn.commit()
                 except Exception as error:  # noqa: BLE001 - asserted below
                     box["error"] = error
@@ -1333,7 +1334,7 @@ async def test_sv15_lock_timeout_maps_to_action_failed(staff_install):
     admin_conn = st.runtime_connection(staff_install)
     try:
         st.set_tenant(admin_conn, staff_install)
-        st.call_on(admin_conn, staff_install, "m01_staff_admin",
+        st.call_on(admin_conn, staff_install, "m01_staff_admin_v2",
                    st.admin_command("deactivate", str(actor)))
         async with sv.runtime(staff_install) as rt:
             ctx = await sv.context(rt, staff_install, str(actor), sv.STAFF_CAPS)

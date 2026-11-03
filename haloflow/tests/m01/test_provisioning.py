@@ -361,7 +361,7 @@ def test_a_test_only_unit_is_accepted_only_when_explicitly_allowed() -> None:
 def test_the_production_registry_contains_no_test_units() -> None:
     """TC-E21, over the real composition root rather than a constructed example."""
 
-    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS, L1W_W3B_TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
@@ -404,6 +404,11 @@ def test_the_production_registry_contains_no_test_units() -> None:
         "t030_m05_prepare_action_v2",
         "t031_m05_apply_action_v2",
         "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     )
     assert not any(unit.is_test_unit for unit in registry)
     assert APPROVED_TENANT_MIGRATIONS == (
@@ -412,6 +417,7 @@ def test_the_production_registry_contains_no_test_units() -> None:
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
         L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
     )
 
 
@@ -437,7 +443,7 @@ def test_the_production_baseline_targets_the_supported_schema_version() -> None:
     only; no upgrade path from version 25 is claimed (L-6).
     """
 
-    assert build_production_tenant_migrations().target_version == 32
+    assert build_production_tenant_migrations().target_version == 36
 
 
 # --- unit grammar and rendering -------------------------------------------
@@ -1241,7 +1247,7 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
     makes that change -- and any further one -- visible rather than silent.
     """
 
-    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS
+    from haloflow.composition import L1W_W3A_TENANT_MIGRATIONS, L1W_W3B_TENANT_MIGRATIONS
     from haloflow.m01.staff.units import STAFF_TENANT_MIGRATIONS
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
     from haloflow.m05.units import M05_TENANT_MIGRATIONS
@@ -1287,6 +1293,12 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
         "haloflow_m05_owner",
         "haloflow_m05_owner",
         "haloflow_staff_owner",
+        # L-1W W3b: t033 migrator-owned; t034 the staff owner; the closure units t035
+        # (M05 owner) and t036 (staff owner).
+        None,
+        "haloflow_staff_owner",
+        "haloflow_m05_owner",
+        "haloflow_staff_owner",
     ]
     assert APPROVED_TENANT_MIGRATIONS == (
         TENANT_MIGRATIONS,
@@ -1294,6 +1306,7 @@ def test_the_production_registry_declares_exactly_the_gateway_execution_role() -
         M05_TENANT_MIGRATIONS,
         STAFF_TENANT_MIGRATIONS,
         L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
     )
 
 
@@ -1390,6 +1403,11 @@ def test_composition_performs_no_database_access(monkeypatch: pytest.MonkeyPatch
         "t030_m05_prepare_action_v2",
         "t031_m05_apply_action_v2",
         "t032_m01_staff_bootstrap_admin",
+        # L-1W W3b (plan v1r1): t033-t036.
+        "t033_m01_staff_bootstrap_first_admin_schema",
+        "t034_m01_staff_bootstrap_first_admin",
+        "t035_m05_v1_runtime_closure",
+        "t036_m01_staff_v1_runtime_closure",
     )
     assert len(registry.units[0].checksum) == 64
 

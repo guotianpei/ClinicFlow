@@ -11,7 +11,7 @@ from typing import Final
 import m05_support as m05
 import staff_support as st
 
-PRODUCTION_TARGET: Final = 32  # L-1W W3a (was 25 at B5)
+PRODUCTION_TARGET: Final = 36  # L-1W W3b (32 at W3a, 25 at B5)
 PRODUCTION_SUPPORTED: Final = frozenset({PRODUCTION_TARGET})
 
 W3A_UNIT_IDS: Final = (
@@ -23,8 +23,14 @@ W3A_UNIT_IDS: Final = (
     "t031_m05_apply_action_v2",
     "t032_m01_staff_bootstrap_admin",
 )
+W3B_UNIT_IDS: Final = (
+    "t033_m01_staff_bootstrap_first_admin_schema",
+    "t034_m01_staff_bootstrap_first_admin",
+    "t035_m05_v1_runtime_closure",
+    "t036_m01_staff_v1_runtime_closure",
+)
 PRODUCTION_UNIT_IDS: Final = (
-    m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS + W3A_UNIT_IDS
+    m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS + W3A_UNIT_IDS + W3B_UNIT_IDS
 )
 
 M02_ROLES: Final = frozenset(

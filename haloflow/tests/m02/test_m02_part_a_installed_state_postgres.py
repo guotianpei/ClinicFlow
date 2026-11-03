@@ -47,6 +47,9 @@ ORDER = (
     "t026_m01_staff_roles", "t027_m01_staff_self_standing", "t028_m01_staff_member_standing",
     "t029_m01_staff_admin_v2", "t030_m05_prepare_action_v2", "t031_m05_apply_action_v2",
     "t032_m01_staff_bootstrap_admin",
+    # L-1W W3b: t033-t036.
+    "t033_m01_staff_bootstrap_first_admin_schema", "t034_m01_staff_bootstrap_first_admin",
+    "t035_m05_v1_runtime_closure", "t036_m01_staff_v1_runtime_closure",
 )
 # B5 (H5): the typed M05 and staff functions the production registry verifies
 # after t011, in install order (frozen, not read from the profiles).
@@ -58,6 +61,10 @@ B5_VERIFIED = (
     # L-1W W3a, in install order.
     "m01_staff_self_standing", "m01_staff_member_standing", "m01_staff_admin_v2",
     "m05_prepare_action_v2", "m05_apply_action_v2", "m01_staff_bootstrap_admin",
+    # L-1W W3b: t034, then the closure units re-verify their targets against the
+    # amended profiles (t035: prepare, apply; t036: the v1 admin gateway).
+    "m01_staff_bootstrap_first_admin", "m05_prepare_action", "m05_apply_action",
+    "m01_staff_admin",
 )
 # Frozen from the part-A manifest (amendment C1), not read from the profiles.
 TYPED = {

@@ -99,6 +99,10 @@ def _registry_without(dropped: str) -> Any:
         *composition.APPROVED_TENANT_MIGRATIONS,
         approved_execution_roles=composition.APPROVED_EXECUTION_ROLES,
         installed_state_profiles=profiles,
+        # L-1W W3b: the closure amendments, minus any whose target lost its profile
+        # here (that refusal is the amendment rule's, not the row's subject).
+        acl_amendments=tuple(a for a in composition.APPROVED_ACL_AMENDMENTS
+                             if a.target_unit in profiles),
     )
 
 

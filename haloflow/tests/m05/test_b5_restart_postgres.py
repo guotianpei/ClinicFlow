@@ -95,7 +95,7 @@ def _setup(install: st.StaffInstall, action: str) -> tuple[UUID, UUID, int]:
     item = _item(install)
     version = 1
     if action != "claim":
-        st.call(install, "m05_apply_action", _cmd(str(item), 1, "claim", actor=m05.S1))
+        st.call(install, "m05_apply_action_v2", _cmd(str(item), 1, "claim", actor=m05.S1))
         version = 2
     return item, uuid4(), version
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Final
 
 from haloflow.m01.errors import MigrationUnitRejected
@@ -43,11 +43,13 @@ from haloflow.m01.resolver import SCHEMA_KEY_PATTERN
 
 __all__ = [
     "INSTALLED_FUNCTION_QUERY",
+    "AclAmendment",
     "InstalledStateProfile",
     "InstalledStateRequirement",
     "VerifiedInstalledState",
     "check_profile_agreement",
     "compare_installed_function",
+    "effective_profile",
     "profile_digest",
 ]
 
@@ -142,6 +144,64 @@ def profile_digest(profile: InstalledStateProfile) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class AclAmendment:
+    """L-1W W3b: a remove-only change to one accepted profile's installed ACL.
+
+    ``target_unit`` names a typed unit with an accepted profile; ``activated_by``
+    names the ``acl_closure_v1`` unit whose install performs the removal;
+    ``removes`` is a tuple of ``(grantee, privilege, grantor, is_grantable)``
+    entries of the target profile's ``installed_acl``. An addition is not
+    representable. Composition (``build_tenant_migration_registry``) validates every
+    amendment against the registry and the profiles; this record checks only its
+    own primitive shape.
+    """
+
+    target_unit: str
+    activated_by: str
+    removes: tuple[tuple[str, str, str, bool], ...]
+
+    def __post_init__(self) -> None:
+        for text in (self.target_unit, self.activated_by):
+            if type(text) is not str or not text:
+                raise _invalid()
+        if type(self.removes) is not tuple:
+            raise _invalid()
+        for entry in self.removes:
+            if (
+                type(entry) is not tuple
+                or len(entry) != 4
+                or any(type(part) is not str or not part for part in entry[:3])
+                or type(entry[3]) is not bool
+            ):
+                raise _invalid()
+
+
+def effective_profile(
+    profile: InstalledStateProfile,
+    amendment: AclAmendment | None,
+    *,
+    activator_version: int,
+    checked_version: int,
+) -> InstalledStateProfile:
+    """The profile a check at ``checked_version`` must compare against.
+
+    Before the activating closure unit (``checked_version < activator_version``)
+    the accepted profile applies unchanged. From it on, exactly the amendment's
+    removals leave ``installed_acl``; every other field is the accepted value.
+    """
+
+    if type(profile) is not InstalledStateProfile:
+        raise _invalid()
+    if amendment is None or checked_version < activator_version:
+        return profile
+    removes = set(amendment.removes)
+    return replace(
+        profile,
+        installed_acl=tuple(entry for entry in profile.installed_acl if entry not in removes),
+    )
 
 
 @dataclass(frozen=True, slots=True)

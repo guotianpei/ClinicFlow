@@ -49,7 +49,7 @@ STAFF_TYPED_UNITS: Final = {
     "t024_m01_staff_display": "m01_staff_display",
     "t025_m01_staff_followup_reader": "m01_staff_followup_reader",
 }
-STAFF_TEST_TARGET: Final = 32  # B3b adds t025; L-1W W3a composes t026-t032
+STAFF_TEST_TARGET: Final = 36  # B3b adds t025; L-1W W3a t026-t032; W3b t033-t036
 STAFF_TEST_SUPPORTED: Final = range(STAFF_TEST_TARGET, STAFF_TEST_TARGET + 1)
 
 TABLES: Final = (
@@ -187,7 +187,7 @@ def admin_digest_v2(
 
 
 def staff_registry() -> Any:
-    """The production registry (B5 H1): part A + M05 + staff (+ L-1W W3a), target 32."""
+    """The production registry (B5 H1): part A + M05 + staff (+ L-1W W3a, W3b), target 36."""
 
     from haloflow.composition import build_production_tenant_migrations
 
@@ -212,23 +212,27 @@ def _production_registry_with(
     mutated body keeps its unit's profile."""
 
     from haloflow.composition import (
+        APPROVED_ACL_AMENDMENTS,
         APPROVED_EXECUTION_ROLES,
         APPROVED_INSTALLED_STATE_PROFILES,
         L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
     )
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
 
-    # L-1W W3a: the production W3a set follows unchanged, so a mutant registry keeps
-    # the production target (32).
+    # L-1W W3a/W3b: the production W3a and W3b sets (and the closure amendments)
+    # follow unchanged, so a mutant registry keeps the production target (36).
     return build_tenant_migration_registry(
         TENANT_MIGRATIONS,
         M02_TENANT_MIGRATIONS,
         m05_units,
         staff_units,
         L1W_W3A_TENANT_MIGRATIONS,
+        L1W_W3B_TENANT_MIGRATIONS,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+        acl_amendments=APPROVED_ACL_AMENDMENTS,
     )
 
 
@@ -354,9 +358,86 @@ def call(install: StaffInstall, function: str, arg: Any, *, isolation: str | Non
             return call_on(conn, install, function, arg)
 
 
+FIXTURE_ADMIN_NAME: Final = "Fixture Clinic Admin"
+
+
+def ensure_admin(install: StaffInstall, actor: str = ADMIN) -> None:
+    """FIXTURE SETUP (escape hatch, admin connection; L-1W W3b harness H-c, Codex
+    162405Z): the fixture admin actor is an active member holding clinic_admin, so
+    routine directory setup runs through m01_staff_admin_v2 as runtime after the v1
+    runtime paths are closed. Idempotent. The production first-admin path is t034
+    (FM-01..FM-10); this helper is never a production path."""
+
+    install.require()
+    schema = sql.Identifier(install.schema)
+    admin_rows(install, sql.SQL(
+        "INSERT INTO {}.m01_staff (staff_id, status, status_changed_at, display_name)"
+        " VALUES (%s, 'active', clock_timestamp(), %s) ON CONFLICT DO NOTHING").format(schema),
+        (actor, FIXTURE_ADMIN_NAME))
+    admin_rows(install, sql.SQL(
+        "INSERT INTO {}.m01_staff_roles (staff_id, role, granted_by, granted_at)"
+        " VALUES (%s, 'clinic_admin', 'fixture', clock_timestamp())"
+        " ON CONFLICT DO NOTHING").format(schema), (actor,))
+
+
 def admin_op(install: StaffInstall, command: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-    result: dict[str, Any] = call(install, "m01_staff_admin", command, **kwargs)
+    """Routine directory administration (L-1W W3b H-c): through m01_staff_admin_v2 as
+    runtime -- the v1 gateway is closed to runtime at t036. The fixture admin actors
+    (ADMIN, ADMIN2) are ensured first. The v2 SQL result adds "outcome"; it is
+    checked to be applied/replayed and removed, leaving the public four-key result
+    (the same mapping StaffService performs, SVC-01)."""
+
+    if isinstance(command, dict) and command.get("operation") == "reactivate":
+        # v2 names the same operation "activate" (W3a; StaffService maps it the same).
+        command = {**command, "operation": "activate"}
+    attribution = command.get("attribution") if isinstance(command, dict) else None
+    actor = attribution.get("principal_id") if isinstance(attribution, dict) else None
+    if actor in (ADMIN, ADMIN2) and isinstance(attribution, dict) \
+            and attribution.get("principal_kind") == "actor":
+        ensure_admin(install, actor)
+    result: dict[str, Any] = call(install, "m01_staff_admin_v2", command, **kwargs)
+    if isinstance(result, dict) and "outcome" in result:
+        assert result["outcome"] in ("applied", "replayed"), result
+        result = {k: v for k, v in result.items() if k != "outcome"}
     return result
+
+
+def owner_connection(install: StaffInstall) -> psycopg.Connection[Any]:
+    """FIXTURE (historical v1 contract only; L-1W W3b H-c): a connection acting as
+    haloflow_staff_owner, the owner of the closed v1 m01_staff_admin."""
+
+    conn = psycopg.connect(install.ids.admin)
+    conn.execute(f"SET ROLE {STAFF_OWNER}")
+    conn.commit()
+    return conn
+
+
+def public_result(result: dict[str, Any]) -> dict[str, Any]:
+    """The v2 SQL result mapped to the public four-key result (SVC-01): "outcome" is
+    checked to be applied/replayed and removed."""
+
+    if isinstance(result, dict) and "outcome" in result:
+        assert result["outcome"] in ("applied", "replayed"), result
+        return {k: v for k, v in result.items() if k != "outcome"}
+    return result
+
+
+def admin_op_v1_as_owner(
+    install: StaffInstall, command: dict[str, Any], **kwargs: Any
+) -> dict[str, Any]:
+    """FIXTURE (historical v1 contract only; L-1W W3b H-c): calls the closed v1
+    m01_staff_admin as its owner, haloflow_staff_owner, for rows that test t023's own
+    contract. Never used for routine setup. Runtime is denied (C-02)."""
+
+    with psycopg.connect(install.ids.admin, autocommit=True) as conn:
+        conn.execute(f"SET ROLE {STAFF_OWNER}")
+        with conn.transaction():
+            isolation = kwargs.get("isolation")
+            if isolation is not None:
+                conn.execute(f"SET TRANSACTION ISOLATION LEVEL {isolation}")
+            set_tenant(conn, install)
+            result: dict[str, Any] = call_on(conn, install, "m01_staff_admin", command)
+            return result
 
 
 def display(install: StaffInstall, staff_ids: list[str], **kwargs: Any) -> dict[str, Any]:
@@ -580,14 +661,19 @@ def check_admin_delta(
     command: dict[str, Any],
     result: dict[str, Any],
     *,
-    v2: bool = False,
+    v2: bool = True,
 ) -> None:
     """Exactly the intended directory change for one admitted admin command; the
     caller asserts the M05 tables separately. ``v2`` (L-1W W3a): the command went
     through m01_staff_admin_v2 (the service route), whose key digest is v2 and whose
-    SQL result adds "outcome" to the logged four-key result."""
+    SQL result adds "outcome" to the logged four-key result. L-1W W3b (H-c): v2 is
+    the default -- routine administration runs on v2 once the v1 runtime path is
+    closed; a result without "outcome" (already mapped by `admin_op`) is accepted,
+    and the v1 name "reactivate" is v2's "activate"."""
 
     staff, operation = command["staff_id"], command["operation"]
+    if v2 and operation == "reactivate":
+        operation = "activate"
     key, actor = command["client_action_id"], command["attribution"]["principal_id"]
     snap = result["staff"]
     # m01_staff
@@ -612,7 +698,8 @@ def check_admin_delta(
     # Expected values derived from the command and the pre-state, not only from the
     # returned snapshot (Codex gate 24e463b, non-blocking hardening).
     pre = staff_snapshot_from(before, staff)
-    expected_status = {"add": "active", "deactivate": "inactive", "reactivate": "active"}.get(
+    expected_status = {"add": "active", "deactivate": "inactive", "reactivate": "active",
+                       "activate": "active"}.get(
         operation, pre["status"] if pre else None
     )
     expected_name = (
@@ -648,8 +735,8 @@ def check_admin_delta(
         install.tenant[0], key, actor, operation, staff,
         command.get("display_name"), command.get("access"),
     )
-    if v2:
-        assert result.get("outcome") in ("applied", "replayed")
+    if v2 and "outcome" in result:
+        assert result["outcome"] in ("applied", "replayed")
         result = {k: v for k, v in result.items() if k != "outcome"}
     assert not delta.changed["m01_staff_action_keys"] and not delta.removed["m01_staff_action_keys"]
     (key_row,) = delta.added["m01_staff_action_keys"]

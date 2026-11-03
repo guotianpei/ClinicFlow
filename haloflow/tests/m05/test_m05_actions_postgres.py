@@ -130,7 +130,7 @@ def _call(install: M05Install, function: str, command: Any) -> dict[str, Any]:
 
 
 def _apply(install: M05Install, command: Any) -> dict[str, Any]:
-    result = _call(install, "m05_apply_action", command)
+    result = _call(install, "m05_apply_action_v2", command)
     assert sorted(result) == sorted(m05.APPLY_KEYS), result
     assert result["schema_version"] == 1
     assert sorted(result["snapshot"]) == sorted(m05.SNAPSHOT_KEYS), result
@@ -139,7 +139,7 @@ def _apply(install: M05Install, command: Any) -> dict[str, Any]:
 
 def _prepare(install: M05Install, command: Any) -> dict[str, Any]:
     before = _snapshot(install)
-    result = _call(install, "m05_prepare_action", command)
+    result = _call(install, "m05_prepare_action_v2", command)
     assert _snapshot(install) == before, "prepare wrote something"
     assert sorted(result) == sorted(m05.PREPARE_KEYS[result["decision"]]), result
     assert result["schema_version"] == 1
@@ -156,7 +156,7 @@ def _refused(install: M05Install, command: Any, code: str) -> None:
     }
     before = _snapshot(install)
     with pytest.raises(psycopg.Error) as caught:
-        _call(install, "m05_apply_action", command)
+        _call(install, "m05_apply_action_v2", command)
     assert (caught.value.sqlstate, caught.value.diag.message_primary) == ("P0001", code)
     assert _snapshot(install) == before, "a refused apply wrote something"
 
@@ -367,7 +367,7 @@ def test_ma08_stale_version(m05_install: M05Install) -> None:
 
 def test_ma09_concurrent_claim(m05_install: M05Install) -> None:
     item = _new_item(m05_install)
-    call = sql.SQL("SELECT {}.m05_apply_action(%s)").format(sql.Identifier(m05_install.schema))
+    call = sql.SQL("SELECT {}.m05_apply_action_v2(%s)").format(sql.Identifier(m05_install.schema))
     first, second = _cmd(item, 1, "claim"), _cmd(item, 1, "claim", actor=m05.S2)
     outcome: list[Any] = []
     holder = psycopg.connect(m05_install.ids.logins[m05.RUNTIME])
@@ -599,7 +599,8 @@ def test_mb3_p_prepare_classifies_and_holds_the_lock(m05_install: M05Install) ->
         holder.execute(f"SET ROLE {m05.RUNTIME}")
         holder.execute("SELECT set_config('app.tenant_id', %s, true)", (m05_install.tenant[0],))
         holder.execute(
-            sql.SQL("SELECT {}.m05_prepare_action(%s)").format(sql.Identifier(m05_install.schema)),
+            sql.SQL("SELECT {}.m05_prepare_action_v2(%s)").format(
+                sql.Identifier(m05_install.schema)),
             (Jsonb(_cmd(item, 1, "claim")),),
         )
         with (
@@ -619,7 +620,7 @@ def test_mb3_p_prepare_does_not_envelope_tenant_context_failure(m05_install: M05
     item = _new_item(m05_install)
     with psycopg.connect(m05_install.ids.logins[m05.RUNTIME], autocommit=True) as conn:
         conn.execute(f"SET ROLE {m05.RUNTIME}")
-        for function in ("m05_prepare_action", "m05_apply_action"):
+        for function in ("m05_prepare_action_v2", "m05_apply_action_v2"):
             with pytest.raises(psycopg.Error) as caught, conn.transaction():
                 conn.execute(
                     sql.SQL("SELECT {}.{}(%s)").format(
@@ -656,7 +657,7 @@ def test_mb3_a_fault_at_record_insert_rolls_back_the_item(
         )
         before = _snapshot(m05_install)
         with pytest.raises(psycopg.Error) as caught:
-            _call(m05_install, "m05_apply_action", _cmd(item, 1, "claim"))
+            _call(m05_install, "m05_apply_action_v2", _cmd(item, 1, "claim"))
         assert (caught.value.sqlstate, caught.value.diag.message_primary) == (
             "P0001", "MB3_FAULT",
         )

@@ -77,7 +77,7 @@ async def test_ma01_assignee_resolves_own_item(staff_install, start):
     item = await _claimed(staff_install)
     version = 2
     if start == "in_progress":
-        await asyncio.to_thread(st.call, staff_install, "m05_apply_action",
+        await asyncio.to_thread(st.call, staff_install, "m05_apply_action_v2",
                                 _cmd(str(item), 2, "start_progress"))
         version = 3
     keys = sv.TestNoteKeys()
@@ -214,7 +214,7 @@ async def test_ma_or_other_requires_note_in_sql_too(staff_install):
         "permissions": m05.STAFF_PERMISSIONS,
         "attribution": st.attribution(m05.S1),
     }
-    st.expect_code("NOTE_REQUIRED", lambda: st.call(staff_install, "m05_apply_action", command))
+    st.expect_code("NOTE_REQUIRED", lambda: st.call(staff_install, "m05_apply_action_v2", command))
 
 
 # ---------------------------------------------------------------------------

@@ -47,8 +47,17 @@ W3A_FUNCTIONS: Final = {
     "t032_m01_staff_bootstrap_admin": ("m01_staff_bootstrap_admin", "jsonb", "jsonb", SUPPORT),
 }
 W3A_TARGET: Final = 32
+# L-1W W3b: the production registry continues through t036 (target 36); the W3a rows
+# below pin the production composition, so they follow it (node names kept).
+W3B_UNIT_IDS: Final = (
+    "t033_m01_staff_bootstrap_first_admin_schema",
+    "t034_m01_staff_bootstrap_first_admin",
+    "t035_m05_v1_runtime_closure",
+    "t036_m01_staff_v1_runtime_closure",
+)
+PRODUCTION_TARGET: Final = 36
 PRODUCTION_UNIT_IDS: Final = (
-    m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS + W3A_UNIT_IDS
+    m05.PART_A_UNIT_IDS + m05.M05_UNIT_IDS + st.STAFF_UNIT_IDS + W3A_UNIT_IDS + W3B_UNIT_IDS
 )
 
 # Statements W3a changes or adds: key -> (mode, capability, query).
@@ -72,7 +81,7 @@ def _registry() -> Any:
 def test_w3a_u01_production_unit_ids_and_target() -> None:
     registry = _registry()
     assert registry.migration_ids == PRODUCTION_UNIT_IDS
-    assert registry.target_version == W3A_TARGET
+    assert registry.target_version == PRODUCTION_TARGET
 
 
 def test_w3a_u02_unit_kinds_and_execution_roles() -> None:
@@ -98,7 +107,8 @@ def test_w3a_u03_profiles_exist_for_every_typed_w3a_unit_with_exact_acl() -> Non
 def test_w3a_u04_supported_version_literal_is_32() -> None:
     from haloflow.composition import APPROVED_SUPPORTED_SCHEMA_VERSIONS
 
-    assert frozenset({W3A_TARGET}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
+    # Superseded by L-1W W3b: the literal is now {36} (the node name keeps "32").
+    assert frozenset({PRODUCTION_TARGET}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
 
 
 def test_w3a_u05_repointed_and_new_statements() -> None:

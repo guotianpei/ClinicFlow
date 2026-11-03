@@ -321,7 +321,7 @@ def test_2a_m01_positive_control_provisioning_succeeds(
 ) -> None:
     m02.assert_baseline_role(m02_ids)
     outcome = _provision_production(m02, m02_ids, m02_tenant)
-    assert outcome.schema_version == 32  # B5 (H5): production target; 11 in part A
+    assert outcome.schema_version == 36  # B5 (H5): production target; 11 in part A
 
 
 def _expect_stage_one_refusal(m02: ModuleType, ids: Any, tenant: tuple[str, str]) -> None:

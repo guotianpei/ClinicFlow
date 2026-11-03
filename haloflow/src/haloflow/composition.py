@@ -26,9 +26,12 @@ from types import MappingProxyType
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning import TenantMigrationRegistry
 from haloflow.m01.provisioning.codes import PreconditionCode
-from haloflow.m01.provisioning.installed_state import InstalledStateProfile
+from haloflow.m01.provisioning.installed_state import AclAmendment, InstalledStateProfile
+from haloflow.m01.provisioning.roles import RUNTIME_ROLE
 from haloflow.m01.provisioning.units import (
+    ACL_CLOSURE_KIND,
     TENANT_MIGRATIONS,
+    UnitDefinition,
     UnitDefinitions,
     build_tenant_migration_registry,
 )
@@ -38,7 +41,15 @@ from haloflow.m01.runtime import (
     compose_tenant_runtime,
 )
 from haloflow.m01.staff.l1w_units import L1W_STAFF_PROFILES, L1W_STAFF_TENANT_MIGRATIONS
-from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
+from haloflow.m01.staff.l1w_w3b_units import (
+    L1W_W3B_STAFF_PROFILES,
+    L1W_W3B_STAFF_TENANT_MIGRATIONS,
+)
+from haloflow.m01.staff.units import (
+    STAFF_GATEWAY_PROFILES,
+    STAFF_OWNER_ROLE,
+    STAFF_TENANT_MIGRATIONS,
+)
 from haloflow.m01.statements import (
     M01_STATEMENTS,
     CompiledCatalog,
@@ -47,6 +58,7 @@ from haloflow.m01.statements import (
 )
 from haloflow.m02.gateway_profile import LOCK_OPERATION_PROFILE
 from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
+from haloflow.m02.roles import M05_OWNER_ROLE
 from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 from haloflow.m05.gateways import M05_GATEWAY_PROFILES
@@ -74,6 +86,44 @@ L1W_W3A_TENANT_MIGRATIONS: UnitDefinitions = MappingProxyType(
     dict(sorted({**L1W_STAFF_TENANT_MIGRATIONS, **M05_V2_UNITS}.items()))
 )
 
+# L-1W W3b (plan v1r1 + addendum 1, Codex 151751Z; owner decision OD-FM1): t033 (the
+# first-member bootstrap storage), t034 (the first-member bootstrap), and the two
+# remove-only `acl_closure_v1` units that close the v1 runtime paths: t035 run as the
+# M05 owner (m05_prepare_action, m05_apply_action) and t036 run as the staff owner
+# (m01_staff_admin). The functions stay installed; only haloflow_runtime's EXECUTE
+# goes. A closure unit carries no template: what it executes is rendered from the
+# amendments below, which are its whole declaration.
+T035_MIGRATION_ID = "t035_m05_v1_runtime_closure"
+T036_MIGRATION_ID = "t036_m01_staff_v1_runtime_closure"
+L1W_W3B_TENANT_MIGRATIONS: UnitDefinitions = MappingProxyType(
+    {
+        **L1W_W3B_STAFF_TENANT_MIGRATIONS,
+        T035_MIGRATION_ID: UnitDefinition(
+            template="", kind=ACL_CLOSURE_KIND, execution_role=M05_OWNER_ROLE
+        ),
+        T036_MIGRATION_ID: UnitDefinition(
+            template="", kind=ACL_CLOSURE_KIND, execution_role=STAFF_OWNER_ROLE
+        ),
+    }
+)
+APPROVED_ACL_AMENDMENTS: tuple[AclAmendment, ...] = (
+    AclAmendment(
+        target_unit="t015_m05_prepare_action",
+        activated_by=T035_MIGRATION_ID,
+        removes=((RUNTIME_ROLE, "EXECUTE", M05_OWNER_ROLE, False),),
+    ),
+    AclAmendment(
+        target_unit="t016_m05_apply_action",
+        activated_by=T035_MIGRATION_ID,
+        removes=((RUNTIME_ROLE, "EXECUTE", M05_OWNER_ROLE, False),),
+    ),
+    AclAmendment(
+        target_unit="t023_m01_staff_admin",
+        activated_by=T036_MIGRATION_ID,
+        removes=((RUNTIME_ROLE, "EXECUTE", STAFF_OWNER_ROLE, False),),
+    ),
+)
+
 # Approved per-tenant migration definition sets. Same rule, same reason: one
 # composition path, so what a tenant schema receives is reviewable in one place.
 # `allow_test_units` is never passed here -- a test-only unit cannot reach
@@ -87,6 +137,7 @@ L1W_W3A_TENANT_MIGRATIONS: UnitDefinitions = MappingProxyType(
 # either. UC1 part B B5 adds the M05 units t012-t020 and the staff-directory units
 # t021-t025 (target version 25); no upgrade path from version 11 is claimed (L-6).
 # L-1W W3a adds t026-t032 (target version 32); no upgrade path from 25 is claimed.
+# L-1W W3b adds t033-t036 (target version 36); no upgrade path from 32 is claimed.
 # Runtime acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     TENANT_MIGRATIONS,
@@ -94,6 +145,7 @@ APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     M05_TENANT_MIGRATIONS,
     STAFF_TENANT_MIGRATIONS,
     L1W_W3A_TENANT_MIGRATIONS,
+    L1W_W3B_TENANT_MIGRATIONS,
 )
 
 # Execution roles this deployment approves for per-tenant migrations (R-P1.2).
@@ -134,19 +186,21 @@ APPROVED_INSTALLED_STATE_PROFILES: Mapping[str, InstalledStateProfile] = Mapping
         **STAFF_GATEWAY_PROFILES,
         **L1W_STAFF_PROFILES,
         **M05_V2_PROFILES,
+        **L1W_W3B_STAFF_PROFILES,
     }
 )
 
 
 # L-1 (requirements v2, L1-D2 = M1). The schema versions the production runtime
-# admits: exactly {32} since L-1W W3a composed t026-t032 (previously {25} from UC1 part B
+# admits: exactly {36} since L-1W W3b composed t033-t036 (previously {32} from L-1W W3a,
+# which composed t026-t032; before that {25} from UC1 part B
 # B5, which composed t012-t025; before that {11} from
 # UC1 part A, P-b, Codex ALIGN 20261031T130451Z; before that {3}). The one
 # declaration -- resolver, gateway, provisioner, the bundle and startup all receive
 # this object. A literal, never derived from the registry: a derived set would make
 # the coordination check vacuous and silently admit a future target. Version 3 means
 # "the M01 infrastructure baseline through t003" (R-E11).
-APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({32})
+APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({36})
 
 
 def build_production_catalog() -> CompiledCatalog:
@@ -195,6 +249,7 @@ def build_production_tenant_migrations() -> TenantMigrationRegistry:
         *APPROVED_TENANT_MIGRATIONS,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+        acl_amendments=APPROVED_ACL_AMENDMENTS,
     )
     require_installed_state_profiles(registry)
     return registry

@@ -49,6 +49,10 @@ pytestmark = pytest.mark.postgres
 
 def _ready(install: st.StaffInstall) -> None:
     install.require()
+    # L-1W W3b harness H-c (Codex 162405Z): administration runs on m01_staff_admin_v2
+    # as runtime; its actor is the fixture clinic admin, ensured here (FIXTURE SETUP)
+    # so that no row's before/after snapshot includes it.
+    st.ensure_admin(install)
 
 
 def _add(
@@ -152,7 +156,8 @@ def test_dt03_reactivate_and_revoke(staff_install):
     staff = st.new_uuid()
     st.seed_staff(staff_install, staff, access=("read", "act"), active=False)
     re_snap = _assert_result(
-        st.admin_op(staff_install, st.admin_command("reactivate", staff)), "reactivate",
+        # L-1W W3b: v2 names the operation "activate" (the result echoes it).
+        st.admin_op(staff_install, st.admin_command("reactivate", staff)), "activate",
         _last_key(staff_install, staff),
     )
     assert re_snap["status"] == "active" and re_snap["access"] == ["act", "read"]
@@ -311,14 +316,14 @@ def test_dt07_same_key_different_digest_conflict(staff_install):
 
 
 @pytest.mark.parametrize("isolation", ["REPEATABLE READ", "SERIALIZABLE"])
-@pytest.mark.parametrize("function", ["m01_staff_admin", "m01_staff_display"])
+@pytest.mark.parametrize("function", ["m01_staff_admin_v2", "m01_staff_display"])
 def test_dt08_isolation_guard(staff_install, isolation, function):
     _ready(staff_install)
     staff = st.new_uuid()
     st.seed_staff(staff_install, staff)
     before = st.directory_snapshot(staff_install)
     arg = (st.admin_command("rename", staff, display_name="Z")
-           if function == "m01_staff_admin" else {"schema_version": 1, "staff_ids": [staff]})
+           if function == "m01_staff_admin_v2" else {"schema_version": 1, "staff_ids": [staff]})
     if function == "m01_staff_display":
         # The display read takes no lock and is STABLE; it is not isolation-guarded.
         result = st.call(staff_install, function, arg, isolation=isolation)
@@ -358,7 +363,7 @@ def test_dt08_isolation_guard_takes_no_lock_first(staff_install, isolation):
         st.set_tenant(conn, staff_install)
         st.expect_immediate_code(
             conn, "ISOLATION_UNSUPPORTED",
-            lambda: st.call_on(conn, staff_install, "m01_staff_admin",
+            lambda: st.call_on(conn, staff_install, "m01_staff_admin_v2",
                                st.admin_command("rename", staff, display_name="Z")),
         )
         conn.rollback()
@@ -372,7 +377,7 @@ def test_dt08_tenant_context_precedes_everything(staff_install):
         conn.transaction(),
         pytest.raises(psycopg.Error) as refused,
     ):
-        st.call_on(conn, staff_install, "m01_staff_admin", {"schema_version": 9})
+        st.call_on(conn, staff_install, "m01_staff_admin_v2", {"schema_version": 9})
     assert refused.value.sqlstate == "22023"
 
 
@@ -611,10 +616,14 @@ def test_dt11_exact_function_acl(staff_install, function):
         "WHERE p.oid = pg_catalog.to_regprocedure(%s)",
         (signature,),
     )
-    assert {tuple(r) for r in rows} == {
+    expected = {
         (st.STAFF_OWNER, "EXECUTE", st.STAFF_OWNER, False),
         (grantee, "EXECUTE", st.STAFF_OWNER, False),
     }
+    if function == "m01_staff_admin":
+        # L-1W W3b: t036 (acl_closure_v1) removed exactly the runtime EXECUTE.
+        expected.discard((grantee, "EXECUTE", st.STAFF_OWNER, False))
+    assert {tuple(r) for r in rows} == expected
 
 
 # ---------------------------------------------------------------------------
@@ -786,13 +795,19 @@ def test_dts1_m05_v2_bodies_call_exactly_member_standing():
 # ---------------------------------------------------------------------------
 
 
-def _admin_in_txn(install: st.StaffInstall, command: dict[str, Any]) -> tuple[Any, Any]:
-    """Open a runtime transaction, call admin, return (conn, result) without commit."""
+def _admin_in_txn(install: st.StaffInstall, command: dict[str, Any], *,
+                  v1_owner: bool = False) -> tuple[Any, Any]:
+    """Open a transaction, call admin, return (conn, result) without commit.
 
-    conn = st.runtime_connection(install)
+    L-1W W3b (H-c): routine rows run m01_staff_admin_v2 as runtime and get the public
+    result; `v1_owner` runs the closed v1 gateway as its owner, only for the named
+    historical t023 rows (AM-2)."""
+
+    conn = st.owner_connection(install) if v1_owner else st.runtime_connection(install)
     st.set_tenant(conn, install)
-    result = st.call_on(conn, install, "m01_staff_admin", command)
-    return conn, result
+    if v1_owner:
+        return conn, st.call_on(conn, install, "m01_staff_admin", command)
+    return conn, st.public_result(st.call_on(conn, install, "m01_staff_admin_v2", command))
 
 
 def _only_admin_delta(
@@ -804,16 +819,21 @@ def _only_admin_delta(
 
 
 def _contend(
-    install: st.StaffInstall, first: dict[str, Any], second: dict[str, Any], *, commit: bool
+    install: st.StaffInstall, first: dict[str, Any], second: dict[str, Any], *, commit: bool,
+    v1_owner: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """A runs `first` and holds its transaction; B runs `second`, observed waiting
     on A exactly; A commits or rolls back; B commits. Returns (A result, B box)."""
 
-    conn_a, result_a = _admin_in_txn(install, first)
-    conn_b = st.runtime_connection(install)
+    conn_a, result_a = _admin_in_txn(install, first, v1_owner=v1_owner)
+    conn_b = st.owner_connection(install) if v1_owner else st.runtime_connection(install)
+    function = "m01_staff_admin" if v1_owner else "m01_staff_admin_v2"
     try:
         st.set_tenant(conn_b, install)
-        with st.background(lambda: st.call_on(conn_b, install, "m01_staff_admin", second)) as box:
+        with st.background(
+            lambda: (st.call_on(conn_b, install, function, second) if v1_owner
+                     else st.public_result(st.call_on(conn_b, install, function, second)))
+        ) as box:
             st.wait_until_blocked_by(install, conn_b.info.backend_pid, conn_a.info.backend_pid)
             (conn_a.commit if commit else conn_a.rollback)()
         if "error" in box:
@@ -872,6 +892,7 @@ def test_dak5_different_actor_same_key(staff_install, concurrent):
     staff, key = st.new_uuid(), st.new_uuid()
     first = st.admin_command("add", staff, key=key, display_name="K5")
     second = st.admin_command("add", staff, key=key, display_name="K5", actor=st.ADMIN2)
+    st.ensure_admin(staff_install, st.ADMIN2)  # FIXTURE SETUP (H-c): before the snapshot
     before = st.state(staff_install)
     if not concurrent:
         result_a = st.admin_op(staff_install, first)
@@ -945,7 +966,8 @@ def test_dad1_stored_digest_equals_oracle(staff_install):
         (key,),
     )
     assert rows == [(
-        st.admin_digest(staff_install.tenant[0], key, st.ADMIN, "add", staff, 'Zoë "Z"', None),
+        st.admin_digest_v2(staff_install.tenant[0], key, st.ADMIN, "add", staff, 'Zoë "Z"',
+                           None),
         st.ADMIN, staff,
     )]
 
@@ -1001,7 +1023,7 @@ def test_dad3_every_operation_snapshot(staff_install):
         key = st.new_uuid()
         snap = _assert_result(
             st.admin_op(staff_install, st.admin_command(operation, staff, key=key, **payload)),
-            operation, key,
+            {"reactivate": "activate"}.get(operation, operation), key,  # L-1W W3b: v2 name
         )
         for field, value in expect.items():
             assert snap[field] == value, (operation, field)
@@ -1094,7 +1116,7 @@ def test_dad3_integrity_key_without_log_fails_closed(staff_install):
     _ready(staff_install)
     staff, key = st.new_uuid(), st.new_uuid()
     command = st.admin_command("add", staff, key=key, display_name="I")
-    digest = st.admin_digest(staff_install.tenant[0], key, st.ADMIN, "add", staff, "I", None)
+    digest = st.admin_digest_v2(staff_install.tenant[0], key, st.ADMIN, "add", staff, "I", None)
     st.admin_rows(
         staff_install,
         sql.SQL("INSERT INTO {}.m01_staff_action_keys VALUES (%s, %s, %s, %s, now())")
@@ -1126,14 +1148,14 @@ def test_dts2_directory_sql_is_ascii_with_escapes():
 
 def _valid_rows(
     install: st.StaffInstall, staff: str, key: str, name: str, *, operation: str = "add",
-    timestamp: str = "2026-10-01T09:30:00.000000Z",
+    timestamp: str = "2026-10-01T09:30:00.000000Z", v1: bool = False,
 ) -> tuple[Any, Any]:
     """A constraint-valid, semantically valid key row and log row for `add` or
     `deactivate` (a non-add/rename operation: the name is not in its command)."""
 
     command_name = name if operation == "add" else None
-    digest = st.admin_digest(install.tenant[0], key, st.ADMIN, operation, staff,
-                             command_name, None)
+    digest = (st.admin_digest if v1 else st.admin_digest_v2)(
+        install.tenant[0], key, st.ADMIN, operation, staff, command_name, None)
     status = "active" if operation == "add" else "inactive"
     snap = {"schema_version": 1, "staff_id": staff, "status": status, "display_name": name,
             "access": [], "status_changed_at": timestamp}
@@ -1259,7 +1281,9 @@ def test_dad1b_literal_vectors_through_sql(staff_install):
     digest compared with its literal hash."""
 
     _ready(staff_install)
-    with st.runtime_connection(staff_install) as conn:
+    # L-1W W3b (H-c): the v1 digest namespace belongs to the closed v1 gateway; this
+    # historical t023 row runs it as its owner (FIXTURE). v2 digests: DA-D1.
+    with st.owner_connection(staff_install) as conn:
         for (tenant, key, actor, operation, staff, name, access), _ in st.DIGEST_VECTORS:
             conn.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant,))
             st.call_on(conn, staff_install, "m01_staff_admin", st.admin_command(
@@ -1305,7 +1329,8 @@ def _rename_under_rr_with_holder(install: st.StaffInstall) -> psycopg.Error | No
     st.seed_staff(install, staff)
     with (
         st.holder(install, [("m01_staff", "staff_id", staff)]),
-        st.runtime_connection(install) as conn,
+        # L-1W W3b (H-c): historical t023 mutant row -> the v1 gateway as its owner.
+        st.owner_connection(install) as conn,
     ):
         conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         st.set_tenant(conn, install)
@@ -1342,7 +1367,7 @@ def test_am2_admission_without_on_conflict_is_caught(mutant_install):
     install = mutant_install("am2", st.MUTANT_NO_ON_CONFLICT)
     staff, key = st.new_uuid(), st.new_uuid()
     command = st.admin_command("add", staff, key=key, display_name="K1")
-    _, box = _contend(install, command, command, commit=True)
+    _, box = _contend(install, command, command, commit=True, v1_owner=True)
     error = box.get("error")
     assert isinstance(error, psycopg.Error), "mutant replayed: AM-2 not discriminated"
     assert error.sqlstate == "23505"
@@ -1356,13 +1381,14 @@ def test_am3_weak_replay_check_is_caught(mutant_install, staff_install):
 
     def scenario(install: st.StaffInstall) -> Any:
         staff, key, name = st.new_uuid(), st.new_uuid(), "Stored Name"
-        key_row, log_row = _valid_rows(install, staff, key, name)
+        key_row, log_row = _valid_rows(install, staff, key, name, v1=True)
         _CORRUPTIONS["codex_counterexample"](key_row, log_row)
         _insert_rows(install, key_row, log_row)
         before = st.state(install)
         try:
-            outcome: Any = st.admin_op(install, st.admin_command("add", staff, key=key,
-                                                                 display_name=name))
+            # L-1W W3b (H-c): historical t023 mutant row -> v1 as its owner.
+            outcome: Any = st.admin_op_v1_as_owner(install, st.admin_command(
+                "add", staff, key=key, display_name=name))
         except psycopg.Error as error:
             outcome = error
         st.Delta(before, st.state(install)).untouched(st.ALL_TABLES)

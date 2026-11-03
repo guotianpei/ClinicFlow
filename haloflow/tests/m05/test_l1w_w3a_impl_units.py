@@ -72,6 +72,7 @@ def test_sup01_support_is_a_usage_only_profile_with_the_008_edge_and_not_approve
 
 def test_sup02_a_unit_run_as_support_is_refused_by_the_production_registry() -> None:
     from haloflow.composition import (
+        APPROVED_ACL_AMENDMENTS,
         APPROVED_EXECUTION_ROLES,
         APPROVED_INSTALLED_STATE_PROFILES,
         APPROVED_TENANT_MIGRATIONS,
@@ -88,6 +89,7 @@ def test_sup02_a_unit_run_as_support_is_refused_by_the_production_registry() -> 
             *APPROVED_TENANT_MIGRATIONS, rogue,
             approved_execution_roles=APPROVED_EXECUTION_ROLES,
             installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+            acl_amendments=APPROVED_ACL_AMENDMENTS,  # L-1W W3b
         )
     assert refused.value.reason_code == "EXECUTION_ROLE_NOT_APPROVED"
     # Control: the identical registry composes once support is (hypothetically)
@@ -96,6 +98,7 @@ def test_sup02_a_unit_run_as_support_is_refused_by_the_production_registry() -> 
         *APPROVED_TENANT_MIGRATIONS, rogue,
         approved_execution_roles=APPROVED_EXECUTION_ROLES | {SUPPORT},
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+        acl_amendments=APPROVED_ACL_AMENDMENTS,  # L-1W W3b
     )
 
 

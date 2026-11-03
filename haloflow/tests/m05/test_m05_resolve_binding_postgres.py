@@ -117,7 +117,7 @@ async def test_mr10_control_valid_synthetic_event_applies(staff_install):
     item = await rs.claimed(staff_install)
     key = uuid4()
     event_id = await asyncio.to_thread(rs.synthetic_event, staff_install, item, key)
-    result = await asyncio.to_thread(st.call, staff_install, "m05_apply_action",
+    result = await asyncio.to_thread(st.call, staff_install, "m05_apply_action_v2",
                                      rs.apply_command(item, key, event_id))
     assert result["outcome"] == "applied"
     assert result["snapshot"]["state"] == "resolved"
@@ -132,7 +132,7 @@ async def test_mr10_one_predicate_false_is_invalid(staff_install, case):
                                        field=field, value=value)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, key, event_id)))
     assert sv.full_state(staff_install) == before
 
@@ -144,7 +144,7 @@ async def test_mr10_workload_principal_is_invalid(staff_install):
     event_id = await asyncio.to_thread(_workload_event, staff_install, item, key)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, key, event_id)))
     assert sv.full_state(staff_install) == before
 
@@ -254,7 +254,7 @@ async def test_mr10_unknown_event_is_invalid(staff_install):
     item = await rs.claimed(staff_install)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, uuid4(), uuid4())))
     assert sv.full_state(staff_install) == before
 
@@ -267,7 +267,7 @@ async def test_mr10_other_tenant_event_identical_to_unknown(staff_install, staff
     item = await rs.claimed(staff_install)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, key, foreign_event)))
     assert sv.full_state(staff_install) == before
 
@@ -279,7 +279,7 @@ async def test_mr10_real_other_type_event_is_invalid(staff_install):
     other = await asyncio.to_thread(_source, staff_install)  # a real M02 test observation
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, uuid4(), UUID(other))))
     assert sv.full_state(staff_install) == before
 
@@ -325,7 +325,7 @@ async def test_mr10_genuine_reuse_is_reused(staff_install):
     await asyncio.to_thread(_corrupt_back_to_claimed, staff_install, item, key)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_REUSED",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, key, UUID(event["event_id"]))))
     assert sv.full_state(staff_install) == before
 
@@ -342,7 +342,7 @@ async def test_mr10_precedence_binding_before_reuse(staff_install):
     item = await rs.claimed(staff_install)
     before = sv.full_state(staff_install)
     st.expect_code("RESOLUTION_EVENT_INVALID",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, uuid4(), UUID(event["event_id"]))))
     assert sv.full_state(staff_install) == before
 
@@ -359,7 +359,7 @@ def _actor_with_claim(install: st.StaffInstall) -> tuple[str, UUID]:
     actor = st.new_uuid()
     st.seed_staff(install, actor, name="Resolver")
     item = _item(install)
-    st.call(install, "m05_apply_action", _cmd(str(item), 1, "claim", actor=actor))
+    st.call(install, "m05_apply_action_v2", _cmd(str(item), 1, "claim", actor=actor))
     return actor, item
 
 
@@ -372,7 +372,7 @@ async def test_rar1_actor_change_committed_before_resolve(staff_install, change)
     await asyncio.to_thread(st.admin_op, staff_install, _change_command(change, actor))
     before = sv.full_state(staff_install)
     st.expect_code("NOT_AUTHORIZED",
-                   lambda: st.call(staff_install, "m05_apply_action",
+                   lambda: st.call(staff_install, "m05_apply_action_v2",
                                    rs.apply_command(item, key, event_id, actor=actor)))
     assert sv.full_state(staff_install) == before
 
@@ -392,7 +392,7 @@ async def test_rar2_actor_change_uncommitted_resolve_waits(staff_install, change
         try:
             st.set_tenant(apply_conn, staff_install)
             with st.background(lambda: st.call_on(apply_conn, staff_install,
-                                                  "m05_apply_action", command)) as box:
+                                                  "m05_apply_action_v2", command)) as box:
                 st.wait_until_blocked_by(staff_install, apply_conn.info.backend_pid,
                                          admin_conn.info.backend_pid)
                 (admin_conn.rollback if rollback else admin_conn.commit)()
@@ -537,6 +537,7 @@ def _pre_b4_registry() -> Any:
     import pre_b4_units as pre
 
     from haloflow.composition import (
+        APPROVED_ACL_AMENDMENTS,
         APPROVED_EXECUTION_ROLES,
         APPROVED_INSTALLED_STATE_PROFILES,
         APPROVED_TENANT_MIGRATIONS,
@@ -555,6 +556,7 @@ def _pre_b4_registry() -> Any:
         *(frozen(g) for g in APPROVED_TENANT_MIGRATIONS),
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
+        acl_amendments=APPROVED_ACL_AMENDMENTS,  # L-1W W3b
     )
 
 
