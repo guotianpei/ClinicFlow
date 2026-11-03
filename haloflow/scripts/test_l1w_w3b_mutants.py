@@ -67,3 +67,14 @@ def test_sha_literals_cover_t034_and_keep_the_w3a_targets() -> None:
         "haloflow.m01.staff.l1w_w3b_units", (("_T034_SHA256", "_FIRST_ADMIN_BODY"),))
     assert script.STAFF_TARGET in literals and script.M05_TARGET in literals
     assert script.UNITS_TARGET not in literals and script.RUNNER_TARGET not in literals
+
+
+def test_sha_sync_reproduces_every_committed_literal() -> None:
+    """On the unmutated tree the sync's formula yields exactly the reviewed literals,
+    so a mutant run differs from the control only by its SQL."""
+
+    script = _script()
+    for target in script.sha_literals():
+        text = (HERE.parent / target).read_text(encoding="utf-8")
+        for literal, sha in script.current_shas(target).items():
+            assert f'{literal}: Final = "{sha}"' in text, (target, literal)

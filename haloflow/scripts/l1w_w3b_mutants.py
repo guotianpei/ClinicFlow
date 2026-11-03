@@ -34,7 +34,9 @@ import argparse
 import contextlib
 import importlib.util
 import io
+import json
 import os
+import re
 import subprocess
 import sys
 import types
@@ -246,10 +248,46 @@ def sha_literals() -> dict[Path, tuple[str, tuple[tuple[str, str], ...]]]:
     return literals
 
 
+def current_shas(target: Path, python: str | None = None) -> dict[str, str]:
+    """The SHA each literal of `target` must hold for its CURRENT body text.
+
+    The reviewed literals are SHA-256 over ``normalize_body(body)`` -- the form the
+    installed-state comparator hashes. For the W3a bodies that equals the raw text;
+    t034 differs (measured locally: the W3a raw-text sync left every t034 mutant
+    INSTALLED_STATE_PROFILE_INVALID), so this harness hashes the normalized body for
+    every literal. The static test pins that this reproduces every committed literal."""
+
+    key = target.relative_to(HERE.parent) if target.is_absolute() else target
+    module, pairs = sha_literals()[key]
+    script = (
+        "import hashlib, importlib, json, os, sys\n"
+        "sys.path.insert(0, 'src')\n"
+        "from haloflow.m01.provisioning.installed_state import normalize_body\n"
+        f"m = importlib.import_module({module!r})\n"
+        "assert m.__file__.replace('\\\\', '/').startswith(os.getcwd().replace('\\\\', '/')"
+        " + '/src/'), m.__file__\n"
+        "print(json.dumps({lit: hashlib.sha256(normalize_body(getattr(m, body))"
+        f".encode('utf-8')).hexdigest() for lit, body in {list(pairs)!r}}}))\n"
+    )
+    completed = subprocess.run([python or sys.executable, "-I", "-c", script],
+                               capture_output=True, text=True, check=True, cwd=HERE.parent)
+    shas: dict[str, str] = json.loads(completed.stdout)
+    return shas
+
+
 def sync_sha_literals(target: Path) -> None:
-    w3a = _w3a()
-    w3a.SHA_LITERALS = sha_literals()
-    w3a.sync_sha_literals(target)
+    """Rewrite the target's body SHA literals to its CURRENT (mutated) bodies."""
+
+    key = target.relative_to(HERE.parent) if target.is_absolute() else target
+    path = HERE.parent / key
+    text = path.read_text(encoding="utf-8")
+    for literal, sha in current_shas(key).items():
+        text, count = re.subn(rf'^{literal}: Final = "[0-9a-f]{{64}}"$',
+                              f'{literal}: Final = "{sha}"', text, flags=re.MULTILINE)
+        if count != 1:
+            raise SystemExit(f"SHA literal {literal} not found exactly once")
+    path.write_text(text, encoding="utf-8")
+    _w3a().drop_bytecode(path)
 
 
 def _runner(checker: Any, group: Group) -> Any:
