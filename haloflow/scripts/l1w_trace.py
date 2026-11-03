@@ -592,4 +592,151 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[137-False]",
         "tests/m05/test_l1w_w3a_impl_postgres.py::test_gb01_granted_by_length_boundary[0-False]",
     ],
+    # L-1W W3b (plan v1r1 + addendum 1; Codex 150630Z/151751Z): red tranche.
+    "AM-01": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am01_unknown_target_is_refused",
+    ],
+    "AM-02": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am02_removal_outside_the_target_profile_acl_is_refused",  # noqa: E501
+    ],
+    "AM-03": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am03_owner_entry_removal_is_refused",
+    ],
+    "AM-04": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am04_a_closure_unit_carrying_a_template_is_refused",  # noqa: E501
+    ],
+    "AM-05": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t034_m01_staff_bootstrap_first_admin]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t033_m01_staff_bootstrap_first_admin_schema]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am05_activator_must_be_a_closure_unit_run_as_the_target_owner[t036_m01_staff_v1_runtime_closure]",  # noqa: E501
+    ],
+    "AM-06": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am06_two_amendments_on_one_target_are_refused",  # noqa: E501
+    ],
+    "AM-07": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am07_activator_version_not_above_the_target_is_refused",  # noqa: E501
+    ],
+    "AM-08": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[empty-removes]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[duplicate-removes]",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am08_empty_duplicate_and_orphan_closures_are_refused[closure-without-amendment]",  # noqa: E501
+    ],
+    "AM-09": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am09_before_activation_the_accepted_profile_applies_unchanged",  # noqa: E501
+    ],
+    "AM-10": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am10_every_non_acl_field_is_unchanged_after_activation",  # noqa: E501
+    ],
+    "AM-11": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am11_grantee_outside_the_role_vocabulary_is_refused",  # noqa: E501
+    ],
+    "AM-12": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12_the_closure_checksum_covers_the_declared_targets",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_am12b_the_closure_checksum_is_stable_and_differs_per_unit",  # noqa: E501
+    ],
+    "AM-13": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_am13_changed_closure_declaration_after_install_is_ledger_drift",  # noqa: E501
+    ],
+    "C-01": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c01_runtime_execute_inventory_is_exact",
+    ],
+    "C-02": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_prepare_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_apply_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m01_staff_admin(jsonb)]",  # noqa: E501
+    ],
+    "CG-REV-01": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
+    ],
+    "CLOSURE-UNITS": [
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00_w3b_units_kinds_and_declared_amendments",  # noqa: E501
+        "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cl00b_closure_statements_are_rendered_from_the_declaration_only",  # noqa: E501
+    ],
+    "CL-01": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl01_exact_acl_after_provisioning_and_startup_is_green",  # noqa: E501
+    ],
+    "CL-02": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl02_restored_runtime_grant_is_drift_at_startup",  # noqa: E501
+    ],
+    "CL-03": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl03_partial_closure_fails_verification_and_is_not_applied",  # noqa: E501
+    ],
+    "CL-04": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_cl04_a_registry_below_36_is_refused_by_the_supported_set",  # noqa: E501
+    ],
+    "FM-01": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm01_empty_clinic_gets_member_and_admin_in_one_step",  # noqa: E501
+    ],
+    "FM-02": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm02_members_without_an_active_admin_do_not_block[active-member]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm02_members_without_an_active_admin_do_not_block[inactive-member]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm02_members_without_an_active_admin_do_not_block[inactive-admin]",  # noqa: E501
+    ],
+    "FM-03": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm03_active_admin_exists_writes_only_the_key",  # noqa: E501
+    ],
+    "FM-04": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm04_existing_staff_id_is_target_exists[active]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm04_existing_staff_id_is_target_exists[inactive]",  # noqa: E501
+    ],
+    "FM-04b": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm04b_staff_row_inserted_while_waiting_is_target_exists_no_partial_rows",  # noqa: E501
+    ],
+    "FM-05": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[unlisted]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[renamed]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[no-grant]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[other-tenant]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[no-capability]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05_identity_and_grant_refusals_write_nothing[expired]",  # noqa: E501
+    ],
+    "FM-05b": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05b_authorization_lost_while_waiting_on_the_guard[revoked]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm05b_authorization_lost_while_waiting_on_the_guard[renamed]",  # noqa: E501
+    ],
+    "FM-06": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm06_replay_conflict_and_actor_mismatch",  # noqa: E501
+    ],
+    "FM-06b": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm06b_bootstrap_keys_are_shared_with_t032_directional_codes",  # noqa: E501
+    ],
+    "FM-06c": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm06c_staff_action_keys_are_an_independent_namespace",  # noqa: E501
+    ],
+    "FM-06d": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm06d_replay_under_a_renewed_grant_returns_the_original_outcome",  # noqa: E501
+    ],
+    "FM-07": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm07_concurrent_first_members_one_wins",  # noqa: E501
+    ],
+    "FM-07b": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm07b_first_member_and_t032_serialize_on_the_guard",  # noqa: E501
+    ],
+    "FM-08": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm08_first_member_privileges_are_exact",  # noqa: E501
+    ],
+    "FM-09": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[access-field]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[extra-key]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[missing-name]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[blank-name]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[long-name]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[bad-uuid]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm09_closed_shape_refusals_write_nothing[schema-version]",  # noqa: E501
+    ],
+    "FM-10": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_fm10_fresh_production_tenant_onboards_through_production_units_only",  # noqa: E501
+    ],
+    "ST-01": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st01_t033_columns_and_defaults",
+    ],
+    "ST-02": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st02_t032_rows_after_t033_record_bootstrap_admin",  # noqa: E501
+    ],
+    "ST-03": [
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[create_first_admin-None-False]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[bootstrap_admin-Has A Name-False]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[create_first_admin-Has A Name-True]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_first_member_postgres.py::test_st03_display_name_present_iff_create[bootstrap_admin-None-True]",  # noqa: E501
+    ],
 }

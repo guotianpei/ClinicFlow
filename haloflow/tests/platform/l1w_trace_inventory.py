@@ -40,14 +40,24 @@ W3A_IDS: Final = (
     "SUP-05", "SUP-06", "SUP-07", "SUP-08",  # Codex 225500Z stage-1 profile check
 )
 
+# W3b (plan v1r1 + addendum 1; Codex 150630Z/151751Z; owner decision OD-FM1): the
+# first-member bootstrap (t033/t034), the acl_closure_v1 kind and the closure of the
+# v1 runtime paths (t035/t036). HARNESS-MIGRATION stays deferred to W3b
+# implementation (existing-test changes are enumerated there).
+W3B_IDS: Final = (
+    "FM-01", "FM-02", "FM-03", "FM-04", "FM-04b", "FM-05", "FM-05b", "FM-06",
+    "FM-06b", "FM-06c", "FM-06d", "FM-07", "FM-07b", "FM-08", "FM-09", "FM-10",
+    "ST-01", "ST-02", "ST-03",
+    "CLOSURE-UNITS", "AM-01", "AM-02", "AM-03", "AM-04", "AM-05", "AM-06", "AM-07",
+    "AM-08", "AM-09", "AM-10", "AM-11", "AM-12", "AM-13",
+    "CL-01", "CL-02", "CL-03", "CL-04", "C-01", "C-02", "CG-REV-01",
+)
+
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them
 # (Codex W2 plan disposition). id -> tranche.
 DEFERRED: Final = {
-    # W3b (Codex 214930Z staging): closure of the v1 runtime paths.
-    "C-01": "W3b", "C-02": "W3b", "CLOSURE-UNITS": "W3b", "HARNESS-MIGRATION": "W3b",
-    "AM-01": "W3b", "AM-02": "W3b", "AM-03": "W3b", "AM-04": "W3b", "AM-05": "W3b",
-    "AM-06": "W3b", "AM-07": "W3b", "AM-08": "W3b",
-    "CL-01": "W3b", "CL-02": "W3b", "CL-03": "W3b", "CL-04": "W3b",
+    # W3b implementation: existing-test changes for the closed v1 paths (Q-B3 ruling).
+    "HARNESS-MIGRATION": "W3b",
     "R-01": "W4",  # the capability matrix literal belongs to the adapter
     "ADMIT-COMMIT-FAILURE": "W4",  # Codex final disposition pin 3
     "S-04-HTTP": "W4", "S-08-HTTP": "W4",

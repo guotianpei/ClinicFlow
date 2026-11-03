@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent / "tests" / "platform"))
 
 import l1w_trace_inventory as inv  # noqa: E402
 
-IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS)
+IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS, *inv.W3B_IDS)
 
 
 def _script() -> Any:
@@ -66,7 +66,8 @@ def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
     result = subprocess.run(
         [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
          "tests/platform", *sorted(str(p.relative_to(HERE.parent))
-                                   for p in (HERE.parent / "tests/m05").glob("test_l1w_*.py"))],
+                                   for d in ("tests/m01", "tests/m05")
+                                   for p in (HERE.parent / d).glob("test_l1w_*.py"))],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
     )
     # Codex e0323cac: the collection itself must succeed ...
