@@ -158,9 +158,12 @@ FUNCTION_ACL: Final = (
 STATEMENTS: Final = {
     "m05.followup.create": ("write", "m05.followup.create", "SELECT m05_create_item(%(command)s)"),
     "m05.followup.prepare": (
-        "write", "m05.followup.prepare", "SELECT m05_prepare_action(%(command)s)",
+        "write", "m05.followup.prepare", "SELECT m05_prepare_action_v2(%(command)s)",
     ),
-    "m05.followup.apply": ("write", "m05.followup.apply", "SELECT m05_apply_action(%(command)s)"),
+    # L-1W W3a: prepare/apply repointed to the role-authorized v2 gateways (t030/t031).
+    "m05.followup.apply": (
+        "write", "m05.followup.apply", "SELECT m05_apply_action_v2(%(command)s)",
+    ),
     "m05.followup.get": ("read", "m05.followup.read", "SELECT m05_get_item(%(item_id)s)"),
     "m05.followup.list": ("read", "m05.followup.read", "SELECT m05_list_items(%(query)s)"),
     "m05.followup.history": ("read", "m05.followup.read", "SELECT m05_get_history(%(item_id)s)"),

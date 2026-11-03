@@ -275,6 +275,8 @@ SHIPPED_CONTROLLED_EDGES = Answer(
         ("haloflow_m02_read_owner", "haloflow_migrator", True, False, False),
         ("haloflow_m05_owner", "haloflow_migrator", True, False, False),
         ("haloflow_staff_owner", "haloflow_migrator", True, False, False),
+        # L-1W W3a: haloflow_support is a USAGE-only profile; its 008 edge is declared.
+        ("haloflow_support", "haloflow_migrator", True, False, False),
     ),
 )
 

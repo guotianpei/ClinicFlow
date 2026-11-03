@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -243,6 +244,120 @@ def build_service_mutants(text: str, mutant_class: Any,
     return tuple(mutants)
 
 
+V2_GATEWAYS = Path("src/haloflow/m05/gateways_v2.py")
+
+
+_PROBE = """
+import glob, hashlib, os, sys
+sys.path.insert(0, "src")
+for f in sorted(glob.glob("src/haloflow/m05/__pycache__/gateways*.pyc")):
+    st = os.stat(f)
+    print("pyc", f, st.st_size, int(st.st_mtime))
+for f in ("src/haloflow/m05/gateways.py", "src/haloflow/m05/gateways_v2.py"):
+    st = os.stat(f)
+    print("src", f, st.st_size, int(st.st_mtime),
+          hashlib.sha256(open(f, "rb").read()).hexdigest()[:16])
+import haloflow.m05.gateways as g, haloflow.m05.gateways_v2 as v2
+print("modules", g.__file__, v2.__file__)
+h = lambda s: hashlib.sha256(s.encode()).hexdigest()[:16]
+print("v1 literal/recomputed prepare", g._PREPARE_BODY_SHA256[:16], h(g._PREPARE_BODY),
+      "apply", g._APPLY_BODY_SHA256[:16], h(g._APPLY_BODY))
+print("v2 literal/recomputed prepare", v2._PREPARE_V2_BODY_SHA256[:16], h(v2._PREPARE_V2_BODY),
+      "apply", v2._APPLY_V2_BODY_SHA256[:16], h(v2._APPLY_V2_BODY))
+from haloflow.composition import build_production_tenant_migrations
+try:
+    build_production_tenant_migrations()
+    print("composition ok")
+except Exception as error:
+    import traceback
+    print("composition refused", type(error).__name__, getattr(error, "reason_code", None))
+    print("".join(traceback.format_exception(error)[-6:]))
+"""
+
+
+def _pytest_failure_excerpt(label: str, evidence: Path) -> None:
+    """Diagnostic only: the ACTUAL pytest process's first MigrationUnitRejected (or
+    first error) traceback from the checker's <label>.log, copied to the CI log."""
+
+    log = evidence / f"{label}.log"
+    if not log.exists():
+        return
+    lines = log.read_text(errors="replace").splitlines()
+    marks = [i for i, line in enumerate(lines)
+             if "MigrationUnitRejected" in line or "reason_code" in line]
+    if not marks:
+        return
+    i = marks[0]
+    excerpt = "\n".join(lines[max(0, i - 45): i + 8])
+    sys.stderr.write(f"pytest-excerpt {label}:\n{excerpt}\n")
+
+
+def _drop_bytecode(target: Path) -> None:
+    """The restore keeps the synced file's size; drop its .pyc so no later import
+    can reuse bytecode compiled from the synced (or mutated) text (CI #229)."""
+
+    for cached in (target.parent / "__pycache__").glob(f"{target.stem}.*.pyc"):
+        cached.unlink(missing_ok=True)
+
+
+def _composition_probe(python: str, label: str, evidence: Path) -> None:
+    """Diagnostic only (CI #228): does the production registry compose with the
+    mutated template and the re-synchronised v2 literals? Printed and saved."""
+
+    done = subprocess.run([python, "-I", "-c", _PROBE], capture_output=True, text=True,
+                          timeout=120, check=False, cwd=HERE.parent)
+    report = (done.stdout + done.stderr[-600:]).strip()
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / f"{label}.v2probe.txt").write_text(report + "\n")
+    sys.stderr.write(f"v2-probe {label}: {report}\n")
+
+
+def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
+                      sync: Any = None, sync_probe: bool = True) -> Any:
+    """L-1W W3a: the v2 action bodies (gateways_v2.py, t030/t031) are rendered from
+    THIS template, so a mutated gateways.py also changes them. While a mutant is
+    applied, the v2 body hash literals are re-synchronised to the mutated bodies
+    (scripts/l1w_w3a_mutants.sync_sha_literals) so the production registry still
+    composes and the mutated SQL is what the service routes reach; gateways_v2.py is
+    restored byte for byte after every run, success or failure, and its SHA-256 is
+    re-checked (Codex 000140Z). Judging is unchanged (the checker's).
+
+    ``runner.records`` holds (label, sha256 before, sha256 after restore) per run."""
+
+    if sync is None:
+        spec = importlib.util.spec_from_file_location("_l1w_w3a_mutants",
+                                                      HERE / "l1w_w3a_mutants.py")
+        assert spec is not None and spec.loader is not None
+        w3a = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(w3a)
+        sync = w3a.sync_sha_literals
+    records: list[tuple[str, str, str]] = []
+
+    def runner(pytest: str, label: str, evidence: Path) -> Any:
+        original = target.read_bytes()
+        before = hashlib.sha256(original).hexdigest()
+        try:
+            if label != "control":
+                python = str(Path(pytest).with_name("python"))
+                sync(target, python)
+                if sync_probe:
+                    _composition_probe(python, label, evidence)
+            result = checker.run_pytest(pytest, label, evidence)
+            if sync_probe and label != "control":
+                _pytest_failure_excerpt(label, evidence)
+            return result
+        finally:
+            target.write_bytes(original)
+            _drop_bytecode(target)
+            after = hashlib.sha256(target.read_bytes()).hexdigest()
+            records.append((label, before, after))
+            if after != before:
+                raise SystemExit(f"{target} not restored after {label}")
+
+    runner.records = records  # type: ignore[attr-defined]
+    return runner
+
+
 GROUPS = (
     ("sql-binding", GATEWAYS, BINDING),
     ("sql-resolve", GATEWAYS, RESOLVE),
@@ -270,8 +385,23 @@ def main(argv: list[str] | None = None) -> int:
             checker.MUTANTS = build_service_mutants(text, checker.Mutant, only=tests)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
-            code = int(checker.main(["--pytest", args.pytest,
-                                     "--evidence", str(evidence / label)]))
+            if target == GATEWAYS:
+                v2_runner = _v2_synced_runner(checker)
+                v2_initial = hashlib.sha256(V2_GATEWAYS.read_bytes()).hexdigest()
+                code = int(checker.main(["--pytest", args.pytest,
+                                         "--evidence", str(evidence / label)],
+                                        runner=v2_runner))
+                v2_final = hashlib.sha256(V2_GATEWAYS.read_bytes()).hexdigest()
+                restored = v2_final == v2_initial and all(
+                    b == a == v2_initial for _, b, a in v2_runner.records)
+                print(f"secondary={V2_GATEWAYS} sha256_before={v2_initial}"
+                      f" sha256_after={v2_final} runs={len(v2_runner.records)}"
+                      f" restored={restored}")
+                if not restored:
+                    code = 1
+            else:
+                code = int(checker.main(["--pytest", args.pytest,
+                                         "--evidence", str(evidence / label)]))
         sys.stdout.write(buffer.getvalue().replace(f"title={TITLE_FROM}",
                                                    f"title=m05-resolve-mutants {label}"))
         status = status or code

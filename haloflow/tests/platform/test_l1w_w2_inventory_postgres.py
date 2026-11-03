@@ -111,7 +111,16 @@ def test_priv01_tables_have_no_grant_beyond_the_owner(env: db.L1WEnv) -> None:
     for name, owner, grantees, column_acls in rows:
         assert owner == OWNER, name
         assert set(grantees) == {OWNER}, name
-        assert column_acls == 0, name
+        # Version-scoped (Codex 223109Z/224307Z): alembic 009 (L-1W W3a) adds exactly
+        # the staff owner's SELECT on three support_operator_logins columns; every
+        # other table keeps no column ACL. The exact 009 set is pinned below and by
+        # PRIV-W3-01.
+        assert column_acls == (3 if name == "support_operator_logins" else 0), name
+    assert {(c, g, p) for c, g, p in env.all(
+        "SELECT a.attname, pg_get_userbyid(x.grantee), x.privilege_type FROM pg_attribute a,"
+        " LATERAL aclexplode(a.attacl) x"
+        " WHERE a.attrelid = 'shared.support_operator_logins'::regclass")} == {
+        (column, db.STAFF_OWNER, "SELECT") for column in ("login_oid", "login_name", "actor_id")}
 
 
 def test_priv01_identity_owner_reads_exactly_eight_grant_columns(env: db.L1WEnv) -> None:
@@ -171,6 +180,18 @@ def test_b04_no_role_but_the_owner_can_touch_the_identity_tables(
         env.login("b04support", db.SUPPORT)
         role_key = "b04support"
     for table in db.L1W_TABLES:
+        if role_key == "staff_owner" and table == "support_operator_logins":
+            # Version-scoped: alembic 009 (L-1W W3a) grants the staff owner SELECT on
+            # exactly login_oid, login_name and actor_id; no table privilege, no other
+            # column, no write.
+            assert env.one(
+                "SELECT has_table_privilege(%s, %s, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,"
+                "REFERENCES,TRIGGER') OR has_any_column_privilege(%s, %s, 'INSERT,UPDATE,"
+                "REFERENCES')", (group, f"shared.{table}", group, f"shared.{table}")
+            ) == (False,)
+            with env.connect(role_key) as conn, pytest.raises(errors.InsufficientPrivilege):
+                conn.execute("SELECT added_at FROM shared.support_operator_logins LIMIT 1")
+            continue
         assert env.one(
             "SELECT has_table_privilege(%s, %s, 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,"
             "REFERENCES,TRIGGER') OR has_any_column_privilege(%s, %s, 'SELECT,INSERT,UPDATE,"

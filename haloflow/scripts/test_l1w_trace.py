@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent / "tests" / "platform"))
 
 import l1w_trace_inventory as inv  # noqa: E402
 
-IDS = (*inv.W1_IDS, *inv.W2_IDS)
+IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS)
 
 
 def _script() -> Any:
@@ -65,7 +65,8 @@ def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
     script = _script()
     result = subprocess.run(
         [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
-         "tests/platform"],
+         "tests/platform", *sorted(str(p.relative_to(HERE.parent))
+                                   for p in (HERE.parent / "tests/m05").glob("test_l1w_*.py"))],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
     )
     # Codex e0323cac: the collection itself must succeed ...
@@ -86,6 +87,6 @@ def test_l1w_trace_t06_deferred_and_retired_rows_stay_explicit() -> None:
     assert set(inv.DEFERRED).isdisjoint(IDS)
     assert set(inv.DEFERRED).isdisjoint(script.TRACE)
     assert set(inv.RETIRED).isdisjoint(script.TRACE)
-    assert {"W3", "W4"} <= set(inv.DEFERRED.values())
+    assert {"W3b", "W4"} <= set(inv.DEFERRED.values())
     for carriers in inv.RETIRED.values():
-        assert set(carriers) <= set(inv.W2_IDS)
+        assert set(carriers) <= set(inv.W2_IDS) | set(inv.W3A_IDS)

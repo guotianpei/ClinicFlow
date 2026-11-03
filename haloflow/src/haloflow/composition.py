@@ -37,6 +37,7 @@ from haloflow.m01.runtime import (
     TenantRuntimeDependencies,
     compose_tenant_runtime,
 )
+from haloflow.m01.staff.l1w_units import L1W_STAFF_PROFILES, L1W_STAFF_TENANT_MIGRATIONS
 from haloflow.m01.staff.units import STAFF_GATEWAY_PROFILES, STAFF_TENANT_MIGRATIONS
 from haloflow.m01.statements import (
     M01_STATEMENTS,
@@ -49,6 +50,7 @@ from haloflow.m02.part_a_gateways import PART_A_GATEWAY_PROFILES
 from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 from haloflow.m05.gateways import M05_GATEWAY_PROFILES
+from haloflow.m05.gateways_v2 import M05_V2_PROFILES, M05_V2_UNITS
 from haloflow.m05.statements import M05_STATEMENTS
 from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
@@ -65,6 +67,13 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (
     M05_STATEMENTS,
 )
 
+# L-1W W3a (contract v1, Codex 215519Z): t026-t032 in migration-id order. The staff
+# units (t026-t029, t032) and the M05 v2 actions (t030, t031) interleave, so they
+# compose as one id-ordered set. W3a does not close v1 (W3b).
+L1W_W3A_TENANT_MIGRATIONS: UnitDefinitions = MappingProxyType(
+    dict(sorted({**L1W_STAFF_TENANT_MIGRATIONS, **M05_V2_UNITS}.items()))
+)
+
 # Approved per-tenant migration definition sets. Same rule, same reason: one
 # composition path, so what a tenant schema receives is reviewable in one place.
 # `allow_test_units` is never passed here -- a test-only unit cannot reach
@@ -77,12 +86,14 @@ APPROVED_MODULE_STATEMENTS: tuple[StatementDefinitions, ...] = (
 # adds t004-t011 (target version 11); no upgrade path from version 3 is claimed
 # either. UC1 part B B5 adds the M05 units t012-t020 and the staff-directory units
 # t021-t025 (target version 25); no upgrade path from version 11 is claimed (L-6).
+# L-1W W3a adds t026-t032 (target version 32); no upgrade path from 25 is claimed.
 # Runtime acceptance is `APPROVED_SUPPORTED_SCHEMA_VERSIONS` below (L-1).
 APPROVED_TENANT_MIGRATIONS: tuple[UnitDefinitions, ...] = (
     TENANT_MIGRATIONS,
     M02_TENANT_MIGRATIONS,
     M05_TENANT_MIGRATIONS,
     STAFF_TENANT_MIGRATIONS,
+    L1W_W3A_TENANT_MIGRATIONS,
 )
 
 # Execution roles this deployment approves for per-tenant migrations (R-P1.2).
@@ -121,18 +132,21 @@ APPROVED_INSTALLED_STATE_PROFILES: Mapping[str, InstalledStateProfile] = Mapping
         **PART_A_GATEWAY_PROFILES,
         **M05_GATEWAY_PROFILES,
         **STAFF_GATEWAY_PROFILES,
+        **L1W_STAFF_PROFILES,
+        **M05_V2_PROFILES,
     }
 )
 
 
 # L-1 (requirements v2, L1-D2 = M1). The schema versions the production runtime
-# admits: exactly {25} since UC1 part B B5 composed t012-t025 (previously {11} from
+# admits: exactly {32} since L-1W W3a composed t026-t032 (previously {25} from UC1 part B
+# B5, which composed t012-t025; before that {11} from
 # UC1 part A, P-b, Codex ALIGN 20261031T130451Z; before that {3}). The one
 # declaration -- resolver, gateway, provisioner, the bundle and startup all receive
 # this object. A literal, never derived from the registry: a derived set would make
 # the coordination check vacuous and silently admit a future target. Version 3 means
 # "the M01 infrastructure baseline through t003" (R-E11).
-APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({25})
+APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({32})
 
 
 def build_production_catalog() -> CompiledCatalog:

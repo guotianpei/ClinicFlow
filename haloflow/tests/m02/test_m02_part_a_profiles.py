@@ -77,6 +77,13 @@ def test_pr1_every_m02_typed_unit_is_exactly_the_profiled_set() -> None:
         "t023_m01_staff_admin",
         "t024_m01_staff_display",
         "t025_m01_staff_followup_reader",
+        # L-1W W3a typed units.
+        "t027_m01_staff_self_standing",
+        "t028_m01_staff_member_standing",
+        "t029_m01_staff_admin_v2",
+        "t030_m05_prepare_action_v2",
+        "t031_m05_apply_action_v2",
+        "t032_m01_staff_bootstrap_admin",
     }
     assert typed == profiled == {"t003_m02_lock_operation", *PART_A_TYPED, *b5_typed}
 

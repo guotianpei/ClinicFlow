@@ -975,7 +975,7 @@ def _is_literal_frozenset_of_twenty_five(value: ast.expr | None) -> bool:
         and len(value.args[0].elts) == 1
         and isinstance(value.args[0].elts[0], ast.Constant)
         and type(value.args[0].elts[0].value) is int
-        and value.args[0].elts[0].value == 25
+        and value.args[0].elts[0].value == 32
     )
 
 
@@ -999,7 +999,8 @@ def _declaration_assignments_in(source: str) -> list[ast.expr | None]:
 
 def _declaration_violations(path: str, source: str) -> list[str]:
     """L1-A4. The composition root assigns the declaration exactly once, at
-    module level, to the literal `frozenset({25})` (B5; `frozenset({11})` before it);
+    module level, to the literal `frozenset({32})` (L-1W W3a; `frozenset({25})` at B5,
+    `frozenset({11})` before it);
     no other module assigns it."""
 
     assigned = _declaration_assignments_in(source)
@@ -1027,7 +1028,7 @@ def _declaration_violations(path: str, source: str) -> list[str]:
             f"{path}: {len(assigned)} assignments, {len(module_level)} module-level"
         )
     if not all(_is_literal_frozenset_of_twenty_five(value) for value in assigned):
-        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{25}})")
+        violations.append(f"{path}: {SUPPORTED_DECLARATION} is not frozenset({{32}})")
     return violations
 
 
@@ -1111,7 +1112,7 @@ def test_l1_a4_the_supported_set_is_declared_once_as_the_literal_three() -> None
 
 
 def test_l1_a4_negative_control() -> None:
-    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({25})\n"
+    good = "APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({32})\n"
     assert _declaration_violations(COMPOSITION_ROOT, good) == []
     assert _declaration_violations(COMPOSITION_ROOT, good + good)
     assert _declaration_violations(
@@ -1123,16 +1124,17 @@ def test_l1_a4_negative_control() -> None:
         "frozenset({10})",
         "frozenset({11})",
         "frozenset({24})",
-        "frozenset({25, 2})",
+        "frozenset({25})",
+        "frozenset({32, 2})",
         "frozenset({True})",
-        "{25}",
-        "frozenset([25])",
+        "{32}",
+        "frozenset([32])",
     )
     for wrong in wrongs:
         source = f"APPROVED_SUPPORTED_SCHEMA_VERSIONS = {wrong}\n"
         assert _declaration_violations(COMPOSITION_ROOT, source), wrong
     assert _declaration_violations(
-        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({25})\n"
+        COMPOSITION_ROOT, "def f():\n    APPROVED_SUPPORTED_SCHEMA_VERSIONS = frozenset({32})\n"
     )
     assert _declaration_violations("src/haloflow/m01/runtime.py", good)
 

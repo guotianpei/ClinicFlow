@@ -71,6 +71,17 @@
         "USAGE",
         "CREATE"
       ]
+    },
+    "haloflow_support": {
+      "login": false,
+      "superuser": false,
+      "createdb": false,
+      "createrole": false,
+      "replication": false,
+      "bypassrls": false,
+      "tenant_schema_privileges": [
+        "USAGE"
+      ]
     }
   },
   "role_memberships": [
@@ -111,6 +122,13 @@
     },
     {
       "role": "haloflow_staff_owner",
+      "member": "haloflow_migrator",
+      "set": true,
+      "inherit": false,
+      "admin": false
+    },
+    {
+      "role": "haloflow_support",
       "member": "haloflow_migrator",
       "set": true,
       "inherit": false,

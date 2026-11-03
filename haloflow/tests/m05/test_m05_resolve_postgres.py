@@ -33,6 +33,7 @@ from collections.abc import Iterator
 from typing import Any
 from uuid import UUID, uuid4
 
+import l1w_w3a_support as w3
 import m05_support as m05
 import psycopg
 import pytest
@@ -139,6 +140,8 @@ async def test_ma03_claim_and_resolve_on_assigned_item_refused(staff_install):
 
 async def test_ma03s_others_item_needs_supervise(staff_install):
     item = await _claimed(staff_install, m05.S2)
+    # L-1W W3a: supervise comes from the supervisor role row (FIXTURE SETUP).
+    await asyncio.to_thread(w3.seed_role, staff_install, m05.SUP, "supervisor")
     async with sv.runtime(staff_install) as rt:
         ctx = await sv.context(rt, staff_install, m05.S1, sv.RESOLVE_CAPS)
         before = sv.full_state(staff_install)
@@ -159,6 +162,8 @@ async def test_ma05_supervisor_resolve_history_event_and_action_actor(staff_inst
 
     item = await _claimed(staff_install, m05.S2)
     action = _resolve(item, 2)
+    # L-1W W3a: supervise comes from the supervisor role row (FIXTURE SETUP).
+    await asyncio.to_thread(w3.seed_role, staff_install, m05.SUP, "supervisor")
     async with sv.runtime(staff_install) as rt:
         sup = await sv.context(rt, staff_install, m05.SUP, sv.SUPERVISOR_RESOLVE_CAPS)
         result = await _service(rt, sv.TestNoteKeys()).act(sup, action)

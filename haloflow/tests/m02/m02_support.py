@@ -776,7 +776,7 @@ def provision_sync(*args: Any, **kwargs: Any) -> Any:
 # composes t012-t025, so its target is 25 and this moves to range(25, 26) in the
 # composing commit. Historical version-11 compatibility fixtures pass their own
 # range explicitly and are not affected.
-PRODUCTION_SUPPORTED: Final = range(25, 26)
+PRODUCTION_SUPPORTED: Final = range(32, 33)  # L-1W W3a: target 32
 
 
 def production_registry() -> Any:

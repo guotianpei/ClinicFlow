@@ -44,6 +44,11 @@ UUID_TEXT: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 AUTH_METHOD: Final = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 TIMESTAMP: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
 OPERATIONS: Final = ("add", "rename", "deactivate", "reactivate", "grant", "revoke")
+# L-1W W3a: `m01.staff.admin` reaches m01_staff_admin_v2, which names reactivation
+# `activate` and adds "outcome" (applied | replayed) to the v1 four-key result. The
+# public command and AdminResult keep the v1 names and shape.
+_V2_OPERATION: Final = {"reactivate": "activate"}
+_V2_OUTCOMES: Final = ("applied", "replayed")
 _WS: Final = frozenset(
     [chr(c) for c in range(0x09, 0x0E)] + [" ", "\u0085", " ", " "]
     + [chr(c) for c in range(0x2000, 0x200B)] + [" ", " ", " ", " ", "　"]
@@ -348,14 +353,16 @@ def _bind_admin(rows: list[Any], command: StaffAdminCommand) -> dict[str, Any]:
     value = single_json(rows)
     if (
         type(value) is not dict
-        or set(value) != {"schema_version", "client_action_id", "operation", "staff"}
+        or set(value) != {"schema_version", "client_action_id", "operation", "staff", "outcome"}
+        or not member(value["outcome"], _V2_OUTCOMES)
         or not exact_int(value["schema_version"]) or value["schema_version"] != 1
         or value["client_action_id"] != str(command.client_action_id)
-        or value["operation"] != command.operation
+        or value["operation"] != _V2_OPERATION.get(command.operation, command.operation)
         or not _valid_staff_snapshot(value["staff"], command)
     ):
         raise AdminFailed("ADMIN_RESULT_INVALID")
-    return value
+    return {"schema_version": 1, "client_action_id": value["client_action_id"],
+            "operation": command.operation, "staff": value["staff"]}
 
 
 def _bind_display(rows: list[Any], requested: tuple[UUID, ...]) -> dict[str, Any]:
@@ -425,7 +432,7 @@ class StaffService:
         sql_command: dict[str, Any] = {
             "schema_version": 1,
             "client_action_id": str(command.client_action_id),
-            "operation": command.operation,
+            "operation": _V2_OPERATION.get(command.operation, command.operation),
             "staff_id": str(command.staff_id),
             "permissions": {"staff_admin": STAFF_ADMIN_CAPABILITY in context.capabilities},
             "attribution": attribution,

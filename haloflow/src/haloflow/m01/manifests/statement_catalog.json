@@ -11,7 +11,7 @@
     "m01.staff.admin": {
       "mode": "write",
       "required_capability": "m01.staff.admin",
-      "sha256": "e5d3cb804d27db2990b1298da878c0492b2989adfef8a86580a8b15b719f8ec9"
+      "sha256": "45a22700990b0d866dd26a8617e3072f40e5779cf9bc7737ef053ed676f8fd50"
     },
     "m01.staff.display": {
       "mode": "read",
@@ -23,45 +23,50 @@
       "required_capability": "m05.followup.read",
       "sha256": "639f09ea93b7c969df052dc30a57e54e36bbfe3bc598f41810adc0023e17e6bf"
     },
+    "m01.staff.self_standing": {
+      "mode": "read",
+      "required_capability": "m01.staff.self_standing",
+      "sha256": "c58f4681b54364ae31365e743a742757725e1c9cd3f94d1498b60be799a904d0"
+    },
     "m02.observation.append": {
       "mode": "write",
       "required_capability": "m02.observation.append",
       "sha256": "44ee7e1ce8c49ca382722bd1cda5a2d2c4a83754049060bc02904ab1a7f98906"
+    },
+    "m05.followup.apply": {
+      "mode": "write",
+      "required_capability": "m05.followup.apply",
+      "sha256": "ba62487e5783e79d5251b52bf747e9132bdfde8fcec3c1928b4b81979aa2fbaf"
     },
     "m05.followup.create": {
       "mode": "write",
       "required_capability": "m05.followup.create",
       "sha256": "b314940ca1efa19d43574d31c0ec47c502558d6f2b407c9825889f8b2fddb34c"
     },
-    "m05.followup.prepare": {
-      "mode": "write",
-      "required_capability": "m05.followup.prepare",
-      "sha256": "dbeb2e8e43e6c9e96902820ec592e34f73d5c19654a1bbf27753fc06d8f5518b"
-    },
-    "m05.followup.apply": {
-      "mode": "write",
-      "required_capability": "m05.followup.apply",
-      "sha256": "7058e176842bf5cc4e21a36717cb3c436e6b26d46429d566e6774468a282faf6"
-    },
     "m05.followup.get": {
       "mode": "read",
       "required_capability": "m05.followup.read",
       "sha256": "2f12589dbf0c663b99d72a7c95332dc9c8905b2b5ed03d2213d0d4f1cf975619"
-    },
-    "m05.followup.list": {
-      "mode": "read",
-      "required_capability": "m05.followup.read",
-      "sha256": "98afdf551bce973ce5901c5e63f395a6e57e7de8d16f274e13fc6de3a52cea65"
     },
     "m05.followup.history": {
       "mode": "read",
       "required_capability": "m05.followup.read",
       "sha256": "3cc5def20b9ad57f705d73922c1a516c365e7b9b6d1f3b2a33f87fa2f07f14f6"
     },
+    "m05.followup.list": {
+      "mode": "read",
+      "required_capability": "m05.followup.read",
+      "sha256": "98afdf551bce973ce5901c5e63f395a6e57e7de8d16f274e13fc6de3a52cea65"
+    },
     "m05.followup.note.read": {
       "mode": "read",
       "required_capability": "m05.followup.note.read",
       "sha256": "0e70c2b9f95148a6f72ea3c4a7463f051369473d5a8714d22e07277eedb6e5e6"
+    },
+    "m05.followup.prepare": {
+      "mode": "write",
+      "required_capability": "m05.followup.prepare",
+      "sha256": "274e7a7bfdfbf8938ff793d3d180a47da081eedcd2f58423d52b37f43244e516"
     }
   },
   "composition_root": "src/haloflow/composition.py"

@@ -49,7 +49,7 @@ STAFF_TYPED_UNITS: Final = {
     "t024_m01_staff_display": "m01_staff_display",
     "t025_m01_staff_followup_reader": "m01_staff_followup_reader",
 }
-STAFF_TEST_TARGET: Final = 25  # B3b adds t025 (package v2 1.2)
+STAFF_TEST_TARGET: Final = 32  # B3b adds t025; L-1W W3a composes t026-t032
 STAFF_TEST_SUPPORTED: Final = range(STAFF_TEST_TARGET, STAFF_TEST_TARGET + 1)
 
 TABLES: Final = (
@@ -166,13 +166,28 @@ def admin_digest(*parts: Any) -> bytes:
     return hashlib.sha256(admin_digest_preimage(*parts).encode("utf-8")).digest()
 
 
+def admin_digest_v2(
+    tenant: str, key: str, actor: str, operation: str, staff: str,
+    display_name: str | None, access: str | None,
+) -> bytes:
+    """L-1W W3a m01_staff_admin_v2 key digest (written out independently): the v1
+    elements plus role, issuer, subject, setting and value, which a v1-operation
+    command never carries (null)."""
+
+    elements = ["m01.staff_admin/v2", tenant, key, actor, operation, staff, display_name, access,
+                None, None, None, None, None]
+    preimage = "[" + ",".join(
+        json.dumps(e, ensure_ascii=False, separators=(",", ":")) for e in elements) + "]"
+    return hashlib.sha256(preimage.encode("utf-8")).digest()
+
+
 # ---------------------------------------------------------------------------
 # Registry, manifest, install
 # ---------------------------------------------------------------------------
 
 
 def staff_registry() -> Any:
-    """The production registry (B5 H1): part A + M05 + staff, target 25."""
+    """The production registry (B5 H1): part A + M05 + staff (+ L-1W W3a), target 32."""
 
     from haloflow.composition import build_production_tenant_migrations
 
@@ -196,15 +211,22 @@ def _production_registry_with(
     sets replaced (mutant registries). The profiles are keyed by migration id, so a
     mutated body keeps its unit's profile."""
 
-    from haloflow.composition import APPROVED_EXECUTION_ROLES, APPROVED_INSTALLED_STATE_PROFILES
+    from haloflow.composition import (
+        APPROVED_EXECUTION_ROLES,
+        APPROVED_INSTALLED_STATE_PROFILES,
+        L1W_W3A_TENANT_MIGRATIONS,
+    )
     from haloflow.m01.provisioning.units import TENANT_MIGRATIONS, build_tenant_migration_registry
     from haloflow.m02.units import M02_TENANT_MIGRATIONS
 
+    # L-1W W3a: the production W3a set follows unchanged, so a mutant registry keeps
+    # the production target (32).
     return build_tenant_migration_registry(
         TENANT_MIGRATIONS,
         M02_TENANT_MIGRATIONS,
         m05_units,
         staff_units,
+        L1W_W3A_TENANT_MIGRATIONS,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles=APPROVED_INSTALLED_STATE_PROFILES,
     )
@@ -557,9 +579,13 @@ def check_admin_delta(
     install: StaffInstall,
     command: dict[str, Any],
     result: dict[str, Any],
+    *,
+    v2: bool = False,
 ) -> None:
     """Exactly the intended directory change for one admitted admin command; the
-    caller asserts the M05 tables separately."""
+    caller asserts the M05 tables separately. ``v2`` (L-1W W3a): the command went
+    through m01_staff_admin_v2 (the service route), whose key digest is v2 and whose
+    SQL result adds "outcome" to the logged four-key result."""
 
     staff, operation = command["staff_id"], command["operation"]
     key, actor = command["client_action_id"], command["attribution"]["principal_id"]
@@ -618,10 +644,13 @@ def check_admin_delta(
     )
     assert snap["access"] == after_access
     # keys and log
-    digest = admin_digest(
+    digest = (admin_digest_v2 if v2 else admin_digest)(
         install.tenant[0], key, actor, operation, staff,
         command.get("display_name"), command.get("access"),
     )
+    if v2:
+        assert result.get("outcome") in ("applied", "replayed")
+        result = {k: v for k, v in result.items() if k != "outcome"}
     assert not delta.changed["m01_staff_action_keys"] and not delta.removed["m01_staff_action_keys"]
     (key_row,) = delta.added["m01_staff_action_keys"]
     assert (key_row["client_action_id"], key_row["staff_id"], key_row["actor_id"],

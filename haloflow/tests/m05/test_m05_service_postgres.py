@@ -31,6 +31,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 from uuid import UUID
 
+import l1w_w3a_support as w3
 import m05_support as m05
 import psycopg
 import pytest
@@ -40,11 +41,21 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from test_m05_actions_postgres import _cmd
 from test_m05_actions_postgres import _refused as _sql_refused
-from test_m05_create_postgres import _command, _create, _ready, _source
+from test_m05_create_postgres import _command, _create, _source
+from test_m05_create_postgres import _ready as _ready_base
 
 pytestmark = pytest.mark.postgres
 
 S1, S2, SUP = UUID(m05.S1), UUID(m05.S2), UUID(m05.SUP)
+
+
+def _ready(install: Any) -> None:
+    """The B3b setup plus the L-1W W3a role rows (FIXTURE SETUP): ADMIN holds
+    clinic_admin and SUP holds supervisor, because the repointed statements read
+    authority from role rows (red packet section 3)."""
+
+    _ready_base(install)
+    w3.seed_service_roles(install)
 
 
 def _svc() -> Any:
@@ -439,7 +450,13 @@ async def test_sv08t_act_only_revocation_keeps_reads(staff_install):
 
 async def test_sv08u_admin_authority_independent_of_followup_access(staff_install):
     await asyncio.to_thread(_ready, staff_install)
-    admin = uuid.uuid4()  # no directory row at all
+    admin = uuid.uuid4()
+    # L-1W W3a: admin authority is the clinic_admin role row of an active member; the
+    # member holds NO follow-up access, so the row still proves independence from it.
+    await asyncio.to_thread(st.seed_staff, staff_install, str(admin), name="Admin Only",
+                            access=())  # FIXTURE SETUP
+    await asyncio.to_thread(w3.seed_role, staff_install, str(admin),
+                            "clinic_admin")  # FIXTURE SETUP
     async with _service(staff_install) as (rt, rec):
         ctx = await sv.context(rt, staff_install, str(admin),
                                frozenset({sv.STAFF_ADMIN, sv.STAFF_DISPLAY}))
@@ -485,13 +502,30 @@ async def test_sv09b_display_subsets_are_valid(staff_install):
 
 
 async def test_sv10_admin_bootstrap_without_directory_row(staff_install):
+    """L-1W W3a re-expression (owner decision 2026-11-02: HaloVox support bootstraps
+    the first clinic admin, BS-01). An admin principal with NO directory row is now
+    refused in SQL with nothing written; once it is a member holding clinic_admin
+    (FIXTURE SETUP), the same command applies and replays identically."""
+
     await asyncio.to_thread(_ready, staff_install)
+    principal = uuid.uuid4()
+    staff = uuid.uuid4()
+    key = uuid.uuid4()
+    command = _staff_svc().StaffAdminCommand(client_action_id=key, operation="add",
+                                             staff_id=staff, display_name="First Admin Hire")
     async with _service(staff_install) as (rt, rec):
-        ctx = await sv.context(rt, staff_install, str(uuid.uuid4()), frozenset({sv.STAFF_ADMIN}))
-        staff = uuid.uuid4()
-        key = uuid.uuid4()
-        command = _staff_svc().StaffAdminCommand(client_action_id=key, operation="add",
-                                                 staff_id=staff, display_name="First Admin Hire")
+        ctx = await sv.context(rt, staff_install, str(principal), frozenset({sv.STAFF_ADMIN}))
+        before = sv.full_state(staff_install)
+        with pytest.raises(_staff_svc().AdminRefused) as refused:
+            await _staff_svc().StaffService(rec).admin(ctx, command)
+        assert refused.value.code == "NOT_AUTHORIZED"
+        assert sv.full_state(staff_install) == before
+    await asyncio.to_thread(st.seed_staff, staff_install, str(principal), name="Clinic Admin",
+                            access=())  # FIXTURE SETUP
+    await asyncio.to_thread(w3.seed_role, staff_install, str(principal),
+                            "clinic_admin")  # FIXTURE SETUP
+    async with _service(staff_install) as (rt, rec):
+        ctx = await sv.context(rt, staff_install, str(principal), frozenset({sv.STAFF_ADMIN}))
         first = await _staff_svc().StaffService(rec).admin(ctx, command)
         again = await _staff_svc().StaffService(rec).admin(ctx, command)
         assert first.result == again.result
@@ -781,14 +815,18 @@ async def test_sv12_admin_unknown_commit_then_recovery(staff_install, mode):
         assert fired == [mode]
     after_retry = st.state(staff_install)
     if COMMITTED[mode]:
-        assert dict(retry.result) == original
+        # L-1W W3a: the v2 SQL result adds "outcome"; the bound public result is the
+        # v1 four-key shape (SVC-01).
+        assert original["outcome"] == "applied"
+        assert dict(retry.result) == {k: v for k, v in original.items() if k != "outcome"}
         assert after_retry == after_fault
         st.check_admin_delta(st.Delta(before, after_fault), before, staff_install, sql_command,
-                             original)
+                             original, v2=True)
     else:
         assert after_fault == before
         st.check_admin_delta(st.Delta(before, after_retry), before, staff_install,
-                             rec.sent(sv.K_ADMIN)[1], dict(retry.result))
+                             rec.sent(sv.K_ADMIN)[1],
+                             {**dict(retry.result), "outcome": "applied"}, v2=True)
     st.Delta(before, after_retry).untouched(st.M05_CONTENT_TABLES)
 
 

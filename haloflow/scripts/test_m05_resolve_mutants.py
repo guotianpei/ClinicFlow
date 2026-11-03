@@ -96,3 +96,40 @@ def test_a_missing_anchor_is_refused() -> None:
         assert "SM-ORPHAN" in str(refused)
     else:  # pragma: no cover - the control must refuse
         raise AssertionError("a missing anchor was not refused")
+
+
+def test_v2_secondary_file_is_restored_when_the_run_fails(tmp_path: Path) -> None:
+    """Codex 000140Z: gateways_v2.py is restored byte for byte, and re-checked, even
+    when the mutant run raises; the control run never synchronises."""
+
+    script = _script()
+    target = tmp_path / "gateways_v2.py"
+    target.write_bytes(b"original v2 bytes\n")
+    synced: list[str] = []
+
+    def sync(path: Path, python: str) -> None:
+        synced.append(python)
+        path.write_bytes(b"mutated literals\n")
+
+    class Checker:
+        @staticmethod
+        def run_pytest(pytest: str, label: str, evidence: Path) -> Any:
+            assert target.read_bytes() == (
+                b"original v2 bytes\n" if label == "control" else b"mutated literals\n")
+            if label != "control":
+                raise RuntimeError("pytest crashed")
+            return "control-evidence"
+
+    runner = script._v2_synced_runner(Checker, target=target, sync=sync, sync_probe=False)
+    assert runner("/venv/bin/pytest", "control", tmp_path) == "control-evidence"
+    assert synced == []
+    try:
+        runner("/venv/bin/pytest", "RM-X", tmp_path)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("the run failure was swallowed")
+    assert target.read_bytes() == b"original v2 bytes\n"
+    assert synced == ["/venv/bin/python"]
+    digest = hashlib.sha256(b"original v2 bytes\n").hexdigest()
+    assert runner.records == [("control", digest, digest), ("RM-X", digest, digest)]
