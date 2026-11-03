@@ -24,6 +24,14 @@ business clarification (product behaviour, clinical or patient-facing wording, r
 spending, priorities). **Merges to `main` are the owner's: ask her to merge.** Governing record:
 `TECHNICAL_DECISION_DELEGATION_2026-10-25.md` in the Shared Workspace.
 
+This delegation applies within approved work packages and established requirements; current owner
+restrictions and operational holds remain controlling, and actions outside that scope require the
+appropriate owner decision. Examples that stay separate decisions: production access or deployment,
+live patient messaging (SMS, calls), real EHR writes or real patient data, destructive actions,
+material scope changes, weakened acceptance criteria, and repository actions outside the approved
+package. The current holds are listed in the newest session-close note and the delivery tracker; this
+guide does not lift them.
+
 ## Local environment
 
 ```
