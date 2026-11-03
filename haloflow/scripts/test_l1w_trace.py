@@ -67,7 +67,8 @@ def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
         [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
          "tests/platform", *sorted(str(p.relative_to(HERE.parent))
                                    for d in ("tests/m01", "tests/m05")
-                                   for p in (HERE.parent / d).glob("test_l1w_*.py"))],
+                                   for p in (HERE.parent / d).glob("test_l1w_*.py")),
+         *inv.HARNESS_EXTERNAL_FILES],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
     )
     # Codex e0323cac: the collection itself must succeed ...
@@ -75,9 +76,19 @@ def test_l1w_trace_t05_every_mapped_node_is_collected_in_this_tree() -> None:
     collected = {line.strip() for line in result.stdout.splitlines() if "::" in line}
     assert collected, "nothing collected"
     script.check(script.TRACE, IDS, collected)
-    # ... and the mapped nodes must be exactly the collected tests/platform nodes, so an
-    # unmapped new test fails here instead of passing silently.
-    assert _nodes(script.TRACE) == collected, sorted(collected ^ _nodes(script.TRACE))[:10]
+    # ... and the mapped nodes must be exactly the collected L-1W nodes, so an unmapped
+    # new test fails here instead of passing silently. Nodes of the two historical
+    # files (HARNESS_EXTERNAL_FILES) may be mapped only by HARNESS-MIGRATION.
+    def external(node: str) -> bool:
+        return node.split("::")[0] in inv.HARNESS_EXTERNAL_FILES
+
+    l1w_collected = {n for n in collected if not external(n)}
+    l1w_mapped = {n for n in _nodes(script.TRACE) if not external(n)}
+    assert l1w_mapped == l1w_collected, sorted(l1w_collected ^ l1w_mapped)[:10]
+    for key, nodes in script.TRACE.items():
+        if key != "HARNESS-MIGRATION":
+            assert not any(external(n) for n in nodes), key
+    assert any(external(n) for n in script.TRACE["HARNESS-MIGRATION"])
 
 
 def test_l1w_trace_t06_deferred_and_retired_rows_stay_explicit() -> None:
@@ -88,6 +99,8 @@ def test_l1w_trace_t06_deferred_and_retired_rows_stay_explicit() -> None:
     assert set(inv.DEFERRED).isdisjoint(IDS)
     assert set(inv.DEFERRED).isdisjoint(script.TRACE)
     assert set(inv.RETIRED).isdisjoint(script.TRACE)
-    assert {"W3b", "W4"} <= set(inv.DEFERRED.values())
+    assert {"W4"} <= set(inv.DEFERRED.values())
+    # HARNESS-MIGRATION left DEFERRED when the H-c harness landed (W3b).
+    assert "HARNESS-MIGRATION" in inv.W3B_IDS and "HARNESS-MIGRATION" not in inv.DEFERRED
     for carriers in inv.RETIRED.values():
         assert set(carriers) <= set(inv.W2_IDS) | set(inv.W3A_IDS)

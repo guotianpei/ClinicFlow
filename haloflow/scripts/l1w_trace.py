@@ -745,6 +745,42 @@ TRACE: dict[str, list[str]] = {
     "CG-REV-01": [
         "tests/m01/test_l1w_w3b_acl_closure_units.py::test_cg_rev01_ordinary_role_bearing_revoke_is_still_refused",  # noqa: E501
     ],
+    # A: closed to runtime; B: historical v1-contract rows run as the closed function's
+    # owner (HARNESS_EXTERNAL_FILES); E: replay controls on the migrated v2 paths. C (v2
+    # mutation equivalents) lives in scripts/l1w_w3b_mutants.py; D is the full test step.
+    "HARNESS-MIGRATION": [
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c01_runtime_execute_inventory_is_exact",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_prepare_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m05_apply_action(jsonb)]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_closure_postgres.py::test_c02_runtime_calls_to_v1_raise_42501[m01_staff_admin(jsonb)]",  # noqa: E501
+        "tests/m05/test_m05_staff_directory_postgres.py::test_dad1b_literal_vectors_through_sql",  # noqa: E501
+        "tests/m05/test_m05_staff_directory_postgres.py::test_am1_guard_after_lock_is_caught",  # noqa: E501
+        "tests/m05/test_m05_staff_directory_postgres.py::test_am2_admission_without_on_conflict_is_caught",  # noqa: E501
+        "tests/m05/test_m05_staff_directory_postgres.py::test_am3_weak_replay_check_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_rm1_key_share_alone_is_equivalent_here",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_rm1b_key_share_without_writer_lock_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_rm2_revoke_without_membership_lock_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_rm3_merged_statements_are_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_gm1_isolation_guard_after_item_lock_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_gm2_composition_guard_after_item_lock_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_sm1_actor_check_removed_is_caught",  # noqa: E501
+        "tests/m05/test_m05_assignee_eligibility_postgres.py::test_sm2_target_check_skipped_is_caught",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri03_a_stored_result_with_outcome_is_unrepresentable",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[revoke_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri01_real_v2_operation_replays_with_outcome_replayed[activate-None]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri02_impossible_timestamp_never_replays[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri02_impossible_timestamp_never_replays[activate-None]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri04_activate_with_inactive_snapshot_never_replays",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[bind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[unbind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[set_auth_setting]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[bind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[unbind_identity]",  # noqa: E501
+        "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri07_retry_after_the_actor_lost_authority_is_refused[set_auth_setting]",  # noqa: E501
+    ],
     "RI-06": [
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[bind_identity]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri06_identity_and_setting_operations_replay_exactly[unbind_identity]",  # noqa: E501
