@@ -247,8 +247,34 @@ def build_service_mutants(text: str, mutant_class: Any,
 V2_GATEWAYS = Path("src/haloflow/m05/gateways_v2.py")
 
 
+_PROBE = """
+import sys
+sys.path.insert(0, "src")
+import haloflow.m05.gateways as g, haloflow.m05.gateways_v2 as v2
+from haloflow.composition import build_production_tenant_migrations
+print("modules", g.__file__, v2.__file__)
+try:
+    build_production_tenant_migrations()
+    print("composition ok")
+except Exception as error:
+    print("composition refused", type(error).__name__, getattr(error, "reason_code", None))
+"""
+
+
+def _composition_probe(python: str, label: str, evidence: Path) -> None:
+    """Diagnostic only (CI #228): does the production registry compose with the
+    mutated template and the re-synchronised v2 literals? Printed and saved."""
+
+    done = subprocess.run([python, "-I", "-c", _PROBE], capture_output=True, text=True,
+                          timeout=120, check=False, cwd=HERE.parent)
+    report = (done.stdout + done.stderr[-600:]).strip()
+    evidence.mkdir(parents=True, exist_ok=True)
+    (evidence / f"{label}.v2probe.txt").write_text(report + "\n")
+    sys.stderr.write(f"v2-probe {label}: {report}\n")
+
+
 def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
-                      sync: Any = None) -> Any:
+                      sync: Any = None, sync_probe: bool = True) -> Any:
     """L-1W W3a: the v2 action bodies (gateways_v2.py, t030/t031) are rendered from
     THIS template, so a mutated gateways.py also changes them. While a mutant is
     applied, the v2 body hash literals are re-synchronised to the mutated bodies
@@ -273,7 +299,10 @@ def _v2_synced_runner(checker: Any, target: Path = V2_GATEWAYS,
         before = hashlib.sha256(original).hexdigest()
         try:
             if label != "control":
-                sync(target, str(Path(pytest).with_name("python")))
+                python = str(Path(pytest).with_name("python"))
+                sync(target, python)
+                if sync_probe:
+                    _composition_probe(python, label, evidence)
             return checker.run_pytest(pytest, label, evidence)
         finally:
             target.write_bytes(original)

@@ -120,7 +120,7 @@ def test_v2_secondary_file_is_restored_when_the_run_fails(tmp_path: Path) -> Non
                 raise RuntimeError("pytest crashed")
             return "control-evidence"
 
-    runner = script._v2_synced_runner(Checker, target=target, sync=sync)
+    runner = script._v2_synced_runner(Checker, target=target, sync=sync, sync_probe=False)
     assert runner("/venv/bin/pytest", "control", tmp_path) == "control-evidence"
     assert synced == []
     try:

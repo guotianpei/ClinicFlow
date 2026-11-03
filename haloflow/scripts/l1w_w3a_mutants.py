@@ -233,8 +233,13 @@ def sync_sha_literals(target: Path, python: str | None = None) -> None:
     module, pairs = SHA_LITERALS[key]
     target = HERE.parent / key
     script = (
-        "import hashlib, importlib, json\n"
+        "import hashlib, importlib, json, sys\n"
+        # The working tree, not an installed copy: CI's project install need not be
+        # editable, while pytest imports src/ (CI #228 measured the stale-hash case).
+        "sys.path.insert(0, 'src')\n"
         f"m = importlib.import_module({module!r})\n"
+        "assert m.__file__.replace('\\\\', '/').startswith(str(__import__('os').getcwd())"
+        ".replace('\\\\', '/') + '/src/'), m.__file__\n"
         "print(json.dumps({lit: hashlib.sha256(getattr(m, body).encode()).hexdigest()"
         f" for lit, body in {list(pairs)!r}}}))\n"
     )
