@@ -60,9 +60,9 @@ Equivalently — these are the three gate commands in `.github/workflows/m01.yml
 locked environment and also runs a gate-reachability harness; the workflow file is authoritative):
 
 ```
-ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py tests/conftest.py tests/m01 tests/m02 alembic
-mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/composition.py
-pytest tests/m01 tests/m02 -q -rA
+ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform alembic
+mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py
+pytest tests/m01 tests/m02 tests/m05 tests/platform -q -rA
 ```
 
 ## Constraints that will bite
@@ -71,8 +71,10 @@ pytest tests/m01 tests/m02 -q -rA
 - The test database name **must start with `haloflow_test`**. The harness refuses anything else,
   because it drops schemas and roles inside it on every run.
 - The migration issues `CREATE ROLE`, so the migrating role needs `CREATEROLE`.
-- `ruff` and `mypy` cover **only** the paths in the gate commands above (`m01`, `m02`,
-  `composition.py`, their tests, `tests/conftest.py`, `alembic`). Code outside that scope — including
+- `ruff` and `mypy` cover **only** the paths in the gate commands above (`m01`, `m02`, `m05`,
+  `platform`, `composition.py`, `startup.py`, their tests, `tests/conftest.py`, `alembic`). Beyond the
+  three gate commands, the workflow also runs trace checks and mutation harnesses; read it for the full
+  list. Code outside that scope — including
   `config.py`, `main.py`, `scheduler.py` and everything under `src/haloflow/modules/` — is not checked
   by CI. Run the tools manually on files you touch there.
 - `mypy` runs in `strict` mode.
