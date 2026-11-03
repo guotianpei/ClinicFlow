@@ -210,7 +210,63 @@ _MA10K = _p("test_ma10k_isolation_guard", *(
     for f in ("m05_prepare_action_v2", "m05_apply_action_v2")
     for i in ("REPEATABLE READ", "SERIALIZABLE")))
 
-KILLS: dict[str, frozenset[str]] = {}  # filled from the oracle analysis below
+# Declared from the oracle analysis, checked against a local PG17.11 measurement on
+# 2026-11-03 (disclosed to Codex before declaration); every declared node is one the
+# analysis named as relevant. Analysis-predicted nodes that did NOT fail are listed
+# in the W3b acceptance packet with the reason; they are not declared here.
+_FM05B = _p("test_fm05b_authorization_lost_while_waiting_on_the_guard", "renamed", "revoked")
+_R_REVOKE = (
+    *_p("test_r2_change_uncommitted_apply_waits",
+        *(f"{c}-{e}" for c in ("revoke_read", "revoke_act") for e in ("commit", "rollback"))),
+    *_p("test_r4_r5_apply_first_admin_waits",
+        *(f"{m}-{c}" for m in ("apply", "prepare_apply") for c in ("revoke_read", "revoke_act"))),
+    *_p("test_r8_lock_timeout_never_accepts", "revoke_read", "revoke_act"),
+    *_p("test_ra2_actor_change_uncommitted_apply_waits",
+        *(f"{c}-{e}" for c in ("revoke_read", "revoke_act") for e in ("commit", "rollback"))),
+    *_p("test_ra4_ra5_apply_first_actor_change_waits",
+        *(f"{m}-{c}" for m in ("apply", "prepare_apply") for c in ("revoke_read", "revoke_act"))),
+    *_p("test_ra8_actor_lock_timeout_never_accepts", "revoke_read", "revoke_act"),
+)
+_INELIGIBLE = ("unknown", "inactive", "foreign", "no_read", "no_act")
+
+KILLS: dict[str, frozenset[str]] = {
+    "F-EXISTS": _n(FM_FILE, "test_fm03_active_admin_exists_writes_only_the_key",
+                   "test_fm07_concurrent_first_members_one_wins"),
+    "F-GUARD": _n(FM_FILE, *_FM05B, "test_fm07_concurrent_first_members_one_wins",
+                  "test_fm07b_first_member_and_t032_serialize_on_the_guard"),
+    "F-RECHECK-GRANT": _n(FM_FILE, _FM05B[1]),
+    "F-RECHECK-LOGIN": _n(FM_FILE, _FM05B[0]),
+    "F-KEY": _n(FM_FILE, "test_fm03_active_admin_exists_writes_only_the_key"),
+    "F-ACCESS": _n(FM_FILE, "test_fm01_empty_clinic_gets_member_and_admin_in_one_step"),
+    "F-DIGEST": _n(FM_FILE, "test_fm01_empty_clinic_gets_member_and_admin_in_one_step"),
+    "C-TEMPLATE": _n(CU_FILE, "test_am04_a_closure_unit_carrying_a_template_is_refused"),
+    "C-OWNER": _n(CU_FILE, "test_am03_owner_entry_removal_is_refused"),
+    "C-CHECKSUM": _n(CU_FILE, *(
+        f"{t}[{u}]" for t in ("test_am12_closure_checksum_payload_is_exact",
+                              "test_am12b_checksum_is_the_pinned_digest_and_every_field_is_bound")
+        for u in ("t035_m05_v1_runtime_closure", "t036_m01_staff_v1_runtime_closure"))),
+    "C-VERIFY": _n(CL_FILE, "test_cl03_partial_closure_fails_verification_and_is_not_applied"),
+    "T029-TS": _n(RI_FILE, *_p("test_ri02_impossible_timestamp_never_replays",
+                               "grant_role-supervisor", "activate-None")),
+    "T029-IMPLIED": _n(RI_FILE, "test_ri04_activate_with_inactive_snapshot_never_replays"),
+    "R-M2-V2": _n(EL_FILE, *_R_REVOKE),
+    "GM-1-V2": _n(EL_FILE, *_MA10K),
+    "GM-2-V2": _n(EL_FILE, "test_rc1_admin_then_m05_and_reverse", "test_rc1_two_items_in_one_txn",
+                  "test_rc2_changed_target_and_reused_admin_key"),
+    # Step 4b is the only actor check on claim (target = actor) and on the replay
+    # path; for supervisor actions t028's `supervisor` (active AND access AND role)
+    # refuses on its own, so RA-1/RA-2/RA-4/5/RA-8 are layered, not discriminating.
+    "SM-1-V2": _n(EL_FILE, *_p("test_ma10bcde_ineligible_target_refused",
+                               *(f"claim-{k}" for k in _INELIGIBLE)),
+                  *_p("test_ra1r_replay_refused_after_actor_change", *_CHANGES)),
+    "SM-2-V2": _n(EL_FILE, *_p("test_ma10bcde_ineligible_target_refused",
+                               *(f"{a}-{k}" for a in ("assign", "reassign")
+                                 for k in _INELIGIBLE)),
+                  *_p("test_r1_change_committed_before_apply", *_CHANGES),
+                  *_p("test_r2_change_uncommitted_apply_waits",
+                      *(f"{c}-commit" for c in _CHANGES)),
+                  *_p("test_r6_split_prepare_apply_change_between", *_CHANGES)),
+}
 
 
 @dataclass(frozen=True)

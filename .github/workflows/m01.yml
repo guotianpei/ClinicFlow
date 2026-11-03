@@ -174,6 +174,14 @@ jobs:
           $VENV/bin/python -I scripts/l1w_w3a_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3a-mutation"
+      # L-1W W3b: 18 targeted mutants (t034 first member, the acl_closure_v1 kind,
+      # t029 replay integrity, and v2 equivalents of the historical v1 rows), five
+      # groups, fresh database per run, judged by the same checker.
+      - run: $VENV/bin/pytest scripts/test_l1w_w3b_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/l1w_w3b_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3b-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
