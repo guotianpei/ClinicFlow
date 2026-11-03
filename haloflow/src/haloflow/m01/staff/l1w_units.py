@@ -301,6 +301,11 @@ DECLARE
     v_stored record;
     v_log record;
     v_result jsonb;
+    v_snap jsonb;
+    v_snap_name text;
+    v_name_ok boolean;
+    v_ts timestamptz;
+    v_ts_ok boolean;
     v_row record;
     v_found boolean := false;
     v_actor_status text;
@@ -518,30 +523,99 @@ BEGIN"""
         IF v_stored.digest IS DISTINCT FROM v_digest THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ACTION_KEY_CONFLICT';
         END IF;
+        -- Replay integrity (L-1W W3b R1, Codex 170024Z; ported from t023, v1r2 c3 and
+        -- F-MA10-IMPL-01): the stored result is returned only if the full closed
+        -- FOUR-key result and its nested staff snapshot are well-typed and bound to
+        -- this request, the key row and the log row; "outcome" is never stored, only
+        -- appended on return. The historical snapshot is never compared with current
+        -- (mutable) staff state.
         SELECT l.operation, l.staff_id, l.actor_id, l.digest, l.after, l.result
           INTO v_log
           FROM {schema}.m01_staff_admin_log AS l
          WHERE l.client_action_id = v_key;
-        IF NOT FOUND
-           OR COALESCE(v_stored.staff_id IS DISTINCT FROM v_staff
-              OR v_log.operation IS DISTINCT FROM v_op
-              OR v_log.staff_id IS DISTINCT FROM v_staff
-              OR v_log.actor_id IS DISTINCT FROM v_actor
-              OR v_log.digest IS DISTINCT FROM v_digest
-              OR pg_catalog.jsonb_typeof(v_log.result) IS DISTINCT FROM 'object'
-              OR (SELECT pg_catalog.array_agg(k ORDER BY k)
-                    FROM pg_catalog.jsonb_object_keys(v_log.result) AS k)
-                 IS DISTINCT FROM ARRAY['client_action_id', 'operation', 'schema_version',
-                                        'staff']::text[]
-              OR (v_log.result OPERATOR(pg_catalog.->) 'client_action_id')
-                 IS DISTINCT FROM pg_catalog.to_jsonb(v_key::text)
-              OR (v_log.result OPERATOR(pg_catalog.->) 'operation')
-                 IS DISTINCT FROM pg_catalog.to_jsonb(v_op)
-              OR (v_log.result OPERATOR(pg_catalog.->) 'staff') IS DISTINCT FROM v_log.after,
-              true) THEN
+        IF NOT FOUND THEN
             RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_LOG_INTEGRITY';
         END IF;
-        RETURN v_log.result OPERATOR(pg_catalog.||)
+        v_result := v_log.result;
+        v_snap := v_log.after;
+        -- Canonical UTC timestamp: shape, a real calendar date (narrowly caught
+        -- parse) and an exact round trip.
+        v_ts_ok := false;
+        IF pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'status_changed_at') = 'string'
+           AND (v_snap OPERATOR(pg_catalog.->>) 'status_changed_at') OPERATOR(pg_catalog.~)
+               '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{6}Z$' THEN
+            BEGIN
+                v_ts := pg_catalog.timezone('UTC', pg_catalog.replace(pg_catalog.replace(
+                    v_snap OPERATOR(pg_catalog.->>) 'status_changed_at', 'T', ' '), 'Z', '')
+                    ::timestamp);
+                v_ts_ok := pg_catalog.to_char(v_ts AT TIME ZONE 'UTC',
+                                              'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+                           = (v_snap OPERATOR(pg_catalog.->>) 'status_changed_at');
+            EXCEPTION WHEN datetime_field_overflow OR invalid_datetime_format THEN
+                v_ts_ok := false;
+            END;
+        END IF;
+        -- The full display-name rule applies to every stored snapshot.
+        v_snap_name := CASE
+            WHEN pg_catalog.jsonb_typeof(v_snap OPERATOR(pg_catalog.->) 'display_name') = 'string'
+            THEN v_snap OPERATOR(pg_catalog.->>) 'display_name' END;
+        v_name_ok := COALESCE(v_snap_name IS NFC NORMALIZED
+            AND pg_catalog.char_length(v_snap_name) BETWEEN 1 AND 80
+            AND v_snap_name OPERATOR(pg_catalog.!~) c_forbidden
+            AND v_snap_name OPERATOR(pg_catalog.!~) ('^' || c_ws)
+            AND v_snap_name OPERATOR(pg_catalog.!~) (c_ws || '$'), false);
+        -- Any unknown (NULL) predicate counts as corrupt.
+        IF COALESCE(v_stored.staff_id IS DISTINCT FROM v_staff
+           OR v_log.operation IS DISTINCT FROM v_op
+           OR v_log.staff_id IS DISTINCT FROM v_staff
+           OR v_log.actor_id IS DISTINCT FROM v_actor
+           OR v_log.digest IS DISTINCT FROM v_digest
+           OR pg_catalog.jsonb_typeof(v_result) IS DISTINCT FROM 'object'
+           OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                 FROM pg_catalog.jsonb_object_keys(v_result) AS k)
+              IS DISTINCT FROM ARRAY['client_action_id', 'operation', 'schema_version',
+                                     'staff']::text[]
+           OR (v_result OPERATOR(pg_catalog.->) 'schema_version') IS DISTINCT FROM '1'::jsonb
+           OR (v_result OPERATOR(pg_catalog.->) 'client_action_id')
+              IS DISTINCT FROM pg_catalog.to_jsonb(v_key::text)
+           OR (v_result OPERATOR(pg_catalog.->) 'operation')
+              IS DISTINCT FROM pg_catalog.to_jsonb(v_op)
+           OR (v_result OPERATOR(pg_catalog.->) 'staff') IS DISTINCT FROM v_snap
+           OR pg_catalog.jsonb_typeof(v_snap) IS DISTINCT FROM 'object'
+           OR (SELECT pg_catalog.array_agg(k ORDER BY k)
+                 FROM pg_catalog.jsonb_object_keys(v_snap) AS k)
+              IS DISTINCT FROM ARRAY['access', 'display_name', 'schema_version', 'staff_id',
+                                     'status', 'status_changed_at']::text[]
+           OR (v_snap OPERATOR(pg_catalog.->) 'schema_version') IS DISTINCT FROM '1'::jsonb
+           OR (v_snap OPERATOR(pg_catalog.->) 'staff_id')
+              IS DISTINCT FROM pg_catalog.to_jsonb(v_staff::text)
+           OR NOT COALESCE((v_snap OPERATOR(pg_catalog.->) 'status')
+                           IN ('"active"'::jsonb, '"inactive"'::jsonb), false)
+           OR NOT v_name_ok
+           OR NOT COALESCE((v_snap OPERATOR(pg_catalog.->) 'access')
+                           IN ('[]'::jsonb, '["act"]'::jsonb, '["read"]'::jsonb,
+                               '["act", "read"]'::jsonb), false)
+           OR NOT v_ts_ok
+           -- operation-implied facts of the after snapshot (v2 operations: activate is
+           -- v1's reactivate; role, identity and setting operations change no
+           -- snapshot field)
+           OR (v_op IN ('add', 'activate')
+               AND (v_snap OPERATOR(pg_catalog.->>) 'status') IS DISTINCT FROM 'active')
+           OR (v_op = 'deactivate'
+               AND (v_snap OPERATOR(pg_catalog.->>) 'status') IS DISTINCT FROM 'inactive')
+           OR (v_op IN ('add', 'rename')
+               AND (v_snap OPERATOR(pg_catalog.->>) 'display_name') IS DISTINCT FROM v_name)
+           OR (v_op = 'add'
+               AND (v_snap OPERATOR(pg_catalog.->) 'access') IS DISTINCT FROM '[]'::jsonb)
+           OR (v_op = 'grant'
+               AND NOT COALESCE((v_snap OPERATOR(pg_catalog.->) 'access')
+                                OPERATOR(pg_catalog.?) v_access, false))
+           OR (v_op = 'revoke'
+               AND COALESCE((v_snap OPERATOR(pg_catalog.->) 'access')
+                            OPERATOR(pg_catalog.?) v_access, true)), true) THEN
+            RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'ADMIN_LOG_INTEGRITY';
+        END IF;
+        RETURN v_result OPERATOR(pg_catalog.||)
             pg_catalog.jsonb_build_object('outcome', 'replayed');
     END IF;
 
@@ -819,7 +893,7 @@ END;
 
 _T027_SHA256: Final = "68f1ce2ceda6eb5ad4cbd12309c20cc5b63a246c4d5a7586ae2179c1ba437920"
 _T028_SHA256: Final = "4a4c735e911ea2f95f9ed64488b2b84c086aa7647cc000a6e3bd9610516372f1"
-_T029_SHA256: Final = "233a6238ee0f2942e9625edd31286ae18a7e3207e996ded0989112ea4ec9877e"
+_T029_SHA256: Final = "482e248532e62c2bc3c36f2526174da4a475fa2f6539d21adfc7a78760a81141"
 _T032_SHA256: Final = "190a4298c6d8939f2f9115f362d13ef959b2f2b3711faacd72ac36bdc0ec999c"
 
 _Params = tuple[tuple[str, str], ...]
