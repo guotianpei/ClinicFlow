@@ -810,7 +810,7 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
     ],
-    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3). Red tranche.
+    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3 / ff2ef544). Red tranche.
     "E-L1": [
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1a_unservable_tenant_exits_nonzero_without_accepting",  # noqa: E501
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_SERVED_TENANTS]",  # noqa: E501
@@ -838,8 +838,13 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4a_app_units.py::test_el3_cleanup_failure_alone_fails_startup",
         "tests/platform/test_l1w_w4a_app_units.py::test_el3_cancellation_during_startup_wins_and_cleans_up",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_el3_cancellation_during_cleanup_wins",
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_el3_real_pools_partial_startup_leaves_no_backend[fault-keyset]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_el3_real_pools_partial_startup_leaves_no_backend[fault-verifier]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_el3_real_pools_partial_startup_leaves_no_backend[fault-admission]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_el3_real_pools_partial_startup_leaves_no_backend[close-failure]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_el3_real_pools_partial_startup_leaves_no_backend[cancel-keyset]",  # noqa: E501
     ],
-    "H-01": [
+    "H-01-W4A": [
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[None-POST-/v1/session/logout]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Bearer-POST-/v1/session/logout]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Bearer -POST-/v1/session/logout]",  # noqa: E501
@@ -852,9 +857,9 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides3-POST-/v1/session/logout]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides4-POST-/v1/session/logout]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h01_unknown_kid_is_401",
-        "tests/platform/test_l1w_w4a_app_postgres.py::test_h01_refused_admission_never_reaches_a_handler",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_h01_w4a_refused_admission_never_reaches_a_handler",  # noqa: E501
     ],
-    "H-03": [
+    "H-03-W4A": [
         "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-Tenant-Id-GET-/healthz]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-Tenant-Id-POST-/v1/session/logout]",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-x-haloflow-tenant-GET-/healthz]",  # noqa: E501

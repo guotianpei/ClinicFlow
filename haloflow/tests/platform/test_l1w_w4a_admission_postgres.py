@@ -23,11 +23,12 @@ PINNED INTERFACE (W4a contract; red-gate reviewed):
   failure raises AdmissionUnavailable("ADMISSION_COMMIT_UNKNOWN").
 
 TEST SEAM (labelled): ``CommitSeam`` wraps the real connection and replaces only
-``commit``. Mode "before" rolls back and raises without sending COMMIT (known
-rollback). Mode "after" sends the REAL COMMIT, waits for it to complete on the
-server, then raises instead of returning (acknowledgement withheld: Codex pin,
-ACF-3/4). Persisted state is always read on a separate admin connection, and for
-"after" the committed effect is observed BEFORE the adapter's result is asserted.
+``commit``. Mode "count" passes through and counts. Mode "before" rolls back and
+raises without sending COMMIT (known rollback). Mode "after" sends the REAL COMMIT,
+waits for it to complete on the server, then raises instead of returning
+(acknowledgement withheld: Codex pin, ACF-3/4). Persisted state is always read on a
+separate admin connection, and for "after" the committed effect is observed BEFORE
+the adapter's result is asserted.
 
 Rows: ADMIT-MAP, ADMIT-PERSIST, ACF-1..4, LO-01 (adapter tier; HTTP tier in
 test_l1w_w4a_app_postgres.py).
@@ -77,6 +78,10 @@ class CommitSeam:
 
     async def commit(self) -> None:
         self.commits += 1
+        if self.mode == "count":  # passthrough: count only
+            await self._conn.commit()
+            self.server_committed = True
+            return
         if self.mode == "before":
             await self._conn.rollback()
             raise psycopg.OperationalError("seam: connection lost before COMMIT was sent")
@@ -134,8 +139,9 @@ async def test_admit_map_admitted_returns_binding_and_commits_once(
 ) -> None:
     b = bind()
     sid, auth = db.new_sid(), ago(minutes=3)
-    admission, _ = _admission(env)
+    admission, seams = _admission(env, "count")
     session = await admission.admit(_identity(b.ident, sid, auth))
+    assert [seam.commits for seam in seams] == [1]  # one connection, exactly one COMMIT
     assert (session.tenant_id, session.staff_id) == (b.tenant, b.staff)
     assert session.identity.sid == sid
     row = env.session_row(b.ident.issuer, b.ident.subject, sid)
@@ -173,10 +179,10 @@ async def test_admit_map_every_refusal_outcome(
 
     cases["AUTH_TIME_FUTURE"] = _identity(b.ident, db.new_sid(), now() + timedelta(minutes=5))
 
-    sid3 = db.new_sid()
+    sid3, auth3 = db.new_sid(), ago(hours=12, minutes=1)  # captured once (Codex ff2ef544)
     env.seed_session(b.ident.issuer, b.ident.subject, sid3, b.tenant, b.staff,
-                     ago(hours=12, minutes=1), ago(minutes=1))
-    cases["ABSOLUTE"] = _identity(b.ident, sid3, ago(hours=12, minutes=1))
+                     auth3, ago(minutes=1))
+    cases["ABSOLUTE"] = _identity(b.ident, sid3, auth3)
 
     sid4, auth4 = db.new_sid(), ago(hours=1)
     env.seed_session(b.ident.issuer, b.ident.subject, sid4, b.tenant, b.staff,

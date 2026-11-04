@@ -19,6 +19,10 @@ PINNED INTERFACE (W4a contract; red-gate reviewed):
     6. ``build_admission(admission_pool) -> IdentityAdmission`` (no close)
   Then publish ``PlatformServices(services, admission, verifier)`` at
   ``app.state.platform``. Shutdown unpublishes first, then closes in reverse order.
+- ``haloflow.platform.app.PRODUCTION_STEPS`` (a ``StartupSteps``): the tenant and
+  admission pools are opened with ``wait=True`` and ``min_size >= 1`` on
+  ``config.runtime_database_url`` (so each holds a backend once opened; E-L3 real-pool
+  rows count them by ``application_name``); ``open_keyset`` performs no fetch.
 - Cleanup (addendum 1 D3): on a failure every resource opened so far is closed in
   reverse order; a close failure is recorded, never raised over the original; the
   original exception propagates with its type and code; ``CancelledError`` wins; a
@@ -256,20 +260,25 @@ async def test_el2_shutdown_unpublishes_before_closing() -> None:
     rig = _rig(close_gate=gate)
     app = create_app(config=_config(), steps=rig.steps)
     transport = httpx.ASGITransport(app=app)
+    exiting: asyncio.Future[Any] | None = None
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         lifespan = app.router.lifespan_context(app)
-        await lifespan.__aenter__()
-        assert (await client.get("/healthz")).status_code == 200
-        exiting = asyncio.ensure_future(lifespan.__aexit__(None, None, None))
-        for _ in range(200):  # until shutdown reaches the (gated) tenant pool close
-            if "close:tenant_pool" in rig.journal.events:
-                break
-            await asyncio.sleep(0.01)
-        assert "close:tenant_pool" in rig.journal.events
-        during = await client.get("/healthz")
-        gate.set()
-        await exiting
-        after = await client.get("/healthz")
+        try:
+            async with asyncio.timeout(10):
+                await lifespan.__aenter__()
+                assert (await client.get("/healthz")).status_code == 200
+                exiting = asyncio.ensure_future(lifespan.__aexit__(None, None, None))
+                while "close:tenant_pool" not in rig.journal.events:  # gated close reached
+                    await asyncio.sleep(0.01)
+                during = await client.get("/healthz")
+                gate.set()
+                await exiting
+                after = await client.get("/healthz")
+        finally:  # failure path: never leave the shutdown task or the gate pending
+            gate.set()
+            if exiting is not None and not exiting.done():
+                exiting.cancel()
+                await asyncio.gather(exiting, return_exceptions=True)
     assert during.status_code == 503 and during.json() == {"code": "NOT_READY"}
     assert after.status_code == 503
     assert rig.journal.events[-3:] == ["close:keyset", "close:admission_pool",

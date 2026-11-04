@@ -181,21 +181,41 @@ def bound_test_issuer(env: db.L1WEnv) -> Callable[..., Bound]:
     return make
 
 
+@pytest.fixture
+def at(ago: Callable[..., datetime]) -> Callable[..., datetime]:
+    """``ago`` truncated to whole seconds: JWT ``auth_time`` is an integer, so every SQL
+    seed and every token in this module uses the same value (Codex ff2ef544 #1)."""
+
+    def make(**delta: float) -> datetime:
+        return ago(**delta).replace(microsecond=0)
+
+    return make
+
+
+async def _settle(*tasks: asyncio.Future[Any]) -> None:
+    """Failure-path cleanup: cancel and await anything still running (Codex ff2ef544 #2)."""
+
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
 # ---------------------------------------------------------------------------
 # LO-01 over HTTP
 # ---------------------------------------------------------------------------
 
 
 async def test_lo01_http_logout_is_per_device(
-    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], ago: Callable[..., datetime],
+    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], at: Callable[..., datetime],
 ) -> None:
     key = s.SigningKey.ec()
     h = Harness(env, key)
     b = bound_test_issuer()
-    auth = ago(minutes=3)
+    auth = at(minutes=3)
     sid_a, sid_b = db.new_sid(), db.new_sid()
-    async with _client(h.app(held_route=True)) as client:
-        h.barrier.set()
+    h.barrier.set()
+    async with asyncio.timeout(DEADLINE), _client(h.app(held_route=True)) as client:
         assert (await client.get("/test/i2/held", headers=_bearer(key, b, sid_a, auth))
                 ).status_code == 200
         assert (await client.get("/test/i2/held", headers=_bearer(key, b, sid_b, auth))
@@ -209,7 +229,7 @@ async def test_lo01_http_logout_is_per_device(
     assert again.status_code == 401 and again.json() == {"code": "UNAUTHENTICATED"}
     assert other.status_code == 200
     row = env.session_row(b.ident.issuer, b.ident.subject, sid_a)
-    assert row is not None and row[6] == "logout"
+    assert row is not None and row[2] == auth and row[6] == "logout"
     assert h.handler_calls == 3
 
 
@@ -219,72 +239,90 @@ async def test_lo01_http_logout_is_per_device(
 
 
 async def test_i2_http_requests_admitted_before_logout_complete_later_ones_refused(
-    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], ago: Callable[..., datetime],
+    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], at: Callable[..., datetime],
 ) -> None:
     key = s.SigningKey.ec()
     h = Harness(env, key)
     b = bound_test_issuer()
-    sid, auth = db.new_sid(), ago(minutes=3)
+    sid, auth = db.new_sid(), at(minutes=3)
     headers = _bearer(key, b, sid, auth)
     n = 3
+    held: list[asyncio.Future[Any]] = []
+    late_task: asyncio.Future[Any] | None = None
     async with _client(h.app(held_route=True)) as client:
-        held = [asyncio.ensure_future(client.get("/test/i2/held", headers=headers))
-                for _ in range(n)]
-        async with asyncio.timeout(DEADLINE):
-            while h.arrived < n:  # every request passed T1 and is inside its handler
-                await asyncio.sleep(0.01)
+        try:
+            async with asyncio.timeout(DEADLINE):
+                held = [asyncio.ensure_future(client.get("/test/i2/held", headers=headers))
+                        for _ in range(n)]
+                while h.arrived < n:  # every request passed T1 and is inside its handler
+                    await asyncio.sleep(0.01)
 
-        with env.connect("runtime") as conn:  # logout commits while all n are held
-            assert db.logout(conn, b.ident, sid, auth) == "LOGGED_OUT"
+                with env.connect("runtime") as conn:  # logout commits while all n are held
+                    assert db.logout(conn, b.ident, sid, auth) == "LOGGED_OUT"
 
-        late = await client.get("/test/i2/held", headers=headers)
-        h.barrier.set()
-        async with asyncio.timeout(DEADLINE):
-            results = await asyncio.gather(*held)
+                # A regression that admits the late request would park it at the
+                # barrier: it runs as a task and is bounded by the deadline.
+                late_task = asyncio.ensure_future(client.get("/test/i2/held", headers=headers))
+                late = await late_task
+                h.barrier.set()
+                results = await asyncio.gather(*held)
+        finally:
+            h.barrier.set()
+            await _settle(*held, *([late_task] if late_task else []))
     assert [r.status_code for r in results] == [200] * n
     assert late.status_code == 401
     assert h.handler_calls == n  # the late request never reached the handler
 
 
 async def test_i2_http_logout_waits_behind_inflight_admission_then_applies(
-    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], ago: Callable[..., datetime],
+    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], at: Callable[..., datetime],
 ) -> None:
     key = s.SigningKey.ec()
     b = bound_test_issuer()
-    sid, auth = db.new_sid(), ago(minutes=3)
+    sid, auth = db.new_sid(), at(minutes=3)
     with env.connect("runtime") as conn:  # the session exists before the race
         assert db.admit(conn, b.ident, sid, auth)[0] == "ADMITTED"
     h = Harness(env, key, seam="hold")
     headers = _bearer(key, b, sid, auth)
+    result: dict[str, Any] = {}
+
+    def do_logout() -> None:
+        with env.connect("runtime") as conn:
+            result["pid"] = db.backend_pid(conn)
+            result["outcome"] = db.logout(conn, b.ident, sid, auth)
+
+    thread = threading.Thread(target=do_logout, daemon=True)
+    request: asyncio.Future[Any] | None = None
+    h.barrier.set()
     async with _client(h.app(held_route=True)) as client:
-        h.barrier.set()
-        request = asyncio.ensure_future(client.get("/test/i2/held", headers=headers))
-        async with asyncio.timeout(DEADLINE):
-            while not h.seams or not h.seams[0].holding.is_set():
-                await asyncio.sleep(0.01)
-        holder = h.seams[0].pid
-        assert holder is not None
+        try:
+            async with asyncio.timeout(DEADLINE):
+                request = asyncio.ensure_future(client.get("/test/i2/held", headers=headers))
+                while not h.seams or not h.seams[0].holding.is_set():
+                    await asyncio.sleep(0.01)
+                holder = h.seams[0].pid
+                assert holder is not None
 
-        result: dict[str, Any] = {}
+                thread.start()
+                while "pid" not in result:
+                    await asyncio.sleep(0.01)
+                await asyncio.to_thread(db.wait_blocked_by, env, result["pid"], holder)
 
-        def do_logout() -> None:
-            with env.connect("runtime") as conn:
-                result["pid"] = db.backend_pid(conn)
-                result["outcome"] = db.logout(conn, b.ident, sid, auth)
-
-        thread = threading.Thread(target=do_logout, daemon=True)
-        thread.start()
-        async with asyncio.timeout(DEADLINE):
-            while "pid" not in result:
-                await asyncio.sleep(0.01)
-        await asyncio.to_thread(db.wait_blocked_by, env, result["pid"], holder)
-
-        h.seams[0].release.set()  # T1 commits: the in-flight request is admitted
-        first = await request
-        await asyncio.to_thread(thread.join, DEADLINE)
-        assert result["outcome"] == "LOGGED_OUT"
-        h.seam = None
-        after = await client.get("/test/i2/held", headers=headers)
+                h.seams[0].release.set()  # T1 commits: the in-flight request is admitted
+                first = await request
+                await asyncio.to_thread(thread.join, DEADLINE)
+                assert not thread.is_alive()
+                assert result["outcome"] == "LOGGED_OUT"
+                h.seam = None
+                after = await client.get("/test/i2/held", headers=headers)
+        finally:
+            for seam in h.seams:  # never strand a held COMMIT (and its locks)
+                if isinstance(seam, HoldSeam):
+                    seam.release.set()
+            await _settle(*([request] if request else []))
+            if thread.is_alive():
+                await asyncio.to_thread(thread.join, DEADLINE)
+    assert not thread.is_alive()
     assert first.status_code == 200
     assert after.status_code == 401
 
@@ -297,14 +335,14 @@ async def test_i2_http_logout_waits_behind_inflight_admission_then_applies(
 @pytest.mark.parametrize("mode", ["before", "after"])
 async def test_acf_http_commit_failure_is_503_and_no_handler(
     mode: str, env: db.L1WEnv, bound_test_issuer: Callable[..., Bound],
-    ago: Callable[..., datetime],
+    at: Callable[..., datetime],
 ) -> None:
     key = s.SigningKey.ec()
     h = Harness(env, key, seam=mode)
     b = bound_test_issuer()
-    sid, auth = db.new_sid(), ago(minutes=3)
-    async with _client(h.app(held_route=True)) as client:
-        h.barrier.set()
+    sid, auth = db.new_sid(), at(minutes=3)
+    h.barrier.set()
+    async with asyncio.timeout(DEADLINE), _client(h.app(held_route=True)) as client:
         response = await client.get("/test/i2/held", headers=_bearer(key, b, sid, auth))
     assert response.status_code == 503 and response.json() == {"code": "UNAVAILABLE"}
     assert h.handler_calls == 0
@@ -315,17 +353,125 @@ async def test_acf_http_commit_failure_is_503_and_no_handler(
         assert row is None
 
 
-async def test_h01_refused_admission_never_reaches_a_handler(
-    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], ago: Callable[..., datetime],
+async def test_h01_w4a_refused_admission_never_reaches_a_handler(
+    env: db.L1WEnv, at: Callable[..., datetime],
 ) -> None:
     key = s.SigningKey.ec()
     h = Harness(env, key)
     stranger = Bound(env.tenant(), uuid.uuid4(),
                      db.Identity(issuer=s.ISSUER, subject=f"sub-{env.token}-unbound"),
                      uuid.uuid4())
-    async with _client(h.app(held_route=True)) as client:
-        h.barrier.set()
+    h.barrier.set()
+    async with asyncio.timeout(DEADLINE), _client(h.app(held_route=True)) as client:
         response = await client.get("/test/i2/held",
-                                    headers=_bearer(key, stranger, db.new_sid(), ago(minutes=1)))
+                                    headers=_bearer(key, stranger, db.new_sid(), at(minutes=1)))
     assert response.status_code == 401 and response.json() == {"code": "UNAUTHENTICATED"}
     assert h.handler_calls == 0
+
+
+# ---------------------------------------------------------------------------
+# E-L3 with real pools (Codex ff2ef544 #3): pg_stat_activity is the oracle
+# ---------------------------------------------------------------------------
+
+PROBE_APP = "haloflow-l1w-w4a-el3"
+
+
+def _platform_environ(env: db.L1WEnv, tag: str) -> dict[str, str]:
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    params = conninfo_to_dict(env.conninfo("runtime"))
+    params["application_name"] = tag
+    runtime = make_conninfo("", **params)
+    return {
+        "HALOFLOW_PLATFORM_DEPLOYMENT": "non_production",
+        "HALOFLOW_PLATFORM_SERVED_TENANTS": "clinic-el3-unused",
+        "HALOFLOW_PLATFORM_RUNTIME_DATABASE_URL": runtime,
+        "HALOFLOW_PLATFORM_MIGRATOR_DATABASE_URL": runtime,
+        "HALOFLOW_PLATFORM_PROVISIONER_DATABASE_URL": runtime,
+        "HALOFLOW_PLATFORM_AUTH_ISSUER": s.ISSUER,
+        "HALOFLOW_PLATFORM_AUTH_AUDIENCE": s.AUDIENCE,
+        "HALOFLOW_PLATFORM_AUTH_JWKS_URL": s.JWKS_URL,
+        "HALOFLOW_PLATFORM_AUTH_ALGORITHMS": "ES256",
+    }
+
+
+def _backends(env: db.L1WEnv, tag: str) -> int:
+    row = env.one("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", (tag,))
+    assert row is not None
+    return int(row[0])
+
+
+class StepFault(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.reason_code = code
+
+
+@pytest.mark.parametrize("case", ["fault-keyset", "fault-verifier", "fault-admission",
+                                  "close-failure", "cancel-keyset"])
+async def test_el3_real_pools_partial_startup_leaves_no_backend(
+    case: str, env: db.L1WEnv,
+) -> None:
+    """Real ``PRODUCTION_STEPS`` pools (tenant + admission) on the fixture runtime login,
+    tagged by application_name. ``start_services`` is replaced (no production tenant in
+    this suite; B5 startup closes its own connections, B5-E rows). A fault is injected
+    after the real acquisitions; the positive control counts the tagged backends while
+    the fault fires; afterwards none remain."""
+
+    import dataclasses
+
+    from haloflow.platform.app import PRODUCTION_STEPS, create_app
+    from haloflow.platform.config import load_config
+
+    tag = f"{PROBE_APP}-{case}-{env.token}"
+    config = load_config(_platform_environ(env, tag))
+    seen: dict[str, int] = {}
+
+    async def fake_services(*_: Any) -> Any:
+        return object()
+
+    def faulty(step: str) -> Callable[..., Any]:
+        async def fire(*_: Any) -> Any:
+            seen["during"] = await asyncio.to_thread(_backends, env, tag)
+            if case == "cancel-keyset":
+                raise asyncio.CancelledError()
+            raise StepFault(f"FAULT_{step.upper()}")
+        return fire
+
+    replace: dict[str, Any] = {"start_services": fake_services}
+    if case in ("fault-keyset", "cancel-keyset", "close-failure"):
+        replace["open_keyset"] = faulty("keyset")
+    elif case == "fault-verifier":
+        replace["build_verifier"] = faulty("verifier")
+    else:
+        replace["build_admission"] = faulty("admission")
+    if case == "close-failure":
+        real_open = PRODUCTION_STEPS.open_admission_pool
+
+        async def open_then_fail_close(cfg: Any) -> Any:
+            resource, close = await real_open(cfg)
+
+            async def close_then_raise() -> None:
+                await close()  # the real pool really closes ...
+                raise RuntimeError("seam: close reported failure")  # ... then reports one
+
+            return resource, close_then_raise
+
+        replace["open_admission_pool"] = open_then_fail_close
+    steps = dataclasses.replace(PRODUCTION_STEPS, **replace)
+    app = create_app(config=config, steps=steps)
+
+    expected: type[BaseException] = (asyncio.CancelledError if case == "cancel-keyset"
+                                      else StepFault)
+    async with asyncio.timeout(DEADLINE):
+        with pytest.raises(expected) as caught:
+            async with app.router.lifespan_context(app):
+                pytest.fail("startup should have failed")
+    if expected is StepFault:
+        assert caught.value.reason_code.startswith("FAULT_")  # the original, not the close
+    assert seen["during"] >= 2  # positive control: both real pools held a backend
+    deadline = asyncio.get_running_loop().time() + DEADLINE
+    while (count := await asyncio.to_thread(_backends, env, tag)) and \
+            asyncio.get_running_loop().time() < deadline:
+        await asyncio.sleep(0.05)
+    assert count == 0
