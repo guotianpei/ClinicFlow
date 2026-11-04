@@ -182,6 +182,13 @@ jobs:
           $VENV/bin/python -I scripts/l1w_w3b_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3b-mutation"
+      # L-1W W4a: 15 predeclared mutants of the platform admission adapter (PG17
+      # rows), the app lifespan/mapping and the outermost gate (unit rows).
+      - run: $VENV/bin/pytest scripts/test_l1w_w4a_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/l1w_w4a_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4a-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -37,10 +37,15 @@ def test_ids_unique_and_every_mutant_has_a_w2_kill_set() -> None:
     ids = [spec[0] for spec in script.SPECS]
     assert len(ids) == len(set(ids))
     assert set(script.KILLS) == set(ids)
+    added = script.W4A_ADDED_KILLS  # W4a option B (Codex 366f7e94): additive only
+    assert set(added) <= set(ids)
     for mid in ids:
         kills = script.KILLS[mid]
-        assert kills, mid
-        assert all(node.startswith("tests/platform/test_l1w_w2_") for node in kills), mid
+        extra = added.get(mid, frozenset())
+        base = kills - extra
+        assert base, mid  # every mutant keeps its own W2 kill rows
+        assert all(node.startswith("tests/platform/test_l1w_w2_") for node in base), mid
+        assert all(node.startswith("tests/platform/test_l1w_w4a_") for node in extra), mid
 
 
 def test_every_declared_kill_is_a_collected_node() -> None:

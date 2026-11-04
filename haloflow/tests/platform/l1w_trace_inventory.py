@@ -56,6 +56,20 @@ W3B_IDS: Final = (
     "HARNESS-MIGRATION",
 )
 
+# W4a (plan v1 + addendum 1; Codex eeaddf94 ALIGN-after-revise, 183528a3 construction
+# pins, ff2ef544 red review): process, readiness, boundary and admission.
+# ADMIT-COMMIT-FAILURE is carried by ACF-1..4 and ACF-HTTP together (addendum 1 pin 2).
+# H-01-W4A / H-03-W4A are the logout-only W4a evidence; H-01 and H-03 themselves stay
+# DEFERRED to W4b (every route, and the full W1 refusal corpus through HTTP).
+W4A_IDS: Final = (
+    "E-L1", "E-L2", "E-L3", "H-01-W4A", "H-03-W4A", "H-05", "H-06", "W4A-SURFACE",
+    "KEYSET-503",
+    "ADMIT-MAP", "ADMIT-PERSIST", "ADMIT-COMMIT-FAILURE", "ACF-1", "ACF-2", "ACF-3",
+    "ACF-4", "ACF-ACQ", "ACF-HTTP", "LO-01", "I2-HTTP",
+    "I2-CONTROL",  # harness control (Codex 94a45a4f); passes at red by design
+    "LIFE-1",  # acquisition-window ownership + lifetime-error precedence (Codex 413421dd)
+)
+
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them
 # (Codex W2 plan disposition). id -> tranche.
 # Test files outside tests/*/test_l1w_*.py whose nodes the trace may map, and only
@@ -67,12 +81,11 @@ HARNESS_EXTERNAL_FILES: Final = (
 )
 
 DEFERRED: Final = {
-    "R-01": "W4",  # the capability matrix literal belongs to the adapter
-    "ADMIT-COMMIT-FAILURE": "W4",  # Codex final disposition pin 3
+    "R-01": "W4",  # the capability matrix literal belongs to the adapter (W4b)
     "S-04-HTTP": "W4", "S-08-HTTP": "W4",
-    "E-L1": "W4", "E-L2": "W4", "E-L3": "W4",
-    "H-01": "W4", "H-02": "W4", "H-03": "W4", "H-04": "W4", "H-05": "W4", "H-06": "W4",
-    "H-07": "W4",
+    "H-01": "W4",  # every W4b route + the full W1 refusal corpus through HTTP (ff2ef544)
+    "H-03": "W4",  # every W4b route, with W4b's closed request models (ff2ef544)
+    "H-02": "W4", "H-04": "W4", "H-07": "W4",
     "G-01": "W4", "G-02": "W4", "G-03": "W4", "G-04": "W4", "G-05": "W4",
     "S-11": "later",  # pruning deferred (v1r1 §5)
 }

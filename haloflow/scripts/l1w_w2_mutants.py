@@ -354,6 +354,53 @@ KILLS: dict[str, frozenset[str]] = {
     }),
 }
 
+# L-1W W4a (Codex 366f7e94 / b0bd5d3e, option B): ADDITIVE kill-set entries. TESTS is the
+# whole tests/platform directory, and the W4a admission and HTTP rows also detect these
+# alembic-008 mutants. Every entry above is unchanged; each node below was measured with
+# this harness (PG16 calibration, then PG17 CI) and maps to one causal assertion, listed in
+# Work Session 2026-11-04/claude_w2-killset-extension-causal-map-2026-11-04.md.
+# WM-SETROW x ADMIT-MAP is settings-operation detection (the explicit l1w_admin_set_setting
+# call fails on the mutated default-row materialization), not MFA-admission coverage.
+W4A_ADDED_KILLS: dict[str, frozenset[str]] = {
+    "AM-REVOKED": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_lo01_adapter_logout_revokes_only_that_session",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_logout_waits_behind_inflight_admission_then_applies",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_requests_admitted_before_logout_complete_later_ones_refused",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_lo01_http_logout_is_per_device",
+    }),
+    "AM-MISMATCH": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[BINDING_MISMATCH]",  # noqa: E501
+    }),
+    "AM-SID": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+    }),
+    "AM-ABS": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[ABSOLUTE]",  # noqa: E501
+    }),
+    "AM-IDLE": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf4_committed_but_ack_lost_on_idle_is_unavailable_revocation_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[IDLE]",  # noqa: E501
+    }),
+    "AM-IDLEDEF": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf4_committed_but_ack_lost_on_idle_is_unavailable_revocation_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[IDLE]",  # noqa: E501
+    }),
+    "AM-INPUT": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+    }),
+    "WM-SETROW": frozenset({
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+    }),
+}
+for _mid, _nodes in W4A_ADDED_KILLS.items():
+    assert _nodes.isdisjoint(KILLS[_mid]), _mid  # strictly additive
+    KILLS[_mid] = KILLS[_mid] | _nodes
+
 
 def _load_checker() -> Any:
     spec = importlib.util.spec_from_file_location(
