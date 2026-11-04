@@ -196,10 +196,16 @@ def _lifespan(config: PlatformConfig | None, steps: StartupSteps) -> Any:
                                               verifier=verifier)
         try:
             yield
-        finally:
-            app.state.platform = None  # the gate refuses from here on
-            if await _close_all(closers):
-                raise StartupCleanupFailed()
+        except BaseException:
+            # An error or cancellation thrown into the app's lifetime: unpublish, close
+            # everything, and re-raise THAT error (D3; Codex W4A-LIFE-1). A close
+            # failure is recorded only; a cancellation during the close wins.
+            app.state.platform = None
+            await _close_all(closers)
+            raise
+        app.state.platform = None  # the gate refuses from here on
+        if await _close_all(closers):
+            raise StartupCleanupFailed()  # shutdown-only close failure stays visible
 
     return lifespan
 

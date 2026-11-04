@@ -1,7 +1,7 @@
 """L-1W W4a security mutation controls (plan v1 §3; Codex eb7bbb28: declared mutation
 evidence for implementation acceptance).
 
-Three groups, judged by the shared part-A checker (scripts/m02_observation_mutants.py),
+Five groups, judged by the shared part-A checker (scripts/m02_observation_mutants.py),
 exactly as scripts/l1w_w1_mutants.py: the control run must pass completely; a
 mutant is KILLED only by a completed run whose every failure is in its PREDECLARED kill
 set; the target is restored after every run and its SHA-256 re-checked.
@@ -9,6 +9,9 @@ set; the target is restored after every run and its SHA-256 re-checked.
 - admission: haloflow.platform.admission against the PostgreSQL adapter rows.
 - app: haloflow.platform.app against the unit rows.
 - http: haloflow.platform.http against the unit rows.
+- connections: haloflow.m01.connections against the LIFE-1 unit rows.
+- lifetime: the yielded-lifespan branch of haloflow.platform.app against the
+  LIFE-1 unit rows (Codex W4A-LIFE-1; measured on the LIFE-1 fix head).
 
 Kill sets were measured locally on implementation head d484edf before CI (unit groups
 on the locked Python 3.12 venv; the admission group on a disposable local PostgreSQL 16
@@ -34,8 +37,10 @@ HERE = Path(__file__).resolve().parent
 ADMISSION = Path("src/haloflow/platform/admission.py")
 APP = Path("src/haloflow/platform/app.py")
 HTTP = Path("src/haloflow/platform/http.py")
+CONNECTIONS = Path("src/haloflow/m01/connections.py")
 ADMISSION_TESTS = "tests/platform/test_l1w_w4a_admission_postgres.py"
 APP_TESTS = "tests/platform/test_l1w_w4a_app_units.py"
+LIFE1_TESTS = "tests/platform/test_l1w_w4a_life1_units.py"
 TITLE_FROM = "m02-observation-mutants"
 
 
@@ -123,14 +128,14 @@ SPECS: tuple[tuple[str, str, Path, str, str, frozenset[str]], ...] = (
             'test_el3_cancellation_during_cleanup_wins',
      )),
     ('AP-UNPUBLISH', 'shutdown does not unpublish', APP,
-     '            app.state.platform = None  # the gate refuses from here on\n',
+     '        app.state.platform = None  # the gate refuses from here on\n',
      '',
      _nodes(APP_TESTS,
             'test_el2_shutdown_unpublishes_before_closing',
      )),
     ('AP-CLEANFAIL', 'cleanup failure alone not reported', APP,
-     '            if await _close_all(closers):\n                raise StartupCleanupFailed()\n',
-     '            await _close_all(closers)\n',
+     '        if await _close_all(closers):\n            raise StartupCleanupFailed()  # shutdown-only close failure stays visible\n',  # noqa: E501
+     '        await _close_all(closers)\n',
      _nodes(APP_TESTS,
             'test_el3_cleanup_failure_alone_fails_startup',
      )),
@@ -183,12 +188,51 @@ SPECS: tuple[tuple[str, str, Path, str, str, frozenset[str]], ...] = (
             'test_h03_tenant_input_is_400_before_authentication[query-tenant_id-GET-/healthz]',
             'test_h03_tenant_input_is_400_before_authentication[query-tenant_id-POST-/v1/session/logout]',  # noqa: E501
      )),
+    # W4A-LIFE-1 (Codex 413421dd / e531b6a8): acquisition ownership and lifetime errors.
+    ('CN-NOCLOSE', 'failed open leaves the pool open', CONNECTIONS,
+     '            await pool.close()\n',
+     '            pass\n',
+     _nodes(LIFE1_TESTS,
+            'test_life1_cancellation_during_the_close_wins[open_admission_pool-AdmissionPool]',
+            'test_life1_cancellation_during_the_close_wins[open_tenant_pool-TenantPool]',
+            'test_life1_cancellation_while_opening_closes_and_propagates[open_admission_pool-AdmissionPool]',  # noqa: E501
+            'test_life1_cancellation_while_opening_closes_and_propagates[open_tenant_pool-TenantPool]',  # noqa: E501
+            'test_life1_close_failure_never_replaces_the_open_failure[open_admission_pool-AdmissionPool]',  # noqa: E501
+            'test_life1_close_failure_never_replaces_the_open_failure[open_tenant_pool-TenantPool]',
+            'test_life1_open_failure_closes_the_pool_and_reraises_the_original[open_admission_pool-AdmissionPool]',  # noqa: E501
+            'test_life1_open_failure_closes_the_pool_and_reraises_the_original[open_tenant_pool-TenantPool]',  # noqa: E501
+     )),
+    ('CN-MASK', 'close failure raised over the open failure', CONNECTIONS,
+     '        except Exception:  # noqa: BLE001 - never raised over the original\n            pass\n',  # noqa: E501
+     '        except Exception:  # noqa: BLE001 - never raised over the original\n            raise\n',  # noqa: E501
+     _nodes(LIFE1_TESTS,
+            'test_life1_cancellation_while_opening_closes_and_propagates[open_admission_pool-AdmissionPool]',  # noqa: E501
+            'test_life1_cancellation_while_opening_closes_and_propagates[open_tenant_pool-TenantPool]',  # noqa: E501
+            'test_life1_close_failure_never_replaces_the_open_failure[open_admission_pool-AdmissionPool]',  # noqa: E501
+            'test_life1_close_failure_never_replaces_the_open_failure[open_tenant_pool-TenantPool]',
+     )),
+    ('CN-CANCEL', 'cancellation during the close does not win', CONNECTIONS,
+     '        if cancelled and not isinstance(original, asyncio.CancelledError):\n            raise asyncio.CancelledError() from None\n',  # noqa: E501
+     '',
+     _nodes(LIFE1_TESTS,
+            'test_life1_cancellation_during_the_close_wins[open_admission_pool-AdmissionPool]',
+            'test_life1_cancellation_during_the_close_wins[open_tenant_pool-TenantPool]',
+     )),
+    ('AP-LIFETIME', 'lifetime error replaced by StartupCleanupFailed', APP,
+     '            app.state.platform = None\n            await _close_all(closers)\n            raise\n',  # noqa: E501
+     '            app.state.platform = None\n            if await _close_all(closers):\n                raise StartupCleanupFailed() from None\n            raise\n',  # noqa: E501
+     _nodes(LIFE1_TESTS,
+            'test_life1_cancellation_in_lifetime_is_reraised_despite_close_failure',
+            'test_life1_error_in_lifetime_is_reraised_not_cleanup_failed[close_error1]',
+     )),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (
     ("admission", ADMISSION, ADMISSION_TESTS),
     ("app", APP, APP_TESTS),
     ("http", HTTP, APP_TESTS),
+    ("connections", CONNECTIONS, LIFE1_TESTS),
+    ("lifetime", APP, LIFE1_TESTS),
 )
 
 
@@ -203,11 +247,18 @@ def _load_checker() -> Any:
     return module
 
 
-def build_mutants(checker: Any, target: Path) -> tuple[Any, ...]:
+def in_group(target: Path, tests: str, spec: tuple[Any, ...]) -> bool:
+    """A mutant belongs to the group of its target AND of the module its kills name
+    (two groups share app.py: the app unit rows and the LIFE-1 rows)."""
+
+    return bool(spec[2] == target and all(n.startswith(tests + "::") for n in spec[5]))
+
+
+def build_mutants(checker: Any, target: Path, tests: str) -> tuple[Any, ...]:
     return tuple(
-        checker.Mutant(mid, desc, old, new, kills)
-        for mid, desc, spec_target, old, new, kills in SPECS
-        if spec_target == target
+        checker.Mutant(spec[0], spec[1], spec[3], spec[4], spec[5])
+        for spec in SPECS
+        if in_group(target, tests, spec)
     )
 
 
@@ -222,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         checker = _load_checker()
         checker.TARGET = target
         checker.TESTS = tests
-        checker.MUTANTS = build_mutants(checker, target)
+        checker.MUTANTS = build_mutants(checker, target, tests)
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = int(checker.main(["--pytest", args.pytest,

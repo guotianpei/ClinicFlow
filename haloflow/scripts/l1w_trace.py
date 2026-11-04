@@ -810,7 +810,7 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
     ],
-    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3 / ff2ef544 / 94a45a4f).
+    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3 / ff2ef544 / 94a45a4f / 413421dd).
     "E-L1": [
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1a_unservable_tenant_exits_nonzero_without_accepting",  # noqa: E501
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_SERVED_TENANTS]",  # noqa: E501
@@ -955,5 +955,26 @@ TRACE: dict[str, list[str]] = {
     ],
     "I2-CONTROL": [
         "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_control_retained_lock_blocks_logout_only_until_its_bound",  # noqa: E501
+    ],
+    "LIFE-1": [
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_open_failure_closes_the_pool_and_reraises_the_original[open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_open_failure_closes_the_pool_and_reraises_the_original[open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_close_failure_never_replaces_the_open_failure[open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_close_failure_never_replaces_the_open_failure[open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_while_opening_closes_and_propagates[open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_while_opening_closes_and_propagates[open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_during_the_close_wins[open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_during_the_close_wins[open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_successful_open_returns_the_pool_and_its_close[open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_successful_open_returns_the_pool_and_its_close[open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_error_in_lifetime_is_reraised_not_cleanup_failed[None]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_error_in_lifetime_is_reraised_not_cleanup_failed[close_error1]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_in_lifetime_is_reraised_despite_close_failure",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_cancellation_during_lifetime_close_wins",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_units.py::test_life1_lifetime_error_unpublishes_before_closing",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[error-open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[error-open_admission_pool-AdmissionPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[cancel-open_tenant_pool-TenantPool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[cancel-open_admission_pool-AdmissionPool]",  # noqa: E501
     ],
 }

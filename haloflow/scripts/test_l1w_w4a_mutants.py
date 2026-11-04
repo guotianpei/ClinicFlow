@@ -37,10 +37,11 @@ def test_ids_unique_and_kill_sets_named_in_group_module() -> None:
     script = _script()
     ids = [spec[0] for spec in script.SPECS]
     assert len(ids) == len(set(ids))
-    modules = {target: tests for _label, target, tests in script.GROUPS}
-    for mid, _desc, target, _old, _new, kills in script.SPECS:
-        assert kills, mid
-        assert all(node.startswith(modules[target] + "::") for node in kills), mid
+    for spec in script.SPECS:
+        assert spec[5], spec[0]
+        homes = [label for label, target, tests in script.GROUPS
+                 if script.in_group(target, tests, spec)]
+        assert len(homes) == 1, (spec[0], homes)  # every mutant runs in exactly one group
 
 
 def test_every_declared_kill_is_a_collected_node() -> None:

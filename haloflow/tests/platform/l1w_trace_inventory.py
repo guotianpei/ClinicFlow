@@ -67,6 +67,7 @@ W4A_IDS: Final = (
     "ADMIT-MAP", "ADMIT-PERSIST", "ADMIT-COMMIT-FAILURE", "ACF-1", "ACF-2", "ACF-3",
     "ACF-4", "ACF-ACQ", "ACF-HTTP", "LO-01", "I2-HTTP",
     "I2-CONTROL",  # harness control (Codex 94a45a4f); passes at red by design
+    "LIFE-1",  # acquisition-window ownership + lifetime-error precedence (Codex 413421dd)
 )
 
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them
