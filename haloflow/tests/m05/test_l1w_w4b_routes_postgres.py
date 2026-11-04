@@ -414,16 +414,27 @@ async def _held_request(clinic: Clinic, hold: Hold, client: httpx.AsyncClient,
                         change: Callable[[], None]) -> httpx.Response:
     hold.armed = True
     task = asyncio.ensure_future(_send(client, headers, req))
+    paused = asyncio.ensure_future(hold.paused.wait())
     try:
-        await asyncio.wait_for(hold.paused.wait(), DEADLINE)
+        # Whichever comes first: a request that never reaches the self-standing step
+        # (no route, or a regression that skips it) returns its own response here and
+        # fails on its status, instead of waiting out the deadline (red CI 41929674514).
+        done, _ = await asyncio.wait({task, paused}, timeout=DEADLINE,
+                                     return_when=asyncio.FIRST_COMPLETED)
+        assert done, "neither paused nor answered within the deadline"
+        if task in done:
+            response: httpx.Response = task.result()
+            assert hold.paused.is_set() is False
+            return response
         await asyncio.to_thread(change)  # commits on its own connection
         hold.release.set()
         return await asyncio.wait_for(task, DEADLINE)
     finally:
         hold.release.set()
-        if not task.done():
-            task.cancel()
-            await asyncio.wait([task], timeout=10)
+        for pending in (task, paused):
+            if not pending.done():
+                pending.cancel()
+        await asyncio.wait([task, paused], timeout=10)
 
 
 async def test_r01_role_revoked_before_t3_refuses_the_supervisor_action(clinic: Clinic) -> None:
