@@ -11,13 +11,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import AsyncIterator, Callable
-from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Final
-
-from psycopg import AsyncConnection
-from psycopg_pool import AsyncConnectionPool
 
 from haloflow.platform.verify import VerifiedIdentity
 
@@ -117,27 +114,3 @@ class IdentityAdmission:
             raise AdmissionRefused(outcome)
         raise AdmissionUnavailable(UNAVAILABLE)
 
-
-class AdmissionPool:
-    """A small runtime-role pool for admission transactions only (Q-W4-1). Its
-    connections are non-autocommit; a connection returned inside a transaction is
-    rolled back by the pool."""
-
-    def __init__(self, conninfo: str, *, min_size: int = 1, max_size: int = 4,
-                 timeout: float = 10.0) -> None:
-        self._pool: AsyncConnectionPool[AsyncConnection[Any]] = AsyncConnectionPool(
-            conninfo, min_size=min_size, max_size=max_size, timeout=timeout,
-            name="haloflow-platform-admission", open=False,
-            kwargs={"autocommit": False, "prepare_threshold": None},
-        )
-
-    async def open(self) -> None:
-        await self._pool.open(wait=True)
-
-    async def close(self) -> None:
-        await self._pool.close()
-
-    @asynccontextmanager
-    async def connection(self) -> AsyncIterator[AsyncConnection[Any]]:
-        async with self._pool.connection() as conn:
-            yield conn

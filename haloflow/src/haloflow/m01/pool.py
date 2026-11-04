@@ -2,6 +2,7 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from psycopg import AsyncConnection
 from psycopg.pq import TransactionStatus
@@ -70,3 +71,40 @@ class TenantPool:
         ).fetchone()
         if row is None or row[0] != ["pg_catalog"] or row[1] != 0:
             raise RoutingSetupFailed(reason_code="POOL_BASELINE_MISMATCH")
+
+
+class AdmissionPool:
+    """L-1W W4a: a small runtime-role pool for the platform's admission transactions
+    only (plan v1 Q-W4-1). Its connections are NON-autocommit and are used solely for
+    the shared ``l1w_admit`` / ``l1w_logout`` definers, never for tenant data; a
+    connection returned inside a transaction is rolled back by the pool."""
+
+    def __init__(
+        self,
+        conninfo: str,
+        *,
+        min_size: int = 1,
+        max_size: int = 4,
+        timeout: float = 10.0,
+        name: str = "haloflow-platform-admission",
+    ) -> None:
+        self._pool: AsyncConnectionPool[AsyncConnection[Any]] = AsyncConnectionPool(
+            conninfo,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=timeout,
+            name=name,
+            open=False,
+            kwargs={"autocommit": False, "prepare_threshold": None},
+        )
+
+    async def open(self) -> None:
+        await self._pool.open(wait=True)
+
+    async def close(self) -> None:
+        await self._pool.close()
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[AsyncConnection[Any]]:
+        async with self._pool.connection() as connection:
+            yield connection

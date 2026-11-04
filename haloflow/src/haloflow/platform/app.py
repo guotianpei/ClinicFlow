@@ -34,7 +34,6 @@ from psycopg import AsyncConnection
 from starlette.responses import JSONResponse, Response
 
 from haloflow.platform.admission import (
-    AdmissionPool,
     AdmissionRefused,
     AdmissionUnavailable,
     AdmittedSession,
@@ -81,11 +80,9 @@ class PlatformServices:
 
 
 async def _open_tenant_pool(config: PlatformConfig) -> tuple[Any, Close]:
-    from haloflow.m01.pool import TenantPool
+    from haloflow.m01.connections import open_tenant_pool
 
-    pool = TenantPool(config.runtime_database_url, min_size=1)
-    await pool.open()
-    return pool, pool.close
+    return await open_tenant_pool(config.runtime_database_url, min_size=1)
 
 
 def _connector(conninfo: str) -> Callable[[], Awaitable[AsyncConnection[Any]]]:
@@ -112,9 +109,9 @@ async def _start_services(config: PlatformConfig, tenant_pool: Any) -> Any:
 
 
 async def _open_admission_pool(config: PlatformConfig) -> tuple[Any, Close]:
-    pool = AdmissionPool(config.runtime_database_url, min_size=1)
-    await pool.open()
-    return pool, pool.close
+    from haloflow.m01.connections import open_admission_pool
+
+    return await open_admission_pool(config.runtime_database_url, min_size=1)
 
 
 async def _open_keyset(config: PlatformConfig) -> tuple[Any, Close]:

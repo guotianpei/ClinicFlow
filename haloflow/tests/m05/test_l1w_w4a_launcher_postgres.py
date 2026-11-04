@@ -34,7 +34,9 @@ Rows:
   process exits non-zero within the deadline, and no TCP connect ever succeeded.
 - E-L1b: a missing required variable: non-zero exit, no TCP accept.
 - E-L1c (positive control): the same tenant active: the port accepts, and
-  ``GET /healthz`` returns exactly ``{"status":"ok"}``; SIGTERM then exits 0.
+  ``GET /healthz`` returns exactly ``{"status":"ok"}``; SIGTERM then shuts down
+  gracefully (exit 0 or -SIGTERM, uvicorn re-raises the signal; "Application
+  shutdown complete." logged).
 """
 
 from __future__ import annotations
@@ -189,4 +191,9 @@ def test_el1c_good_configuration_serves_after_startup_and_exits_cleanly(
         assert response.status_code == 200 and response.content == b'{"status":"ok"}'
         os.killpg(proc.pid, signal.SIGTERM)
         proc.wait(timeout=DEADLINE)
-        assert proc.returncode == 0, _evidence(proc)
+        evidence = _evidence(proc)
+        # Test repair (disclosed): uvicorn re-raises the received signal after a
+        # graceful shutdown, so a clean SIGTERM exit is -SIGTERM; the shutdown itself
+        # is proven by uvicorn's own completion line.
+        assert proc.returncode in (0, -signal.SIGTERM), evidence
+        assert "Application shutdown complete." in evidence, evidence
