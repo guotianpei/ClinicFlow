@@ -12,6 +12,15 @@ pool, ``start_production_services`` (B5) and the admission pool, from a real
 no network). The services are the genuine bundle (``ProductionNoteKeys``), except
 where a row says SEAM below.
 
+DEPLOYMENT = ``non_production`` (red CI 41928369852 at 2422780: with ``production``
+every row stopped at startup with ``M05_ACTIVATION_NOT_AUTHORIZED``). A
+``production`` registry check refuses an active M05 family and any test intake row
+(``registry_validation`` 165-177), and items exist only through the B2 test intake
+profile; B5-S03 starts the same bundle as ``NON_PRODUCTION`` for the same reason. The
+bundle construction is unchanged; only the registry policy differs. Not claimed:
+that production serves follow-up items (M05 activation in production is not
+authorized; L-1S). The production refusal itself stays covered by B5.
+
 TEST SEAMS (labelled):
 - ``Hold`` wraps the published ``staff.self_standing`` so a request pauses after its
   self-standing step (T2) and before its route resolve and gateway transaction (T3);
@@ -178,7 +187,7 @@ def _config(clinic: Clinic) -> Any:
 
     logins = clinic.install.ids.logins
     return load_config({
-        "HALOFLOW_PLATFORM_DEPLOYMENT": "production",
+        "HALOFLOW_PLATFORM_DEPLOYMENT": "non_production",  # see the module docstring
         "HALOFLOW_PLATFORM_SERVED_TENANTS": clinic.tenant_id,
         "HALOFLOW_PLATFORM_RUNTIME_DATABASE_URL": logins["haloflow_runtime"],
         "HALOFLOW_PLATFORM_MIGRATOR_DATABASE_URL": logins["haloflow_migrator"],
