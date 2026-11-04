@@ -83,6 +83,10 @@ class Harness:
         self.held = asyncio.Event()
         self.barrier = asyncio.Event()
         self.arrived = 0
+        # Only the first ``hold_limit`` arrivals wait at the barrier; any later one is
+        # answered at once, so a wrongly admitted late request shows as a behavioural
+        # 200 (asserted 401), not as a timeout (Codex 366f7e94).
+        self.hold_limit: int | None = None
 
     @asynccontextmanager
     async def connect(self) -> AsyncIterator[Any]:
@@ -142,7 +146,8 @@ class Harness:
                 self.handler_calls += 1
                 self.arrived += 1
                 self.held.set()
-                await self.barrier.wait()
+                if self.hold_limit is None or self.arrived <= self.hold_limit:
+                    await self.barrier.wait()
                 return {"staff": str(session.staff_id)}
 
             app.add_api_route("/test/i2/held", held, methods=["GET"])
@@ -288,6 +293,7 @@ async def test_i2_http_requests_admitted_before_logout_complete_later_ones_refus
     sid, auth = db.new_sid(), at(minutes=3)
     headers = _bearer(key, b, sid, auth)
     n = 3
+    h.hold_limit = n
     held: list[asyncio.Future[Any]] = []
     late_task: asyncio.Future[Any] | None = None
     async with _client(h.app(held_route=True)) as client:

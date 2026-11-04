@@ -201,10 +201,22 @@ async def test_admit_map_every_refusal_outcome(
     cases["MFA_REQUIRED"] = _identity(m.ident, db.new_sid(), ago(minutes=1), assured=False)
 
     assert set(cases) == REFUSALS
+    from haloflow.platform.admission import AdmissionRefused, AdmissionUnavailable
+
+    # Every case is observed, then compared at once, so a failure names exactly which
+    # outcome changed (Codex 366f7e94: map each failed assertion to its SQL change).
+    observed: dict[str, str] = {}
     for code, identity in cases.items():
-        error = await _refusal(admission, identity)
-        assert error.code == code, code
-        _assert_sanitized(error, identity.issuer, identity.subject, identity.sid)
+        try:
+            await admission.admit(identity)
+        except AdmissionRefused as error:
+            observed[code] = error.code
+            _assert_sanitized(error, identity.issuer, identity.subject, identity.sid)
+        except AdmissionUnavailable as error:
+            observed[code] = f"UNAVAILABLE:{error.reason_code}"
+        else:
+            observed[code] = "ADMITTED"
+    assert observed == {code: code for code in cases}
 
 
 # ---------------------------------------------------------------------------
