@@ -810,4 +810,142 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
     ],
+    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3). Red tranche.
+    "E-L1": [
+        "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1a_unservable_tenant_exits_nonzero_without_accepting",  # noqa: E501
+        "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_SERVED_TENANTS]",  # noqa: E501
+        "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_AUTH_ISSUER]",  # noqa: E501
+        "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_RUNTIME_DATABASE_URL]",  # noqa: E501
+        "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1c_good_configuration_serves_after_startup_and_exits_cleanly",  # noqa: E501
+    ],
+    "E-L2": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_el2_without_lifespan_every_request_is_503[/healthz-GET]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el2_without_lifespan_every_request_is_503[/v1/session/logout-POST]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el2_without_lifespan_every_request_is_503[/anything-GET]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el2_shutdown_unpublishes_before_closing",
+        "tests/platform/test_l1w_w4a_app_units.py::test_el2_startup_order_is_pinned",
+    ],
+    "E-L3": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[tenant_pool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[services]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[admission_pool]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[keyset]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[verifier]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_fault_after_each_step_closes_what_was_opened_and_reraises[admission]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_close_failure_never_masks_the_original[keyset]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_close_failure_never_masks_the_original[verifier]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_close_failure_never_masks_the_original[admission]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_cleanup_failure_alone_fails_startup",
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_cancellation_during_startup_wins_and_cleans_up",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_el3_cancellation_during_cleanup_wins",
+    ],
+    "H-01": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[None-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Bearer-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Bearer -POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Basic abc-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[bearer x.y.z-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_missing_or_malformed_bearer_is_401_and_admission_never_runs[Bearer not-a-jwt-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides0-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides1-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides2-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides3-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_verifier_refusal_is_401_and_admission_never_runs[overrides4-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h01_unknown_kid_is_401",
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_h01_refused_admission_never_reaches_a_handler",  # noqa: E501
+    ],
+    "H-03": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-Tenant-Id-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-Tenant-Id-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-x-haloflow-tenant-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-x-haloflow-tenant-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-TENANT-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-X-TENANT-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-tenant-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[header-tenant-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant_id-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant_id-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant_hint-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-tenant_hint-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-clinic-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-clinic-POST-/v1/session/logout]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-CLINIC_ID-GET-/healthz]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h03_tenant_input_is_400_before_authentication[query-CLINIC_ID-POST-/v1/session/logout]",  # noqa: E501
+    ],
+    "H-05": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_h05_docs_and_openapi_are_404[/docs]",
+        "tests/platform/test_l1w_w4a_app_units.py::test_h05_docs_and_openapi_are_404[/redoc]",
+        "tests/platform/test_l1w_w4a_app_units.py::test_h05_docs_and_openapi_are_404[/openapi.json]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_h05_docs_and_openapi_are_404[/docs/oauth2-redirect]",  # noqa: E501
+    ],
+    "H-06": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_h06_healthz_is_exact_when_ready",
+    ],
+    "W4A-SURFACE": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_w4a_route_surface_is_exactly_pinned",
+        "tests/platform/test_l1w_w4a_app_units.py::test_bodies_literal_is_pinned",
+    ],
+    "KEYSET-503": [
+        "tests/platform/test_l1w_w4a_app_units.py::test_keyset_unavailable_is_503_and_admission_never_runs",  # noqa: E501
+    ],
+    "ADMIT-MAP": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_refusal_set_is_pinned",
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_admitted_returns_binding_and_commits_once",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_map_every_refusal_outcome",
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[UNBOUND-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[BINDING_MISMATCH-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[REVOKED-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[SID_MISMATCH-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[AUTH_TIME_FUTURE-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[ABSOLUTE-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[IDLE-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[INVALID_INPUT-401-UNAUTHENTICATED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_refusal_status[MFA_REQUIRED-401-REAUTHENTICATION_REQUIRED]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_unavailable_is_503_and_no_handler[ADMISSION_COMMIT_UNKNOWN]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_admit_map_http_unavailable_is_503_and_no_handler[ADMISSION_UNAVAILABLE]",  # noqa: E501
+    ],
+    "ADMIT-PERSIST": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[IDLE]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[ABSOLUTE]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_admit_persist_confirmed_refusal_revocation_is_durable[BINDING_MISMATCH]",  # noqa: E501
+    ],
+    "ADMIT-COMMIT-FAILURE": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf1_known_rollback_on_admitted_is_unavailable_and_nothing_persists",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf2_known_rollback_on_idle_is_unavailable_and_revocation_not_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf3_committed_but_ack_lost_on_admitted_is_unavailable_session_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf4_committed_but_ack_lost_on_idle_is_unavailable_revocation_persisted",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_acf_http_commit_failure_is_503_and_no_handler[before]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_acf_http_commit_failure_is_503_and_no_handler[after]",  # noqa: E501
+    ],
+    "ACF-1": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf1_known_rollback_on_admitted_is_unavailable_and_nothing_persists",  # noqa: E501
+    ],
+    "ACF-2": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf2_known_rollback_on_idle_is_unavailable_and_revocation_not_persisted",  # noqa: E501
+    ],
+    "ACF-3": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf3_committed_but_ack_lost_on_admitted_is_unavailable_session_persisted",  # noqa: E501
+    ],
+    "ACF-4": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf4_committed_but_ack_lost_on_idle_is_unavailable_revocation_persisted",  # noqa: E501
+    ],
+    "ACF-ACQ": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_acf_connection_acquisition_failure_is_unavailable",  # noqa: E501
+    ],
+    "ACF-HTTP": [
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_acf_http_commit_failure_is_503_and_no_handler[before]",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_acf_http_commit_failure_is_503_and_no_handler[after]",  # noqa: E501
+    ],
+    "LO-01": [
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_lo01_adapter_logout_revokes_only_that_session",  # noqa: E501
+        "tests/platform/test_l1w_w4a_admission_postgres.py::test_lo01_adapter_logout_commit_unknown_is_unavailable",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_units.py::test_logout_route_admits_then_logs_out_and_returns_204",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_lo01_http_logout_is_per_device",
+    ],
+    "I2-HTTP": [
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_requests_admitted_before_logout_complete_later_ones_refused",  # noqa: E501
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_logout_waits_behind_inflight_admission_then_applies",  # noqa: E501
+    ],
 }

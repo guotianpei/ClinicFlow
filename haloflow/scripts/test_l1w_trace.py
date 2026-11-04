@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent / "tests" / "platform"))
 
 import l1w_trace_inventory as inv  # noqa: E402
 
-IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS, *inv.W3B_IDS)
+IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS, *inv.W3B_IDS, *inv.W4A_IDS)
 
 
 def _script() -> Any:
