@@ -261,11 +261,13 @@ async def test_el2_shutdown_unpublishes_before_closing() -> None:
     app = create_app(config=_config(), steps=rig.steps)
     transport = httpx.ASGITransport(app=app)
     exiting: asyncio.Future[Any] | None = None
+    entered = False
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         lifespan = app.router.lifespan_context(app)
         try:
             async with asyncio.timeout(10):
                 await lifespan.__aenter__()
+                entered = True
                 assert (await client.get("/healthz")).status_code == 200
                 exiting = asyncio.ensure_future(lifespan.__aexit__(None, None, None))
                 while "close:tenant_pool" not in rig.journal.events:  # gated close reached
@@ -274,11 +276,15 @@ async def test_el2_shutdown_unpublishes_before_closing() -> None:
                 gate.set()
                 await exiting
                 after = await client.get("/healthz")
-        finally:  # failure path: never leave the shutdown task or the gate pending
+        finally:  # failure path: never leave the shutdown task, the gate or the stack open
             gate.set()
-            if exiting is not None and not exiting.done():
-                exiting.cancel()
-                await asyncio.gather(exiting, return_exceptions=True)
+            if entered and exiting is None:  # failed before shutdown was started
+                exiting = asyncio.ensure_future(lifespan.__aexit__(None, None, None))
+            if exiting is not None:
+                await asyncio.wait([exiting], timeout=10)
+                if not exiting.done():
+                    exiting.cancel()
+                    await asyncio.wait([exiting], timeout=10)
     assert during.status_code == 503 and during.json() == {"code": "NOT_READY"}
     assert after.status_code == 503
     assert rig.journal.events[-3:] == ["close:keyset", "close:admission_pool",

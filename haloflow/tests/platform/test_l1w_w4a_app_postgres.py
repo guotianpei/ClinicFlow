@@ -192,13 +192,54 @@ def at(ago: Callable[..., datetime]) -> Callable[..., datetime]:
     return make
 
 
+SETTLE_S = 10.0
+LOCK_TIMEOUT_MS = 15_000  # longer than wait_blocked_by's 10 s detection window
+STATEMENT_TIMEOUT_MS = 20_000
+BOUNDED_APP = "haloflow-l1w-w4a-bounded"
+
+
 async def _settle(*tasks: asyncio.Future[Any]) -> None:
-    """Failure-path cleanup: cancel and await anything still running (Codex ff2ef544 #2)."""
+    """Failure-path cleanup: cancel and await anything still running, itself bounded
+    (Codex ff2ef544 #2, 94a45a4f)."""
 
     for task in tasks:
         if not task.done():
             task.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
+    if tasks:
+        await asyncio.wait(tasks, timeout=SETTLE_S)
+
+
+def _bounded_conninfo(env: db.L1WEnv, tag: str) -> str:
+    """The fixture runtime login with a connect timeout and server-side lock and
+    statement timeouts, so a retained lock can never block a test forever."""
+
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    params = conninfo_to_dict(env.conninfo("runtime"))
+    params.update(
+        connect_timeout="5", application_name=tag,
+        options=f"-c lock_timeout={LOCK_TIMEOUT_MS} -c statement_timeout={STATEMENT_TIMEOUT_MS}",
+    )
+    return make_conninfo("", **params)
+
+
+def _bounded_logout(env: db.L1WEnv, b: Bound, sid: str, auth: datetime, tag: str,
+                    pid_out: dict[str, Any] | None = None) -> str:
+    """Synchronous logout on its own bounded connection. Always run OFF the event
+    loop (``asyncio.to_thread``), never inline (Codex 94a45a4f)."""
+
+    import psycopg
+
+    with psycopg.connect(_bounded_conninfo(env, tag)) as conn:
+        if pid_out is not None:
+            pid_out["pid"] = db.backend_pid(conn)
+        return db.logout(conn, b.ident, sid, auth)
+
+
+def _tagged_backends(env: db.L1WEnv, tag: str) -> int:
+    row = env.one("SELECT count(*) FROM pg_stat_activity WHERE application_name = %s", (tag,))
+    assert row is not None
+    return int(row[0])
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +298,10 @@ async def test_i2_http_requests_admitted_before_logout_complete_later_ones_refus
                 while h.arrived < n:  # every request passed T1 and is inside its handler
                     await asyncio.sleep(0.01)
 
-                with env.connect("runtime") as conn:  # logout commits while all n are held
-                    assert db.logout(conn, b.ident, sid, auth) == "LOGGED_OUT"
+                # Logout commits while all n are held: off the loop, bounded connection.
+                outcome = await asyncio.to_thread(_bounded_logout, env, b, sid, auth,
+                                                  f"{BOUNDED_APP}-i2a-{env.token}")
+                assert outcome == "LOGGED_OUT"
 
                 # A regression that admits the late request would park it at the
                 # barrier: it runs as a task and is bounded by the deadline.
@@ -286,10 +329,13 @@ async def test_i2_http_logout_waits_behind_inflight_admission_then_applies(
     headers = _bearer(key, b, sid, auth)
     result: dict[str, Any] = {}
 
+    tag = f"{BOUNDED_APP}-i2b-{env.token}"
+
     def do_logout() -> None:
-        with env.connect("runtime") as conn:
-            result["pid"] = db.backend_pid(conn)
-            result["outcome"] = db.logout(conn, b.ident, sid, auth)
+        try:
+            result["outcome"] = _bounded_logout(env, b, sid, auth, tag, result)
+        except Exception as error:  # noqa: BLE001 - surfaced by the assertions below
+            result["error"] = type(error).__name__
 
     thread = threading.Thread(target=do_logout, daemon=True)
     request: asyncio.Future[Any] | None = None
@@ -323,8 +369,56 @@ async def test_i2_http_logout_waits_behind_inflight_admission_then_applies(
             if thread.is_alive():
                 await asyncio.to_thread(thread.join, DEADLINE)
     assert not thread.is_alive()
+    assert "error" not in result, result
     assert first.status_code == 200
     assert after.status_code == 401
+    assert _tagged_backends(env, tag) == 0
+
+
+async def test_i2_control_retained_lock_blocks_logout_only_until_its_bound(
+    env: db.L1WEnv, bound_test_issuer: Callable[..., Bound], at: Callable[..., datetime],
+) -> None:
+    """HARNESS CONTROL (Codex 94a45a4f; passes at red by design, it imports nothing
+    from haloflow.platform). A retained session-row lock, as a regression would leave
+    it, blocks the off-loop bounded logout: the test still finishes within its
+    deadline, the logout fails with the server-side lock timeout, the event loop
+    stayed responsive meanwhile, and no tagged backend or task is left behind."""
+
+    import psycopg
+
+    b = bound_test_issuer()
+    sid, auth = db.new_sid(), at(minutes=3)
+    with env.connect("runtime") as conn:
+        assert db.admit(conn, b.ident, sid, auth)[0] == "ADMITTED"
+    tag = f"{BOUNDED_APP}-ctl-{env.token}"
+    holder = psycopg.connect(env.admin)  # retains the row lock (the regression)
+    try:
+        holder.execute("SELECT 1 FROM shared.staff_sessions WHERE issuer = %s AND subject = %s"
+                       " AND sid = %s FOR UPDATE", (b.ident.issuer, b.ident.subject, sid))
+        pids: dict[str, Any] = {}
+        start = asyncio.get_running_loop().time()
+        task = asyncio.ensure_future(asyncio.to_thread(_bounded_logout, env, b, sid, auth,
+                                                       tag, pids))
+        ticks = 0
+        try:
+            async with asyncio.timeout(DEADLINE):
+                while not task.done():  # the loop keeps running while logout is blocked
+                    ticks += 1
+                    await asyncio.sleep(0.05)
+        finally:
+            await _settle(task)
+        elapsed = asyncio.get_running_loop().time() - start
+        assert task.done()
+        error = task.exception()
+        assert isinstance(error, psycopg.errors.LockNotAvailable), repr(error)
+        assert LOCK_TIMEOUT_MS / 1000 - 1 <= elapsed < DEADLINE
+        assert ticks > 10
+    finally:
+        holder.rollback()
+        holder.close()
+    assert _tagged_backends(env, tag) == 0
+    row = env.session_row(b.ident.issuer, b.ident.subject, sid)
+    assert row is not None and row[5] is None  # the blocked logout changed nothing
 
 
 # ---------------------------------------------------------------------------

@@ -810,7 +810,7 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[grant_role-supervisor]",  # noqa: E501
         "tests/m05/test_l1w_w3b_replay_integrity_postgres.py::test_ri05_crafted_valid_history_replays[activate-None]",  # noqa: E501
     ],
-    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3 / ff2ef544). Red tranche.
+    # L-1W W4a (plan v1 + addendum 1; Codex eeaddf94 / 183528a3 / ff2ef544 / 94a45a4f).
     "E-L1": [
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1a_unservable_tenant_exits_nonzero_without_accepting",  # noqa: E501
         "tests/m05/test_l1w_w4a_launcher_postgres.py::test_el1b_missing_configuration_exits_nonzero_without_accepting[HALOFLOW_PLATFORM_SERVED_TENANTS]",  # noqa: E501
@@ -952,5 +952,8 @@ TRACE: dict[str, list[str]] = {
     "I2-HTTP": [
         "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_requests_admitted_before_logout_complete_later_ones_refused",  # noqa: E501
         "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_http_logout_waits_behind_inflight_admission_then_applies",  # noqa: E501
+    ],
+    "I2-CONTROL": [
+        "tests/platform/test_l1w_w4a_app_postgres.py::test_i2_control_retained_lock_blocks_logout_only_until_its_bound",  # noqa: E501
     ],
 }
