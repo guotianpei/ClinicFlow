@@ -189,6 +189,15 @@ jobs:
           $VENV/bin/python -I scripts/l1w_w4a_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4a-mutation"
+      # L-1W W4b: 17 predeclared mutants in three unit groups (w4b_capabilities:
+      # haloflow.platform.capabilities; w4b_routes: haloflow.platform.routes and the
+      # closed status map in haloflow.platform.http), kill sets in
+      # scripts/l1w_w4b_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_l1w_w4b_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/l1w_w4b_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4b-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

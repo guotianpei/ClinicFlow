@@ -1,0 +1,163 @@
+{
+ "CP-ACTNOREAD": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[act-without-read]"
+ ],
+ "CP-ADMINREAD": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[read]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-no-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_matrix_is_exactly_the_a52_literal"
+ ],
+ "CP-DISPLAYORDER": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_display_prefers_the_read_alternative_when_both_are_held",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[display]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_requirements_are_exactly_the_literal"
+ ],
+ "CP-DRIFT": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_optional_never_adds_an_unheld_capability",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_requirements_are_exactly_the_literal",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[admin-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[everything]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[sup-act]"
+ ],
+ "CP-DROPROW": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[everything]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-no-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-only]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[everything]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[sup-act]"
+ ],
+ "CP-SUPACT": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[admin-act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_matrix_is_exactly_the_a52_literal",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[admin-act]"
+ ],
+ "CP-UNHELD": [
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_optional_never_adds_an_unheld_capability",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[act]",
+  "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[admin-act]"
+ ],
+ "HT-ECHOREASON": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[failure-unlisted]"
+ ],
+ "HT-M01": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-context-invalid-1]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-context-invalid-2]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-tenant-denied-1]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-tenant-denied-2]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[m01-context-invalid]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-capability-denied]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-context-invalid]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-tenant-denied]"
+ ],
+ "HT-NOTAUTH": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[read-not-authorized]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-not-authorized]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-not-authorized]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-not-authorized]"
+ ],
+ "HT-REFUSAL200": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-precondition]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[key-conflict]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[note-required]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-malformed]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[resolved]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[stale]"
+ ],
+ "RT-CORR": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_client_correlation_header_is_ignored_and_not_echoed[x-correlation-id]"
+ ],
+ "RT-ECHO": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-equal]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-other]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-unknown-field]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-unknown-field]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[resolve-item-id-equal]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-resolve]"
+ ],
+ "RT-ITEMID": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-equal]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-other]"
+ ],
+ "RT-NOCHECK": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[act-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[act-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[admin-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[admin-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[display-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[display-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[get-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[get-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[history-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[history-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[list-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[list-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[read_note-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[read_note-unknown]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[resolve-inactive]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[resolve-unknown]"
+ ],
+ "RT-STEP1": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[get]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[history]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[list]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[read_note]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[resolve]"
+ ],
+ "RT-UNKNOWN": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-equal]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-other]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-unknown-field]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-unknown-field]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[resolve-item-id-equal]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-resolve]"
+ ]
+}
