@@ -14,6 +14,10 @@ the target is restored after every run and its SHA-256 re-checked.
   (the standing/route check skipped, a body item_id accepted, unknown keys accepted
   so a body tenant key reaches the request, an unknown key reflected, the client
   correlation header trusted, the self-standing step asking for the route set).
+- late_reader (W4B-MUT-1): the T3 reader revalidation in haloflow.m05.service
+  against the genuine-bundle R-Q1 rows (PostgreSQL 17; measured in CI only, the
+  local environment has no PostgreSQL 17). RT-TENANT (routes) is the compound
+  tenant-from-body mutant; RT-NOCHECK remains the early HTTP decision control.
 - http (``w4b_routes``): the closed status map in haloflow.platform.http against the
   boundary unit rows (a refusal turned into 200, NOT_AUTHORIZED as 409, an unlisted
   failure reason echoed, an M01 error as 500).
@@ -46,7 +50,9 @@ HERE = Path(__file__).resolve().parent
 CAPS = Path("src/haloflow/platform/capabilities.py")
 ROUTES = Path("src/haloflow/platform/routes.py")
 HTTP = Path("src/haloflow/platform/http.py")
+M05_SERVICE = Path("src/haloflow/m05/service.py")
 CAPS_TESTS = "tests/platform/test_l1w_w4b_capabilities_units.py"
+ROUTES_PG_TESTS = "tests/m05/test_l1w_w4b_routes_postgres.py"
 BOUNDARY_TESTS = "tests/platform/test_l1w_w4b_boundary_units.py"
 TITLE_FROM = "m02-observation-mutants"
 KILLS_FILE = HERE / "l1w_w4b_mutant_kills.json"
@@ -91,9 +97,35 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "    ids = _Ids(uuid.uuid4(), uuid.uuid4())\n",
      '    ids = _Ids(uuid.uuid4(), uuid.UUID(request.headers["x-correlation-id"])'
      ' if "x-correlation-id" in request.headers else uuid.uuid4())\n'),
+    # W4B-MUT-1 (Codex 20261105T134723Z): a compound parser + selection mutant, so a
+    # body tenant key is stripped from the body AND becomes the admitted tenant.
+    ("RT-TENANT", "tenant taken from the body (parser accepts it, selection uses it)",
+     ROUTES,
+     "        call = await parse(request, admitted)\n",
+     '        raw = await request.body() if request.method == "POST" else b""\n'
+     "        try:\n"
+     "            sent = json.loads(raw) if raw else {}\n"
+     "        except ValueError:\n"
+     "            sent = {}\n"
+     '        if type(sent) is dict and type(sent.get("tenant_id")) is str:\n'
+     '            admitted = type(admitted)(tenant_id=sent.pop("tenant_id"),\n'
+     "                                      staff_id=admitted.staff_id,\n"
+     "                                      identity=admitted.identity)\n"
+     "            request._body = json.dumps(sent).encode()\n"
+     "        call = await parse(request, admitted)\n"),
     ("RT-STEP1", "self-standing step asks for more than its capability", ROUTES,
      "        own = frozenset({SELF_STANDING})\n",
      '        own = frozenset({SELF_STANDING, "m05.followup.read"})\n'),
+    # W4B-MUT-1: the LATE reader revalidation (T3, inside the gateway transaction),
+    # judged by the genuine-bundle R-Q1 rows on PostgreSQL 17 (CI only).
+    ("LR-READ", "reader revalidation skipped on list/get/history", M05_SERVICE,
+     '            await check_reader(handle, attribution["principal_id"])\n'
+     "            return bind(await fetch_rows(handle, key, params, read_error))\n",
+     "            return bind(await fetch_rows(handle, key, params, read_error))\n"),
+    ("LR-NOTE", "reader revalidation skipped on read_note", M05_SERVICE,
+     '            await check_reader(handle, attribution["principal_id"])\n'
+     "            envelope = _bind_note(\n",
+     "            envelope = _bind_note(\n"),
     ("HT-REFUSAL200", "domain refusal returned as 200", HTTP,
      '            return JSONResponse({"code": code}, status_code=409)\n',
      '            return JSONResponse({"code": code}, status_code=200)\n'),
@@ -113,6 +145,7 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
     ("capabilities", CAPS, CAPS_TESTS),
     ("routes", ROUTES, BOUNDARY_TESTS),
     ("http", HTTP, BOUNDARY_TESTS),
+    ("late_reader", M05_SERVICE, ROUTES_PG_TESTS),  # PostgreSQL 17 rows (CI)
 )
 
 

@@ -394,6 +394,21 @@ async def test_h03_tenant_in_the_body_is_an_unknown_field(route: str, name: str)
     assert all(r["tenant_hint"] == TENANT for r in rig.journal.resolves)
 
 
+# Added during W4b implementation (Codex W4B-MUT-1): the tenant-binding assertion runs
+# FIRST, so a regression that takes the tenant from the body fails here on the resolver
+# hint itself, not only on the 422.
+@pytest.mark.parametrize("route", ["act", "resolve", "admin", "display"])
+async def test_h03_resolver_tenant_is_only_the_admitted_tenant(route: str) -> None:
+    rig = _rig()
+    body = {**ROUTES[route][2], "tenant_id": "clinic-other"}
+    async with _running(rig) as client:
+        response = await _call(client, route, rig, body=body)
+    for r in rig.journal.resolves:
+        assert r["tenant_hint"] == TENANT
+        assert r["principal"].authorized_tenant_ids == frozenset({TENANT})
+    assert response.status_code == 422 and _service_calls(rig) == []
+
+
 # ---------------------------------------------------------------------------
 # The two-step context (A5.1, A5.3; interface pins 1.4) and R-01-U
 # ---------------------------------------------------------------------------

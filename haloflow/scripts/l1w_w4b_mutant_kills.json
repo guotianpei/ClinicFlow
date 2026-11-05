@@ -71,6 +71,14 @@
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[resolved]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[stale]"
  ],
+ "LR-NOTE": [
+  "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[read_note]"
+ ],
+ "LR-READ": [
+  "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[get]",
+  "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[history]",
+  "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[list]"
+ ],
  "RT-CORR": [
   "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_client_correlation_header_is_ignored_and_not_echoed[x-correlation-id]"
  ],
@@ -133,6 +141,16 @@
   "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[read_note]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[resolve]"
  ],
+ "RT-TENANT": [
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-resolve]"
+ ],
  "RT-UNKNOWN": [
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-equal]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-other]",
@@ -143,6 +161,10 @@
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[admin]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[display]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[resolve]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[act]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[admin]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[display]",
+  "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[resolve]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-act]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-admin]",
   "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-display]",

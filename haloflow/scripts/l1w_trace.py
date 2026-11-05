@@ -1641,6 +1641,10 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-list]",  # noqa: E501
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-read_note]",  # noqa: E501
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[display]",  # noqa: E501
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-act]",  # noqa: E501
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-resolve]",  # noqa: E501
         "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-admin]",  # noqa: E501
@@ -1856,6 +1860,9 @@ TRACE: dict[str, list[str]] = {
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps0]",  # noqa: E501
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps1]",  # noqa: E501
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps2]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m05.followup.read]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m01.staff.admin]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m05.followup.apply]",  # noqa: E501
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-bad]",  # noqa: E501
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-dup]",  # noqa: E501
         "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-not-list]",  # noqa: E501

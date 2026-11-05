@@ -400,3 +400,17 @@ async def test_self_standing_invalid_result_fails_closed(case: str) -> None:
     with pytest.raises(ReadFailed) as caught:
         await StaffService(gateway).self_standing(_Context(frozenset({SELF_STANDING})))
     assert caught.value.reason_code == "READ_RESULT_INVALID"
+
+
+# Added during W4b implementation (Codex 20261105T134133Z: pins v1 1.2 "exactly"):
+# the self-standing context is a singleton; any extra capability is refused before I/O.
+@pytest.mark.parametrize("extra", ["m05.followup.read", ADMIN, "m05.followup.apply"])
+async def test_self_standing_refuses_a_context_with_more_than_its_capability(
+    extra: str,
+) -> None:
+    from haloflow.m01.staff.service import RouteDenied, StaffService
+
+    gateway = _Gateway(_standing_row())
+    with pytest.raises(RouteDenied):
+        await StaffService(gateway).self_standing(_Context(frozenset({SELF_STANDING, extra})))
+    assert gateway.transactions == 0 and gateway.calls == []

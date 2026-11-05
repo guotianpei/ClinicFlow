@@ -548,10 +548,12 @@ class StaffService:
         )
 
     async def self_standing(self, context: Any) -> Standing:
-        """The caller's own standing (t027), one gateway transaction; the context
-        must hold the self-standing capability, and attribution is context-only."""
+        """The caller's own standing (t027), one gateway transaction. The context
+        must carry exactly the self-standing capability (pins v1 1.2: a singleton,
+        Codex 20261105T134133Z), and attribution is context-only."""
 
-        require_capabilities(context, frozenset({SELF_STANDING_CAPABILITY}))
+        if context.capabilities != frozenset({SELF_STANDING_CAPABILITY}):
+            raise RouteDenied()
         attribution = actor_attribution(context)
         if attribution is None:
             raise ReadRefused("NOT_AUTHORIZED")

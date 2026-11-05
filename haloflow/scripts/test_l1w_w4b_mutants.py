@@ -49,7 +49,7 @@ def test_every_declared_kill_is_a_collected_node() -> None:
     script = _script()
     result = subprocess.run(
         [sys.executable, "-I", "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
-         "tests/platform"],
+         "tests/platform", "tests/m05/test_l1w_w4b_routes_postgres.py"],
         capture_output=True, text=True, check=False, cwd=HERE.parent,
     )
     assert result.returncode == 0
