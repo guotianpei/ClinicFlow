@@ -206,6 +206,7 @@ class Hold:
         self.paused = asyncio.Event()
         self.release = asyncio.Event()
         self.armed = False
+        self.result: dict[str, bool] = {}
 
 
 class _HeldStaff:
@@ -409,32 +410,71 @@ async def test_r01_sup_without_act_cannot_act_or_resolve(clinic: Clinic) -> None
 # ---------------------------------------------------------------------------
 
 
-async def _held_request(clinic: Clinic, hold: Hold, client: httpx.AsyncClient,
+class HeldEarly(AssertionError):
+    """The request answered before reaching the T2/T3 pause: the revocation scenario
+    did not run, so the row fails whatever the status (Codex W4B-RED-1)."""
+
+
+async def _held_request(clinic: Clinic | None, hold: Hold, client: Any,
                         headers: dict[str, str], req: tuple[str, str, Any],
                         change: Callable[[], None]) -> httpx.Response:
+    """T2 pause -> committed, independently observed change -> release -> T3.
+
+    Returns the response only if all three happened in that order; ``change`` must
+    commit on its own connection and assert its own independent observation. A
+    request that answers before the pause (an absent route, a pre-T2 denial, or a
+    regression that skips the self-standing step) raises ``HeldEarly`` promptly."""
+
     hold.armed = True
     task = asyncio.ensure_future(_send(client, headers, req))
     paused = asyncio.ensure_future(hold.paused.wait())
+    changed = False
     try:
-        # Whichever comes first: a request that never reaches the self-standing step
-        # (no route, or a regression that skips it) returns its own response here and
-        # fails on its status, instead of waiting out the deadline (red CI 41929674514).
         done, _ = await asyncio.wait({task, paused}, timeout=DEADLINE,
                                      return_when=asyncio.FIRST_COMPLETED)
         assert done, "neither paused nor answered within the deadline"
-        if task in done:
-            response: httpx.Response = task.result()
-            assert hold.paused.is_set() is False
-            return response
-        await asyncio.to_thread(change)  # commits on its own connection
+        if not hold.paused.is_set():
+            early = task.result()
+            raise HeldEarly(f"answered {early.status_code} before the T2/T3 pause")
+        assert not task.done(), "request completed while held"
+        await asyncio.to_thread(change)  # commits and observes on its own connection
+        changed = True
         hold.release.set()
-        return await asyncio.wait_for(task, DEADLINE)
+        response: httpx.Response = await asyncio.wait_for(task, DEADLINE)
+        return response
     finally:
         hold.release.set()
         for pending in (task, paused):
             if not pending.done():
                 pending.cancel()
         await asyncio.wait([task, paused], timeout=10)
+        hold.result = {"paused": hold.paused.is_set(), "changed": changed}
+
+
+class _EarlyClient:
+    """CONTROL: answers immediately with a premature 403, never reaching T2."""
+
+    async def request(self, method: str, path: str, **_: Any) -> httpx.Response:
+        return httpx.Response(403, json={"code": "FORBIDDEN"},
+                              request=httpx.Request(method, f"http://test{path}"))
+
+
+@pytest.mark.parametrize("status", [403, 404])
+async def test_held_request_control_premature_answer_fails(status: int) -> None:
+    """Harness control (Codex W4B-RED-1): a premature 403 (or 404) must fail the
+    helper, the change must not run. Passes at red by design."""
+
+    calls: list[str] = []
+    hold = Hold()
+    client = _EarlyClient()
+    if status == 404:
+        async def request(method: str, path: str, **_: Any) -> httpx.Response:
+            return httpx.Response(404, request=httpx.Request(method, f"http://test{path}"))
+        client.request = request  # type: ignore[method-assign]
+    with pytest.raises(HeldEarly):
+        await _held_request(None, hold, client, {}, ("GET", "/v1/followup/items", None),
+                            lambda: calls.append("changed"))
+    assert calls == [] and hold.result == {"paused": False, "changed": False}
 
 
 async def test_r01_role_revoked_before_t3_refuses_the_supervisor_action(clinic: Clinic) -> None:
@@ -459,6 +499,7 @@ async def test_r01_role_revoked_before_t3_refuses_the_supervisor_action(clinic: 
              {"client_action_id": str(uuid.uuid4()), "expected_version": v,
               "type": "reassign", "assignee_id": DUMMY}), revoke)
     assert (response.status_code, response.json()) == (403, {"code": "FORBIDDEN"})
+    assert hold.result == {"paused": True, "changed": True}  # the scenario ran
     assert _history_rows(clinic, item) == before
 
 
@@ -475,11 +516,15 @@ async def test_rq1_reader_access_revoked_before_t3_returns_no_data(
     def revoke() -> None:  # FIXTURE: committed removal of the read access row
         _schema_sql(clinic.install, "DELETE FROM {}.m01_staff_followup_access"
                     " WHERE staff_id = %s AND access = 'read'", (staff,))
+        assert st.admin_rows(clinic.install, sql.SQL(  # observed on a separate connection
+            "SELECT access FROM {}.m01_staff_followup_access WHERE staff_id = %s").format(
+            sql.Identifier(clinic.install.schema)), (staff,)) == []
 
     async with _client(clinic, hold=hold) as client:
         response = await _held_request(clinic, hold, client, _headers(member),
                                        _request(route, item=item), revoke)
     assert (response.status_code, response.json()) == (403, {"code": "FORBIDDEN"})
+    assert hold.result == {"paused": True, "changed": True}  # the scenario ran
     assert item.encode() not in response.content
 
 

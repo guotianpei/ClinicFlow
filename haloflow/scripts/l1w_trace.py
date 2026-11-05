@@ -1086,9 +1086,13 @@ TRACE: dict[str, list[str]] = {
         "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_sup_without_act_cannot_act_or_resolve",
     ],
     "R-01-REVOKE-PRE-T3": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[403]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[404]",  # noqa: E501
         "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_role_revoked_before_t3_refuses_the_supervisor_action",  # noqa: E501
     ],
     "R-Q1": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[403]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[404]",  # noqa: E501
         "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[list]",  # noqa: E501
         "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[get]",  # noqa: E501
         "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[history]",  # noqa: E501
