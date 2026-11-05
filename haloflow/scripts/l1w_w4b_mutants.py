@@ -42,6 +42,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -188,6 +189,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pytest", required=True)
     parser.add_argument("--evidence", required=True)
     args = parser.parse_args(argv)
+    # Stale-bytecode guard (CI 42041087971, CP-DRIFT): the checker's pytest
+    # subprocess inherits this environment. CPython validates a cached .pyc by the
+    # source's mtime (whole seconds) and size only; two mutants of one file written
+    # within the same second with the same byte delta (CP-ACTNOREAD and CP-DRIFT
+    # are both -8 bytes) let the second run import the FIRST mutant's bytecode. No
+    # bytecode is written, so every run compiles the source on disk.
+    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
     evidence = Path(args.evidence)
     status = 0
     for label, target, tests in GROUPS:
