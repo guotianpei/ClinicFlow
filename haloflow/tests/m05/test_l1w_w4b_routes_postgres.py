@@ -821,7 +821,11 @@ async def test_h07_canaries_absent_and_request_lines_are_templates(
         text = response.text + repr(dict(response.headers))
         for value in forbidden:
             assert value not in text, (response.request.url.path, value)
-    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    # TEST REPAIR (disclosed, W4b implementation): the test client's own transport log
+    # (logger ``httpx``, one INFO line with each request URL it sends) is excluded; the
+    # last request deliberately puts the canary in the query string.
+    log_text = "\n".join(r.getMessage() for r in caplog.records
+                         if r.name != "httpx" and not r.name.startswith(("httpx.", "httpcore")))
     for value in [*forbidden, item]:
         assert value not in log_text, value
     lines = [r.getMessage() for r in caplog.records

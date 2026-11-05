@@ -567,6 +567,16 @@ async def test_h02_unknown_key_is_never_reflected(
     assert _service_calls(rig) == []
 
 
+def _server_log(caplog: pytest.LogCaptureFixture) -> str:
+    """TEST REPAIR (disclosed, W4b implementation): every captured record except the
+    TEST CLIENT's own transport log. httpx logs each request URL it sends at INFO on
+    logger ``httpx``; a canary placed in the query is therefore in the client's line,
+    which no server code can prevent. The server's records are all still checked."""
+
+    return "\n".join(r.getMessage() for r in caplog.records
+                     if r.name != "httpx" and not r.name.startswith(("httpx.", "httpcore")))
+
+
 async def test_h02_unknown_query_key_is_never_reflected(caplog: pytest.LogCaptureFixture) -> None:
     rig = _rig()
     with caplog.at_level("DEBUG"):
@@ -575,7 +585,7 @@ async def test_h02_unknown_query_key_is_never_reflected(caplog: pytest.LogCaptur
                                    path=f"/v1/followup/items?limit=10&{s.CANARY}=1")
     assert response.status_code == 422
     assert response.json() == {"code": "MALFORMED", "field": "query"}
-    assert s.CANARY.encode() not in response.content and s.CANARY not in caplog.text
+    assert s.CANARY.encode() not in response.content and s.CANARY not in _server_log(caplog)
 
 
 @pytest.mark.parametrize("route", ["act", "resolve", "display", "admin"])

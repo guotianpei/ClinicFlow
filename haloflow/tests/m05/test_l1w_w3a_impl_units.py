@@ -324,6 +324,11 @@ def test_svc01_result_validation_stays_strict(operation: str, value: str) -> Non
 
 
 def test_svc01_the_public_operation_set_is_unchanged() -> None:
+    # TEST REPAIR (disclosed, W4b implementation): W4b interface pins v1 1.3 extends
+    # the public set by the three addendum 1 Q-3 operations, pinned exactly by
+    # tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_operations_literal. The v1
+    # six keep their order and names (reactivate, not the SQL name activate).
     from haloflow.m01.staff.service import OPERATIONS
 
-    assert OPERATIONS == ("add", "rename", "deactivate", "reactivate", "grant", "revoke")
+    assert OPERATIONS == ("add", "rename", "deactivate", "reactivate", "grant", "revoke",
+                          "grant_role", "revoke_role", "set_auth_setting")

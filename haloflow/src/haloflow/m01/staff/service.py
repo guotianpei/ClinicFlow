@@ -39,11 +39,20 @@ STAFF_DISPLAY_CAPABILITY: Final = "m01.staff.display"
 K_ADMIN: Final = "m01.staff.admin"
 K_DISPLAY: Final = "m01.staff.display"
 K_READER: Final = "m01.staff.followup_reader"
+K_SELF_STANDING: Final = "m01.staff.self_standing"
+SELF_STANDING_CAPABILITY: Final = "m01.staff.self_standing"
 
 UUID_TEXT: Final = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 AUTH_METHOD: Final = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 TIMESTAMP: Final = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$")
-OPERATIONS: Final = ("add", "rename", "deactivate", "reactivate", "grant", "revoke")
+OPERATIONS: Final = ("add", "rename", "deactivate", "reactivate", "grant", "revoke",
+                     "grant_role", "revoke_role", "set_auth_setting")
+# L-1W W4b (interface pins v1 1.3, addendum 1 Q-3): the role and setting payloads,
+# validated as the t029 / 008 rules do (ASCII digits only; 5-60 minutes).
+ROLES: Final = ("supervisor", "clinic_admin")
+AUTH_SETTINGS: Final = ("idle_timeout_minutes", "mfa_required")
+_IDLE_VALUE: Final = re.compile(r"[0-9]{1,2}")
+STANDING_STATUSES: Final = ("active", "inactive", "unknown")
 # L-1W W3a: `m01.staff.admin` reaches m01_staff_admin_v2, which names reactivation
 # `activate` and adds "outcome" (applied | replayed) to the v1 four-key result. The
 # public command and AdminResult keep the v1 names and shape.
@@ -263,6 +272,9 @@ class StaffAdminCommand:
     staff_id: UUID
     display_name: str | None = None
     access: str | None = None
+    role: str | None = None
+    setting: str | None = None
+    value: str | None = None
 
     def __post_init__(self) -> None:
         if not is_uuid(self.client_action_id):
@@ -278,16 +290,64 @@ class StaffAdminCommand:
         ):
             raise CommandMalformed("display_name")
         if accessed != (self.access is not None) or (
-            accessed and self.access not in ("read", "act")
+            accessed and not member(self.access, ("read", "act"))
         ):
             raise CommandMalformed("access")
+        roled = self.operation in ("grant_role", "revoke_role")
+        if roled != (self.role is not None) or (roled and not member(self.role, ROLES)):
+            raise CommandMalformed("role")
+        configured = self.operation == "set_auth_setting"
+        if configured != (self.setting is not None) or (
+            configured and not member(self.setting, AUTH_SETTINGS)
+        ):
+            raise CommandMalformed("setting")
+        if configured != (self.value is not None) or (
+            configured and not _valid_setting_value(self.setting, self.value)
+        ):
+            raise CommandMalformed("value")
+
+
+def _valid_setting_value(setting: Any, value: Any) -> bool:
+    if type(value) is not str:
+        return False
+    if setting == "idle_timeout_minutes":
+        return bool(_IDLE_VALUE.fullmatch(value)) and 5 <= int(value) <= 60
+    return value in ("true", "false")
 
 
 @dataclass(frozen=True)
 class AdminResult:
-    """The bound admin result: {schema_version, client_action_id, operation, staff}."""
+    """The bound admin result: {schema_version, client_action_id, operation, staff},
+    plus the v2 ``outcome`` (applied | replayed; interface pins v1 1.3, Q-B1)."""
 
     result: Mapping[str, Any]
+    outcome: str
+
+
+def _sorted_unique_subset(value: Any, allowed: tuple[str, ...]) -> bool:
+    return (
+        type(value) is tuple
+        and all(member(v, allowed) for v in value)
+        and list(value) == sorted(set(value))
+    )
+
+
+@dataclass(frozen=True)
+class Standing:
+    """The caller's own standing (t027; interface pins v1 1.2). Closed vocabularies,
+    validated on construction; anything else is READ_RESULT_INVALID."""
+
+    status: str
+    access: tuple[str, ...]
+    roles: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not (
+            member(self.status, STANDING_STATUSES)
+            and _sorted_unique_subset(self.access, ("read", "act"))
+            and _sorted_unique_subset(self.roles, ROLES)
+        ):
+            raise ReadFailed("READ_RESULT_INVALID")
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +425,28 @@ def _bind_admin(rows: list[Any], command: StaffAdminCommand) -> dict[str, Any]:
             "operation": command.operation, "staff": value["staff"]}
 
 
+def _bind_admin_result(rows: list[Any], command: StaffAdminCommand) -> AdminResult:
+    """The v1-shaped result plus the v2 outcome (validated by ``_bind_admin``)."""
+
+    bound = _bind_admin(rows, command)
+    outcome: str = single_json(rows)["outcome"]
+    return AdminResult(bound, outcome)
+
+
+def _bind_standing(rows: list[Any], staff_id: str) -> Standing:
+    value = single_json(rows)
+    if (
+        type(value) is not dict
+        or set(value) != {"schema_version", "staff_id", "status", "access", "roles"}
+        or not exact_int(value["schema_version"]) or value["schema_version"] != 1
+        or value["staff_id"] != staff_id
+        or type(value["access"]) is not list or type(value["roles"]) is not list
+    ):
+        raise ReadFailed("READ_RESULT_INVALID")
+    return Standing(status=value["status"], access=tuple(value["access"]),
+                    roles=tuple(value["roles"]))
+
+
 def _bind_display(rows: list[Any], requested: tuple[UUID, ...]) -> dict[str, Any]:
     value = single_json(rows)
     wanted = {str(u) for u in requested}
@@ -429,6 +511,11 @@ class StaffService:
         attribution = actor_attribution(context)
         if attribution is None:
             raise AdminRefused("NOT_AUTHORIZED")
+        # AO-05: the clinic setting names the acting admin (t029 rule), refused here
+        # before any I/O as well.
+        if (command.operation == "set_auth_setting"
+                and str(command.staff_id) != attribution["principal_id"]):
+            raise CommandMalformed("staff_id")
         sql_command: dict[str, Any] = {
             "schema_version": 1,
             "client_action_id": str(command.client_action_id),
@@ -441,11 +528,16 @@ class StaffService:
             sql_command["display_name"] = command.display_name
         if command.access is not None:
             sql_command["access"] = command.access
+        if command.role is not None:
+            sql_command["role"] = command.role
+        if command.setting is not None:
+            sql_command["setting"] = command.setting
+            sql_command["value"] = command.value
 
         async def body(handle: Any, mark: Callable[[], None]) -> AdminResult:
             rows = await fetch_rows(handle, K_ADMIN, {"command": Jsonb(sql_command)},
                                     _admin_error)
-            result = AdminResult(_bind_admin(rows, command))
+            result = _bind_admin_result(rows, command)
             mark()
             return result
 
@@ -454,6 +546,23 @@ class StaffService:
             lambda: AdminCommitUnknown(command.staff_id, command.client_action_id,
                                        command.operation),
         )
+
+    async def self_standing(self, context: Any) -> Standing:
+        """The caller's own standing (t027), one gateway transaction; the context
+        must hold the self-standing capability, and attribution is context-only."""
+
+        require_capabilities(context, frozenset({SELF_STANDING_CAPABILITY}))
+        attribution = actor_attribution(context)
+        if attribution is None:
+            raise ReadRefused("NOT_AUTHORIZED")
+
+        async def callback(handle: Any) -> Standing:
+            rows = await fetch_rows(handle, K_SELF_STANDING,
+                                    {"attribution": Jsonb(attribution)}, read_error)
+            return _bind_standing(rows, attribution["principal_id"])
+
+        standing: Standing = await self._gateway.with_tenant_transaction(context, callback)
+        return standing
 
     async def display(self, context: Any, staff_ids: tuple[UUID, ...]) -> Mapping[str, Any]:
         requested = _display_ids(staff_ids)
