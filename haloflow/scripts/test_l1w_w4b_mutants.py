@@ -61,3 +61,42 @@ def test_every_declared_kill_is_a_collected_node() -> None:
 def test_kill_file_names_exactly_the_declared_mutants() -> None:
     script = _script()
     assert set(script.kill_sets()) == {edit[0] for edit in script.EDITS}
+
+
+def _probe(tmp: Path, env: dict[str, str] | None) -> str:
+    """Prime a valid .pyc for value 1, rewrite the module to an equal-size value 2
+    with the identical mtime, then import it in a fresh interpreter."""
+
+    import os
+
+    src = tmp / "probe_mod.py"
+    src.write_text("VALUE = 1\n", encoding="utf-8")
+    os.utime(src, (1_700_000_000, 1_700_000_000))
+    subprocess.run([sys.executable, "-c", "import probe_mod"], cwd=tmp, check=True,
+                   env={k: v for k, v in os.environ.items()
+                        if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")})
+    assert list((tmp / "__pycache__").glob("probe_mod.*.pyc"))  # primed
+    src.write_text("VALUE = 2\n", encoding="utf-8")  # same size
+    os.utime(src, (1_700_000_000, 1_700_000_000))  # same mtime
+    base = {k: v for k, v in os.environ.items()
+            if k not in ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")}
+    result = subprocess.run([sys.executable, "-c", "import probe_mod; print(probe_mod.VALUE)"],
+                            cwd=tmp, env={**base, **(env or {})}, capture_output=True,
+                            text=True, check=True)
+    return result.stdout.strip()
+
+
+def test_stale_bytecode_hazard_is_real_without_the_guard(tmp_path: Path) -> None:
+    # Negative control: the probe really reproduces the CP-DRIFT hazard.
+    assert _probe(tmp_path, None) == "1"
+
+
+def test_bytecode_env_compiles_the_source_on_disk(tmp_path: Path) -> None:
+    # W4B-CACHE-1 regression control: primed, same size, same mtime -> the new source.
+    script = _script()
+    empty = tmp_path / "prefix"
+    empty.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+    assert _probe(work, script.bytecode_env(str(empty))) == "2"
+    assert not any(empty.rglob("*.pyc"))  # nothing written under the prefix

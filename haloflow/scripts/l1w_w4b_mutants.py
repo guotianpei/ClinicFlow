@@ -44,6 +44,7 @@ import io
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,21 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
 )
 
 
+def bytecode_env(empty_dir: str) -> dict[str, str]:
+    """Stale-bytecode guard (CI 42041087971 CP-DRIFT; Codex W4B-CACHE-1).
+
+    CPython validates a cached .pyc by the source's mtime (whole seconds) and size
+    only, so a mutant written within the same second as an equal-size earlier
+    version can import that version's bytecode (CP-ACTNOREAD and CP-DRIFT are both
+    -8 bytes). With PYTHONPYCACHEPREFIX the interpreter reads and writes .pyc files
+    ONLY under that prefix and ignores every __pycache__ directory; the prefix is a
+    fresh empty directory and PYTHONDONTWRITEBYTECODE keeps it empty, so every
+    control and mutant run compiles the source on disk. The checker's pytest
+    subprocess inherits this environment (it copies os.environ)."""
+
+    return {"PYTHONPYCACHEPREFIX": empty_dir, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def kill_sets() -> dict[str, frozenset[str]]:
     raw = json.loads(KILLS_FILE.read_text(encoding="utf-8"))
     return {mid: frozenset(nodes) for mid, nodes in raw.items()}
@@ -189,13 +205,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pytest", required=True)
     parser.add_argument("--evidence", required=True)
     args = parser.parse_args(argv)
-    # Stale-bytecode guard (CI 42041087971, CP-DRIFT): the checker's pytest
-    # subprocess inherits this environment. CPython validates a cached .pyc by the
-    # source's mtime (whole seconds) and size only; two mutants of one file written
-    # within the same second with the same byte delta (CP-ACTNOREAD and CP-DRIFT
-    # are both -8 bytes) let the second run import the FIRST mutant's bytecode. No
-    # bytecode is written, so every run compiles the source on disk.
-    os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
+    os.environ.update(bytecode_env(tempfile.mkdtemp(prefix="l1w-w4b-pycache-")))
     evidence = Path(args.evidence)
     status = 0
     for label, target, tests in GROUPS:
