@@ -977,4 +977,906 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[cancel-open_tenant_pool-TenantPool]",  # noqa: E501
         "tests/platform/test_l1w_w4a_life1_postgres.py::test_life1_real_pool_fault_inside_acquisition_window_leaves_no_backend[cancel-open_admission_pool-AdmissionPool]",  # noqa: E501
     ],
+    # W4b (plan v1 + addendum 1; interface pins v1 + v1r1, Codex 5cca1a17).
+    "R-01": [
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_self_standing_capability_literal",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_matrix_is_exactly_the_a52_literal",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_matrix_is_read_only",
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_requirements_are_exactly_the_literal",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_optional_is_exactly_the_literal",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_requirements_are_read_only",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_no_matrix_row_grants_self_standing",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[act-without-read]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[active-nothing]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[admin-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[admin-only]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[everything]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[inactive-with-everything]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[read]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-no-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[sup-only]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_capabilities_for_each_standing[unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_supervisor_without_act_cannot_act_or_resolve",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_admin_only_standing_is_route_specific",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_display_prefers_the_read_alternative_when_both_are_held",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[admin-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[admin-only]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[everything]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[read]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[sup-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_write_routes_carry_read_and_held_supervise[sup-no-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_optional_never_adds_an_unheld_capability",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_unknown_route_is_refused",
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_standing_outside_the_closed_vocabulary_is_refused[bad0]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_standing_outside_the_closed_vocabulary_is_refused[bad1]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_standing_outside_the_closed_vocabulary_is_refused[bad2]",  # noqa: E501
+    ],
+    "R-01-U": [
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_two_step_context_and_exact_route_request[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing0-act-expected0]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing1-resolve-expected1]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing2-act-expected2]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing3-get-expected3]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing4-display-expected4]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_route_context_is_bounded_by_the_standing[standing5-display-expected5]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_each_request_gets_a_fresh_execution_and_correlation_id",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_client_correlation_header_is_ignored_and_not_echoed[x-correlation-id]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_client_correlation_header_is_ignored_and_not_echoed[x-request-id]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_client_correlation_header_is_ignored_and_not_echoed[traceparent]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[act-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[act-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[admin-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[admin-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[display-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[display-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[get-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[get-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[history-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[history-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[list-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[list-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[read_note-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[read_note-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[resolve-inactive]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_inactive_or_unknown_standing_is_403_on_every_route[resolve-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_r01u_logout_needs_no_standing",
+    ],
+    "R-01-HTTP": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[ACT]",
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[ADMIN-ACT]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[ADMIN-ONLY]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[INACTIVE]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[READ]",
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[SUP-ACT]",
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_http_standing_by_route_table[SUP-NO-ACT]",  # noqa: E501
+    ],
+    "R-01-OWN": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_own_claim_then_resolve_own_item",
+    ],
+    "R-01-SUP": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_sup_reassigns_then_resolves_another_actors_item",  # noqa: E501
+    ],
+    "R-01-SUP-NOACT": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_sup_without_act_cannot_act_or_resolve",
+    ],
+    "R-01-REVOKE-PRE-T3": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[403]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[404]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_r01_role_revoked_before_t3_refuses_the_supervisor_action",  # noqa: E501
+    ],
+    "R-Q1": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[403]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_held_request_control_premature_answer_fails[404]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[list]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[get]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[history]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_rq1_reader_access_revoked_before_t3_returns_no_data[read_note]",  # noqa: E501
+    ],
+    "H-01": [
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-hs256-jwk-secret-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-none-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-alg-not-allowlisted-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-bad-signature-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-crit-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jku-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-jwk-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-not-string-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kid-unknown-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-kty-alg-mismatch-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-jwt-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-typ-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5c-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v02-x5u-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-amr-not-list-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-aud-cross-environment-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-boolean-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-float-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-auth-time-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-client-id-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-at-skew-edge-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-boolean-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-past-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-exp-string-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-boolean-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iat-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-iss-prefix-only-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-jti-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-boolean-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-nbf-future-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sid-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-missing-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-sub-number-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-aud-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v03-wrong-iss-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-deep-header-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v05-too-large-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-bad-base64-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-empty-signature-segment-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-four-segments-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-json-array-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-header-not-json-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_the_w1_corpus_before_admission[v06-two-segments-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[None-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer -resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Basic abc-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_every_route_refuses_a_missing_or_malformed_bearer[Bearer a b-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h01_key_set_unavailable_is_503_on_every_route[resolve]",  # noqa: E501
+    ],
+    "H-02": [
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-equal]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-item-id-other]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-key-not-uuid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-missing-version]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-type-bad]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-unknown-field]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-version-bool]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[act-version-string]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-idle-4]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-idle-61]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-mfa-yes]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-role-bad]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-set-with-staff-id]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-unknown-field]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-unknown-op]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[display-bad-uuid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[display-empty]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[display-not-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[resolve-item-id-equal]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[resolve-note-not-str]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[resolve-outcome-bad]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_key_is_never_reflected[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unknown_query_key_is_never_reflected",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_over_16_kib_is_422_before_parsing[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_over_16_kib_is_422_before_parsing[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_over_16_kib_is_422_before_parsing[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_over_16_kib_is_422_before_parsing[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_at_16_kib_is_not_refused_for_size[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_at_16_kib_is_not_refused_for_size[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_at_16_kib_is_not_refused_for_size[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_body_at_16_kib_is_not_refused_for_size[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[truncated-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[truncated-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[truncated-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[truncated-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[array-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[array-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[array-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[array-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[null-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[null-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[null-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[null-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[not-utf8-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[not-utf8-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[not-utf8-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[not-utf8-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[empty-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[empty-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[empty-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_unparseable_or_non_object_body_is_422[empty-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_nine_query_parameters_is_422",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[-limit]",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=0-limit]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=101-limit]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=x-limit]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&states=done-states]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&states=open,open-states]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&assignee=nobody-assignee]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&after_item_id=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-after_created_at]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&after_created_at=2026-11-04T21:00:00.000000Z-after_item_id]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&unknown=1-query]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_validation[limit=10&limit=11-query]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_list_query_builds_the_service_query",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[not-a-uuid-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[not-a-uuid-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[not-a-uuid-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[not-a-uuid-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_path_uuid_is_422_without_echo[aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_bad_note_id_is_422",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_item_id_comes_from_the_path_only",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_set_auth_setting_staff_id_is_the_principal",  # noqa: E501
+    ],
+    "H-03": [
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-X-Tenant-Id-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[header-tenant-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-tenant_id-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-get]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-history]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-list]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-read_note]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_input_on_every_route_is_400[query-Clinic-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_resolver_tenant_is_only_the_admitted_tenant[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_id-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[tenant_hint-display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-act]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-resolve]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-admin]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h03_tenant_in_the_body_is_an_unknown_field[clinic_id-display]",  # noqa: E501
+    ],
+    "H-04": [
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_case_list_is_complete",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[route-denied]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-not-authorized]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-not-authorized]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-not-authorized]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-not-found]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-not-found]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-malformed]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[stale]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[resolved]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[note-required]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[key-conflict]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-precondition]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-refusal-unlisted]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[command-malformed]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-key-unavailable]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-note-key-unavailable]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[read-result-invalid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-result-invalid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-unavailable]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[lock-timeout]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[failure-unlisted]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[action-commit-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[resolve-commit-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-commit-unknown]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-capability-denied]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-context-invalid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[m01-tenant-denied]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[not-served]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[unmapped]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[unmapped-keyerror]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[not-served-1]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[not-served-2]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-tenant-denied-1]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-tenant-denied-2]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-context-invalid-1]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_resolve_failure_at_either_step_is_503[m01-context-invalid-2]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[read-result-invalid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[read-not-authorized]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[m01-context-invalid]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_self_standing_failure_never_reaches_the_service[unmapped]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_success_bodies",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_admin_replayed_outcome_is_returned",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_bodies_literal_extends_w4a",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_no_other_route_or_method_exists[/v1/followup/items-DELETE]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_no_other_route_or_method_exists[/v1/followup/items/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-POST]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_no_other_route_or_method_exists[/v1/staff/admin-GET]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_no_other_route_or_method_exists[/v1/support/bootstrap-POST]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_no_other_route_or_method_exists[/v1/admin-POST]",  # noqa: E501
+    ],
+    "H-07": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_h07_canaries_absent_and_request_lines_are_templates",  # noqa: E501
+    ],
+    "S-04-HTTP": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_s04_http_idle_expiry_is_401_and_persisted",
+    ],
+    "S-08-HTTP": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_s08_http_absolute_expiry_is_401_and_persisted",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_s08_http_no_row_past_twelve_hours_creates_nothing",  # noqa: E501
+    ],
+    "G-01": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_g01_list_and_get_return_exactly_the_seeded_items",  # noqa: E501
+    ],
+    "G-02": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_g02_claim_writes_history_with_the_staff_id",  # noqa: E501
+    ],
+    "G-03": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_g03_note_bearing_resolve_and_read_note_fail_closed",  # noqa: E501
+        "tests/m05/test_l1w_w4b_note_harness_postgres.py::test_g03b_genuine_bundle_cannot_read_a_stored_note",  # noqa: E501
+    ],
+    "G-04": [
+        "tests/m05/test_l1w_w4b_note_harness_postgres.py::test_g04a_authorized_reader_gets_the_note_text",  # noqa: E501
+        "tests/m05/test_l1w_w4b_note_harness_postgres.py::test_g04b_unauthorized_reader_gets_no_text[ADMIN-ONLY]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_note_harness_postgres.py::test_g04b_unauthorized_reader_gets_no_text[INACTIVE]",  # noqa: E501
+    ],
+    "G-05": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_g05_commit_unknown_then_same_id_retry_replays",  # noqa: E501
+    ],
+    "AO-01": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_parser_reads_every_t029_operation",
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[add]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[deactivate]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[grant]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[grant_role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[reactivate]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[rename]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[revoke]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[revoke_role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_emitted_keys_equal_t029_v_expected[set_auth_setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao01_set_auth_setting_values_are_strings",
+    ],
+    "AO-02": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[activate-sql-name-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[add-with-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[bind_identity-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[deactivate-with-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant-with-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-bad-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-no-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-role-not-str]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-access]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-name]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-4]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-61]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-arabic-indic]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-empty]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-sign]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-space]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-three-digits]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-1]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-True]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-yes]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[revoke_role-with-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-bad-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-no-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-no-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-value-not-str]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-with-access]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-with-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[unbind_identity-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_operations_literal",
+    ],
+    "AO-03": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao03_roles_and_settings_postconditions",
+    ],
+    "AO-04": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao04_same_id_replays_and_changed_field_conflicts",  # noqa: E501
+    ],
+    "AO-05": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao05_set_auth_setting_for_another_staff_id_refused_before_io",  # noqa: E501
+    ],
+    "AO-06": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao06_non_admin_is_403_and_nothing_changes[READ]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao06_non_admin_is_403_and_nothing_changes[ACT]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao06_non_admin_is_403_and_nothing_changes[SUP-ACT]",  # noqa: E501
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao06_non_admin_is_403_and_nothing_changes[INACTIVE]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h04_service_exception_maps_to_its_literal[admin-not-authorized]",  # noqa: E501
+    ],
+    "AO-07": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[activate-sql-name-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[add-with-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[bind_identity-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[deactivate-with-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant-with-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-bad-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-no-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-role-not-str]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-access]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-name]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[grant_role-with-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-4]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-61]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-arabic-indic]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-empty]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-sign]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-space]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[idle-three-digits]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-1]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-True]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[mfa-yes]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[revoke_role-with-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-bad-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-no-setting]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-no-value]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-value-not-str]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-with-access]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[set-with-role]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao02_ao07_malformed_command_refused_at_construction[unbind_identity-not-offered]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_idle_values_inside_the_sql_rule_are_accepted[5]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_idle_values_inside_the_sql_rule_are_accepted[05]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_idle_values_inside_the_sql_rule_are_accepted[15]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_idle_values_inside_the_sql_rule_are_accepted[60]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_idle_values_inside_the_sql_rule_are_accepted[59]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_mfa_values_accepted[true]",
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_ao07_mfa_values_accepted[false]",
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-idle-4]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-idle-61]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_boundary_units.py::test_h02_malformed_body_is_422_without_echo[admin-mfa-yes]",  # noqa: E501
+    ],
+    "AO-08": [
+        "tests/m05/test_l1w_w4b_routes_postgres.py::test_ao08_setting_applies_to_the_next_request_of_an_existing_session",  # noqa: E501
+    ],
+    "AO-RESULT": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_carries_the_outcome[applied]",
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_carries_the_outcome[replayed]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_for_role_operation_is_bound[other-staff]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_for_role_operation_is_bound[other-operation]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_for_role_operation_is_bound[bad-outcome]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_admin_result_for_role_operation_is_bound[extra-key]",  # noqa: E501
+    ],
+    "SELF-STANDING": [
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_binds_the_caller_standing",
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_unknown_is_a_standing_not_an_error",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps0]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps1]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_requires_its_capability[caps2]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m05.followup.read]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m01.staff.admin]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_refuses_a_context_with_more_than_its_capability[m05.followup.apply]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-bad]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-dup]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-not-list]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[access-unsorted]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[bool-schema]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[extra-key]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[missing-key]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[no-rows]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[not-object]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[other-staff]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[roles-bad]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[roles-unsorted]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[schema-2]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[status-bad]",  # noqa: E501
+        "tests/m01/test_l1w_w4b_admin_ops_units.py::test_self_standing_invalid_result_fails_closed[two-rows]",  # noqa: E501
+    ],
 }

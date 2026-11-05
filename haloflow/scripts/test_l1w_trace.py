@@ -19,7 +19,7 @@ sys.path.insert(0, str(HERE.parent / "tests" / "platform"))
 
 import l1w_trace_inventory as inv  # noqa: E402
 
-IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS, *inv.W3B_IDS, *inv.W4A_IDS)
+IDS = (*inv.W1_IDS, *inv.W2_IDS, *inv.W3A_IDS, *inv.W3B_IDS, *inv.W4A_IDS, *inv.W4B_IDS)
 
 
 def _script() -> Any:
@@ -99,7 +99,8 @@ def test_l1w_trace_t06_deferred_and_retired_rows_stay_explicit() -> None:
     assert set(inv.DEFERRED).isdisjoint(IDS)
     assert set(inv.DEFERRED).isdisjoint(script.TRACE)
     assert set(inv.RETIRED).isdisjoint(script.TRACE)
-    assert {"W4"} <= set(inv.DEFERRED.values())
+    # W4b mapped every former W4 row; only the "later" pruning row stays deferred.
+    assert set(inv.DEFERRED.values()) == {"later"}
     # HARNESS-MIGRATION left DEFERRED when the H-c harness landed (W3b).
     assert "HARNESS-MIGRATION" in inv.W3B_IDS and "HARNESS-MIGRATION" not in inv.DEFERRED
     for carriers in inv.RETIRED.values():

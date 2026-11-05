@@ -70,6 +70,20 @@ W4A_IDS: Final = (
     "LIFE-1",  # acquisition-window ownership + lifetime-error precedence (Codex 413421dd)
 )
 
+# W4b (plan v1 + addendum 1 Q-3; interface pins v1 + v1r1, Codex 5cca1a17): routes,
+# the capability matrix, the HTTP boundary and status map, the genuine-bundle data
+# path, admin role/setting operations and session expiry over HTTP. The former W4
+# DEFERRED rows (R-01, H-01..04, H-07, S-04-HTTP, S-08-HTTP, G-01..05) move here.
+# G-04 is LABELLED HARNESS evidence (seam (a)); G-03 is genuine-bundle refusal.
+# Identity binding over HTTP stays deferred until a sign-in provider is chosen
+# (addendum 1 Q-3; not an inventory row).
+W4B_IDS: Final = (
+    "R-01", "R-01-U", "R-01-HTTP", "R-01-OWN", "R-01-SUP", "R-01-SUP-NOACT",
+    "R-01-REVOKE-PRE-T3", "R-Q1", "H-01", "H-02", "H-03", "H-04", "H-07", "S-04-HTTP",
+    "S-08-HTTP", "G-01", "G-02", "G-03", "G-04", "G-05", "AO-01", "AO-02", "AO-03",
+    "AO-04", "AO-05", "AO-06", "AO-07", "AO-08", "AO-RESULT", "SELF-STANDING",
+)
+
 # Deferred rows, kept explicit so SQL-tier evidence cannot stand in for them
 # (Codex W2 plan disposition). id -> tranche.
 # Test files outside tests/*/test_l1w_*.py whose nodes the trace may map, and only
@@ -81,12 +95,6 @@ HARNESS_EXTERNAL_FILES: Final = (
 )
 
 DEFERRED: Final = {
-    "R-01": "W4",  # the capability matrix literal belongs to the adapter (W4b)
-    "S-04-HTTP": "W4", "S-08-HTTP": "W4",
-    "H-01": "W4",  # every W4b route + the full W1 refusal corpus through HTTP (ff2ef544)
-    "H-03": "W4",  # every W4b route, with W4b's closed request models (ff2ef544)
-    "H-02": "W4", "H-04": "W4", "H-07": "W4",
-    "G-01": "W4", "G-02": "W4", "G-03": "W4", "G-04": "W4", "G-05": "W4",
     "S-11": "later",  # pruning deferred (v1r1 §5)
 }
 

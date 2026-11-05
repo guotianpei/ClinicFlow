@@ -49,7 +49,8 @@ STATEMENTS: Final = {
     "m01.staff.admin": ("write", "m01.staff.admin"),
     "m01.staff.display": ("read", "m01.staff.display"),
     "m01.staff.followup_reader": ("read", "m05.followup.read"),
-    "m01.staff.self_standing": ("read", "m01.staff.self_standing"),  # L-1W W3a
+    # L-1W W3a; TEST REPAIR (disclosed, W4b): WRITE, t027 locks FOR SHARE (CI 42037386795)
+    "m01.staff.self_standing": ("write", "m01.staff.self_standing"),
     "m05.followup.create": ("write", "m05.followup.create"),
     "m05.followup.prepare": ("write", "m05.followup.prepare"),
     "m05.followup.apply": ("write", "m05.followup.apply"),

@@ -14,7 +14,8 @@ A refused startup logs one ERROR line on the ``haloflow.platform`` logger:
 ``STARTUP_REFUSED reason_code=<code>`` (``... field=<VARIABLE>`` for configuration),
 with no tenant id, conninfo or driver text.
 
-W4a routes: ``GET /healthz`` and ``POST /v1/session/logout``. Tenant routes are W4b.
+W4a routes: ``GET /healthz`` and ``POST /v1/session/logout``. The W4b tenant routes
+are installed from ``haloflow.platform.routes``.
 """
 
 from __future__ import annotations
@@ -42,6 +43,7 @@ from haloflow.platform.admission import (
 from haloflow.platform.config import ConfigInvalid, PlatformConfig, load_config
 from haloflow.platform.http import Gate, body
 from haloflow.platform.keys import KeySetClient
+from haloflow.platform.routes import install as install_routes
 from haloflow.platform.verify import AuthRefused, DependencyUnavailable, TokenVerifier
 
 LOGGER: Final = logging.getLogger("haloflow.platform")
@@ -288,6 +290,7 @@ def create_app(*, config: PlatformConfig | None = None,
     app.add_api_route("/healthz", healthz, methods=["GET"])
     app.add_api_route("/v1/session/logout", logout, methods=["POST"], status_code=204,
                       response_class=Response)
+    install_routes(app)
     app.add_exception_handler(_Refusal, _refusal_handler)
     app.add_exception_handler(Exception, _internal_handler)
     app.add_middleware(Gate)  # last added = outermost

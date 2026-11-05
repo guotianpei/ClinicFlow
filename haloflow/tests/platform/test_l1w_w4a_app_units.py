@@ -217,7 +217,15 @@ def test_w4a_route_surface_is_exactly_pinned() -> None:
 
     app = create_app(config=_config(), steps=_rig().steps)
     routes = {(m, r.path) for r in app.routes if isinstance(r, APIRoute) for m in r.methods}
-    assert routes == {("GET", "/healthz"), ("POST", "/v1/session/logout")}
+    # TEST REPAIR (disclosed, W4b implementation): the W4a pair plus exactly the eight
+    # W4b tenant routes of interface pins v1 1.5, written out.
+    assert routes == {("GET", "/healthz"), ("POST", "/v1/session/logout"),
+                      ("GET", "/v1/followup/items"), ("GET", "/v1/followup/items/{item_id}"),
+                      ("GET", "/v1/followup/items/{item_id}/history"),
+                      ("POST", "/v1/followup/items/{item_id}/actions"),
+                      ("POST", "/v1/followup/items/{item_id}/resolve"),
+                      ("GET", "/v1/followup/notes/{note_id}"),
+                      ("POST", "/v1/staff/display"), ("POST", "/v1/staff/admin")}
     assert app.docs_url is None and app.redoc_url is None and app.openapi_url is None
 
 
@@ -231,6 +239,10 @@ def test_bodies_literal_is_pinned() -> None:
         "UNAVAILABLE": (503, {"code": "UNAVAILABLE"}),
         "TENANT_INPUT_REFUSED": (400, {"code": "TENANT_INPUT_REFUSED"}),
         "INTERNAL": (500, {"code": "INTERNAL"}),
+        # TEST REPAIR (disclosed, W4b implementation): pins v1 1.6 adds these two;
+        # the same literal is pinned by test_l1w_w4b_boundary_units.py.
+        "FORBIDDEN": (403, {"code": "FORBIDDEN"}),
+        "NOT_FOUND": (404, {"code": "NOT_FOUND"}),
     }
 
 

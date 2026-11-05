@@ -197,7 +197,8 @@ def test_st4_staff_statements_exact_and_no_assignable_statement() -> None:
         "m01.staff.display": (StatementMode.READ, "m01.staff.display"),
         "m01.staff.followup_reader": (StatementMode.READ, "m05.followup.read"),
         # L-1W W3a: the caller's own standing.
-        "m01.staff.self_standing": (StatementMode.READ, "m01.staff.self_standing"),
+        # TEST REPAIR (disclosed, W4b): WRITE, t027 locks FOR SHARE (CI 42037386795).
+        "m01.staff.self_standing": (StatementMode.WRITE, "m01.staff.self_standing"),
     }
     assert not [q for _, _, q in M01_STATEMENTS.values() if "m01_staff_assignable" in q]
 
