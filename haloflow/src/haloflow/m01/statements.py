@@ -175,9 +175,13 @@ M01_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
         "m01.staff.admin": (
             StatementMode.WRITE, "m01.staff.admin", "SELECT m01_staff_admin_v2(%(command)s)",
         ),
-        # L-1W W3a: the caller's own standing (t027).
+        # L-1W W3a: the caller's own standing (t027). W4b correction (CI 42037386795):
+        # t027 takes the membership row FOR SHARE (contract section 3), which
+        # PostgreSQL refuses in a READ ONLY transaction (SQLSTATE 25006); the gateway
+        # opens read-write only for a context holding a WRITE capability, so this
+        # statement is WRITE. The per-statement capability check is unchanged.
         "m01.staff.self_standing": (
-            StatementMode.READ,
+            StatementMode.WRITE,
             "m01.staff.self_standing",
             "SELECT m01_staff_self_standing(%(attribution)s)",
         ),

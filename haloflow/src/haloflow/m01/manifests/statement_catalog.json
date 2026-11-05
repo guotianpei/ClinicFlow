@@ -24,7 +24,7 @@
       "sha256": "639f09ea93b7c969df052dc30a57e54e36bbfe3bc598f41810adc0023e17e6bf"
     },
     "m01.staff.self_standing": {
-      "mode": "read",
+      "mode": "write",
       "required_capability": "m01.staff.self_standing",
       "sha256": "c58f4681b54364ae31365e743a742757725e1c9cd3f94d1498b60be799a904d0"
     },

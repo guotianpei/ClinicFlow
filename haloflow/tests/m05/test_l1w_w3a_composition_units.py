@@ -63,7 +63,9 @@ PRODUCTION_UNIT_IDS: Final = (
 # Statements W3a changes or adds: key -> (mode, capability, query).
 W3A_STATEMENTS: Final = {
     "m01.staff.admin": ("write", "m01.staff.admin", "SELECT m01_staff_admin_v2(%(command)s)"),
-    "m01.staff.self_standing": ("read", "m01.staff.self_standing",
+    # TEST REPAIR (disclosed, W4b): WRITE, because t027 locks FOR SHARE (25006 in a
+    # read-only transaction; CI 42037386795).
+    "m01.staff.self_standing": ("write", "m01.staff.self_standing",
                                 "SELECT m01_staff_self_standing(%(attribution)s)"),
     "m05.followup.prepare": ("write", "m05.followup.prepare",
                              "SELECT m05_prepare_action_v2(%(command)s)"),
