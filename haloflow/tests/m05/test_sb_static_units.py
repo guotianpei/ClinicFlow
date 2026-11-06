@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import re
 import uuid
 from pathlib import Path
@@ -305,22 +306,51 @@ class _ParkingResolver:
         raise self.error
 
 
+BOUND_S = 10.0  # every wait is bounded; a timeout is an assertion, never a hang (SB-RED-1)
+
+
+async def _bounded(awaitable: Any, what: str, timeout: float = BOUND_S) -> Any:
+    try:
+        return await asyncio.wait_for(awaitable, timeout)
+    except TimeoutError:
+        raise AssertionError(f"not reached within {timeout}s: {what}") from None
+
+
+async def _drain(*tasks: asyncio.Task[Any]) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    for task in tasks:
+        with contextlib.suppress(BaseException):  # cleanup only
+            await asyncio.wait_for(task, BOUND_S)
+
+
 def test_sb_u02_run_in_progress_without_io() -> None:
     async def body() -> None:
         resolver = _ParkingResolver()
         gateway = _Spy()
         runner = _runner(_principal(), gateway=gateway, resolver=resolver)
         first = asyncio.create_task(runner.run_once("t-sb", uuid.uuid4()))
-        await resolver.entered.wait()
-        second = await runner.run_once("t-sb", uuid.uuid4())
-        assert second.code == "RUN_IN_PROGRESS"
-        assert (second.attempted, second.no_reply, second.opted_out, second.not_awaiting,
-                second.not_due, second.commit_unknown, dict(second.failed),
-                second.wrapped) == (0, 0, 0, 0, 0, 0, {}, False)
-        assert resolver.calls == 1 and gateway.calls == []
-        resolver.release.set()
-        result = await first
-        assert result.code == "SELECTION_FAILED"
+        second_task: asyncio.Task[Any] | None = None
+        try:
+            await _bounded(resolver.entered.wait(), "first run reaches the resolver")
+            second_task = asyncio.create_task(runner.run_once("t-sb", uuid.uuid4()))
+            # immediate: the second run must not reach the (parked) resolver
+            done, _ = await asyncio.wait({second_task}, timeout=2.0)
+            assert resolver.calls == 1, "second run entered the resolver (busy not held)"
+            assert second_task in done, "second run did not return immediately"
+            second = second_task.result()
+            assert second.code == "RUN_IN_PROGRESS"
+            assert (second.attempted, second.no_reply, second.opted_out, second.not_awaiting,
+                    second.not_due, second.commit_unknown, dict(second.failed),
+                    second.wrapped) == (0, 0, 0, 0, 0, 0, {}, False)
+            assert gateway.calls == []
+            resolver.release.set()
+            result = await _bounded(first, "first run completes after release")
+            assert result.code == "SELECTION_FAILED"
+        finally:
+            resolver.release.set()
+            await _drain(first, *([second_task] if second_task else []))
 
     asyncio.run(body())
 
@@ -329,21 +359,28 @@ def test_sb_u03_busy_cleared_after_error_and_cancel() -> None:
     async def body() -> None:
         resolver = _ParkingResolver()
         runner = _runner(_principal(), resolver=resolver)
-        # 1. an error run (resolver raises -> SELECTION_FAILED)
-        resolver.release.set()
-        assert (await runner.run_once("t-sb", uuid.uuid4())).code == "SELECTION_FAILED"
-        # 2. a cancelled run
-        resolver.release.clear()
-        resolver.entered.clear()
-        task = asyncio.create_task(runner.run_once("t-sb", uuid.uuid4()))
-        await resolver.entered.wait()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        # 3. the SAME runner runs again: not RUN_IN_PROGRESS
-        resolver.release.set()
-        again = await runner.run_once("t-sb", uuid.uuid4())
-        assert again.code == "SELECTION_FAILED"
-        assert resolver.calls == 3
+        tasks: list[asyncio.Task[Any]] = []
+        try:
+            # 1. an error run (resolver raises -> SELECTION_FAILED)
+            resolver.release.set()
+            first = await _bounded(runner.run_once("t-sb", uuid.uuid4()), "error run")
+            assert first.code == "SELECTION_FAILED"
+            # 2. a cancelled run
+            resolver.release.clear()
+            resolver.entered.clear()
+            task = asyncio.create_task(runner.run_once("t-sb", uuid.uuid4()))
+            tasks.append(task)
+            await _bounded(resolver.entered.wait(), "cancelled run reaches the resolver")
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(task, "cancelled run ends")
+            # 3. the SAME runner runs again: not RUN_IN_PROGRESS
+            resolver.release.set()
+            again = await _bounded(runner.run_once("t-sb", uuid.uuid4()), "third run")
+            assert again.code == "SELECTION_FAILED"
+            assert resolver.calls == 3
+        finally:
+            resolver.release.set()
+            await _drain(*tasks)
 
     asyncio.run(body())

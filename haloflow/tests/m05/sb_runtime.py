@@ -19,6 +19,7 @@ The wrapper is duck-typed like `service_support.Recorder` (the services use only
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -191,3 +192,27 @@ def ordered_due(install: sb.SBInstall, reminders: list[str]) -> list[str]:
 
     order = [r for _, r in sb.awaiting_due(install)]
     return sorted(reminders, key=order.index)
+
+
+BOUND_S = 20.0  # every seam wait is bounded; a timeout is an assertion, never a hang
+
+
+async def bounded(awaitable: Any, what: str, timeout: float = BOUND_S) -> Any:
+    try:
+        return await asyncio.wait_for(awaitable, timeout)
+    except TimeoutError:
+        raise AssertionError(f"not reached within {timeout}s: {what}") from None
+
+
+async def drain(task: asyncio.Task[Any] | None, *events: asyncio.Event) -> None:
+    """finally-cleanup: release every seam, cancel and await the task (bounded)."""
+
+    for event in events:
+        event.set()
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    with contextlib.suppress(BaseException):  # cleanup only
+        await asyncio.wait_for(task, BOUND_S)
+

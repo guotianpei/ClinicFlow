@@ -70,10 +70,13 @@ def test_sb_c01_cancel_before_selection(sb_install: sb.SBInstall,
             resolver.park_select = True
             r, gate = sr.runner(sb_install, rt, page=10, cap=10, resolver=resolver)
             task = asyncio.create_task(sr.run(r, sb_install))
-            await resolver.parked.wait()
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            try:
+                await sr.bounded(resolver.parked.wait(), "selection resolve parked")
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await sr.bounded(task, "cancelled run ends")
+            finally:
+                await sr.drain(task, resolver.release)
             return gate, r.resume_key(sb_install.tenant_id)
 
     with caplog.at_level(logging.INFO, logger=sr.LOGGER):
@@ -96,10 +99,13 @@ def test_sb_c02_cancel_during_selection(sb_install: sb.SBInstall) -> None:
             gate.park_select_at = 1
             r, _ = sr.runner(sb_install, rt, page=10, cap=10, gate=gate)
             task = asyncio.create_task(sr.run(r, sb_install))
-            await gate.select_parked.wait()
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            try:
+                await sr.bounded(gate.select_parked.wait(), "selection statement parked")
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await sr.bounded(task, "cancelled run ends")
+            finally:
+                await sr.drain(task, gate.select_release)
             return gate, r.resume_key(sb_install.tenant_id)
 
     gate, resume = asyncio.run(body())
@@ -120,10 +126,13 @@ def test_sb_c03_cancel_after_body_marker(sb_install: sb.SBInstall,
             gate.park_after_body = keys[0]
             r, _ = sr.runner(sb_install, rt, page=10, cap=10, gate=gate)
             task = asyncio.create_task(sr.run(r, sb_install))
-            await gate.parked.wait()
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            try:
+                await sr.bounded(gate.parked.wait(), "first close parked after its body")
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await sr.bounded(task, "cancelled run ends")
+            finally:
+                await sr.drain(task, gate.release)
             return gate, r.resume_key(sb_install.tenant_id)
 
     with caplog.at_level(logging.INFO, logger=sr.LOGGER):
@@ -153,14 +162,18 @@ def test_sb_c04_cancel_during_lock_wait(sb_install: sb.SBInstall,
         async with sr.runtime(sb_install) as rt:
             r, gate = sr.runner(sb_install, rt, page=10, cap=10)
             task = asyncio.create_task(sr.run(r, sb_install))
-            await asyncio.to_thread(_wait_lock, sb_install)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+            try:
+                # cancelled well inside the gateway's 5 s lock timeout (polling is 20 ms)
+                await sr.bounded(asyncio.to_thread(_wait_lock, sb_install), "close blocked")
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await sr.bounded(task, "cancelled run ends")
+            finally:
+                await sr.drain(task)
             resume = r.resume_key(sb_install.tenant_id)
             state = sb.states(sb_install, [reminder])
             holder.rollback()
-            again = await sr.run(r, sb_install)
+            again = await sr.bounded(sr.run(r, sb_install), "next run on the same runner")
             return resume, state, again
 
     try:
