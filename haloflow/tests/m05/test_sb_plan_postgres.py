@@ -80,9 +80,10 @@ def _explain(install: sb.SBInstall, query: str, values: dict[str, Any], mode: st
         conn.execute(f"SET LOCAL ROLE {sa.M05_OWNER}")
         conn.execute(sql.SQL("SET LOCAL plan_cache_mode = {}").format(sql.Literal(mode)))
         conn.execute(sql.SQL("PREPARE sb_plan (" + types + ") AS " + text))  # type: ignore[arg-type]
-        placeholders = ", ".join(["%s"] * len(args))
-        row = conn.execute(sql.SQL("EXPLAIN (FORMAT JSON) EXECUTE sb_plan(" + placeholders  # type: ignore[arg-type]
-                                   + ")"), args).fetchone()
+        # A utility statement takes no bind parameters: the arguments go in as literals.
+        literals = sql.SQL(", ").join(sql.Literal(a) for a in args)
+        row = conn.execute(sql.SQL("EXPLAIN (FORMAT JSON) EXECUTE sb_plan({})").format(
+            literals)).fetchone()
         conn.execute("DEALLOCATE sb_plan")
     assert row is not None
     value = row[0]
