@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "m02"))
 
 import m02_support  # noqa: E402
 import m05_support  # noqa: E402
+import sa_support  # noqa: E402
 from m05_harness import M05Install  # noqa: E402
 from staff_support import StaffInstall  # noqa: E402
 
@@ -105,3 +106,64 @@ def staff_foreign_install(
         yield StaffInstall(m02_ids, tenant)
     finally:
         m05_reset(tenant)
+
+
+# L-1S package S-A: one tenant per module, installed through the S-A TEST registry
+# (target 42) lazily in the row body; a second tenant for cross-tenant rows.
+@pytest.fixture(scope="module")
+def sa_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa")
+
+
+@pytest.fixture(scope="module")
+def sa_other_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:other")
+
+
+@pytest.fixture(scope="module")
+def sa_bare_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    """S-A units WITHOUT the test profile: what the units alone install."""
+
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:bare", profile=False)
+
+
+SA_CALL_FAILED = pytest.StashKey[bool]()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
+    """Record a failed call phase, so `sa_guard` does not add a teardown ERROR to a
+    row whose body already FAILED (the mutation checker judges assertion-level
+    failures; a body failure plus a teardown error would read as a setup/teardown
+    error). A swallowed forbidden use in a PASSING body still fails at teardown."""
+
+    outcome = yield
+    report = outcome.get_result()  # type: ignore[attr-defined]
+    if report.when == "call" and report.failed:
+        item.stash[SA_CALL_FAILED] = True
+
+
+@pytest.fixture
+def sa_guard(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Iterator[list[str]]:
+    """R-SA-10: active for every S-A PostgreSQL row (pytestmark usefixtures); fails
+    the row at teardown on any forbidden use, even one the code swallowed (unless the
+    body already failed: see pytest_runtest_makereport)."""
+
+    calls = sa_support.install_guard(monkeypatch)
+    yield calls
+    if not request.node.stash.get(SA_CALL_FAILED, False):
+        assert calls == [], f"S-A side effect attempted: {calls}"
