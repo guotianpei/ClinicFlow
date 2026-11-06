@@ -285,6 +285,8 @@ class IntakeService:
                               "appointment_ref": str(row["appointment_ref"]),
                               "triage_kind": "no_reply"},
                     patient_id=_required_uuid(row["patient_id"]),
+                    occurred_at=_time(row["deadline"]),  # SA-EVENT-TIME-1: stored
+                    source_time_quality="trusted",
                 ))
                 item = await self._create(binding, context, event, "no_reply")
             return CloseResult(str(row["outcome"]), None if decision is None else str(decision),

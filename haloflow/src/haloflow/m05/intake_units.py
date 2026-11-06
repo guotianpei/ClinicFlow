@@ -677,7 +677,8 @@ END;
 _CLOSE_RESULT: Final = (
     "pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', {outcome},"
     " 'decision', {decision}, 'event_id', {event},"
-    " 'patient_id', v_w.patient_id::text, 'appointment_ref', v_w.appointment_ref::text)"
+    " 'patient_id', v_w.patient_id::text, 'appointment_ref', v_w.appointment_ref::text,"
+    " 'deadline', " + _ts("v_w.deadline") + ")"
 )
 
 _CLOSE_BODY: Final = (
