@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "m02"))
 import m02_support  # noqa: E402
 import m05_support  # noqa: E402
 import sa_support  # noqa: E402
+import sb_support  # noqa: E402
 from m05_harness import M05Install  # noqa: E402
 from staff_support import StaffInstall  # noqa: E402
 
@@ -137,6 +138,25 @@ def sa_bare_install(
     """S-A units WITHOUT the test profile: what the units alone install."""
 
     yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:bare", profile=False)
+
+
+# L-1S package S-B: S-A install shape through the S-B TEST registry (target 45).
+@pytest.fixture(scope="module")
+def sb_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sb_support.SBInstall]:
+    yield from sb_support.module_install(request, m02_ids, m05_reset, "sb")
+
+
+@pytest.fixture(scope="module")
+def sb_other_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sb_support.SBInstall]:
+    yield from sb_support.module_install(request, m02_ids, m05_reset, "sb:other")
 
 
 SA_CALL_FAILED = pytest.StashKey[bool]()
