@@ -38,14 +38,7 @@
   "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_c04_opted_out[after_deadline]"
  ],
  "M8": [
-  "tests/m05/test_sa_service_postgres.py::test_sa_v03_inbound_item_and_correlation",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v05_ambiguous",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[after-append]",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[after-register]",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[at-create]",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v08_lost_ack[inbound]",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v09_no_side_effects",
-  "tests/m05/test_sa_service_postgres.py::test_sa_v10_binding_from_trusted_sources"
+  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[at-create]"
  ],
  "M9": [
   "tests/m05/test_sa_service_postgres.py::test_sa_v02_dispatch_service",

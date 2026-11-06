@@ -95,10 +95,15 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "    IF false THEN\n"
      "        UPDATE {schema}.m05_reminder_windows AS w\n"
      "           SET state = 'opted_out', closed_decision = 'opted_out'\n"),
-    ("M8", "item created in a separate transaction", INTAKE,
+    # Codex 020334Z: an ACTUAL atomicity regression (a create failure no longer
+    # rolls back the registration and the observation), not an unrelated error.
+    ("M8", "item-create failure swallowed (registration and event commit without it)",
+     INTAKE,
      "                item = await self._create(binding, context, event, str(kind))\n",
-     "                item = await self.__foundation.run_in_transaction(\n"
-     "                    context, lambda b: self._create(b, context, event, str(kind)))\n"),
+     "                try:\n"
+     "                    item = await self._create(binding, context, event, str(kind))\n"
+     "                except Exception:\n"
+     "                    item = None\n"),
     ("M9", "a send added to dispatch", INTAKE,
      "            return DispatchResult(str(row[\"outcome\"]), reminder, patient, event)\n",
      "            import haloflow.integrations.notifyre as _sms\n"
