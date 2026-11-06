@@ -143,8 +143,9 @@ def test_sb_s03_declarations() -> None:
 
 
 def _selector_body() -> str:
-    (function,) = sb.sb_units()["t045_m05_due_windows"].policy["functions"]
-    body: str = function["body"]
+    # The policy declaration carries only the body's sha256; the body is the template's
+    # $body$ section (as SA-S06 reads it).
+    body: str = sb.sb_units()["t045_m05_due_windows"].template.split("$body$")[1]
     return body
 
 
