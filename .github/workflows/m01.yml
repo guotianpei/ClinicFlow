@@ -207,6 +207,14 @@ jobs:
           $VENV/bin/python -I scripts/sa_intake_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sa-intake-mutation"
+      # L-1S package S-B due-window mutation controls M1-M11: four groups (t045 unit SQL
+      # against the selector module; the runner against the runner, cancellation and
+      # static modules), kill sets in scripts/sb_due_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sb_due_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sb_due_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sb-due-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
