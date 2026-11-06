@@ -54,8 +54,9 @@ pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 CLOSE = "m05_close_window"
 INBOUND = "m05_register_inbound"
+# SA-EVENT-TIME-1 (Codex 013337Z): the stored deadline is part of every result.
 RESULT_KEYS = ("schema_version", "outcome", "decision", "event_id", "patient_id",
-               "appointment_ref")
+               "appointment_ref", "deadline")
 
 
 def _one(install: sa.SAInstall) -> tuple[str, str, str, str]:
@@ -87,6 +88,12 @@ def test_sa_c02_due_closes_no_reply(sa_install: sa.SAInstall) -> None:
     result = sa.close(sa_install, reminder)
     assert (result["outcome"], result["decision"], result["patient_id"],
             result["appointment_ref"]) == ("closed", "no_reply", patient, ref)
+    stored = sa.admin(sa_install, sa.q(sa_install,
+                                       "SELECT to_char(deadline AT TIME ZONE 'UTC',"
+                                       " 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"') FROM"
+                                       " {s}.m05_reminder_windows WHERE reminder_id = %s"),
+                      (reminder,))
+    assert stored == [(result["deadline"],)]  # SA-EVENT-TIME-1: the stored deadline
     w = sa.window(sa_install, reminder)
     assert (w["state"], w["closed_decision"], w["closed_event_id"]) == (
         "no_reply", "no_reply", result["event_id"])

@@ -21,7 +21,8 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
 - SA-V04  confirm -> event, no item; STOP -> no event, no item; quarantined -> none.
 - SA-V05  ambiguous -> unclear_reply item; metadata appointment_ref and reminder_id
           null; patient set.
-- SA-V06  close -> `m05_reminder_no_reply` event (dedupe noreply:<reminder hex>) + one
+- SA-V06  close -> `m05_reminder_no_reply` event (occurred_at = stored deadline,
+          trusted: SA-EVENT-TIME-1) (dedupe noreply:<reminder hex>) + one
           no_reply item; rerun -> the same item, one each.
 - SA-V07  atomicity: a fault injected after the registration statement, after the
           append, or at the create rolls back EVERYTHING (no inbound row, window
@@ -377,7 +378,11 @@ def test_sa_v06_close_service(sa_install: sa.SAInstall) -> None:
         sa.T_NO_REPLY, f"noreply:{uuid.UUID(reminder).hex}", sa.W_TIMER)
     assert source["metadata"] == {"reminder_id": reminder, "appointment_ref": ref,
                                   "triage_kind": "no_reply"}
-    assert source["event_id"] == sa.window(sa_install, reminder)["closed_event_id"]
+    window = sa.window(sa_install, reminder)
+    assert source["event_id"] == window["closed_event_id"]
+    # SA-EVENT-TIME-1 (Codex 013337Z): occurred_at is the STORED deadline, trusted.
+    assert (source["occurred_at"], source["source_time_quality"]) == (
+        window["deadline"], "trusted")
 
 
 # --- SA-V07 / SA-V08 -----------------------------------------------------------------------------
@@ -470,9 +475,12 @@ def test_sa_v08_lost_ack(sa_install: sa.SAInstall, call: str) -> None:
                                                  " {s}.m05_inbound_replies WHERE"
                                                  " provider_message_id = %s"), (message,)) \
         == committed_inbound
-    events = [e["event_id"] for e in _events(sa_install) if e["patient_id"] == patient
+    events = [e for e in _events(sa_install) if e["patient_id"] == patient
               and e["event_type"] != sa.T_DISPATCHED]
-    assert events == [committed_event]
+    assert [e["event_id"] for e in events] == [committed_event]
+    if call == "close":  # SA-EVENT-TIME-1: the retry reproduces the stored deadline
+        assert (events[0]["occurred_at"], events[0]["source_time_quality"]) == (
+            sa.window(sa_install, reminder)["deadline"], "trusted")
 
 
 # --- SA-V09 --------------------------------------------------------------------------------------
