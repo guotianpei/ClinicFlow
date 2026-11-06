@@ -371,13 +371,20 @@ def test_sb_u03_busy_cleared_after_error_and_cancel() -> None:
             resolver.entered.clear()
             task = asyncio.create_task(runner.run_once("t-sb", uuid.uuid4()))
             tasks.append(task)
-            await _bounded(resolver.entered.wait(), "cancelled run reaches the resolver")
+            entered = asyncio.ensure_future(resolver.entered.wait())
+            tasks.append(entered)
+            await asyncio.wait({task, entered}, timeout=BOUND_S,
+                               return_when=asyncio.FIRST_COMPLETED)
+            if task.done() and not task.cancelled() and task.exception() is None:
+                assert task.result().code != "RUN_IN_PROGRESS", "busy leaked after an error run"
+            assert entered.done(), "cancelled run did not reach the resolver"
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await _bounded(task, "cancelled run ends")
             # 3. the SAME runner runs again: not RUN_IN_PROGRESS
             resolver.release.set()
             again = await _bounded(runner.run_once("t-sb", uuid.uuid4()), "third run")
+            assert again.code != "RUN_IN_PROGRESS", "busy leaked after a cancelled run"
             assert again.code == "SELECTION_FAILED"
             assert resolver.calls == 3
         finally:
