@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
+import sys
 import threading
 import time
+import types
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -154,6 +158,7 @@ TIMESTAMP_PATTERN: Final = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$"
 CODES: Final = (
     "COMMAND_MALFORMED", "WORKLOAD_NOT_AUTHORIZED", "DISPATCH_UNROUTABLE",
     "CONTACT_OPTED_OUT", "DISPATCH_CONFLICT", "INBOUND_CONFLICT", "WINDOW_NOT_FOUND",
+    "DIRECTORY_CONTENDED",
 )
 
 # --- synthetic principals and directory -------------------------------------------
@@ -593,3 +598,79 @@ def module_install(request: Any, ids: m02_support.Identities,
         yield SAInstall(ids, tenant, profile=profile)
     finally:
         reset(tenant)
+
+
+# --- R-SA-10 side-effect guard (Codex b5d846f item 3) --------------------------------
+
+ADAPTER_MODULES: Final = (
+    "haloflow.integrations", "haloflow.modules", "haloflow.ehr",
+    "haloflow.integrations.notifyre", "haloflow.integrations.stedi",
+    "haloflow.ehr.athenahealth", "haloflow.modules.reminders.service",
+    "haloflow.modules.fax.service", "haloflow.modules.eligibility.service",
+    "haloflow.modules.care_gaps.service",
+)
+
+
+class Tripwire(types.ModuleType):
+    """Stands in for an SMS/EHR adapter module in sys.modules: any attribute use is
+    recorded, then fails. The real adapters read deployment settings at import, so
+    they are never imported by the guard."""
+
+    def __init__(self, name: str, calls: list[str]) -> None:
+        super().__init__(name)
+        self._calls = calls
+
+    def __getattr__(self, attr: str) -> Any:
+        if attr.startswith("__"):
+            raise AttributeError(attr)
+        self._calls.append(f"{self.__name__}.{attr}")
+        raise AssertionError(f"S-A must not use {self.__name__}.{attr}")
+
+
+def _database_address() -> tuple[str, int] | None:
+    conninfo = os.getenv("HALOFLOW_TEST_DATABASE_URL")
+    if not conninfo:
+        return None
+    from psycopg.conninfo import conninfo_to_dict
+
+    params = conninfo_to_dict(conninfo)
+    return str(params.get("host") or "localhost"), int(params.get("port") or 5432)
+
+
+def install_guard(monkeypatch: Any) -> list[str]:
+    """Install the guard; return the list every forbidden use is appended to. The
+    caller asserts the list is empty at teardown (a swallowed failure still counts)."""
+
+    calls: list[str] = []
+    for name in ADAPTER_MODULES:
+        monkeypatch.setitem(sys.modules, name, Tripwire(name, calls))
+
+    import httpx
+
+    def _http(*args: Any, **kwargs: Any) -> Any:
+        calls.append("httpx.send")
+        raise AssertionError("S-A must not send HTTP")
+
+    monkeypatch.setattr(httpx.Client, "send", _http)
+    monkeypatch.setattr(httpx.AsyncClient, "send", _http)
+
+    allowed = _database_address()
+    allowed_hosts = set()
+    if allowed is not None:
+        host, port = allowed
+        allowed_hosts = {(host, port)}
+        if host == "localhost":
+            allowed_hosts |= {("127.0.0.1", port), ("::1", port)}
+    real_connect = socket.socket.connect
+
+    def guarded(self: socket.socket, address: Any) -> Any:
+        if self.family == socket.AF_UNIX:
+            return real_connect(self, address)
+        key = (str(address[0]), int(address[1])) if isinstance(address, tuple) else None
+        if key in allowed_hosts:
+            return real_connect(self, address)
+        calls.append(f"socket.connect {address!r}")
+        raise AssertionError(f"S-A must not connect to {address!r}")
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
+    return calls

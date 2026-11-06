@@ -37,8 +37,10 @@ these rows do not claim equal-instant coverage from timing.
 - SA-X03  the same pair as X01/X02 for an actionable reply (reschedule): ingress
           first -> replied, timer not_awaiting; timer first -> no_reply, then the
           reply is late, its own item, window stays no_reply (D-S2 row 6).
-- SA-X04  received_at is taken AFTER the lock: a reply that starts while the timer
-          holds the lock has received_at > the timer's close time.
+- SA-X04  received_at is taken AFTER the lock: the blocker samples clock_timestamp()
+          AFTER the waiter is observed blocked and BEFORE releasing; the stored
+          received_at must be later than that marker (kills M3; Codex b5d846f item 1).
+- SA-X05  the same marker for a STOP waiting on the timer.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ from typing import Any
 import pytest
 import sa_support as sa
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 CLOSE = "m05_close_window"
 INBOUND = "m05_register_inbound"
@@ -245,16 +247,38 @@ def test_sa_x03_actionable_both_orders(sa_install: sa.SAInstall) -> None:
 
 
 def test_sa_x04_received_at_after_lock(sa_install: sa.SAInstall) -> None:
+    """Codex b5d846f item 1: the marker is sampled on the BLOCKER's connection AFTER
+    the waiter is observed blocked and BEFORE the lock is released, so a received_at
+    read before the lock (mutant M3) is earlier than the marker and fails here."""
+
     _, phone, _, reminder = _one(sa_install)
     sa.shift_window(sa_install, reminder, -25)
     with sa.runtime_conn(sa_install) as conn, conn.transaction():
         sa.call_in(conn, sa_install, CLOSE, sa.close_cmd(reminder))
-        held_at = conn.execute("SELECT clock_timestamp()").fetchone()
         waiter = sa.Waiter(sa_install, INBOUND,
                            sa.inbound_cmd(sa.new_id(), phone, "confirm")).start_and_block()
+        marker = conn.execute("SELECT clock_timestamp()").fetchone()
+        assert marker is not None
     reply = waiter.join()
     later = sa.admin(sa_install, sa.q(sa_install, "SELECT received_at > %s FROM"
                                                   " {s}.m05_inbound_replies WHERE inbound_id"
-                                                  " = %s"),
-                     (held_at[0] if held_at else None, reply["inbound_id"]))
+                                                  " = %s"), (marker[0], reply["inbound_id"]))
+    assert later == [(True,)]
+
+
+def test_sa_x05_stop_received_after_release_marker(sa_install: sa.SAInstall) -> None:
+    """The same discriminating marker for the STOP order of SA-X02."""
+
+    _, phone, _, reminder = _one(sa_install)
+    sa.shift_window(sa_install, reminder, -25)
+    with sa.runtime_conn(sa_install) as conn, conn.transaction():
+        sa.call_in(conn, sa_install, CLOSE, sa.close_cmd(reminder))
+        waiter = sa.Waiter(sa_install, INBOUND,
+                           sa.inbound_cmd(sa.new_id(), phone, "stop")).start_and_block()
+        marker = conn.execute("SELECT clock_timestamp()").fetchone()
+        assert marker is not None
+    stop = waiter.join()
+    later = sa.admin(sa_install, sa.q(sa_install, "SELECT received_at > %s FROM"
+                                                  " {s}.m05_inbound_replies WHERE inbound_id"
+                                                  " = %s"), (marker[0], stop["inbound_id"]))
     assert later == [(True,)]

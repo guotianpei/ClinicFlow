@@ -27,10 +27,12 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
           unchanged, no event, no item); the rerun yields exactly one of each.
 - SA-V08  lost acknowledgement: the gateway raises after COMMIT -> IntakeCommitUnknown;
           the rerun returns the stored result: one inbound row, one event, one item.
-- SA-V09  no side effects (R-SA-10 behavioural half): the SMS, fax, eligibility, EHR
-          and legacy module service modules are replaced in sys.modules by tripwires
-          that FAIL on any use; httpx sends and Python socket connects to non-loopback
-          addresses are refused; for every call kind.
+- SA-V09  no side effects (R-SA-10 behavioural half): `sa_guard` (sa_support) is
+          ACTIVE FOR EVERY S-A ROW (pytestmark) and asserts at teardown that no
+          forbidden use happened, even one the code under test swallowed: SMS, fax,
+          eligibility, EHR and legacy module services are sys.modules tripwires; httpx
+          sends refused; Python socket connects refused except to the configured test
+          database. This row drives every call kind and branch, incl. a due no_reply.
 - SA-V10  binding (R-SA-8): the item's patient and the event's patient come from the
           directory/window, and the tenant from the context; nothing in the public
           commands can name either (SA-S08 pins the fields).
@@ -39,9 +41,6 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
 from __future__ import annotations
 
 import asyncio
-import socket
-import sys
-import types
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
@@ -51,7 +50,7 @@ import pytest
 import sa_support as sa
 import service_support as sv
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 
 # --- harness -------------------------------------------------------------------------------------
@@ -87,9 +86,15 @@ async def _context(rt: Any, install: sa.SAInstall, principal: str, call: str, *,
                             sa.CAPS[call] if capabilities is None else capabilities, kind=kind)
 
 
+class InjectedFault(Exception):
+    """The ONLY exception the fault harness raises (Codex b5d846f item 2)."""
+
+
 class FaultGateway:
-    """Wraps the real gateway. `fail_before`/`fail_after` raise around ONE statement
-    key inside the transaction; `lose_ack` raises after the transaction committed."""
+    """Wraps the real gateway. `fail_before`/`fail_after` raise InjectedFault around
+    ONE statement key inside the transaction; `lose_ack` raises InjectedFault after
+    the real transaction RETURNED (committed). Every firing is recorded in `fired`
+    as (key, phase) so a row can prove the designated point fired exactly once."""
 
     def __init__(self, real: Any, *, fail_before: str | None = None,
                  fail_after: str | None = None, lose_ack: bool = False) -> None:
@@ -98,6 +103,8 @@ class FaultGateway:
         self.fail_after = fail_after
         self.lose_ack = lose_ack
         self.entered = 0
+        self.fired: list[tuple[str, str]] = []
+        self.reached: list[tuple[str, str]] = []
 
     async def with_tenant_transaction(self, context: Any, callback: Callable[[Any], Awaitable[Any]],
                                       **kwargs: Any) -> Any:
@@ -109,11 +116,15 @@ class FaultGateway:
                 self._real = real
 
             async def _run(self, method: str, key: str, params: Any) -> Any:
+                outer.reached.append((key, "before"))
                 if key == outer.fail_before:
-                    raise RuntimeError(f"injected before {key}")
+                    outer.fired.append((key, "before"))
+                    raise InjectedFault(f"before {key}")
                 result = await getattr(self._real, method)(key, params)
+                outer.reached.append((key, "after"))
                 if key == outer.fail_after:
-                    raise RuntimeError(f"injected after {key}")
+                    outer.fired.append((key, "after"))
+                    raise InjectedFault(f"after {key}")
                 return result
 
             async def fetch_one(self, key: str, params: Any = None) -> Any:
@@ -130,8 +141,18 @@ class FaultGateway:
 
         result = await self.real.with_tenant_transaction(context, wrapped, **kwargs)
         if self.lose_ack:
-            raise ConnectionError("acknowledgement lost after commit")
+            self.fired.append(("commit", "after"))
+            raise InjectedFault("acknowledgement lost after commit")
         return result
+
+
+def _chain(error: BaseException) -> list[BaseException]:
+    out: list[BaseException] = []
+    current: BaseException | None = error
+    while current is not None and current not in out:
+        out.append(current)
+        current = current.__cause__ or current.__context__
+    return out
 
 
 def _service(gateway: Any) -> Any:
@@ -360,10 +381,11 @@ def test_sa_v06_close_service(sa_install: sa.SAInstall) -> None:
 
 # --- SA-V07 / SA-V08 -----------------------------------------------------------------------------
 
-FAULTS: dict[str, dict[str, Any]] = {
-    "after-register": {"fail_after": "m05.intake.inbound"},
-    "after-append": {"fail_after": "m02.observation.append"},
-    "at-create": {"fail_before": "m05.followup.create"},
+FAULTS: dict[str, tuple[dict[str, Any], tuple[str, str]]] = {
+    "after-register": ({"fail_after": "m05.intake.inbound"}, ("m05.intake.inbound", "after")),
+    "after-append": ({"fail_after": "m02.observation.append"},
+                     ("m02.observation.append", "after")),
+    "at-create": ({"fail_before": "m05.followup.create"}, ("m05.followup.create", "before")),
 }
 
 
@@ -373,14 +395,20 @@ def test_sa_v07_atomic_then_recovered(sa_install: sa.SAInstall, fault: str) -> N
     message = sa.new_id()
     before = sa.snapshot(sa_install)
     window_before = sa.window(sa_install, reminder)
+    options, expected = FAULTS[fault]
 
-    async def faulty() -> None:
+    async def faulty() -> FaultGateway:
         async with _runtime(sa_install) as rt:
             ctx = await _context(rt, sa_install, sa.W_INGRESS, "inbound")
-            gateway = FaultGateway(rt.gateway, **FAULTS[fault])
-            with pytest.raises(Exception):  # noqa: B017 - any failure; state is asserted
+            gateway = FaultGateway(rt.gateway, **options)
+            with pytest.raises(Exception) as caught:  # noqa: B017 - identity asserted below
                 await _service(gateway).register_inbound(
                     ctx, _inbound_command(phone, "reschedule", message))
+            # The designated point fired exactly once, and the failure IS that
+            # injection (directly or as the cause), not an unrelated error.
+            assert gateway.fired == [expected], gateway.fired
+            assert any(isinstance(e, InjectedFault) for e in _chain(caught.value)), caught.value
+            return gateway
 
     _run(faulty)
     assert sa.snapshot(sa_install) == before
@@ -393,8 +421,8 @@ def test_sa_v07_atomic_then_recovered(sa_install: sa.SAInstall, fault: str) -> N
                 ctx, _inbound_command(phone, "reschedule", message))
 
     result = _run(rerun)
-    assert len(sa.items_for(sa_install, patient)) == 1
-    assert str(result.item_id) == sa.items_for(sa_install, patient)[0]["item_id"]
+    items = sa.items_for(sa_install, patient)
+    assert len(items) == 1 and str(result.item_id) == items[0]["item_id"]
 
 
 @pytest.mark.parametrize("call", ("inbound", "close"))
@@ -404,107 +432,92 @@ def test_sa_v08_lost_ack(sa_install: sa.SAInstall, call: str) -> None:
     if call == "close":
         sa.shift_window(sa_install, reminder, -25)
 
-    async def attempt(lose: bool) -> Any:
+    def argument() -> Any:
+        return (_inbound_command(phone, "reschedule", message) if call == "inbound"
+                else uuid.UUID(reminder))
+
+    async def lost() -> None:
         from haloflow.m05.intake import IntakeCommitUnknown
 
         async with _runtime(sa_install) as rt:
             ctx = await _context(rt, sa_install, CALLS[call][0], call)
-            service = _service(FaultGateway(rt.gateway, lose_ack=lose))
-            argument = (_inbound_command(phone, "reschedule", message) if call == "inbound"
-                        else uuid.UUID(reminder))
-            if lose:
-                with pytest.raises(IntakeCommitUnknown):
-                    await getattr(service, CALLS[call][1])(ctx, argument)
-                return None
-            return await getattr(service, CALLS[call][1])(ctx, argument)
+            gateway = FaultGateway(rt.gateway, lose_ack=True)
+            with pytest.raises(IntakeCommitUnknown):
+                await getattr(_service(gateway), CALLS[call][1])(ctx, argument())
+            # Fired once, AFTER the real transaction returned (nothing before it).
+            assert gateway.fired == [("commit", "after")], gateway.fired
 
-    _run(lambda: attempt(True))
-    result = _run(lambda: attempt(False))
-    items = sa.items_for(sa_install, patient)
-    assert len(items) == 1 and str(result.item_id) == items[0]["item_id"]
-    events = [e for e in _events(sa_install) if e["patient_id"] == patient
+    _run(lost)
+    # The commit really happened: capture the committed identities BEFORE retrying.
+    committed_items = sa.items_for(sa_install, patient)
+    assert len(committed_items) == 1
+    committed_event = committed_items[0]["source_event_id"]
+    committed_inbound = sa.admin(sa_install, sa.q(sa_install,
+                                                  "SELECT inbound_id::text FROM"
+                                                  " {s}.m05_inbound_replies WHERE"
+                                                  " provider_message_id = %s"), (message,))
+
+    async def retry() -> Any:
+        async with _runtime(sa_install) as rt:
+            ctx = await _context(rt, sa_install, CALLS[call][0], call)
+            return await getattr(_service(rt.gateway), CALLS[call][1])(ctx, argument())
+
+    result = _run(retry)
+    assert sa.items_for(sa_install, patient) == committed_items
+    assert str(result.item_id) == committed_items[0]["item_id"]
+    assert sa.admin(sa_install, sa.q(sa_install, "SELECT inbound_id::text FROM"
+                                                 " {s}.m05_inbound_replies WHERE"
+                                                 " provider_message_id = %s"), (message,)) \
+        == committed_inbound
+    events = [e["event_id"] for e in _events(sa_install) if e["patient_id"] == patient
               and e["event_type"] != sa.T_DISPATCHED]
-    assert len(events) == 1
+    assert events == [committed_event]
 
 
 # --- SA-V09 --------------------------------------------------------------------------------------
 
 
-class _Tripwire(types.ModuleType):
-    """Stands in for an SMS/EHR adapter module: any attribute use is recorded and
-    fails. Installed in sys.modules, so an import by S-A code receives it. (The real
-    adapter modules read deployment settings at import, so they are never imported
-    here; red-run finding: fixture setup must not depend on them.)"""
+def test_sa_v09_no_side_effects(sa_install: sa.SAInstall, sa_guard: list[str]) -> None:
+    """Every call kind and branch under the guard (also active for every other S-A
+    row, asserted at teardown): dispatch; inbound confirm, reschedule, cancel,
+    unclear, ambiguous, quarantined, STOP; a DUE unanswered window closed no_reply."""
 
-    def __init__(self, name: str, calls: list[str]) -> None:
-        super().__init__(name)
-        self._calls = calls
-
-    def __getattr__(self, attr: str) -> Any:
-        if attr.startswith("__"):
-            raise AttributeError(attr)
-        self._calls.append(f"{self.__name__}.{attr}")
-        raise AssertionError(f"S-A must not use {self.__name__}.{attr}")
-
-
-ADAPTER_MODULES = (
-    "haloflow.integrations.notifyre", "haloflow.integrations.stedi",
-    "haloflow.ehr.athenahealth", "haloflow.modules.reminders.service",
-    "haloflow.modules.fax.service", "haloflow.modules.eligibility.service",
-    "haloflow.modules.care_gaps.service",
-)
-
-
-@pytest.fixture
-def no_side_effects(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    calls: list[str] = []
-    for name in ADAPTER_MODULES:
-        monkeypatch.setitem(sys.modules, name, _Tripwire(name, calls))
-
-    import httpx
-
-    def _http(*args: Any, **kwargs: Any) -> Any:
-        calls.append("httpx.send")
-        raise AssertionError("S-A must not send HTTP")
-
-    monkeypatch.setattr(httpx.Client, "send", _http)
-    monkeypatch.setattr(httpx.AsyncClient, "send", _http)
-
-    real_connect = socket.socket.connect
-
-    def guarded(self: socket.socket, address: Any) -> Any:
-        host = address[0] if isinstance(address, tuple) else address
-        if self.family == socket.AF_UNIX or host in ("127.0.0.1", "::1", "localhost"):
-            return real_connect(self, address)
-        calls.append(f"socket.connect {host}")
-        raise AssertionError(f"S-A must not open a network connection to {host}")
-
-    monkeypatch.setattr(socket.socket, "connect", guarded)
-    return calls
-
-
-def test_sa_v09_no_side_effects(sa_install: sa.SAInstall, no_side_effects: list[str]) -> None:
     sa_install.require()
-    patient, phone, (ref,) = sa.fresh_patient(sa_install)
-    reminder = uuid.uuid4()
+    patient, phone, refs = sa.fresh_patient(sa_install, appointments=3)
+    reminders = [uuid.uuid4() for _ in refs]
 
     async def body() -> None:
         intake = _commands()
         async with _runtime(sa_install) as rt:
             service = _service(rt.gateway)
-            await service.register_dispatch(
-                await _context(rt, sa_install, sa.W_DISPATCH, "dispatch"),
-                intake.DispatchCommand(reminder_id=reminder, appointment_ref=uuid.UUID(ref)))
+            dispatch_ctx = await _context(rt, sa_install, sa.W_DISPATCH, "dispatch")
+            for reminder, ref in zip(reminders, refs, strict=True):
+                await service.register_dispatch(dispatch_ctx, intake.DispatchCommand(
+                    reminder_id=reminder, appointment_ref=uuid.UUID(ref)))
             ingress = await _context(rt, sa_install, sa.W_INGRESS, "inbound")
-            for reply_class in ("confirm", "reschedule", "stop"):
+            # Three current windows: every reply is ambiguous -> unclear_reply items.
+            for reply_class in ("confirm", "reschedule", "cancel", "unclear"):
                 await service.register_inbound(ingress, _inbound_command(phone, reply_class))
-            sa.shift_window(sa_install, str(reminder), -25)
-            await service.close_window(await _context(rt, sa_install, sa.W_TIMER, "close"),
-                                       reminder)
+            await service.register_inbound(ingress,
+                                           _inbound_command(sa.PHONE_UNKNOWN, "cancel"))
+            # A single-window patient: exact kinds.
+            p2, phone2, (ref2,) = sa.fresh_patient(sa_install)
+            await service.register_dispatch(dispatch_ctx, intake.DispatchCommand(
+                reminder_id=uuid.uuid4(), appointment_ref=uuid.UUID(ref2)))
+            for reply_class in ("reschedule", "cancel", "unclear", "confirm"):
+                await service.register_inbound(ingress, _inbound_command(phone2, reply_class))
+            # A due unanswered window -> no_reply item.
+            sa.shift_window(sa_install, str(reminders[0]), -25)
+            timer = await _context(rt, sa_install, sa.W_TIMER, "close")
+            closed = await service.close_window(timer, reminders[0])
+            assert closed.item_id is not None
+            await service.register_inbound(ingress, _inbound_command(phone, "stop"))
+            assert sa.items_for(sa_install, p2)
 
     _run(body)
-    assert no_side_effects == []
-    assert sa.items_for(sa_install, patient)  # the calls really ran
+    assert sa_guard == []
+    kinds = sorted(i["item_kind"] for i in sa.items_for(sa_install, patient))
+    assert "no_reply" in kinds and "unclear_reply" in kinds
 
 
 # --- SA-V10 --------------------------------------------------------------------------------------

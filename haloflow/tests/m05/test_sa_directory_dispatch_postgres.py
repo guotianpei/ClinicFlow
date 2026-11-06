@@ -27,6 +27,13 @@ and ZERO writes (full S-A table contents + item/history + M02 counts compared).
 - SA-D04  concurrent contact change vs dispatch: a second phone added for the patient
           while dispatch waits -> DISPATCH_UNROUTABLE (after view); dispatch first ->
           contact_put waits, the window keeps the original phone (before view).
+- SA-D05  changing lock set (Codex b5d846f directory follow-through, pins v1r2
+          P-1'): ONE attempt locks its discovered set in global sorted order, then
+          re-reads; if the set grew it refuses DIRECTORY_CONTENDED (whole transaction
+          rolled back, zero writes) instead of taking out-of-order locks; the caller
+          restarts. Adversarial case: B adds phone W to patient P while A (a contact
+          change for P) waits on P's phone; A -> DIRECTORY_CONTENDED; A's restart ->
+          applied.
 - SA-P01  dispatch registers: window awaiting, deadline = sent_at + 24 h, sent_at
           after the lock (>= transaction start), fingerprint = independent oracle,
           dispatched observation appended BY THE SERVICE only (none from SQL).
@@ -55,7 +62,7 @@ import psycopg
 import pytest
 import sa_support as sa
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 DIRECTORY = "m05_directory_put"
 DISPATCH = "m05_register_dispatch"
@@ -274,6 +281,28 @@ def test_sa_d04_contact_change_vs_dispatch(sa_install: sa.SAInstall) -> None:
             "contact_remove", phone=phone2, patient_id=patient2)).start_and_block()
     assert waiter.join()["outcome"] == "applied"
     assert sa.window(sa_install, reminder)["phone"] == phone2
+
+
+def test_sa_d05_lock_set_grew_restart(sa_install: sa.SAInstall) -> None:
+    _ready(sa_install)
+    patient, phone_x, _ = sa.fresh_patient(sa_install, appointments=0)
+    phone_w, phone_y = sa.fresh_phone(), sa.fresh_phone()
+    # B holds {W, X}: adds W for P.
+    with sa.held(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_put", phone=phone_w, patient_id=patient)):
+        # A discovers {X, Y} for P before B commits, and waits on X.
+        waiter = sa.Waiter(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_put", phone=phone_y, patient_id=patient)).start_and_block()
+    with pytest.raises(psycopg.Error) as caught:
+        waiter.join()
+    assert (caught.value.sqlstate, caught.value.diag.message_primary) == (
+        "P0001", "DIRECTORY_CONTENDED")
+    rows = sa.admin(sa_install, sa.q(sa_install, "SELECT phone FROM {s}.m05_patient_contacts"
+                                                 " WHERE patient_id = %s ORDER BY phone"),
+                    (patient,))
+    assert [p for (p,) in rows] == sorted([phone_x, phone_w])  # A wrote nothing
+    assert sa.directory(sa_install, "contact_put", phone=phone_y,
+                        patient_id=patient)["outcome"] == "applied"
 
 
 # --- SA-P01 .. SA-P09 ----------------------------------------------------------------------

@@ -50,7 +50,7 @@ from typing import Any
 import pytest
 import sa_support as sa
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 INBOUND = "m05_register_inbound"
 RESULT_KEYS = ("schema_version", "outcome", "inbound_id", "decision", "triage_kind",

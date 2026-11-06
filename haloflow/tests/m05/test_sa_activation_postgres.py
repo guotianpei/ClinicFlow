@@ -26,7 +26,7 @@ import pytest
 import sa_support as sa
 from psycopg.types.json import Jsonb
 
-pytestmark = pytest.mark.postgres
+pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
 
 def _as_owner(install: sa.SAInstall, statement: str, params: Any = None) -> Any:

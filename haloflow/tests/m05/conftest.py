@@ -137,3 +137,13 @@ def sa_bare_install(
     """S-A units WITHOUT the test profile: what the units alone install."""
 
     yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:bare", profile=False)
+
+
+@pytest.fixture
+def sa_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """R-SA-10: active for every S-A PostgreSQL row (pytestmark usefixtures); fails
+    the row at teardown on any forbidden use, even one the code swallowed."""
+
+    calls = sa_support.install_guard(monkeypatch)
+    yield calls
+    assert calls == [], f"S-A side effect attempted: {calls}"
