@@ -1,0 +1,41 @@
+{
+ "M1": [
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t01_boundary_fixed_cutoff[0]"
+ ],
+ "M2": [
+  "tests/m05/test_sb_selector_postgres.py::test_sb_a03_tenant_isolation",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_r01_read_only_no_row_lock",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t02_result_shape",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t03_states_excluded",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t04_order_and_limit",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t05_tie_heavy_paging",
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t06_after_exclusive_until_inclusive"
+ ],
+ "M3": [
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t04_order_and_limit"
+ ],
+ "M4": [
+  "tests/m05/test_sb_selector_postgres.py::test_sb_t06_after_exclusive_until_inclusive"
+ ],
+ "M5": [
+  "tests/m05/test_sb_runner_postgres.py::test_sb_w03b_wrap_page_crossing_start"
+ ],
+ "M6": [
+  "tests/m05/test_sb_runner_postgres.py::test_sb_e01_phase_b_failure_keeps_global_key"
+ ],
+ "M7": [
+  "tests/m05/test_sb_runner_postgres.py::test_sb_w02_cap_before_fetch"
+ ],
+ "M8": [
+  "tests/m05/test_sb_static_units.py::test_sb_u01_constructor_refusals[superset-CAPABILITIES_INVALID]"
+ ],
+ "M9": [
+  "tests/m05/test_sb_cancellation_postgres.py::test_sb_c03_cancel_after_body_marker"
+ ],
+ "M10": [
+  "tests/m05/test_sb_static_units.py::test_sb_u03_busy_cleared_after_error_and_cancel"
+ ],
+ "M11": [
+  "tests/m05/test_sb_static_units.py::test_sb_u02_run_in_progress_without_io"
+ ]
+}
