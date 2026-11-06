@@ -506,6 +506,32 @@ def test_sc_u10_authorization_before_probe(case: str) -> None:
     assert queries == []
 
 
+def test_sc_u11_success_is_not_shared_between_handles() -> None:
+    """Codex 222842Z (SC6 evidence): authorization is per handle. A first handle (one
+    transaction, tenant active) authorizes; a second handle in the SAME test (another
+    transaction or tenant, inactive) must send its own probe and refuse, sending no
+    business SQL. Self-contained: does not depend on file order."""
+
+    async def body() -> tuple[list[str], list[str], str | None]:
+        from haloflow.m01.errors import ActivationRefused
+
+        key = _keys(_catalog())[0]
+        active = FakeConnection([({"schema_version": 1, "active": True}, "read committed")])
+        await _handle(active).fetch_all(key, {"a": None})
+        inactive = FakeConnection([({"schema_version": 1, "active": False},
+                                     "read committed")])
+        second = _handle(inactive)
+        with pytest.raises(ActivationRefused) as caught:
+            await second.fetch_all(key, {"b": None})
+        return active.queries, inactive.queries, caught.value.reason_code
+
+    first_queries, second_queries, code = asyncio.run(body())
+    catalog = _catalog()
+    assert first_queries == [sc.PROBE_SQL, _query(catalog, _keys(catalog)[0])]
+    assert second_queries == [sc.PROBE_SQL], "the second handle did not send its own probe"
+    assert code == "M05_NOT_ACTIVATED"
+
+
 def test_sc_u07_not_enforced_never_probes() -> None:
     async def body() -> list[str]:
         conn = FakeConnection([({"schema_version": 1, "active": False}, "read committed")])

@@ -42,7 +42,8 @@
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.due_windows-fetch_one]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-execute]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_all]",
-  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_one]"
+  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_one]",
+  "tests/m05/test_sc_static_units.py::test_sc_u11_success_is_not_shared_between_handles"
  ],
  "SC3": [
   "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[active-not-bool]",
@@ -81,10 +82,26 @@
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.directory-fetch_all]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.dispatch-fetch_all]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.due_windows-fetch_all]",
-  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_all]"
+  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_all]",
+  "tests/m05/test_sc_static_units.py::test_sc_u11_success_is_not_shared_between_handles"
  ],
  "SC6": [
+  "tests/m05/test_sc_static_units.py::test_sc_u02_inactive_refuses_and_poisons",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[active-not-bool]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[db-error]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[extra-key]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[missing-key]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[non-object]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[null]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[schema-2]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[two-rows]",
+  "tests/m05/test_sc_static_units.py::test_sc_u03_unreadable_is_never_active[zero-rows]",
+  "tests/m05/test_sc_static_units.py::test_sc_u04_isolation_must_be_read_committed[None]",
+  "tests/m05/test_sc_static_units.py::test_sc_u04_isolation_must_be_read_committed[repeatable read]",
+  "tests/m05/test_sc_static_units.py::test_sc_u04_isolation_must_be_read_committed[serializable]",
+  "tests/m05/test_sc_static_units.py::test_sc_u05_cancellation_propagates",
   "tests/m05/test_sc_static_units.py::test_sc_u06_concurrent_first_calls[False]",
+  "tests/m05/test_sc_static_units.py::test_sc_u06_concurrent_first_calls[True]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.followup.apply-execute]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.followup.apply-fetch_all]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.followup.apply-fetch_one]",
@@ -120,7 +137,8 @@
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.due_windows-fetch_one]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-execute]",
   "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_all]",
-  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_one]"
+  "tests/m05/test_sc_static_units.py::test_sc_u08_every_protected_key_and_method_refuses[m05.intake.inbound-fetch_one]",
+  "tests/m05/test_sc_static_units.py::test_sc_u11_success_is_not_shared_between_handles"
  ],
  "SC7": [
   "tests/m05/test_sc_static_units.py::test_sc_u02_inactive_refuses_and_poisons",

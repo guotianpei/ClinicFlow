@@ -71,11 +71,31 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "        return await cursor.fetchall()\n"),
     ("SC6", "a successful probe is cached across handles (process-wide)", GATEWAY,
      "            if self.__authorized:\n"
-     "                return\n",
+     "                return\n"
+     "            try:\n"
+     "                cursor = await self._connection().execute(PROBE_SQL)\n"
+     "                rows = await cursor.fetchall()\n"
+     "            except Exception:  # noqa: BLE001 - CancelledError is BaseException:"
+     " not caught\n"
+     "                self._refuse(\"M05_ACTIVATION_UNREADABLE\")\n"
+     "            code = _probe_outcome(rows)\n"
+     "            if code is not None:\n"
+     "                self._refuse(code)\n"
+     "            self.__authorized = True\n",
      "            if self.__authorized or globals().get(\"_SC6_CACHE\"):\n"
      "                self.__authorized = True\n"
-     "                globals()[\"_SC6_CACHE\"] = True\n"
-     "                return\n"),
+     "                return\n"
+     "            try:\n"
+     "                cursor = await self._connection().execute(PROBE_SQL)\n"
+     "                rows = await cursor.fetchall()\n"
+     "            except Exception:  # noqa: BLE001 - CancelledError is BaseException:"
+     " not caught\n"
+     "                self._refuse(\"M05_ACTIVATION_UNREADABLE\")\n"
+     "            code = _probe_outcome(rows)\n"
+     "            if code is not None:\n"
+     "                self._refuse(code)\n"
+     "            self.__authorized = True\n"
+     "            globals()[\"_SC6_CACHE\"] = True\n"),
     ("SC7", "a refusal does not poison the handle", GATEWAY,
      "        self.__refused = code\n"
      "        raise ActivationRefused(reason_code=code)\n",
