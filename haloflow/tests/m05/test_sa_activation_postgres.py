@@ -107,4 +107,7 @@ def test_sa_a04_isolated(sa_install: sa.SAInstall) -> None:
 
     text = Path(source).read_text(encoding="utf-8")
     assert "M05_ACTIVATION_NOT_AUTHORIZED" in text
-    assert "m05_activation" not in text  # the record is not read by the validator
+    # The record is not read by the validator (its own `_m05_activation` helper is
+    # the B5 linkage rule, not the D-S1 record): none of the record's names appear.
+    for name in ("m05_activation_records", "m05_activation_state", "m05_activation_change"):
+        assert name not in text, name

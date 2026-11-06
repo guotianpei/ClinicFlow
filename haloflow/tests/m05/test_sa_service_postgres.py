@@ -10,7 +10,8 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
           a capability set that is not EXACTLY the call's set (subset, superset)
           -> IntakeRefused CAPABILITIES_INVALID; the gateway is never entered.
 - SA-V02  dispatch: one window + one `m05_reminder_dispatched` event (dedupe key
-          dispatch:<reminder>, correlation = reminder, patient from the directory,
+          dispatch:<reminder hex> (M02 key grammar [a-z0-9:]+, pins C9),
+          correlation = reminder, patient from the directory,
           workload = dispatch workload, occurred_at = stored sent_at); no item;
           retry -> the same event (existing), still one.
 - SA-V03  inbound reschedule: one `m05_reminder_reply_received` event (metadata
@@ -20,7 +21,7 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
 - SA-V04  confirm -> event, no item; STOP -> no event, no item; quarantined -> none.
 - SA-V05  ambiguous -> unclear_reply item; metadata appointment_ref and reminder_id
           null; patient set.
-- SA-V06  close -> `m05_reminder_no_reply` event (dedupe no_reply:<reminder>) + one
+- SA-V06  close -> `m05_reminder_no_reply` event (dedupe noreply:<reminder hex>) + one
           no_reply item; rerun -> the same item, one each.
 - SA-V07  atomicity: a fault injected after the registration statement, after the
           append, or at the create rolls back EVERYTHING (no inbound row, window
@@ -268,7 +269,7 @@ def test_sa_v02_dispatch_service(sa_install: sa.SAInstall) -> None:
     w = sa.window(sa_install, str(reminder))
     assert (e["event_id"], e["patient_id"], e["producer_service"], e["producer_dedupe_key"],
             e["workload_id"]) == (w["dispatch_event_id"], patient, sa.PRODUCER,
-                                  f"dispatch:{reminder}", sa.W_DISPATCH)
+                                  f"dispatch:{reminder.hex}", sa.W_DISPATCH)
     assert e["metadata"] == {"reminder_id": str(reminder), "appointment_ref": ref}
     assert str(first.event_id) == str(second.event_id) == w["dispatch_event_id"]
     assert sa.items_for(sa_install, patient) == []
@@ -296,7 +297,7 @@ def test_sa_v03_inbound_item_and_correlation(sa_install: sa.SAInstall) -> None:
                                   "reply_class": "reschedule",
                                   "triage_kind": "reschedule_request",
                                   "appointment_ref": ref, "reminder_id": reminder}
-    assert source["producer_dedupe_key"] == f"reply:{first.inbound_id}"
+    assert source["producer_dedupe_key"] == f"reply:{first.inbound_id.hex}"
     assert len([e for e in _events(sa_install, sa.T_REPLY)
                 if e["patient_id"] == patient]) == 1
 
@@ -373,7 +374,7 @@ def test_sa_v06_close_service(sa_install: sa.SAInstall) -> None:
     assert str(first.item_id) == str(again.item_id) == item["item_id"]
     source = sa.event(sa_install, item["source_event_id"])
     assert (source["event_type"], source["producer_dedupe_key"], source["workload_id"]) == (
-        sa.T_NO_REPLY, f"no_reply:{reminder}", sa.W_TIMER)
+        sa.T_NO_REPLY, f"noreply:{uuid.UUID(reminder).hex}", sa.W_TIMER)
     assert source["metadata"] == {"reminder_id": reminder, "appointment_ref": ref,
                                   "triage_kind": "no_reply"}
     assert source["event_id"] == sa.window(sa_install, reminder)["closed_event_id"]
