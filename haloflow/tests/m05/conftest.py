@@ -28,6 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "m02"))
 
 import m02_support  # noqa: E402
 import m05_support  # noqa: E402
+import sa_support  # noqa: E402
 from m05_harness import M05Install  # noqa: E402
 from staff_support import StaffInstall  # noqa: E402
 
@@ -105,3 +106,34 @@ def staff_foreign_install(
         yield StaffInstall(m02_ids, tenant)
     finally:
         m05_reset(tenant)
+
+
+# L-1S package S-A: one tenant per module, installed through the S-A TEST registry
+# (target 42) lazily in the row body; a second tenant for cross-tenant rows.
+@pytest.fixture(scope="module")
+def sa_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa")
+
+
+@pytest.fixture(scope="module")
+def sa_other_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:other")
+
+
+@pytest.fixture(scope="module")
+def sa_bare_install(
+    request: pytest.FixtureRequest,
+    m02_ids: m02_support.Identities,
+    m05_reset: Callable[[tuple[str, str]], None],
+) -> Iterator[sa_support.SAInstall]:
+    """S-A units WITHOUT the test profile: what the units alone install."""
+
+    yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:bare", profile=False)
