@@ -119,6 +119,9 @@ class CompiledCatalog:
     """
 
     catalog: TenantStatementCatalog
+    # L-1S S-C: statement keys gated by the D-S1 activation probe. Composed only from
+    # module-owned declarations (`*_PROTECTED`); never derived from capabilities or keys.
+    activation_protected: frozenset[str] = frozenset()
 
     @property
     def write_capabilities(self) -> frozenset[str]:
@@ -139,7 +142,10 @@ def _build_statement_catalog(definitions: StatementDefinitions) -> TenantStateme
     return TenantStatementCatalog(statements, _issuer=_CATALOG_ISSUER)
 
 
-def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledCatalog:
+def build_statement_catalog(
+    *definition_sets: StatementDefinitions,
+    activation_protected: frozenset[str] = frozenset(),
+) -> CompiledCatalog:
     """Compose approved module definition sets into one immutable catalogue.
 
     Startup-only. Duplicate keys across sets fail here rather than at first use,
@@ -156,7 +162,12 @@ def build_statement_catalog(*definition_sets: StatementDefinitions) -> CompiledC
                 raise RepositoryStatementRejected(reason_code="DUPLICATE_STATEMENT_KEY")
             merged[key] = definition
 
-    return CompiledCatalog(catalog=_build_statement_catalog(merged))
+    if not isinstance(activation_protected, frozenset) or any(
+        not isinstance(key, str) or key not in merged for key in activation_protected
+    ):
+        raise RepositoryStatementRejected(reason_code="PROTECTED_KEY_UNKNOWN")
+    return CompiledCatalog(catalog=_build_statement_catalog(merged),
+                           activation_protected=activation_protected)
 
 
 # M01's tenant-schema statements. Its shared-control read runs on the control

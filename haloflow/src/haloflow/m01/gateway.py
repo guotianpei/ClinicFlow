@@ -1,15 +1,18 @@
 """The sole runtime transaction path to tenant operational data."""
 
+import asyncio
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 from psycopg import AsyncConnection, sql
 
+from haloflow.m01.activation import PROBE_SQL, ActivationPolicy
 from haloflow.m01.context import TenantContext
 from haloflow.m01.errors import (
+    ActivationRefused,
     CapabilityDenied,
     ContextExpired,
     NestedTenantTransaction,
@@ -50,14 +53,28 @@ class TransactionOptions:
 
 
 class TenantRepositoryHandle:
-    """Transaction-scoped access to fixed M01-owned statements."""
+    """Transaction-scoped access to fixed M01-owned statements.
+
+    L-1S S-C (D-S1): under `ActivationPolicy.ENFORCE`, the first activation-protected
+    statement of the transaction is preceded by ONE probe (PROBE_SQL, t046). Membership,
+    capability and write-mode checks stay first and synchronous; the probe is awaited only
+    for an authorized protected statement. Success is cached for this handle only; a
+    refusal poisons the handle (every later statement refuses with the same code) and the
+    gateway raises it after the callback even if the callback caught it, so no earlier
+    write commits. Concurrent first calls share one probe. CancelledError is never caught.
+    """
 
     __slots__ = (
+        "__activation",
         "__active",
         "__allow_writes",
+        "__authorized",
         "__capabilities",
         "__catalog",
         "__connection",
+        "__probe_lock",
+        "__protected",
+        "__refused",
     )
 
     def __init__(
@@ -67,25 +84,36 @@ class TenantRepositoryHandle:
         *,
         allow_writes: bool,
         capabilities: frozenset[str],
+        activation_policy: ActivationPolicy = ActivationPolicy.NOT_ENFORCED,
+        activation_protected: frozenset[str] = frozenset(),
     ) -> None:
         self.__connection: AsyncConnection | None = connection
         self.__catalog: TenantStatementCatalog | None = catalog
         self.__allow_writes = allow_writes
         self.__capabilities: frozenset[str] | None = capabilities
         self.__active = True
+        self.__activation = activation_policy
+        self.__protected = activation_protected
+        self.__authorized = False
+        self.__refused: str | None = None
+        self.__probe_lock = asyncio.Lock()
+
+    @property
+    def activation_refused(self) -> str | None:
+        return self.__refused
 
     async def execute(self, statement_key: str, params: Params = None) -> int:
-        statement = self._resolve_statement(statement_key)
+        statement = await self._authorized_statement(statement_key)
         cursor = await self._connection().execute(statement.query, params)
         return cursor.rowcount
 
     async def fetch_one(self, statement_key: str, params: Params = None) -> tuple[Any, ...] | None:
-        statement = self._resolve_statement(statement_key)
+        statement = await self._authorized_statement(statement_key)
         cursor = await self._connection().execute(statement.query, params)
         return await cursor.fetchone()
 
     async def fetch_all(self, statement_key: str, params: Params = None) -> list[tuple[Any, ...]]:
-        statement = self._resolve_statement(statement_key)
+        statement = await self._authorized_statement(statement_key)
         cursor = await self._connection().execute(statement.query, params)
         return await cursor.fetchall()
 
@@ -100,6 +128,35 @@ class TenantRepositoryHandle:
             raise RepositoryHandleExpired()
         return self.__connection
 
+    async def _authorized_statement(self, statement_key: str) -> TenantStatement:
+        if self.__refused is not None:
+            raise ActivationRefused(reason_code=self.__refused)
+        statement = self._resolve_statement(statement_key)
+        if (self.__activation is ActivationPolicy.ENFORCE
+                and statement.key in self.__protected and not self.__authorized):
+            await self._probe()
+        return statement
+
+    async def _probe(self) -> None:
+        async with self.__probe_lock:
+            if self.__refused is not None:
+                raise ActivationRefused(reason_code=self.__refused)
+            if self.__authorized:
+                return
+            try:
+                cursor = await self._connection().execute(PROBE_SQL)
+                rows = await cursor.fetchall()
+            except Exception:  # noqa: BLE001 - CancelledError is BaseException: not caught
+                self._refuse("M05_ACTIVATION_UNREADABLE")
+            code = _probe_outcome(rows)
+            if code is not None:
+                self._refuse(code)
+            self.__authorized = True
+
+    def _refuse(self, code: str) -> NoReturn:
+        self.__refused = code
+        raise ActivationRefused(reason_code=code)
+
     def _resolve_statement(self, statement_key: str) -> TenantStatement:
         self._connection()
         if self.__catalog is None:
@@ -112,6 +169,21 @@ class TenantRepositoryHandle:
         return statement
 
 
+def _probe_outcome(rows: Any) -> str | None:
+    """None when active; otherwise the refusal code. Exact envelope, one row."""
+
+    if type(rows) is not list or len(rows) != 1 or len(rows[0]) != 2:
+        return "M05_ACTIVATION_UNREADABLE"
+    value, isolation = rows[0]
+    if isolation != "read committed":
+        return "ACTIVATION_ISOLATION_UNSUPPORTED"
+    if (not isinstance(value, dict) or set(value) != {"schema_version", "active"}
+            or type(value["schema_version"]) is not int or value["schema_version"] != 1
+            or type(value["active"]) is not bool):
+        return "M05_ACTIVATION_UNREADABLE"
+    return None if value["active"] else "M05_NOT_ACTIVATED"
+
+
 class TenantTransactionGateway:
     """Binds exactly one validated tenant context to one transaction."""
 
@@ -122,6 +194,7 @@ class TenantTransactionGateway:
         *,
         supported_schema_versions: Collection[int] = range(1, 2),
         clock: Callable[[], datetime] | None = None,
+        activation_policy: ActivationPolicy = ActivationPolicy.NOT_ENFORCED,
     ) -> None:
         """Bind a pool to one composed, startup-frozen catalogue.
 
@@ -137,6 +210,10 @@ class TenantTransactionGateway:
         self._statement_catalog: TenantStatementCatalog = catalog.catalog
         self._write_capabilities = catalog.write_capabilities
         self._clock = clock or (lambda: datetime.now(UTC))
+        if type(activation_policy) is not ActivationPolicy:
+            raise TypeError("activation_policy must be an ActivationPolicy")
+        self._activation_policy = activation_policy
+        self._activation_protected = catalog.activation_protected
 
     async def with_tenant_transaction(
         self,
@@ -200,9 +277,14 @@ class TenantTransactionGateway:
                     self._statement_catalog,
                     allow_writes=allow_writes,
                     capabilities=context.capabilities,
+                    activation_policy=self._activation_policy,
+                    activation_protected=self._activation_protected,
                 )
                 try:
                     result = await callback(handle)
+                    # S-C pin 3: a refusal the callback caught still aborts the transaction.
+                    if handle.activation_refused is not None:
+                        raise ActivationRefused(reason_code=handle.activation_refused)
                     await self._verify_effective_path(connection, context.schema_key)
                     return result
                 finally:

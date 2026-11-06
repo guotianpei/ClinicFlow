@@ -138,7 +138,8 @@ def test_sc_s03_startup_maps_deployment_to_policy(monkeypatch: pytest.MonkeyPatc
     dependencies = TenantRuntimeDependencies(pool=object(), control_store=object(),  # type: ignore[arg-type]
                                              migrator_connect=object(),  # type: ignore[arg-type]
                                              provisioner_connect=object())  # type: ignore[arg-type]
-    with pytest.raises(_Stop):
+    # startup turns any construction failure into StartupRefused(COMPOSITION_INVALID)
+    with pytest.raises(startup.StartupRefused):
         asyncio.run(startup.start_production_services(
             dependencies, deployment=startup.Deployment[deployment], served_tenants=("t-sc",)))
     assert captured == [{"activation_policy": ActivationPolicy[policy]}]

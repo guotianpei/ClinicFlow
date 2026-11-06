@@ -50,3 +50,7 @@ M05_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
         ),
     }
 )
+
+# L-1S S-C (D-S1): every statement above is gated by the activation probe (the module
+# owns this declaration; the catalogue never infers it).
+M05_PROTECTED: Final[frozenset[str]] = frozenset(M05_STATEMENTS)
