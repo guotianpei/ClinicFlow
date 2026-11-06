@@ -198,6 +198,15 @@ jobs:
           $VENV/bin/python -I scripts/l1w_w4b_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4b-mutation"
+      # L-1S S-A: 17 predeclared mutants (M1..M17, red package v1/v1r1/v1r2) in four
+      # PostgreSQL 17 groups (haloflow.m05.intake_units against the directory/dispatch,
+      # inbound and timer/interleaving modules; haloflow.m05.intake against the service
+      # module), kill sets in scripts/sa_intake_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sa_intake_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sa_intake_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sa-intake-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

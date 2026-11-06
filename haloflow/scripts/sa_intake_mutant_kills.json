@@ -1,0 +1,84 @@
+{
+ "M1": [
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x01_stop_first_timer_waits",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x02_timer_first_stop_waits",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x03_actionable_both_orders",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x04_received_at_after_lock",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x05_stop_received_after_release_marker"
+ ],
+ "M2": [
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_c03b_opted_out_close_is_stored",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_c04_opted_out[after_deadline]",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x01_stop_first_timer_waits",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x02_timer_first_stop_waits",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x03_actionable_both_orders",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x04_received_at_after_lock",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x05_stop_received_after_release_marker"
+ ],
+ "M3": [
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x04_received_at_after_lock",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_x05_stop_received_after_release_marker"
+ ],
+ "M4": [
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i07_ambiguous_changes_no_window[cancel]",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i07_ambiguous_changes_no_window[confirm]",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i07_ambiguous_changes_no_window[reschedule]",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i07_ambiguous_changes_no_window[unclear]"
+ ],
+ "M5": [
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i03_stop_is_phone_wide",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i04_actionable_with_stop_both_orders"
+ ],
+ "M6": [
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i01_shape",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i02_redelivery_and_conflict"
+ ],
+ "M7": [
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_c03b_opted_out_close_is_stored",
+  "tests/m05/test_sa_timer_interleavings_postgres.py::test_sa_c04_opted_out[after_deadline]"
+ ],
+ "M8": [
+  "tests/m05/test_sa_service_postgres.py::test_sa_v03_inbound_item_and_correlation",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v05_ambiguous",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[after-append]",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[after-register]",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v07_atomic_then_recovered[at-create]",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v08_lost_ack[inbound]",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v09_no_side_effects",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v10_binding_from_trusted_sources"
+ ],
+ "M9": [
+  "tests/m05/test_sa_service_postgres.py::test_sa_v02_dispatch_service",
+  "tests/m05/test_sa_service_postgres.py::test_sa_v09_no_side_effects"
+ ],
+ "M10": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_t04_exact_boundary_predicate"
+ ],
+ "M11": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_p02_retry_returns_original"
+ ],
+ "M12": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_p01_dispatch_registers",
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_p02_retry_returns_original"
+ ],
+ "M13": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d02_directory_waits_for_registration_lock",
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d03_first_contact_insertion_vs_inbound",
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d04_contact_change_vs_dispatch",
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d05_lock_set_grew_restart"
+ ],
+ "M14": [
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i07b_no_current_window",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i08_identity_quarantine",
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i08b_shared_phone_window_untouched"
+ ],
+ "M15": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d03_first_contact_insertion_vs_inbound"
+ ],
+ "M16": [
+  "tests/m05/test_sa_inbound_postgres.py::test_sa_i13_reassigned_appointment_is_stale"
+ ],
+ "M17": [
+  "tests/m05/test_sa_directory_dispatch_postgres.py::test_sa_d05_lock_set_grew_restart"
+ ]
+}
