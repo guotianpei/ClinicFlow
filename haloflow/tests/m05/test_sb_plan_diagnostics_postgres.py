@@ -8,6 +8,14 @@ workloads in their own tenants:
 - small: the pinned shape (3 000 windows; 300 awaiting, 120 due; 30 distinct deadlines);
 - large: 30 000 windows; 8 000 awaiting, 6 000 due; same tie-heavy shape (30 distinct).
 
+Crossover rows (Codex 20261106T170839Z): on the same two workloads, cursors are chosen so
+the page's QUALIFYING set is q in {99, 100, 101, 150, 200, 500} (small: only q <= 120 is
+possible: 99, 100, 101); the exact qualifying count is measured with COUNT(*) under the
+same predicates and printed beside the plan. Per node the line carries Actual Rows (rows
+EMITTED per loop) and Actual Loops, Rows Removed by Filter / Index Recheck, exact and lossy
+heap blocks, heap fetches, sort method/space and buffers; parent and child nodes are
+reported separately and never summed (emitted rows are not examined work).
+
 For each workload x page (first / after / until / after_until) x plan_cache_mode
 (force_custom_plan / force_generic_plan) it runs EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
 on the source-tied `DUE_QUERIES[page]` as the M05 owner with the selector's own
@@ -99,8 +107,9 @@ def _summary(plan: Any) -> dict[str, Any]:
     for n in _nodes(top["Plan"]):
         nodes.append({k: n[k] for k in (
             "Node Type", "Index Name", "Actual Rows", "Actual Loops", "Rows Removed by Filter",
-            "Rows Removed by Index Recheck", "Exact Heap Blocks", "Sort Method",
-            "Shared Hit Blocks", "Shared Read Blocks") if k in n})
+            "Rows Removed by Index Recheck", "Exact Heap Blocks", "Lossy Heap Blocks",
+            "Heap Fetches", "Sort Method", "Sort Space Used", "Shared Hit Blocks",
+            "Shared Read Blocks") if k in n})
     return {"execution_ms": top.get("Execution Time"), "planning_ms": top.get("Planning Time"),
             "nodes": nodes}
 
@@ -127,3 +136,52 @@ def test_sb_plan_diagnostics(sb_install: sb.SBInstall, sb_other_install: sb.SBIn
     scans = [n for n in summary["nodes"] if "Index Name" in n or "Scan" in n["Node Type"]]
     assert scans, summary
     assert summary["nodes"][0]["Actual Rows"] <= 100, summary
+
+
+CROSSOVER_Q = {"small": (99, 100, 101), "large": (99, 100, 101, 150, 200, 500)}
+_CASES = [(w, page, q) for w, qs in CROSSOVER_Q.items()
+          for page in ("first", "after", "until", "after_until") for q in qs]
+
+
+def _qualifying(install: sb.SBInstall, values: dict[str, Any], page: str) -> int:
+    clauses = ["state = 'awaiting'", "deadline <= %(v_cutoff)s"]
+    if page in ("after", "after_until"):
+        clauses.append("(deadline, reminder_id) > (%(v_after_deadline)s, %(v_after_id)s)")
+    if page in ("until", "after_until"):
+        clauses.append("(deadline, reminder_id) <= (%(v_until_deadline)s, %(v_until_id)s)")
+    rows = sa.admin(install, sa.q(install, "SELECT count(*) FROM {s}.m05_reminder_windows"
+                                           " WHERE " + " AND ".join(clauses)), values)
+    return int(rows[0][0])
+
+
+@pytest.mark.parametrize("mode", ("force_custom_plan", "force_generic_plan"))
+@pytest.mark.parametrize(("workload", "page", "q"), _CASES,
+                         ids=[f"{w}-{p}-q{q}" for w, p, q in _CASES])
+def test_sb_plan_crossover(sb_install: sb.SBInstall, sb_other_install: sb.SBInstall,
+                           workload: str, page: str, q: int, mode: str) -> None:
+    install = sb_install if workload == "small" else sb_other_install
+    install.require()
+    from haloflow.m05.due_units import DUE_QUERIES
+
+    due = _seed(install, workload)
+    n = len(due)
+    assert q <= n, (q, n)
+    cutoff = due[-1][0] + sb.MICRO
+    after = until = due[0]
+    if page == "first":
+        cutoff = due[q - 1][0]                    # ties may add rows: measured below
+    elif page == "after":
+        after = due[n - q - 1]                    # exactly q keys after it
+    elif page == "until":
+        until = due[q - 1]                        # exactly q keys up to it
+    else:
+        start = (n - q) // 2
+        after, until = due[start - 1], due[start - 1 + q]  # exactly q keys between
+    values = {"v_cutoff": cutoff, "v_after_deadline": after[0], "v_after_id": after[1],
+              "v_until_deadline": until[0], "v_until_id": until[1], "v_limit": 100}
+    qualifying = _qualifying(install, values, page)
+    summary = _summary(_explain(install, DUE_QUERIES[page], values, mode))
+    print("SB-PLAN-XOVER " + json.dumps({"workload": workload, "due": n, "page": page,
+                                          "target_q": q, "qualifying": qualifying,
+                                          "mode": mode, **summary}, default=str))
+    assert summary["nodes"][0]["Actual Rows"] == min(100, qualifying), summary
