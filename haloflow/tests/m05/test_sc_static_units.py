@@ -12,9 +12,10 @@ a control.
           (PROTECTED_KEY_UNKNOWN); no capability or key prefix is consulted (a protected
           set that omits one m05 key composes, and the oracle — not the runtime — catches it).
 - SC-S03  trusted policy: `build_production_tenant_runtime` has a REQUIRED keyword
-          `activation_policy` (no default); `start_production_services` passes ENFORCE for
-          PRODUCTION and NOT_ENFORCED for NON_PRODUCTION (source-level); M05-A1 still refuses
-          a production generation with the M05 linkage active.
+          `activation_policy` (no default); BEHAVIOURAL: `start_production_services` (tenant
+          verification stubbed, builder captured) passes ENFORCE for PRODUCTION and
+          NOT_ENFORCED for NON_PRODUCTION; M05-A1 by direct validator invocation: a production
+          generation with the M05 linkage active is refused, non-production accepted.
 - SC-S04  t046 declaration: owner-run SECURITY DEFINER, STABLE, jsonb, no inputs, EXECUTE to
           the runtime only; body reads only m05_activation_records with the shared
           LATEST_ORDER; t042/t043 remain owner-only.
@@ -33,6 +34,11 @@ a control.
 - SC-U06  concurrent first protected calls on one handle: exactly one probe; no protected
           statement is sent before it completes; on inactive both refuse; on active both run.
 - SC-U07  NOT_ENFORCED: never probes (target-36 tenants keep current behaviour).
+- SC-U08  every protected key x {execute, fetch_one, fetch_all}: inactive -> M05_NOT_ACTIVATED
+          with zero business SQL (Codex 211059Z item 1).
+- SC-U09  the protected set spans staff routes, t014 create, S-A intake and the S-B selector.
+- SC-U10  missing capability / unknown statement / write in a read transaction: refused by
+          the existing checks with NO probe and no business I/O.
 """
 
 from __future__ import annotations
@@ -45,6 +51,7 @@ from typing import Any
 
 import pytest
 import sa_support as sa
+import sb_support as sb
 import sc_support as sc
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "haloflow"
@@ -89,8 +96,8 @@ def test_sc_s02_protected_provenance_and_completeness() -> None:
 # --- SC-S03 ---------------------------------------------------------------------------------
 
 
-def test_sc_s03_trusted_policy() -> None:
-    from haloflow import composition, startup
+def test_sc_s03_builder_requires_policy() -> None:
+    from haloflow import composition
     from haloflow.m01.activation import ActivationPolicy
 
     parameter = inspect.signature(
@@ -98,25 +105,65 @@ def test_sc_s03_trusted_policy() -> None:
     assert parameter.kind is inspect.Parameter.KEYWORD_ONLY
     assert parameter.default is inspect.Parameter.empty
     assert {p.name for p in ActivationPolicy} == {"ENFORCE", "NOT_ENFORCED"}
-    text = inspect.getsource(startup)
-    call = re.search(r"build_production_tenant_runtime\((?P<args>[^)]*)\)", text)
-    assert call is not None and "activation_policy" in call["args"]
-    assert re.search(r"Deployment\.PRODUCTION\b[^\n]*ActivationPolicy\.ENFORCE"
-                     r"|ActivationPolicy\.ENFORCE[^\n]*Deployment\.PRODUCTION", text)
 
 
-def test_sc_s03_m05_a1_unchanged() -> None:
-    from haloflow.m02.registry_validation import (
-        M05_EVENT_TYPE,
-        M05_FAMILY,
-        M05_RESOLVER,
-        RegistryRefused,
-        validate_loaded_generation,
+class _Stop(Exception):
+    """Raised by the captured builder: construction is not under test here."""
+
+
+@pytest.mark.parametrize(("deployment", "policy"), (("PRODUCTION", "ENFORCE"),
+                                                    ("NON_PRODUCTION", "NOT_ENFORCED")))
+def test_sc_s03_startup_maps_deployment_to_policy(monkeypatch: pytest.MonkeyPatch,
+                                                  deployment: str, policy: str) -> None:
+    """Behavioural (Codex 211059Z item 2): start_production_services, with its tenant
+    verification and static plan stubbed, hands build_production_tenant_runtime the
+    policy for the trusted Deployment; the builder is captured and stops the run."""
+
+    from haloflow import composition, startup
+    from haloflow.m01.activation import ActivationPolicy
+    from haloflow.m01.runtime import TenantRuntimeDependencies
+
+    captured: list[dict[str, Any]] = []
+
+    def capture(dependencies: Any, **kwargs: Any) -> Any:
+        captured.append(kwargs)
+        raise _Stop()
+
+    async def verified(*args: Any, **kwargs: Any) -> tuple[str, str, int]:
+        return ("t-sc", "t_sc_schema", 36)
+
+    monkeypatch.setattr(startup, "_static_plan_or_code", lambda: object())
+    monkeypatch.setattr(startup, "_verify_served_tenant", verified)
+    monkeypatch.setattr(composition, "build_production_tenant_runtime", capture)
+    dependencies = TenantRuntimeDependencies(pool=object(), control_store=object(),  # type: ignore[arg-type]
+                                             migrator_connect=object(),  # type: ignore[arg-type]
+                                             provisioner_connect=object())  # type: ignore[arg-type]
+    with pytest.raises(_Stop):
+        asyncio.run(startup.start_production_services(
+            dependencies, deployment=startup.Deployment[deployment], served_tenants=("t-sc",)))
+    assert captured == [{"activation_policy": ActivationPolicy[policy]}]
+
+
+def test_sc_s03_m05_a1_still_refuses_production() -> None:
+    """Direct validator invocation (Codex 211059Z item 2): a production generation with
+    the M05 linkage fully active is still refused M05_ACTIVATION_NOT_AUTHORIZED."""
+
+    from haloflow.m02 import registry_validation as v
+
+    generation = v.LoadedGeneration(
+        contracts=(v.ContractRow(
+            event_type=v.M05_EVENT_TYPE, version=1, event_level="observation", is_active=True,
+            projection_rule_id=None,
+            signal_rule={"handoff_kind": "event_signal", "signal_type": "m02.event.appended"},
+            value_constraints={"operation_id": {"must_be_null": True}}),),
+        resolvers=(v.ResolverRow(v.M05_RESOLVER, "module_owned", True),),
+        test_targets_present=False,
+        families=(v.FamilyRow(v.M05_FAMILY, True),),
     )
-
-    source = inspect.getsource(validate_loaded_generation)
-    assert '"M05_ACTIVATION_NOT_AUTHORIZED"' in source
-    assert M05_FAMILY and M05_EVENT_TYPE and M05_RESOLVER and RegistryRefused
+    with pytest.raises(v.RegistryRefused) as caught:
+        v.validate_loaded_generation(generation, deployment="production")
+    assert caught.value.reason_code == "M05_ACTIVATION_NOT_AUTHORIZED"
+    assert v.validate_loaded_generation(generation, deployment="non_production") is None
 
 
 # --- SC-S04 ---------------------------------------------------------------------------------
@@ -333,7 +380,9 @@ def test_sc_u06_concurrent_first_calls(active: bool) -> None:
         finally:
             conn.release.set()
             for task in (first, second):
-                task.cancel()
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(first, second, return_exceptions=True)
         return conn.queries, list(results)
 
     queries, results = asyncio.run(body())
@@ -346,6 +395,76 @@ def test_sc_u06_concurrent_first_calls(active: bool) -> None:
 
         assert all(isinstance(r, ActivationRefused) for r in results), results
         assert queries == [sc.PROBE_SQL]
+
+
+# The expected protected set, as a literal (stable node ids in red and green; SC-U09 pins
+# it equal to the composed catalogue's set).
+PROTECTED_KEYS = (
+    "m05.followup.apply", "m05.followup.create", "m05.followup.get", "m05.followup.history",
+    "m05.followup.list", "m05.followup.note.read", "m05.followup.prepare",
+    "m05.intake.close", "m05.intake.directory", "m05.intake.dispatch", "m05.intake.inbound",
+    "m05.intake.due_windows",
+)
+
+
+@pytest.mark.parametrize("method", ("execute", "fetch_one", "fetch_all"))
+@pytest.mark.parametrize("key", PROTECTED_KEYS)
+def test_sc_u08_every_protected_key_and_method_refuses(key: str, method: str) -> None:
+    """Codex 211059Z item 1: every protected statement (staff routes, t014 create, S-A
+    intake, S-B selector), through each supported handle method, refuses when inactive
+    with zero business SQL sent."""
+
+    async def body() -> tuple[str, list[str]]:
+        from haloflow.m01.errors import ActivationRefused
+
+        conn = FakeConnection([({"schema_version": 1, "active": False}, "read committed")])
+        handle = _handle(conn)
+        with pytest.raises(ActivationRefused) as caught:
+            await getattr(handle, method)(key, {"command": None})
+        return caught.value.reason_code, conn.queries
+
+    assert key in _catalog().activation_protected
+    code, queries = asyncio.run(body())
+    assert code == "M05_NOT_ACTIVATED"
+    assert queries == [sc.PROBE_SQL]
+
+
+def test_sc_u09_protected_set_spans_every_m05_surface() -> None:
+    assert _catalog().activation_protected == frozenset(PROTECTED_KEYS)
+    assert sb.DUE_KEY in PROTECTED_KEYS
+
+
+@pytest.mark.parametrize("case", ("missing-capability", "unknown-statement", "write-in-read"))
+def test_sc_u10_authorization_before_probe(case: str) -> None:
+    """Membership and capability are validated first and synchronously: a refused statement
+    triggers no probe and no business I/O (Codex 202256Z pin 1, 211059Z item 1)."""
+
+    async def body() -> list[str]:
+        from haloflow.m01.activation import ActivationPolicy
+        from haloflow.m01.gateway import TenantRepositoryHandle
+
+        conn = FakeConnection()
+        catalog = _catalog()
+        protected_key = _keys(catalog)[0]
+        caps = frozenset(s.required_capability for s in catalog.catalog.statements())
+        allow_writes = True
+        if case == "missing-capability":
+            caps = caps - {"m05.followup.read"}
+        if case == "write-in-read":
+            protected_key, allow_writes = "m05.followup.apply", False
+        handle = TenantRepositoryHandle(conn, catalog.catalog, allow_writes=allow_writes,
+                                        capabilities=caps,
+                                        activation_policy=ActivationPolicy.ENFORCE,
+                                        activation_protected=catalog.activation_protected)
+        key = "m05.no.such.statement" if case == "unknown-statement" else protected_key
+        with pytest.raises(Exception) as caught:
+            await handle.fetch_all(key, {"x": None})
+        from haloflow.m01.errors import ActivationRefused
+
+        assert not isinstance(caught.value, ActivationRefused), caught.value
+        return conn.queries
+
+    assert asyncio.run(body()) == []
 
 
 def test_sc_u07_not_enforced_never_probes() -> None:
