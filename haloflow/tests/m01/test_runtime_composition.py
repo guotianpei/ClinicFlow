@@ -29,6 +29,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 
+from haloflow.m01.activation import ActivationPolicy
 from haloflow.m01.context import (
     CorrelationSource,
     Principal,
@@ -59,6 +60,10 @@ COMPONENT_CLASSES = (
 
 
 # --- recording doubles (no database) ---------------------------------------
+
+
+# L-1S S-C: these composition rows are non-production; the policy is explicit.
+_NOT_ENFORCED = ActivationPolicy.NOT_ENFORCED
 
 
 @dataclass
@@ -222,8 +227,10 @@ def test_l1_b1_each_call_returns_a_new_bundle(spy: Spy) -> None:
     from haloflow.m01.runtime import TenantRuntime
 
     counters = Counters()
-    first = build_production_tenant_runtime(_dependencies(counters))
-    second = build_production_tenant_runtime(_dependencies(counters))
+    first = build_production_tenant_runtime(_dependencies(counters),
+                                            activation_policy=_NOT_ENFORCED)
+    second = build_production_tenant_runtime(_dependencies(counters),
+                                             activation_policy=_NOT_ENFORCED)
 
     assert isinstance(first, TenantRuntime) and isinstance(second, TenantRuntime)
     assert first is not second
@@ -235,7 +242,8 @@ def test_l1_b1_each_call_returns_a_new_bundle(spy: Spy) -> None:
 def test_l1_b2_one_declaration_object_reaches_every_consumer(spy: Spy) -> None:
     from haloflow import composition
 
-    runtime = composition.build_production_tenant_runtime(_dependencies(Counters()))
+    runtime = composition.build_production_tenant_runtime(_dependencies(Counters()),
+                                                          activation_policy=_NOT_ENFORCED)
     declaration = composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
 
     # Wiring oracle: the one declaration object is the argument to all three
@@ -254,7 +262,7 @@ def test_l1_b2_one_declaration_object_reaches_every_consumer(spy: Spy) -> None:
 def test_l1_b3_the_gateway_set_is_passed_explicitly(spy: Spy) -> None:
     from haloflow.composition import build_production_tenant_runtime
 
-    build_production_tenant_runtime(_dependencies(Counters()))
+    build_production_tenant_runtime(_dependencies(Counters()), activation_policy=_NOT_ENFORCED)
 
     assert spy.set_kw_passed["TenantTransactionGateway"] == [True]
     assert spy.set_args["TenantTransactionGateway"][0] == frozenset({36})
@@ -264,7 +272,8 @@ def test_l1_b3_the_gateway_set_is_passed_explicitly(spy: Spy) -> None:
 def test_l1_b4_the_runner_is_constructed_first_and_shared(spy: Spy) -> None:
     from haloflow.composition import build_production_tenant_runtime
 
-    runtime = build_production_tenant_runtime(_dependencies(Counters()))
+    runtime = build_production_tenant_runtime(_dependencies(Counters()),
+                                              activation_policy=_NOT_ENFORCED)
 
     assert spy.order[0] == "TenantMigrationRunner"
     assert sorted(spy.order[1:]) == [
@@ -280,7 +289,7 @@ def test_l1_b5_no_database_access_across_the_whole_path(spy: Spy) -> None:
     from haloflow.composition import build_production_tenant_runtime
 
     counters = Counters()
-    build_production_tenant_runtime(_dependencies(counters))
+    build_production_tenant_runtime(_dependencies(counters), activation_policy=_NOT_ENFORCED)
 
     assert counters.total() == 0, counters
 
@@ -292,7 +301,11 @@ def test_l1_b6_g1_the_production_entry_takes_only_dependencies() -> None:
         inspect.signature(build_production_tenant_runtime).parameters.values()
     )
 
-    assert [p.name for p in parameters] == ["dependencies"]
+    # L-1S S-C (Codex 20261106T220503Z, option A): exactly one addition, the REQUIRED,
+    # keyword-only activation policy; no registry, catalogue or version can be supplied.
+    assert [p.name for p in parameters] == ["dependencies", "activation_policy"]
+    assert parameters[1].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters[1].default is inspect.Parameter.empty
     assert all(p.kind is not inspect.Parameter.VAR_KEYWORD for p in parameters)
 
 
@@ -349,7 +362,8 @@ def test_l1_c3_the_production_entry_reaches_the_coordination_check(
     )
     counters = Counters()
     deps = _dependencies(counters)
-    error = _refuse(lambda: composition.build_production_tenant_runtime(deps))
+    error = _refuse(lambda: composition.build_production_tenant_runtime(deps,
+                                                                        activation_policy=_NOT_ENFORCED))
     _assert_new_check_refusal(error, spy, counters)
     del error
     _assert_no_retained_component(spy)
@@ -393,7 +407,7 @@ def test_l1_d0_the_builder_spy_observes_the_production_entry(
 
     from haloflow.composition import build_production_tenant_runtime
 
-    build_production_tenant_runtime(_dependencies(Counters()))
+    build_production_tenant_runtime(_dependencies(Counters()), activation_policy=_NOT_ENFORCED)
     assert builder_calls.count == 1
 
 
@@ -416,7 +430,8 @@ def test_l1_d1_a_registry_failure_keeps_its_own_code(
     )
     counters = Counters()
     deps = _dependencies(counters)
-    error = _refuse(lambda: composition.build_production_tenant_runtime(deps))
+    error = _refuse(lambda: composition.build_production_tenant_runtime(deps,
+                                                                        activation_policy=_NOT_ENFORCED))
 
     assert type(error) is MigrationUnitRejected
     assert error.reason_code == PreconditionCode.EXECUTION_ROLE_NOT_APPROVED.value
@@ -452,7 +467,8 @@ def test_l1_d2_a_catalogue_failure_keeps_its_own_outcome(
     monkeypatch.setattr(composition, "APPROVED_MODULE_STATEMENTS", (unprefixed,))
     counters = Counters()
     deps = _dependencies(counters)
-    error = _refuse(lambda: composition.build_production_tenant_runtime(deps))
+    error = _refuse(lambda: composition.build_production_tenant_runtime(deps,
+                                                                        activation_policy=_NOT_ENFORCED))
 
     assert type(error) is RepositoryStatementRejected
     assert error.reason_code == "STATEMENT_KEY_NOT_MODULE_PREFIXED"
@@ -552,7 +568,8 @@ async def test_l1_e4c_composed_resolver_refuses_a_registry_tenant_mismatch() -> 
         lifecycle_state=LifecycleState.ACTIVE,
         schema_version=3,
     )
-    runtime = build_production_tenant_runtime(_dependencies(Counters(), record))
+    runtime = build_production_tenant_runtime(_dependencies(Counters(), record),
+                                              activation_policy=_NOT_ENFORCED)
 
     with pytest.raises(TenantUnavailable) as refused:
         await _resolve(runtime, "clinic-l1-e4c")
@@ -568,7 +585,8 @@ async def test_l1_e4d_composed_resolver_refuses_an_invalid_schema_key() -> None:
         lifecycle_state=LifecycleState.ACTIVE,
         schema_version=3,
     )
-    runtime = build_production_tenant_runtime(_dependencies(Counters(), record))
+    runtime = build_production_tenant_runtime(_dependencies(Counters(), record),
+                                              activation_policy=_NOT_ENFORCED)
 
     with pytest.raises(TenantUnavailable) as refused:
         await _resolve(runtime, "clinic-l1-e4d")
@@ -591,7 +609,8 @@ def test_l1_g4_generic_test_composition_does_not_touch_the_declaration() -> None
         # staying untouched.
         supported_schema_versions=frozenset({1, 2, 3, 36}),
     )
-    production = composition.build_production_tenant_runtime(_dependencies(Counters()))
+    production = composition.build_production_tenant_runtime(_dependencies(Counters()),
+                                                             activation_policy=_NOT_ENFORCED)
 
     assert wider.supported_schema_versions == frozenset({1, 2, 3, 36})
     assert production.supported_schema_versions == frozenset({36})

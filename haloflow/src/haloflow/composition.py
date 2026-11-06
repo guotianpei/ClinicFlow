@@ -268,6 +268,9 @@ def build_production_tenant_runtime(
     here, at call time. The caller owns the pool's lifecycle (L-1W).
     """
 
+    # S-C: the policy is checked before anything is built (an annotation is not a check).
+    if type(activation_policy) is not ActivationPolicy:
+        raise TypeError("activation_policy must be an ActivationPolicy")
     registry = build_production_tenant_migrations()
     catalog = build_production_catalog()
     return compose_tenant_runtime(

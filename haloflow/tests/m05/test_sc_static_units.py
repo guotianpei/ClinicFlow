@@ -139,10 +139,34 @@ def test_sc_s03_startup_maps_deployment_to_policy(monkeypatch: pytest.MonkeyPatc
                                              migrator_connect=object(),  # type: ignore[arg-type]
                                              provisioner_connect=object())  # type: ignore[arg-type]
     # startup turns any construction failure into StartupRefused(COMPOSITION_INVALID)
-    with pytest.raises(startup.StartupRefused):
+    with pytest.raises(startup.StartupRefused) as refused:
         asyncio.run(startup.start_production_services(
             dependencies, deployment=startup.Deployment[deployment], served_tenants=("t-sc",)))
+    assert refused.value.reason_code == "COMPOSITION_INVALID"
     assert captured == [{"activation_policy": ActivationPolicy[policy]}]
+
+
+@pytest.mark.parametrize("policy", (None, "enforce", "ENFORCE", True, 0))
+def test_sc_s03_builder_rejects_non_enum_policy_before_io(policy: Any) -> None:
+    """Codex 220503Z: a policy that is not an ActivationPolicy member raises TypeError
+    before any dependency is touched (the dependencies are inert sentinels that would
+    raise on any attribute access)."""
+
+    from haloflow import composition
+    from haloflow.m01.runtime import TenantRuntimeDependencies
+
+    class Inert:
+        def __getattr__(self, name: str) -> Any:
+            raise AssertionError(f"dependency touched before the policy check: {name}")
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("dependency called before the policy check")
+
+    dependencies = TenantRuntimeDependencies(pool=Inert(), control_store=Inert(),  # type: ignore[arg-type]
+                                             migrator_connect=Inert(),  # type: ignore[arg-type]
+                                             provisioner_connect=Inert())  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        composition.build_production_tenant_runtime(dependencies, activation_policy=policy)
 
 
 def test_sc_s03_m05_a1_still_refuses_production() -> None:
