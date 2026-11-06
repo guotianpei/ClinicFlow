@@ -20,6 +20,13 @@ and ZERO writes (full S-A table contents + item/history + M02 counts compared).
 - SA-D02  directory lock policy: a directory write on a phone WAITS while a
           registration holds that phone's contact lock (held-lock seam), and the
           reverse; appointment_put that moves a patient locks old and new phones.
+- SA-D03  first contact insertion vs inbound (Codex 1913 item 1): contact_put locks
+          the PROSPECTIVE phone too. Inbound first (unknown phone, holds the lock) ->
+          contact_put waits; inbound saw "before" (quarantined). contact_put first ->
+          inbound waits and sees "after" (the patient; no window -> unclear_reply).
+- SA-D04  concurrent contact change vs dispatch: a second phone added for the patient
+          while dispatch waits -> DISPATCH_UNROUTABLE (after view); dispatch first ->
+          contact_put waits, the window keeps the original phone (before view).
 - SA-P01  dispatch registers: window awaiting, deadline = sent_at + 24 h, sent_at
           after the lock (>= transaction start), fingerprint = independent oracle,
           dispatched observation appended BY THE SERVICE only (none from SQL).
@@ -226,6 +233,47 @@ def test_sa_d02_directory_waits_for_registration_lock(sa_install: sa.SAInstall) 
             start_at=sa.FUTURE.format(n=2), status="booked")).start_and_block()
     assert waiter.join()["outcome"] == "applied"
     assert other_phone != third_phone
+
+
+def test_sa_d03_first_contact_insertion_vs_inbound(sa_install: sa.SAInstall) -> None:
+    _ready(sa_install)
+    # Inbound first: the phone has no contact row and no directory entry yet.
+    patient, phone = sa.new_id(), sa.fresh_phone()
+    with sa.held(sa_install, INBOUND, sa.inbound_cmd(sa.new_id(), phone, "confirm")) as first:
+        assert first["decision"] == "quarantined"
+        waiter = sa.Waiter(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_put", phone=phone, patient_id=patient)).start_and_block()
+    assert waiter.join()["outcome"] == "applied"
+    # contact_put first (first contact for a new patient): inbound waits, sees it.
+    patient2, phone2 = sa.new_id(), sa.fresh_phone()
+    with sa.held(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_put", phone=phone2, patient_id=patient2)):
+        waiter = sa.Waiter(sa_install, INBOUND,
+                           sa.inbound_cmd(sa.new_id(), phone2, "confirm")).start_and_block()
+    after = waiter.join()
+    assert (after["decision"], after["triage_kind"], after["patient_id"]) == (
+        "item", "unclear_reply", patient2)
+
+
+def test_sa_d04_contact_change_vs_dispatch(sa_install: sa.SAInstall) -> None:
+    _ready(sa_install)
+    # Directory first: a second phone for the patient -> dispatch (after view) refuses.
+    patient, _, (ref,) = sa.fresh_patient(sa_install)
+    with sa.held(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_put", phone=sa.fresh_phone(), patient_id=patient)):
+        waiter = sa.Waiter(sa_install, DISPATCH,
+                           sa.dispatch_cmd(sa.new_id(), ref)).start_and_block()
+    with pytest.raises(psycopg.Error) as caught:
+        waiter.join()
+    assert caught.value.diag.message_primary == "DISPATCH_UNROUTABLE"
+    # Dispatch first: the contact change waits; the window keeps the original phone.
+    patient2, phone2, (ref2,) = sa.fresh_patient(sa_install)
+    reminder = sa.new_id()
+    with sa.held(sa_install, DISPATCH, sa.dispatch_cmd(reminder, ref2)):
+        waiter = sa.Waiter(sa_install, DIRECTORY, sa.directory_cmd(
+            "contact_remove", phone=phone2, patient_id=patient2)).start_and_block()
+    assert waiter.join()["outcome"] == "applied"
+    assert sa.window(sa_install, reminder)["phone"] == phone2
 
 
 # --- SA-P01 .. SA-P09 ----------------------------------------------------------------------

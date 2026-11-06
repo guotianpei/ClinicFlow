@@ -18,6 +18,10 @@ these rows do not claim equal-instant coverage from timing.
 - SA-C04  STOP before the deadline -> window opted_out, timer not_awaiting; STOP
           after the deadline (late, window still awaiting) -> timer closes it
           opted_out, no event id (D-S2 rows 4/5: no no_reply for anyone opted out).
+- SA-C03b a window closed opted_out: rerun -> existing, decision opted_out, event
+          id null. Persisted terminal values (closed_decision): no_reply (with
+          closed_event_id) and opted_out (without); `not_due` and `not_awaiting`
+          persist nothing.
 - SA-C05  replied / opted_out windows -> not_awaiting, unchanged.
 - SA-C06  ambiguous reply left windows awaiting -> each closes no_reply later
           (v1r1 section 1 consequence).
@@ -96,6 +100,19 @@ def test_sa_c03_rerun_returns_stored(sa_install: sa.SAInstall) -> None:
     again = sa.close(sa_install, reminder)
     assert again == {**first, "outcome": "existing"}
     assert sa.snapshot(sa_install) == before
+
+
+def test_sa_c03b_opted_out_close_is_stored(sa_install: sa.SAInstall) -> None:
+    _, phone, _, reminder = _one(sa_install)
+    sa.shift_window(sa_install, reminder, -25)
+    sa.inbound(sa_install, sa.new_id(), phone, "stop")  # late: window stays awaiting
+    first = sa.close(sa_install, reminder)
+    assert (first["outcome"], first["decision"], first["event_id"]) == (
+        "closed", "opted_out", None)
+    w = sa.window(sa_install, reminder)
+    assert (w["closed_decision"], w["closed_event_id"]) == ("opted_out", None)
+    again = sa.close(sa_install, reminder)
+    assert again == {**first, "outcome": "existing"}
 
 
 @pytest.mark.parametrize("stop_when", ("before_deadline", "after_deadline"))

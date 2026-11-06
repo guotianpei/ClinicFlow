@@ -36,6 +36,9 @@ stored inbound row and the window transitions, and that SQL wrote no event/item.
 - SA-I11  wrong workload / actor -> WORKLOAD_NOT_AUTHORIZED; malformed ->
           COMMAND_MALFORMED; cross-tenant: a phone known only in another tenant is
           quarantined here (never looked up there).
+- SA-I13  stale correlation (Codex 1913 item 2): reminder for patient A, appointment
+          then reassigned to B; A replies -> unclear_reply, no appointment or reminder
+          attributed, A's window unchanged, nothing bound to B's appointment.
 - SA-I12  SQL appends no event and creates no item (the service does, atomically).
 """
 
@@ -305,3 +308,17 @@ def test_sa_i12_sql_writes_no_event_or_item(sa_install: sa.SAInstall) -> None:
     before = _counts(sa_install)
     sa.inbound(sa_install, sa.new_id(), phone, "reschedule")
     assert _counts(sa_install) == before
+
+
+def test_sa_i13_reassigned_appointment_is_stale(sa_install: sa.SAInstall) -> None:
+    patient_a, phone_a, (ref,), (reminder,) = _setup(sa_install)
+    patient_b, _, _ = sa.fresh_patient(sa_install, appointments=0)
+    sa.directory(sa_install, "appointment_put", appointment_ref=ref, patient_id=patient_b,
+                 start_at=sa.FUTURE.format(n=1), status="booked")
+    stored = sa.window(sa_install, reminder)
+    result = sa.inbound(sa_install, sa.new_id(), phone_a, "reschedule")
+    assert (result["decision"], result["triage_kind"], result["patient_id"],
+            result["appointment_ref"], result["reminder_id"]) == (
+        "item", "unclear_reply", patient_a, None, None)
+    assert sa.window(sa_install, reminder) == stored
+    assert _stored(sa_install, result["inbound_id"])["matched_reminders"] == []
