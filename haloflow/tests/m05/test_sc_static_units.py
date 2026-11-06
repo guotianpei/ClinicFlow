@@ -434,12 +434,21 @@ def test_sc_u09_protected_set_spans_every_m05_surface() -> None:
     assert sb.DUE_KEY in PROTECTED_KEYS
 
 
-@pytest.mark.parametrize("case", ("missing-capability", "unknown-statement", "write-in-read"))
-def test_sc_u10_authorization_before_probe(case: str) -> None:
-    """Membership and capability are validated first and synchronously: a refused statement
-    triggers no probe and no business I/O (Codex 202256Z pin 1, 211059Z item 1)."""
+U10_CASES = {
+    # case: (exception class name in haloflow.m01.errors, reason_code)
+    "missing-capability": ("CapabilityDenied", "STATEMENT_CAPABILITY_DENIED"),
+    "unknown-statement": ("RepositoryStatementRejected", "STATEMENT_NOT_REGISTERED"),
+    "write-in-read": ("CapabilityDenied", "CAPABILITY_DENIED"),
+}
 
-    async def body() -> list[str]:
+
+@pytest.mark.parametrize("case", sorted(U10_CASES))
+def test_sc_u10_authorization_before_probe(case: str) -> None:
+    """Membership and capability are validated first and synchronously: each refusal is the
+    EXISTING precise exception and reason code, with no probe and no business I/O (Codex
+    202256Z pin 1, 211059Z item 1, 212251Z oracle pin)."""
+
+    async def body() -> tuple[BaseException, list[str]]:
         from haloflow.m01.activation import ActivationPolicy
         from haloflow.m01.gateway import TenantRepositoryHandle
 
@@ -457,14 +466,19 @@ def test_sc_u10_authorization_before_probe(case: str) -> None:
                                         activation_policy=ActivationPolicy.ENFORCE,
                                         activation_protected=catalog.activation_protected)
         key = "m05.no.such.statement" if case == "unknown-statement" else protected_key
-        with pytest.raises(Exception) as caught:
+        try:
             await handle.fetch_all(key, {"x": None})
-        from haloflow.m01.errors import ActivationRefused
+        except Exception as error:  # noqa: BLE001 - asserted precisely below
+            return error, conn.queries
+        raise AssertionError("statement was not refused")
 
-        assert not isinstance(caught.value, ActivationRefused), caught.value
-        return conn.queries
+    from haloflow.m01 import errors
 
-    assert asyncio.run(body()) == []
+    error, queries = asyncio.run(body())
+    expected_class, expected_code = U10_CASES[case]
+    assert type(error) is getattr(errors, expected_class), type(error)
+    assert error.reason_code == expected_code  # type: ignore[attr-defined]
+    assert queries == []
 
 
 def test_sc_u07_not_enforced_never_probes() -> None:
