@@ -139,11 +139,31 @@ def sa_bare_install(
     yield from sa_support.module_install(request, m02_ids, m05_reset, "sa:bare", profile=False)
 
 
+SA_CALL_FAILED = pytest.StashKey[bool]()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Iterator[None]:
+    """Record a failed call phase, so `sa_guard` does not add a teardown ERROR to a
+    row whose body already FAILED (the mutation checker judges assertion-level
+    failures; a body failure plus a teardown error would read as a setup/teardown
+    error). A swallowed forbidden use in a PASSING body still fails at teardown."""
+
+    outcome = yield
+    report = outcome.get_result()  # type: ignore[attr-defined]
+    if report.when == "call" and report.failed:
+        item.stash[SA_CALL_FAILED] = True
+
+
 @pytest.fixture
-def sa_guard(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+def sa_guard(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> Iterator[list[str]]:
     """R-SA-10: active for every S-A PostgreSQL row (pytestmark usefixtures); fails
-    the row at teardown on any forbidden use, even one the code swallowed."""
+    the row at teardown on any forbidden use, even one the code swallowed (unless the
+    body already failed: see pytest_runtest_makereport)."""
 
     calls = sa_support.install_guard(monkeypatch)
     yield calls
-    assert calls == [], f"S-A side effect attempted: {calls}"
+    if not request.node.stash.get(SA_CALL_FAILED, False):
+        assert calls == [], f"S-A side effect attempted: {calls}"
