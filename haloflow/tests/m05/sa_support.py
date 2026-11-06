@@ -45,9 +45,12 @@ SA_UNIT_IDS: Final = (
     "t039_m05_register_dispatch",
     "t040_m05_register_inbound",
     "t041_m05_close_window",
-    "t042_m05_activation",
+    "t042_m05_activation_change",
+    "t043_m05_activation_state",
 )
-SA_TARGET: Final = 42
+# 43 since the t042/t043 split (one function per profiled unit: M01
+# installed_state._only; disclosed harness correction, relay 20261106T012729Z).
+SA_TARGET: Final = 43
 SA_SUPPORTED: Final = range(SA_TARGET, SA_TARGET + 1)
 PRODUCTION_TARGET: Final = 36  # unchanged by S-A
 
@@ -61,7 +64,11 @@ RUNTIME_FUNCTIONS: Final = {
                                   "m05.intake.inbound"),
     "t041_m05_close_window": ("m05_close_window", "m05.intake.close", "m05.intake.close"),
 }
-# t042: owner-only (no runtime, no PUBLIC, no statement key).
+# t042/t043: owner-only (no runtime, no PUBLIC, no statement key). Unit -> function.
+ACTIVATION_UNITS: Final = {
+    "t042_m05_activation_change": "m05_activation_change",
+    "t043_m05_activation_state": "m05_activation_state",
+}
 ACTIVATION_FUNCTIONS: Final = (
     ("m05_activation_change", ("jsonb",), "v"),
     ("m05_activation_state", (), "s"),

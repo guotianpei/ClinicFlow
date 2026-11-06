@@ -1,14 +1,14 @@
 """L-1S package S-A — static rows (no database). Interface pins v1 sections 1, 2, 6, 8.
 
 - SA-S01  CONTROL (green on main): production is unchanged by S-A — supported
-          versions {36}, no t037..t042 in the production registry, no
+          versions {36}, no t037..t043 in the production registry, no
           `m05.intake.*` key in the production catalogue, `haloflow.composition`
           names no S-A module.
 - SA-S02  the S-A unit set: exact ids in order; t037 an ordinary migrator unit;
-          t038..t042 typed units run as the M05 owner; the S-A registry target 42.
+          t038..t043 typed units run as the M05 owner; the S-A registry target 43.
 - SA-S03  runtime gateways t038..t041: SECURITY DEFINER, VOLATILE, PARALLEL UNSAFE,
           not strict, jsonb -> jsonb, pinned search_path, EXECUTE to the runtime only.
-- SA-S04  t042 activation functions: EXECUTE to NO role but the owner (empty ACL
+- SA-S04  t042/t043 activation functions (one per unit): EXECUTE to NO role but the owner (empty ACL
           declaration: no runtime, no PUBLIC); no statement key anywhere (D-S1
           "enable none"; restricted execution).
 - SA-S05  SA_STATEMENTS equals the pinned literal; every key WRITE; the S-A test
@@ -87,7 +87,7 @@ def test_sa_s02_unit_set_and_registry() -> None:
     assert set(sa.sa_profiles()) == set(sa.SA_UNIT_IDS[1:])
     registry = sa.sa_registry()
     assert registry.target_version == sa.SA_TARGET
-    assert registry.migration_ids[-6:] == sa.SA_UNIT_IDS
+    assert registry.migration_ids[-len(sa.SA_UNIT_IDS):] == sa.SA_UNIT_IDS
 
 
 # --- SA-S03 / SA-S04 ---------------------------------------------------------------------
@@ -119,7 +119,12 @@ def test_sa_s03_runtime_gateway_declarations(migration_id: str) -> None:
 
 
 def test_sa_s04_activation_functions_owner_only() -> None:
-    functions = _policy_functions("t042_m05_activation")
+    functions = []
+    for migration_id, name in sa.ACTIVATION_UNITS.items():
+        (function,) = _policy_functions(migration_id)
+        assert function["name"] == name, migration_id
+        assert sa.sa_profiles()[migration_id].installed_acl == sa.FUNCTION_ACL_OWNER_ONLY
+        functions.append(function)
     assert sorted(f["name"] for f in functions) == sorted(
         name for name, _, _ in sa.ACTIVATION_FUNCTIONS
     )

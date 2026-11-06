@@ -1,4 +1,4 @@
-"""L-1S package S-A — D-S1 activation record, isolated (t042), on PostgreSQL 17.
+"""L-1S package S-A — D-S1 activation record, isolated (t042/t043), on PostgreSQL 17.
 
 Owner decision D-S1 "Design now, enable none"; architecture v1r1 section 6 (isolated:
 not wired into the gateway, no global absent-record denial, existing behaviour
