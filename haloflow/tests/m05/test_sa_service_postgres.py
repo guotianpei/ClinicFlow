@@ -27,9 +27,10 @@ Every row runs through `compose_tenant_runtime` with the S-A TEST registry (targ
           unchanged, no event, no item); the rerun yields exactly one of each.
 - SA-V08  lost acknowledgement: the gateway raises after COMMIT -> IntakeCommitUnknown;
           the rerun returns the stored result: one inbound row, one event, one item.
-- SA-V09  no side effects (R-SA-10 behavioural half): SMS, fax, eligibility and EHR
-          adapter methods are replaced by spies that FAIL on any call, and Python
-          socket connects to non-loopback addresses are refused, for every call kind.
+- SA-V09  no side effects (R-SA-10 behavioural half): the SMS, fax, eligibility, EHR
+          and legacy module service modules are replaced in sys.modules by tripwires
+          that FAIL on any use; httpx sends and Python socket connects to non-loopback
+          addresses are refused; for every call kind.
 - SA-V10  binding (R-SA-8): the item's patient and the event's patient come from the
           directory/window, and the tenant from the context; nothing in the public
           commands can name either (SA-S08 pins the fields).
@@ -39,6 +40,8 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import sys
+import types
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine
 from contextlib import asynccontextmanager
@@ -427,30 +430,45 @@ def test_sa_v08_lost_ack(sa_install: sa.SAInstall, call: str) -> None:
 # --- SA-V09 --------------------------------------------------------------------------------------
 
 
+class _Tripwire(types.ModuleType):
+    """Stands in for an SMS/EHR adapter module: any attribute use is recorded and
+    fails. Installed in sys.modules, so an import by S-A code receives it. (The real
+    adapter modules read deployment settings at import, so they are never imported
+    here; red-run finding: fixture setup must not depend on them.)"""
+
+    def __init__(self, name: str, calls: list[str]) -> None:
+        super().__init__(name)
+        self._calls = calls
+
+    def __getattr__(self, attr: str) -> Any:
+        if attr.startswith("__"):
+            raise AttributeError(attr)
+        self._calls.append(f"{self.__name__}.{attr}")
+        raise AssertionError(f"S-A must not use {self.__name__}.{attr}")
+
+
+ADAPTER_MODULES = (
+    "haloflow.integrations.notifyre", "haloflow.integrations.stedi",
+    "haloflow.ehr.athenahealth", "haloflow.modules.reminders.service",
+    "haloflow.modules.fax.service", "haloflow.modules.eligibility.service",
+    "haloflow.modules.care_gaps.service",
+)
+
+
 @pytest.fixture
 def no_side_effects(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     calls: list[str] = []
+    for name in ADAPTER_MODULES:
+        monkeypatch.setitem(sys.modules, name, _Tripwire(name, calls))
 
-    def spy(name: str) -> Callable[..., Any]:
-        def _fail(*args: Any, **kwargs: Any) -> Any:
-            calls.append(name)
-            raise AssertionError(f"S-A must not call {name}")
-        return _fail
+    import httpx
 
-    targets = (
-        ("haloflow.integrations.notifyre", "NotifyreClient",
-         ("send_sms", "send_fax", "get_inbound_faxes", "get_fax_status")),
-        ("haloflow.integrations.stedi", "StediEligibilityClient", None),
-        ("haloflow.ehr.athenahealth", "AthenaHealthAdapter", None),
-    )
-    import importlib
+    def _http(*args: Any, **kwargs: Any) -> Any:
+        calls.append("httpx.send")
+        raise AssertionError("S-A must not send HTTP")
 
-    for module_name, class_name, methods in targets:
-        cls = getattr(importlib.import_module(module_name), class_name)
-        names = methods or [n for n in vars(cls) if not n.startswith("_")
-                            and callable(getattr(cls, n))]
-        for name in names:
-            monkeypatch.setattr(cls, name, spy(f"{class_name}.{name}"))
+    monkeypatch.setattr(httpx.Client, "send", _http)
+    monkeypatch.setattr(httpx.AsyncClient, "send", _http)
 
     real_connect = socket.socket.connect
 
