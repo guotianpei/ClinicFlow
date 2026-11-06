@@ -16,6 +16,9 @@ not_due + commit_unknown + sum(failed).
 - SB-W03  wrap after a phase-A selection failure checkpoint: the next run attempts
           [k5, k1, k2, k3, k4] exactly once each (phase B bounded by `until = start`),
           wrapped True, code COMPLETE, resume None.
+- SB-W03b phase-B pages that do not align with the start key (start k3, page 2): run 2
+          attempts [k4, k5, k1, k2, k3] — the until bound, not page alignment, ends phase B
+          (disclosed implementation-stage addition).
 - SB-W04  fairness: F = 4 permanently failing earliest windows + 3 healthy newer, L = 2,
           A = 3: every healthy window is closed no_reply within ceil(7/3) + 1 = 4 runs of the
           same runner; the failing ones stay awaiting.
@@ -157,6 +160,45 @@ def test_sb_w03_wrap_bounded_by_start(sb_install: sb.SBInstall) -> None:
     assert run2 == [keys[4], keys[0], keys[1], keys[2], keys[3]]
     assert second.code == "COMPLETE" and second.wrapped is True and second.attempted == 5
     assert resume2 is None
+
+
+def test_sb_w03b_wrap_page_crossing_start(sb_install: sb.SBInstall) -> None:
+    """Phase B pages do not align with the start key (start = k3, page 2): the until
+    bound must stop phase B at k3, so k4 is never attempted twice (disclosed addition,
+    implementation stage: SB-W03's aligned pages cannot distinguish an unbounded B)."""
+
+    sb_install.require()
+    keys = _windows(sb_install, 5)
+
+    async def body() -> tuple[Any, Any, list[str]]:
+        async with sr.runtime(sb_install) as rt:
+            gate = sr.Gate(rt.gateway)
+            gate.fail_close = set(keys)          # permanently failing: stay awaiting
+            resolver = sr.FlakyResolver(rt.resolver)
+            r, _ = sr.runner(sb_install, rt, page=2, cap=50, gate=gate, resolver=resolver)
+            original = resolver.resolve
+            count = {"close": 0}
+
+            async def fourth_close_fails(**kwargs: Any) -> Any:
+                if frozenset(kwargs["capabilities"]) == sb.CLOSE_CAPS:
+                    count["close"] += 1
+                    if count["close"] == 4:
+                        raise sr.InjectedFault("resolver unavailable (test)")
+                return await original(**kwargs)
+
+            resolver.resolve = fourth_close_fails  # type: ignore[method-assign]
+            first = await sr.run(r, sb_install)  # k1, k2, k3; k4's context fails
+            resolver.resolve = original  # type: ignore[method-assign]
+            mark = len(gate.closes)
+            second = await sr.run(r, sb_install)
+            return first, second, gate.closes[mark:]
+
+    first, second, run2 = _go(body())
+    _invariant(first)
+    _invariant(second)
+    assert first.code == "CONTEXT_UNAVAILABLE" and first.attempted == 3
+    assert run2 == [keys[3], keys[4], keys[0], keys[1], keys[2]]
+    assert second.code == "COMPLETE" and second.wrapped is True and second.attempted == 5
 
 
 def test_sb_w06_empty_phase_b_completes(sb_install: sb.SBInstall) -> None:
