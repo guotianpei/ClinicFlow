@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import logging
 import math
 import pathlib
@@ -323,17 +324,22 @@ async def test_se_u07_stop_timeout_then_retry() -> None:
     runner = se.fake_runner(resistant)
     s = se.scheduler(runner, (se.TENANT_A,), clock, stop_timeout_s=0.2)
     s.start()
-    await asyncio.wait_for(parked.wait(), 5)
-    with pytest.raises(module.SchedulerStopFailed) as failed:
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        with pytest.raises(module.SchedulerStopFailed) as failed:
+            await s.stop()
+        assert failed.value.code == "STOP_TIMEOUT"
+        assert s.state is module.SchedulerState.STOP_FAILED
+        with pytest.raises(module.SchedulerRefused):
+            s.start()
+        release.set()
         await s.stop()
-    assert failed.value.code == "STOP_TIMEOUT"
-    assert s.state is module.SchedulerState.STOP_FAILED
-    with pytest.raises(module.SchedulerRefused):
-        s.start()
-    release.set()
-    await s.stop()
-    assert s.state is module.SchedulerState.STOPPED
-    assert len(runner.calls) == 1
+        assert s.state is module.SchedulerState.STOPPED
+        assert len(runner.calls) == 1
+    finally:  # never leave the cancellation-resistant double parked (bounded cleanup)
+        release.set()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait_for(s.stop(), 5)
 
 
 async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
@@ -353,20 +359,25 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
     runner = se.fake_runner(slow_cleanup)
     s = se.scheduler(runner, (se.TENANT_A,), clock, stop_timeout_s=5)
     s.start()
-    await asyncio.wait_for(parked.wait(), 5)
-    first = asyncio.ensure_future(s.stop())
-    await se.settle()
-    first.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await first
-    assert s.state is module.SchedulerState.STOPPING
-    second = asyncio.ensure_future(s.stop())
-    third = asyncio.ensure_future(s.stop())
-    await se.settle()
-    release.set()
-    await asyncio.gather(second, third)
-    assert s.state is module.SchedulerState.STOPPED
-    assert len(runner.calls) == 1  # no new work from repeated stops
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        first = asyncio.ensure_future(s.stop())
+        await se.settle()
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        assert s.state is module.SchedulerState.STOPPING
+        second = asyncio.ensure_future(s.stop())
+        third = asyncio.ensure_future(s.stop())
+        await se.settle()
+        release.set()
+        await asyncio.wait_for(asyncio.gather(second, third), 5)
+        assert s.state is module.SchedulerState.STOPPED
+        assert len(runner.calls) == 1  # no new work from repeated stops
+    finally:
+        release.set()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait_for(s.stop(), 5)
 
 
 # --- SE-U08 latency envelope (fake clock) --------------------------------------------------
