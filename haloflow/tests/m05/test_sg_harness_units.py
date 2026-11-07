@@ -50,7 +50,9 @@ PINNED INTERFACE (`sg_harness`, a test-side module in tests/m05):
   3 `verify_tenants(config, pool) -> validated`;
   4 `build_services(config, pool, validated) -> services`;
   5 `readiness(config, services) -> Mapping[str, str]` (published as
-  `app.state.activation`); 6 `open_admission_pool(config) -> (pool, close)`;
+  `app.state.activation`; the opened tenant and admission pool objects are published
+  as `app.state.pools` = {"tenant": ..., "admission": ...} and set to None on
+  unpublish); 6 `open_admission_pool(config) -> (pool, close)`;
   7 `open_keyset(config) -> (keyset, close)`; 8 `build_verifier(config, keyset)`;
   9 `build_admission(admission_pool)`. Then publish
   `app.state.platform = PlatformServices(services, admission, verifier)`, then
@@ -675,9 +677,9 @@ class _Life:
             if self.thrown is not None:
                 raise self.thrown
 
-    async def started(self) -> bool:
+    async def started(self, timeout: float = WATCHDOG) -> bool:
         waiter = asyncio.ensure_future(self.up.wait())
-        await asyncio.wait({waiter, self.task}, timeout=WATCHDOG,
+        await asyncio.wait({waiter, self.task}, timeout=timeout,
                            return_when=asyncio.FIRST_COMPLETED)
         waiter.cancel()
         return self.up.is_set() and not self.task.done()
@@ -758,13 +760,15 @@ async def test_sg_u07a_normal_start_and_stop_order(caplog: pytest.LogCaptureFixt
         platform = rig.app.state.platform
         assert platform is not None and platform.verifier is rig.verifier
         assert dict(rig.app.state.activation) == {TENANT_A: "active", TENANT_B: "inactive"}
+        assert dict(rig.app.state.pools) == {"tenant": "res:tenant_pool",
+                                             "admission": "res:admission_pool"}
         rig.journal.events.clear()
         life.shut()
         assert await life.settled()
         assert life.task.exception() is None
         assert rig.journal.events == ["scheduler.stop"]
         assert rig.journal.seen_at_close == _quiet_close(rig)
-        assert rig.app.state.platform is None
+        assert rig.app.state.platform is None and rig.app.state.pools is None
         assert _errors(caplog) == []
     finally:
         await rig.sched.terminate()

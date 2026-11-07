@@ -301,6 +301,7 @@ async def _shutdown(app: Any, scheduler: Any, closers: list[Close],
     stop; otherwise retains everything and raises ShutdownFailed."""
 
     app.state.platform = None
+    app.state.pools = None
     stop = asyncio.ensure_future(_stop_outcome(scheduler))
     cancelled = False
     while not stop.done():
@@ -350,6 +351,7 @@ def _lifespan(config: SyntheticConfig, steps: SyntheticSteps,
             await close_all(closers)
             raise
         app.state.activation = MappingProxyType(dict(activation))
+        app.state.pools = MappingProxyType({"tenant": pool, "admission": admission_pool})
         app.state.platform = PlatformServices(services=services, admission=admission,
                                               verifier=verifier)
         before = asyncio.all_tasks()
@@ -357,6 +359,7 @@ def _lifespan(config: SyntheticConfig, steps: SyntheticSteps,
             scheduler = factory(services.runner, config.served_tenants, config.interval_s)
         except BaseException as error:
             app.state.platform = None
+            app.state.pools = None
             spawned = asyncio.all_tasks() - before
             if spawned:  # F-H1: live work survives the raise
                 app.state.retained_tasks = tuple(spawned)  # strong ownership, not just ids
@@ -366,6 +369,7 @@ def _lifespan(config: SyntheticConfig, steps: SyntheticSteps,
         spawned = asyncio.all_tasks() - before
         if spawned or getattr(scheduler, "state", None) is not SchedulerState.NEW:
             app.state.platform = None
+            app.state.pools = None
             app.state.retained_tasks = tuple(spawned)
             _fail(app, closers, "SCHEDULER_FACTORY_UNVERIFIED", None)
         try:
@@ -399,6 +403,7 @@ def create_synthetic_app(config: SyntheticConfig, *, steps: SyntheticSteps,
                                              receive=receive))
     app.state.retained = ()
     app.state.retained_tasks = ()
+    app.state.pools = None
     app.state.activation = None
     app.router.lifespan_context = _lifespan(config, steps, scheduler_factory)
     return app

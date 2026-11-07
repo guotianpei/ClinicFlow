@@ -149,23 +149,42 @@ def world(request: pytest.FixtureRequest, migrated_database: str,
         env.login("runtime", db.RUNTIME)
         env.login("staff_owner", db.STAFF_OWNER)
         a, b = (sc.SCInstall(m02_ids, t) for t in tenants)
+        owned = False  # this fixture drops ONLY a manifest table it created (review item 1)
         try:
             sd.prepare(a)
             sd.prepare(b)
-            with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
-                conn.execute(sql.SQL("CREATE TABLE {} (token uuid PRIMARY KEY,"
-                                     " tenants text[] NOT NULL)").format(MANIFEST))
-                for role in ("haloflow_runtime", "haloflow_migrator"):
-                    conn.execute(sql.SQL("GRANT SELECT ON {} TO {}").format(
-                        MANIFEST, sql.Identifier(role)))
+            owned = _create_manifest(m02_ids.admin)
             _write_manifest(m02_ids.admin, token, [a.tenant_id, b.tenant_id])
             yield World(a, b, env, token, _bind(env, a.tenant_id), _bind(env, b.tenant_id))
         finally:
-            with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
-                conn.execute(sql.SQL("DROP TABLE IF EXISTS {}").format(MANIFEST))
+            if owned:
+                with psycopg.connect(m02_ids.admin, autocommit=True) as conn:
+                    conn.execute(sql.SQL("DROP TABLE {}").format(MANIFEST))
             for tenant in tenants:
                 _purge_identity(env, tenant[0])
                 m05_reset(tenant)
+
+
+class ManifestPreexisting(AssertionError):
+    """A manifest table already exists: refuse to adopt or alter it."""
+
+
+def _create_manifest(admin: str) -> bool:
+    """Create and grant the manifest table; True once this caller owns it. An existing
+    table (from anything else) is refused untouched, rows included."""
+
+    with psycopg.connect(admin, autocommit=True) as conn:
+        found = conn.execute("SELECT to_regclass('public.haloflow_synthetic_manifest')"
+                             ).fetchone()
+        if found is None or found[0] is not None:
+            raise ManifestPreexisting("public.haloflow_synthetic_manifest already exists")
+        with conn.transaction():
+            conn.execute(sql.SQL("CREATE TABLE {} (token uuid PRIMARY KEY,"
+                                 " tenants text[] NOT NULL)").format(MANIFEST))
+            for role in ("haloflow_runtime", "haloflow_migrator"):
+                conn.execute(sql.SQL("GRANT SELECT ON {} TO {}").format(
+                    MANIFEST, sql.Identifier(role)))
+    return True
 
 
 @contextmanager
@@ -228,7 +247,8 @@ def _app(config: Any, *, factory: Any = None) -> Any:
 async def _running(app: Any) -> AsyncIterator[httpx.AsyncClient]:
     life = _Life(app)
     try:
-        assert await life.started(), life.task.exception() if life.task.done() else "not up"
+        assert await life.started(timeout=WATCH), (
+            life.task.exception() if life.task.done() else "not up")
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                      base_url="http://test") as client:
             yield client
@@ -466,22 +486,44 @@ async def test_sg_g07_restart_keeps_state_and_replays(world: World) -> None:
 # --- G-08 refusals before publish ---------------------------------------------------------------
 
 
-async def _refused(app: Any, caplog: pytest.LogCaptureFixture) -> Any:
+def _forbidden(config_dsns: list[str], tenants: list[tuple[str, str]]) -> set[str]:
+    """Every DSN marker (password, user, dbname, the whole DSN) and every tenant id and
+    schema key that must never appear in a log record."""
+
+    markers: set[str] = set()
+    for dsn in config_dsns:
+        parts = psycopg.conninfo.conninfo_to_dict(dsn)
+        markers |= {dsn, str(parts["password"]), str(parts["user"]), str(parts["dbname"])}
+    for tenant_id, schema_key in tenants:
+        markers |= {tenant_id, schema_key}
+    return {m for m in markers if m}
+
+
+async def _refused(app: Any, caplog: pytest.LogCaptureFixture, *, dsns: list[str],
+                   tenants: list[tuple[str, str]]) -> Any:
     life = _Life(app)
     try:
         assert await life.settled(timeout=WATCH)
         assert not life.up.is_set() and app.state.platform is None
         error = life.task.exception()
         assert error is not None
-        for record in caplog.records:
-            if not record.name.startswith("haloflow"):
-                continue
-            text = record.getMessage()
-            assert "password" not in text and "haloflow_test" not in text, text
-            assert "clinic-m" not in text, text  # no tenant id in a refusal line
+        formatter = logging.Formatter("%(name)s %(levelname)s %(message)s")
+        forbidden = _forbidden(dsns, tenants)
+        for record in caplog.records:  # every logger; message, exception and stack
+            text = formatter.format(record)
+            leaked = sorted(m for m in forbidden if m in text)
+            assert not leaked, (record.name, leaked)
+        for text in (str(error), repr(error), repr(error.args)):
+            assert not [m for m in forbidden if m in text], text
         return error
     finally:
         await life.abandon()
+
+
+def _dsns(world: World) -> list[str]:
+    logins = world.a.ids.logins
+    return [logins["haloflow_runtime"], logins["haloflow_migrator"],
+            logins["haloflow_provisioner"]]
 
 
 async def test_sg_g08a_manifest_table_missing(world: World,
@@ -490,7 +532,8 @@ async def test_sg_g08a_manifest_table_missing(world: World,
 
     before = sd.counts(world.a)
     with _manifest_renamed(world):
-        error = await _refused(_app(_config(world)), caplog)
+        error = await _refused(_app(_config(world)), caplog, dsns=_dsns(world),
+                               tenants=[world.a.tenant, world.b.tenant])
     assert isinstance(error, StartupRefused)
     assert (error.reason_code, error.tenant_index) == ("SYNTHETIC_DATABASE_UNBOUND", None)
     assert sd.delta(before, sd.counts(world.a)) == {}
@@ -499,7 +542,8 @@ async def test_sg_g08a_manifest_table_missing(world: World,
 async def test_sg_g08b_wrong_token(world: World, caplog: pytest.LogCaptureFixture) -> None:
     from haloflow.startup import StartupRefused
 
-    error = await _refused(_app(_config(world, token=str(uuid.uuid4()))), caplog)
+    error = await _refused(_app(_config(world, token=str(uuid.uuid4()))), caplog,
+                           dsns=_dsns(world), tenants=[world.a.tenant, world.b.tenant])
     assert isinstance(error, StartupRefused)
     assert error.reason_code == "SYNTHETIC_DATABASE_UNBOUND"
 
@@ -548,7 +592,8 @@ async def test_sg_g08cde_tenant_refusals(world: World, negative: Any, code: str,
             manifest_token=world.token, served_tenants=tuple(tenants),
             ingress_secrets={tenants[0]: SECRET_A, tenants[1]: SECRET_B},
             environ=os.environ)
-        error = await _refused(_app(config), caplog)
+        error = await _refused(_app(config), caplog, dsns=_dsns(world),
+                               tenants=[world.a.tenant, install.tenant])
     assert isinstance(error, StartupRefused)
     assert (error.reason_code, error.tenant_index) == (code, 1)
     assert sd.delta(before, sd.counts(world.a)) == {}
@@ -651,15 +696,36 @@ async def test_sg_g10_bundle_classes_and_shared_gateway(world: World) -> None:
 
 
 async def test_sg_g10b_admission_pool_is_the_guarded_database(world: World) -> None:
-    """v1r1 P2: both pools (tenant and admission) open on runtime_dsn; while the app
-    runs, every backend of the runtime login is on the guarded database, and there are
-    at least two (one per pool, min_size=1)."""
+    """v1r1 P2 (review item 2): a connection taken from the ACTUAL admission pool the
+    harness opened (app.state.pools["admission"]) is on the guarded database, as the
+    runtime login, and its backend PID is listed in pg_stat_activity on that database
+    with the fixture manifest visible through it."""
 
     expected = psycopg.conninfo.conninfo_to_dict(world.a.ids.logins["haloflow_runtime"])
     app = _app(_config(world))
     async with _running(app):
-        with psycopg.connect(world.admin, autocommit=True) as conn:
-            rows = conn.execute("SELECT datname FROM pg_stat_activity WHERE usename = %s",
-                                (expected["user"],)).fetchall()
-    assert len(rows) >= 2
-    assert {r[0] for r in rows} == {expected["dbname"]}
+        pool = app.state.pools["admission"]
+        async with pool.connection() as conn:
+            cursor = await conn.execute(
+                "SELECT pg_catalog.current_database(), pg_catalog.current_user,"
+                " pg_catalog.pg_backend_pid()")
+            database, user, pid = await cursor.fetchone()
+            token = await (await conn.execute(
+                "SELECT token::text FROM public.haloflow_synthetic_manifest")).fetchall()
+        with psycopg.connect(world.admin, autocommit=True) as admin:
+            listed = admin.execute("SELECT datname, usename FROM pg_stat_activity"
+                                   " WHERE pid = %s", (pid,)).fetchall()
+    assert (database, user) == (expected["dbname"], expected["user"])
+    assert listed == [(expected["dbname"], expected["user"])]
+    assert token == [(world.token,)]
+
+
+def test_sg_f01_preexisting_manifest_is_refused_and_preserved(world: World) -> None:
+    """Review item 1 control: with a manifest table already present (the module's own),
+    the fixture creator refuses it and changes nothing: table, grants and rows stay."""
+
+    before = _read_manifest(world.admin)
+    with pytest.raises(ManifestPreexisting):
+        _create_manifest(world.admin)
+    assert _read_manifest(world.admin) == before == [
+        (world.token, [world.a.tenant_id, world.b.tenant_id])]
