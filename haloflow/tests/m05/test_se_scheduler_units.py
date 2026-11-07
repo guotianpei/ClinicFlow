@@ -57,6 +57,18 @@ async def _until(predicate: Any, what: str, rounds: int = 2000) -> None:
     raise AssertionError(f"not reached: {what}")
 
 
+async def _drain(s: Any, *futures: Any) -> None:
+    """Bounded teardown: stop the scheduler and settle any outer future, never hang."""
+
+    with contextlib.suppress(BaseException):
+        await asyncio.wait_for(s.stop(), 5)
+    for future in futures:
+        if not future.done():
+            future.cancel()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait_for(future, 5)
+
+
 # --- SE-U01 -----------------------------------------------------------------------------------
 
 BAD_INPUTS: dict[str, tuple[dict[str, Any], str]] = {
@@ -259,21 +271,25 @@ async def test_se_u06_tick_in_progress_and_stop_during_manual_tick() -> None:
     runner = se.fake_runner(behaviour)
     s = se.scheduler(runner, (se.TENANT_A,), clock)
     manual = asyncio.ensure_future(s.tick())
-    await asyncio.wait_for(parked.wait(), 5)
-    assert s.state is module.SchedulerState.NEW
-    with pytest.raises(module.SchedulerRefused) as refused:
-        await s.tick()
-    assert refused.value.code == "TICK_IN_PROGRESS"
-    with pytest.raises(module.SchedulerRefused) as refused:
-        s.start()  # NEW while a manual tick is owned: no loop, ownership unchanged
-    assert refused.value.code == "TICK_IN_PROGRESS"
-    assert s.state is module.SchedulerState.NEW
-    await s.stop()
-    with pytest.raises(module.SchedulerRefused) as refused:
-        await manual
-    assert refused.value.code == "STOPPED_DURING_TICK"
-    assert s.state is module.SchedulerState.STOPPED
-    assert len(runner.calls) == 1
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        assert s.state is module.SchedulerState.NEW
+        with pytest.raises(module.SchedulerRefused) as refused:
+            await s.tick()
+        assert refused.value.code == "TICK_IN_PROGRESS"
+        with pytest.raises(module.SchedulerRefused) as refused:
+            s.start()  # NEW while a manual tick is owned: no loop, ownership unchanged
+        assert refused.value.code == "TICK_IN_PROGRESS"
+        assert s.state is module.SchedulerState.NEW
+        await asyncio.wait_for(s.stop(), 5)
+        with pytest.raises(module.SchedulerRefused) as refused:
+            await asyncio.wait_for(manual, 5)
+        assert refused.value.code == "STOPPED_DURING_TICK"
+        assert s.state is module.SchedulerState.STOPPED
+        assert len(runner.calls) == 1
+    finally:
+        release.set()
+        await _drain(s, manual)
 
 
 async def test_se_u06b_caller_cancels_manual_tick() -> None:
@@ -294,14 +310,17 @@ async def test_se_u06b_caller_cancels_manual_tick() -> None:
     runner = se.fake_runner(behaviour)
     s = se.scheduler(runner, (se.TENANT_A,), clock)
     manual = asyncio.ensure_future(s.tick())
-    await asyncio.wait_for(parked.wait(), 5)
-    manual.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await manual
-    assert cleaned.is_set()  # the owned tick finished its cleanup first
-    await s.tick()  # ownership released after cleanup: a new manual tick is accepted
-    assert len(runner.calls) == 2
-    assert s.state is module.SchedulerState.NEW
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        manual.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(manual, 5)
+        assert cleaned.is_set()  # the owned tick finished its cleanup first
+        await asyncio.wait_for(s.tick(), 5)  # ownership released: a new tick is accepted
+        assert len(runner.calls) == 2
+        assert s.state is module.SchedulerState.NEW
+    finally:
+        await _drain(s, manual)
 
 
 # --- SE-U07 -----------------------------------------------------------------------------------
@@ -347,12 +366,17 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
     clock = se.FakeClock()
     parked, release = asyncio.Event(), asyncio.Event()
 
+    entered = asyncio.Event()
+    completed: list[bool] = []
+
     async def slow_cleanup(_tenant: str, _execution: uuid.UUID) -> Any:
         parked.set()
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
-            await release.wait()  # cleanup in progress until released
+            entered.set()
+            await release.wait()  # cleanup in progress until released; a second
+            completed.append(True)  # cancel would abort it before this line
             raise
         return se.run_result()
 
@@ -362,16 +386,20 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
     try:
         await asyncio.wait_for(parked.wait(), 5)
         first = asyncio.ensure_future(s.stop())
-        await se.settle()
+        await asyncio.wait_for(entered.wait(), 5)  # the owned work is in its cleanup
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await first
+            await asyncio.wait_for(first, 5)
         assert s.state is module.SchedulerState.STOPPING
         second = asyncio.ensure_future(s.stop())
         third = asyncio.ensure_future(s.stop())
         await se.settle()
+        # Before release: both stops wait on the SAME owned work, still in cleanup.
+        assert not second.done() and not third.done()
+        assert completed == [] and s.state is module.SchedulerState.STOPPING
         release.set()
         await asyncio.wait_for(asyncio.gather(second, third), 5)
+        assert completed == [True]  # cleanup ran to completion (not re-cancelled)
         assert s.state is module.SchedulerState.STOPPED
         assert len(runner.calls) == 1  # no new work from repeated stops
     finally:
@@ -411,8 +439,10 @@ async def _closure_delay(interval: int, durations: dict[str, float]) -> float:
     runner = se.fake_runner(behaviour, tenants)
     s = se.scheduler(runner, tenants, clock, interval_s=interval)
     s.start()
-    await _until(lambda: state["closed_at"] is not None, "closure")
-    await s.stop()
+    try:
+        await _until(lambda: state["closed_at"] is not None, "closure")
+    finally:
+        await _drain(s)
     return float(state["closed_at"] - state["due"])
 
 
@@ -470,14 +500,30 @@ async def test_se_u09b_one_summary_on_cancellation(caplog: pytest.LogCaptureFixt
 
     runner = se.fake_runner(behaviour, tenants)
     s = se.scheduler(runner, tenants, clock)
-    with caplog.at_level(logging.INFO, logger=se.LOGGER):
-        s.start()
-        await asyncio.wait_for(parked.wait(), 5)
-        await s.stop()
+    try:
+        with caplog.at_level(logging.INFO, logger=se.LOGGER):
+            s.start()
+            await asyncio.wait_for(parked.wait(), 5)
+            await asyncio.wait_for(s.stop(), 5)
+    finally:
+        await _drain(s)
     (line,) = se.summaries(caplog.records)
     assert line == ("due_scheduler tick=0 skipped=0 duration_ms=0 budget_ms=300000"
                     " over_budget=False attempted=1 no_reply=1 opted_out=0 cancelled=True"
                     " codes=COMPLETE:1")
+
+
+@pytest.mark.parametrize(("duration", "flag"), [(300.0, "False"), (300.001, "True")])
+async def test_se_u09d_over_budget_in_summary(caplog: pytest.LogCaptureFixture,
+                                              duration: float, flag: str) -> None:
+    clock = se.FakeClock()
+    runner = se.fake_runner(se.timed(clock, {se.TENANT_A: duration}))
+    s = se.scheduler(runner, (se.TENANT_A,), clock)  # I=300: budget 300000 ms
+    with caplog.at_level(logging.INFO, logger=se.LOGGER):
+        result = await s.tick()
+    (line,) = se.summaries(caplog.records)
+    assert f"duration_ms={result.duration_ms} budget_ms=300000 over_budget={flag} " in line
+    assert result.duration_ms == round(duration * 1000)
 
 
 def test_se_u09c_budget_flag() -> None:
