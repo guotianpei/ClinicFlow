@@ -707,7 +707,7 @@ async def test_sg_g10b_admission_pool_is_the_guarded_database(world: World) -> N
         pool = app.state.pools["admission"]
         async with pool.connection() as conn:
             cursor = await conn.execute(
-                "SELECT pg_catalog.current_database(), pg_catalog.current_user,"
+                "SELECT pg_catalog.current_database(), CURRENT_USER,"
                 " pg_catalog.pg_backend_pid()")
             database, user, pid = await cursor.fetchone()
             token = await (await conn.execute(
