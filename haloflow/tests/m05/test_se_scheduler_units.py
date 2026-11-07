@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import contextlib
 import logging
 import math
 import pathlib
@@ -58,15 +57,22 @@ async def _until(predicate: Any, what: str, rounds: int = 2000) -> None:
 
 
 async def _drain(s: Any, *futures: Any) -> None:
-    """Bounded teardown: stop the scheduler and settle any outer future, never hang."""
+    """Bounded teardown: stop the scheduler and settle any outer future, never hang.
+    Uses asyncio.wait with a timeout (it never waits for a cancelled awaitable to
+    finish), so a hanging stop() or future leaves this function after the bound."""
 
-    with contextlib.suppress(BaseException):
-        await asyncio.wait_for(s.stop(), 5)
+    stop = asyncio.ensure_future(s.stop())
+    pending = {stop}
     for future in futures:
         if not future.done():
             future.cancel()
-        with contextlib.suppress(BaseException):
-            await asyncio.wait_for(future, 5)
+        pending.add(future)
+    done, still = await asyncio.wait(pending, timeout=5)
+    for future in still:
+        future.cancel()
+    for future in done:
+        if not future.cancelled():
+            future.exception()  # retrieved: teardown never raises
 
 
 # --- SE-U01 -----------------------------------------------------------------------------------
@@ -345,20 +351,26 @@ async def test_se_u07_stop_timeout_then_retry() -> None:
     s.start()
     try:
         await asyncio.wait_for(parked.wait(), 5)
-        with pytest.raises(module.SchedulerStopFailed) as failed:
-            await s.stop()
-        assert failed.value.code == "STOP_TIMEOUT"
+        # Watchdog: stop() runs as its own task, observed with a bounded wait, so a
+        # stop that hangs fails this row instead of hanging it.
+        first = asyncio.ensure_future(s.stop())
+        done, _ = await asyncio.wait({first}, timeout=5)
+        assert first in done, "stop() did not return within the watchdog bound"
+        error = first.exception()
+        assert isinstance(error, module.SchedulerStopFailed), repr(error)
+        assert error.code == "STOP_TIMEOUT"
         assert s.state is module.SchedulerState.STOP_FAILED
         with pytest.raises(module.SchedulerRefused):
             s.start()
         release.set()
-        await s.stop()
+        second = asyncio.ensure_future(s.stop())
+        done, _ = await asyncio.wait({second}, timeout=5)
+        assert second in done and second.exception() is None
         assert s.state is module.SchedulerState.STOPPED
         assert len(runner.calls) == 1
-    finally:  # never leave the cancellation-resistant double parked (bounded cleanup)
+    finally:  # release FIRST, then bounded drain: never leave the resistant double parked
         release.set()
-        with contextlib.suppress(BaseException):
-            await asyncio.wait_for(s.stop(), 5)
+        await _drain(s)
 
 
 async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
@@ -404,8 +416,7 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
         assert len(runner.calls) == 1  # no new work from repeated stops
     finally:
         release.set()
-        with contextlib.suppress(BaseException):
-            await asyncio.wait_for(s.stop(), 5)
+        await _drain(s)
 
 
 # --- SE-U08 latency envelope (fake clock) --------------------------------------------------
