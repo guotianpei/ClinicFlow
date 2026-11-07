@@ -36,6 +36,7 @@ ROUTE: Final = "/v1/synthetic/inbound-sms"
 MAX_BODY_BYTES: Final = 16384
 MAX_AUTH_BYTES: Final = 512
 MIN_SECRET_BYTES: Final = 32
+MAX_SECRET_BYTES: Final = MAX_AUTH_BYTES - len(b"Bearer ")  # 505: the header must fit
 _SECRET_CHARS: Final = re.compile(r"[\x21-\x7e]+")
 _PHONE: Final = re.compile(r"\+[1-9][0-9]{7,14}")
 _KEYS: Final = frozenset({"channel", "provider_message_id", "phone", "text"})
@@ -71,6 +72,8 @@ class IngressConfig:
                 raise IngressConfigInvalid("SECRET_INVALID_CHARS")
             if len(secret.encode("ascii")) < MIN_SECRET_BYTES:
                 raise IngressConfigInvalid("SECRET_TOO_SHORT")
+            if len(secret.encode("ascii")) > MAX_SECRET_BYTES:
+                raise IngressConfigInvalid("SECRET_TOO_LONG")
             bindings.append((tenant_id, secret.encode("ascii")))
         if len({secret for _, secret in bindings}) != len(bindings):
             raise IngressConfigInvalid("SECRET_DUPLICATE")
@@ -106,11 +109,17 @@ def _error(status: int, code: str) -> Response:
 
 
 async def _bounded_body(request: Request) -> bytes | None:
+    """Read the body into a buffer that never exceeds MAX_BODY_BYTES: each chunk is
+    compared with the remaining capacity BEFORE it is copied, so an oversized chunk is
+    refused without copying it. A chunk the server has already received is
+    transport-owned memory; this bounds the application buffer only, not server or
+    proxy memory."""
+
     body = bytearray()
     async for chunk in request.stream():
-        body += chunk
-        if len(body) > MAX_BODY_BYTES:
+        if len(chunk) > MAX_BODY_BYTES - len(body):
             return None
+        body += chunk
     return bytes(body)
 
 

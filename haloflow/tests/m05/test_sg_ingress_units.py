@@ -7,10 +7,11 @@ Synthetic only: no provider, no signature claim, not composed into `platform/app
 
 Pinned API (`haloflow.m05.synthetic_ingress`):
 - `MAX_BODY_BYTES = 16384`, `MAX_AUTH_BYTES = 512`, `MIN_SECRET_BYTES = 32`,
+  `MAX_SECRET_BYTES = 505` (`Bearer ` + token must fit 512; F-SG1 secondary),
   `ROUTE = "/v1/synthetic/inbound-sms"`.
 - `IngressConfig.build(secrets: Mapping[str, str], served_tenants: tuple[str, ...])`
   -> IngressConfig; refusals `IngressConfigInvalid(code)`: SECRETS_EMPTY,
-  SECRET_DUPLICATE, SECRET_TOO_SHORT, SECRET_INVALID_CHARS, TENANT_NOT_SERVED,
+  SECRET_DUPLICATE, SECRET_TOO_SHORT, SECRET_TOO_LONG, SECRET_INVALID_CHARS, TENANT_NOT_SERVED,
   SECRETS_INVALID (non-mapping / non-str). `repr` shows only the clinic count.
 - `authenticate(config, headers) -> str | None`: exactly one `authorization` header,
   <= 512 bytes, `Bearer <token>`; constant-time comparison against EVERY secret (no
@@ -18,7 +19,8 @@ Pinned API (`haloflow.m05.synthetic_ingress`):
 - `create_ingress_router(config, *, context_for, receive) -> APIRouter` with
   `POST ROUTE`: auth (401 INGRESS_UNAUTHENTICATED) -> Content-Type must be
   `application/json` (optionally `; charset=utf-8`) (415 INBOUND_UNSUPPORTED_MEDIA) ->
-  body streamed with a hard cap regardless of Content-Length (413 INBOUND_TOO_LARGE)
+  body streamed with a hard cap regardless of Content-Length; each chunk is checked
+  against the remaining capacity before it is copied (F-SG1) (413 INBOUND_TOO_LARGE)
   -> strict UTF-8 + strict JSON object with exactly {channel, provider_message_id,
   phone, text}, all str, no duplicate keys, no NaN/Infinity, and field values as
   `InboundCommand` requires (channel "sms", id 1-128 chars, E.164 phone)
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 import json
 import logging
+import tracemalloc
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -70,6 +73,7 @@ BAD_CONFIGS: dict[str, tuple[Any, tuple[str, ...], str]] = {
     "duplicate": ({TENANT_A: SECRET_A, TENANT_B: SECRET_A}, (TENANT_A, TENANT_B),
                   "SECRET_DUPLICATE"),
     "short": ({TENANT_A: "x" * 31}, (TENANT_A,), "SECRET_TOO_SHORT"),
+    "long": ({TENANT_A: "x" * 506}, (TENANT_A,), "SECRET_TOO_LONG"),
     "space": ({TENANT_A: "x" * 20 + " " + "y" * 20}, (TENANT_A,), "SECRET_INVALID_CHARS"),
     "control": ({TENANT_A: "x" * 40 + "\x01"}, (TENANT_A,), "SECRET_INVALID_CHARS"),
     "non-ascii": ({TENANT_A: "x" * 40 + "é"}, (TENANT_A,), "SECRET_INVALID_CHARS"),
@@ -87,6 +91,25 @@ def test_sg_u02_config_refusals(case: str) -> None:
         module.IngressConfig.build(secrets, served)
     assert caught.value.code == code
     assert SECRET_A not in str(caught.value) and SECRET_A not in repr(caught.value.args)
+
+
+async def test_sg_u02c_longest_usable_secret() -> None:
+    """F-SG1 secondary: `Bearer ` (7 bytes) + token must fit MAX_AUTH_BYTES (512), so
+    505 bytes is the longest configurable secret; 506 is refused (SG-U02 "long")."""
+
+    module = _mod()
+    assert module.MAX_SECRET_BYTES == module.MAX_AUTH_BYTES - len(b"Bearer ") == 505
+    secret = "k" * 505
+    config = module.IngressConfig.build({TENANT_A: secret}, (TENANT_A,))
+    header = f"Bearer {secret}".encode()
+    assert len(header) == module.MAX_AUTH_BYTES
+    assert module.authenticate(config, [(b"authorization", header)]) == TENANT_A
+    spy = _Spy()
+    async with _client(_app(spy, config)) as client:
+        response = await client.post(module.ROUTE, content=json.dumps(_body()),
+                                     headers={"Authorization": f"Bearer {secret}",
+                                              "Content-Type": "application/json"})
+    assert response.status_code == 202 and spy.contexts == [TENANT_A]
 
 
 def test_sg_u02b_config_repr_redacted() -> None:
@@ -176,13 +199,14 @@ class _Spy:
                              item_id=uuid.UUID(int=10))
 
 
-def _app(spy: _Spy) -> Any:
+def _app(spy: _Spy, config: Any = None) -> Any:
     from fastapi import FastAPI
 
     module = _mod()
     app = FastAPI()
     app.include_router(module.create_ingress_router(
-        _config(), context_for=spy.context_for, receive=spy.receive))
+        config if config is not None else _config(), context_for=spy.context_for,
+        receive=spy.receive))
     return app
 
 
@@ -331,6 +355,53 @@ async def test_sg_u06b_exact_cap_is_accepted() -> None:
         over = await client.post(module.ROUTE, content=padded + b" ", headers=_auth())
     assert (over.status_code, over.json()) == (413, {"code": "INBOUND_TOO_LARGE"})
     assert over_spy.contexts == [] and over_spy.received == []
+
+
+async def test_sg_u06c_single_oversized_chunk_is_not_copied() -> None:
+    """F-SG1: one ASGI chunk far larger than the cap is refused (413) without the
+    helper copying it: the chunk is compared with the remaining capacity BEFORE the
+    buffer is extended. The chunk object itself is transport-owned memory (allocated
+    here, before tracing) and is outside what this helper bounds."""
+
+    module = _mod()
+    spy = _Spy()
+    huge = b"{" + b" " * (module.MAX_BODY_BYTES * 512)  # ~8 MiB in a single chunk
+    headers = [(b"authorization", f"Bearer {SECRET_A}".encode()),
+               (b"content-type", b"application/json")]
+    app = _app(spy)
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        status, body, consumed = await _raw(app, headers, [huge])
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert (status, json.loads(body)) == (413, {"code": "INBOUND_TOO_LARGE"})
+    assert consumed == 1 and spy.contexts == [] and spy.received == []
+    assert peak < len(huge) // 8, peak  # a copy would add ~len(huge) traced bytes
+
+
+@pytest.mark.parametrize(("sizes", "status"), [
+    ((16383, 1), 202), ((16383, 2), 413), ((1, 16383), 202), ((1, 16384), 413),
+    ((16384,), 202), ((16385,), 413), ((8192, 8192), 202), ((8192, 8192, 1), 413),
+], ids=["n-1+1", "n-1+2", "1+n-1", "1+n", "n", "n+1", "half+half", "half+half+1"])
+async def test_sg_u06d_multi_chunk_boundaries(sizes: tuple[int, ...], status: int) -> None:
+    module = _mod()
+    assert module.MAX_BODY_BYTES == 16384
+    raw = json.dumps(_body(text="y")).encode()
+    total = sum(sizes)
+    padded = raw[:-1] + b" " * (total - len(raw)) + b"}"
+    chunks, start = [], 0
+    for size in sizes:
+        chunks.append(padded[start:start + size])
+        start += size
+    spy = _Spy()
+    headers = [(b"authorization", f"Bearer {SECRET_A}".encode()),
+               (b"content-type", b"application/json")]
+    got, _body_bytes, _consumed = await _raw(_app(spy), headers, chunks)
+    assert got == status
+    assert (spy.contexts == [TENANT_A]) is (status == 202)
+    assert (spy.received == []) is (status == 413)
 
 
 MALFORMED: dict[str, bytes] = {
