@@ -231,7 +231,8 @@ class DueWindowScheduler:
             for tenant in self._tenants:
                 _cancel_pending()
                 code = await self._one(tenant, totals)
-                codes[code] += 1
+                codes[code] += 1  # the completed tenant is counted, then:
+                _cancel_pending()  # a runner that swallowed cancellation (incl. the last)
         except asyncio.CancelledError:
             if log_on_cancel:
                 self._log(self._result(number, started, codes, totals, True), skipped=0)

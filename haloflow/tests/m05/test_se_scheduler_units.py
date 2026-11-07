@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import logging
 import math
 import pathlib
@@ -327,6 +328,66 @@ async def test_se_u06b_caller_cancels_manual_tick() -> None:
         assert s.state is module.SchedulerState.NEW
     finally:
         await _drain(s, manual)
+
+
+def _swallowing(parked: asyncio.Event) -> Any:
+    """A runner that catches CancelledError and returns COMPLETE (F-SE1 double)."""
+
+    async def behaviour(_tenant: str, _execution: uuid.UUID) -> Any:
+        parked.set()
+        with contextlib.suppress(asyncio.CancelledError):  # swallowed by the double
+            await asyncio.Event().wait()
+        return se.run_result("COMPLETE")
+
+    return behaviour
+
+
+async def test_se_u06c_caller_cancel_survives_swallowing_last_runner() -> None:
+    """F-SE1: the last (only) tenant swallows the cancellation; the caller still gets
+    CancelledError, never a successful TickResult."""
+
+    module = _mod()
+    clock = se.FakeClock()
+    parked = asyncio.Event()
+    runner = se.fake_runner(_swallowing(parked))
+    s = se.scheduler(runner, (se.TENANT_A,), clock)
+    manual = asyncio.ensure_future(s.tick())
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        manual.cancel()
+        done, _ = await asyncio.wait({manual}, timeout=5)
+        assert manual in done and manual.cancelled(), manual
+        assert len(runner.calls) == 1
+        assert s.state is module.SchedulerState.NEW
+    finally:
+        await _drain(s, manual)
+
+
+async def test_se_u06d_stop_during_tick_survives_swallowing_last_runner() -> None:
+    """F-SE1: stop() cancels a manual tick whose only runner swallows it; the caller
+    gets STOPPED_DURING_TICK and the scheduler is STOPPED."""
+
+    module = _mod()
+    clock = se.FakeClock()
+    parked = asyncio.Event()
+    runner = se.fake_runner(_swallowing(parked))
+    s = se.scheduler(runner, (se.TENANT_A,), clock)
+    manual = asyncio.ensure_future(s.tick())
+    created: list[Any] = [manual]
+    try:
+        await asyncio.wait_for(parked.wait(), 5)
+        stop = asyncio.ensure_future(s.stop())
+        created.append(stop)
+        done, _ = await asyncio.wait({stop, manual}, timeout=5)
+        assert stop in done and stop.exception() is None
+        assert manual in done
+        error = manual.exception()
+        assert isinstance(error, module.SchedulerRefused), repr(error)
+        assert error.code == "STOPPED_DURING_TICK"
+        assert s.state is module.SchedulerState.STOPPED
+        assert len(runner.calls) == 1
+    finally:
+        await _drain(s, *created)
 
 
 # --- SE-U07 -----------------------------------------------------------------------------------
