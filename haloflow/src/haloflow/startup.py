@@ -60,6 +60,7 @@ from psycopg import AsyncConnection, sql
 from psycopg.pq import TransactionStatus
 
 import haloflow.composition as composition
+from haloflow.m01.activation import ActivationPolicy
 from haloflow.m01.context import CorrelationSource, Principal, TenantContext, TrustedSource
 from haloflow.m01.gateway import (
     TenantRepositoryHandle,
@@ -626,7 +627,10 @@ async def start_production_services(
     pairs = frozenset((tenant_id, schema_key) for tenant_id, schema_key, _ in validated)
     services: ProductionServices | None = None
     try:
-        runtime = composition.build_production_tenant_runtime(dependencies)
+        policy = (ActivationPolicy.ENFORCE if deployment is Deployment.PRODUCTION
+                  else ActivationPolicy.NOT_ENFORCED)
+        runtime = composition.build_production_tenant_runtime(
+            dependencies, activation_policy=policy)
         gateway = ServedTenantGateway(runtime.gateway, validated=pairs)
         # The foundation is typed against the real gateway; the served wrapper
         # mirrors the one method it uses (`with_tenant_transaction`).

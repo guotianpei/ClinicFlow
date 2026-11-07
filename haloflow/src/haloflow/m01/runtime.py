@@ -24,6 +24,7 @@ the builder never opens or closes the pool: its lifecycle belongs to the caller
 
 from dataclasses import dataclass
 
+from haloflow.m01.activation import ActivationPolicy
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.gateway import TenantTransactionGateway
 from haloflow.m01.pool import TenantPool
@@ -76,6 +77,7 @@ def compose_tenant_runtime(
     registry: TenantMigrationRegistry,
     catalog: CompiledCatalog,
     supported_schema_versions: frozenset[int],
+    activation_policy: ActivationPolicy = ActivationPolicy.NOT_ENFORCED,
 ) -> TenantRuntime:
     """Compose resolver, gateway and provisioner from one supported-version set."""
 
@@ -94,6 +96,7 @@ def compose_tenant_runtime(
         dependencies.pool,
         catalog,
         supported_schema_versions=supported_schema_versions,
+        activation_policy=activation_policy,
     )
     provisioner = TenantProvisioner(
         dependencies.provisioner_connect,

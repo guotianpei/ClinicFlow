@@ -215,6 +215,14 @@ jobs:
           $VENV/bin/python -I scripts/sb_due_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sb-due-mutation"
+      # L-1S package S-C activation-switch mutation controls SC1-SC13: four groups (the
+      # handle against the static module; the gateway, startup and t046 unit against the
+      # PostgreSQL / static modules), kill sets in scripts/sc_activation_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sc_activation_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sc_activation_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sc-activation-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

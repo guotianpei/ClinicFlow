@@ -23,6 +23,7 @@ it lives in `haloflow.startup`.
 from collections.abc import Mapping
 from types import MappingProxyType
 
+from haloflow.m01.activation import ActivationPolicy
 from haloflow.m01.errors import MigrationUnitRejected
 from haloflow.m01.provisioning import TenantMigrationRegistry
 from haloflow.m01.provisioning.codes import PreconditionCode
@@ -63,7 +64,7 @@ from haloflow.m02.statements import M02_STATEMENTS
 from haloflow.m02.units import M02_TENANT_MIGRATIONS, T003_MIGRATION_ID
 from haloflow.m05.gateways import M05_GATEWAY_PROFILES
 from haloflow.m05.gateways_v2 import M05_V2_PROFILES, M05_V2_UNITS
-from haloflow.m05.statements import M05_STATEMENTS
+from haloflow.m05.statements import M05_PROTECTED, M05_STATEMENTS
 from haloflow.m05.units import M05_TENANT_MIGRATIONS
 
 # Approved module definition sets, in composition order. A new module is added
@@ -206,7 +207,8 @@ APPROVED_SUPPORTED_SCHEMA_VERSIONS: frozenset[int] = frozenset({36})
 def build_production_catalog() -> CompiledCatalog:
     """Compose the production statement catalogue. Startup-only."""
 
-    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS)
+    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS,
+                                   activation_protected=M05_PROTECTED)
 
 
 def require_installed_state_profiles(registry: TenantMigrationRegistry) -> None:
@@ -255,7 +257,9 @@ def build_production_tenant_migrations() -> TenantMigrationRegistry:
     return registry
 
 
-def build_production_tenant_runtime(dependencies: TenantRuntimeDependencies) -> TenantRuntime:
+def build_production_tenant_runtime(
+    dependencies: TenantRuntimeDependencies, *, activation_policy: ActivationPolicy
+) -> TenantRuntime:
     """Compose the production tenancy runtime. Startup-only.
 
     Takes no registry, catalogue or set: a caller cannot substitute them. The
@@ -264,6 +268,9 @@ def build_production_tenant_runtime(dependencies: TenantRuntimeDependencies) -> 
     here, at call time. The caller owns the pool's lifecycle (L-1W).
     """
 
+    # S-C: the policy is checked before anything is built (an annotation is not a check).
+    if type(activation_policy) is not ActivationPolicy:
+        raise TypeError("activation_policy must be an ActivationPolicy")
     registry = build_production_tenant_migrations()
     catalog = build_production_catalog()
     return compose_tenant_runtime(
@@ -271,4 +278,5 @@ def build_production_tenant_runtime(dependencies: TenantRuntimeDependencies) -> 
         registry=registry,
         catalog=catalog,
         supported_schema_versions=APPROVED_SUPPORTED_SCHEMA_VERSIONS,
+        activation_policy=activation_policy,
     )

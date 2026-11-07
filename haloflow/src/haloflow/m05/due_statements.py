@@ -18,3 +18,7 @@ SB_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
         DUE_KEY: (StatementMode.READ, DUE_KEY, "SELECT m05_due_windows(%(command)s)"),
     }
 )
+
+# L-1S S-C (D-S1): every statement above is gated by the activation probe (the module
+# owns this declaration; the catalogue never infers it).
+SB_PROTECTED: Final[frozenset[str]] = frozenset(SB_STATEMENTS)

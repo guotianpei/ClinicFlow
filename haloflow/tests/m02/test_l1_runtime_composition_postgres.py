@@ -30,6 +30,7 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 from psycopg import AsyncConnection, sql
 
+from haloflow.m01.activation import ActivationPolicy
 from haloflow.m01.context import (
     CorrelationSource,
     Principal,
@@ -58,6 +59,8 @@ TEST_ONLY_CATALOG = build_statement_catalog(
     }
 )
 SENTINEL = object()
+
+_NOT_ENFORCED = ActivationPolicy.NOT_ENFORCED
 
 
 def _factory(conninfo: str) -> Callable[[], Awaitable[AsyncConnection[Any]]]:
@@ -196,7 +199,7 @@ async def test_l1_e1a_e1b_a_version_three_tenant_is_resolved_and_admitted(
     from haloflow.composition import build_production_tenant_runtime
 
     async with _dependencies(m02_ids) as deps:
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         outcome = await _provision_through(runtime, m02_tenant)
         assert outcome.schema_version == 36  # B5 (H6): production target; 11 in part A
 
@@ -224,7 +227,8 @@ async def test_l1_e1c_one_catalogued_statement_is_served(
     from haloflow.m01.runtime import compose_tenant_runtime
 
     async with _dependencies(m02_ids) as deps:
-        await _provision_through(build_production_tenant_runtime(deps), m02_tenant)
+        await _provision_through(
+            build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED), m02_tenant)
         _install_probe(m02, m02_ids, m02_tenant[1], "l1-e1c-marker")
         runtime = compose_tenant_runtime(
             deps,
@@ -263,7 +267,7 @@ async def test_l1_e2_the_resolver_refuses_versions_one_two_and_four(
         _tenants(m02, m02_reset, "l1-e2-v1", "l1-e2-v2", "l1-e2-v4") as (v1, v2, v4),
         _dependencies(m02_ids) as deps,
     ):
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         await m02.provision(m02_ids, m02.m01_only_registry(), v1, supported=range(1, 2))
         t001_t002 = build_tenant_migration_registry(
             TENANT_MIGRATIONS, {T002_MIGRATION_ID: T002_SQL}
@@ -300,7 +304,7 @@ async def test_l1_e3a_a_row_leaving_the_set_is_refused_before_the_callback(
     from haloflow.composition import build_production_tenant_runtime
 
     async with _dependencies(m02_ids) as deps:
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         await _provision_through(runtime, m02_tenant)
         context = await _resolve(runtime, m02_tenant[0])
         assert (
@@ -342,7 +346,7 @@ async def test_l1_e3b_a_missing_registry_row_is_refused_before_the_callback(
         == 1
     )
     async with _dependencies(m02_ids) as deps:
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         context = await _resolve(runtime, tenant_id)
         assert (
             _admin(
@@ -368,7 +372,7 @@ async def test_l1_e3c_a_non_active_tenant_is_refused_before_the_callback(
     from haloflow.composition import build_production_tenant_runtime
 
     async with _dependencies(m02_ids) as deps:
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         await _provision_through(runtime, m02_tenant)
         context = await _resolve(runtime, m02_tenant[0])
         update = "UPDATE shared.tenants SET lifecycle_state = %s WHERE tenant_id = %s"
@@ -394,7 +398,7 @@ async def test_l1_e3d_a_schema_key_mismatch_is_refused_before_the_callback(
     tenant_id, schema_key = m02_tenant
     other_key = m02.tenant_for(f"{tenant_id}-other-key")[1]
     async with _dependencies(m02_ids) as deps:
-        runtime = build_production_tenant_runtime(deps)
+        runtime = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         await _provision_through(runtime, m02_tenant)
         context = await _resolve(runtime, tenant_id)
         set_state = (
@@ -446,7 +450,7 @@ async def test_l1_f1_f2b_two_tenants_with_identical_record_ids_stay_isolated(
         _tenants(m02, m02_reset, "l1-f1-a", "l1-f1-b") as (tenant_a, tenant_b),
         _dependencies(m02_ids) as deps,
     ):
-        production = build_production_tenant_runtime(deps)
+        production = build_production_tenant_runtime(deps, activation_policy=_NOT_ENFORCED)
         for tenant in (tenant_a, tenant_b):
             await _provision_through(production, tenant)
         assert tenant_a[0] != tenant_b[0] and tenant_a[1] != tenant_b[1]
@@ -506,7 +510,8 @@ def test_l1_g3_a_fixture_widened_set_cannot_reach_the_declaration(
             control_store=object(),  # type: ignore[arg-type]
             migrator_connect=object(),  # type: ignore[arg-type]
             provisioner_connect=object(),  # type: ignore[arg-type]
-        )
+        ),
+        activation_policy=_NOT_ENFORCED,
     )
     # UC1 part B B5: the production declaration is {25} (was {11} in part A).
     assert runtime.supported_schema_versions == frozenset({36})

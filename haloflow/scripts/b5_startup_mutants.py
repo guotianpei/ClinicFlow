@@ -156,7 +156,10 @@ _CONSTRUCT = (
     "    pairs = frozenset((tenant_id, schema_key) for tenant_id, schema_key, _ in validated)\n"
     "    services: ProductionServices | None = None\n"
     "    try:\n"
-    "        runtime = composition.build_production_tenant_runtime(dependencies)\n"
+    "        policy = (ActivationPolicy.ENFORCE if deployment is Deployment.PRODUCTION\n"
+    "                  else ActivationPolicy.NOT_ENFORCED)\n"
+    "        runtime = composition.build_production_tenant_runtime(\n"
+    "            dependencies, activation_policy=policy)\n"
     "        gateway = ServedTenantGateway(runtime.gateway, validated=pairs)\n"
 )
 _CONSTRUCT_END = (

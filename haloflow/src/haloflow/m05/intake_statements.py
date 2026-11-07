@@ -27,3 +27,7 @@ SA_STATEMENTS: Final[StatementDefinitions] = MappingProxyType(
         CLOSE_KEY: (StatementMode.WRITE, CLOSE_KEY, "SELECT m05_close_window(%(command)s)"),
     }
 )
+
+# L-1S S-C (D-S1): every statement above is gated by the activation probe (the module
+# owns this declaration; the catalogue never infers it).
+SA_PROTECTED: Final[frozenset[str]] = frozenset(SA_STATEMENTS)

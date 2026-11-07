@@ -63,6 +63,13 @@ class CapabilityDenied(M01Error):
     code = "CAPABILITY_DENIED"
 
 
+class ActivationRefused(M01Error):
+    """L-1S S-C: an activation-protected statement was refused (M05_NOT_ACTIVATED,
+    M05_ACTIVATION_UNREADABLE or ACTIVATION_ISOLATION_UNSUPPORTED)."""
+
+    code = "ACTIVATION_REFUSED"
+
+
 class MigrationUnitRejected(M01Error):
     """A per-tenant migration unit or registry failed trusted construction."""
 

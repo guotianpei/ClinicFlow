@@ -778,6 +778,7 @@ def test_b5_a01_independent_context_for_unserved_tenant_refused_on_every_service
     m02_ids: m02.Identities, tenant_a: ProductionInstall, tenant_c: ProductionInstall
 ) -> None:
     from haloflow.composition import build_production_tenant_runtime
+    from haloflow.m01.activation import ActivationPolicy
     from haloflow.m01.resolver import LifecycleState, TenantRegistryRecord, TenantResolver
     from haloflow.startup import TenantNotServed
 
@@ -803,7 +804,8 @@ def test_b5_a01_independent_context_for_unserved_tenant_refused_on_every_service
             sources: dict[str, tuple[Any, str, str]] = {
                 # An independent production runtime: a valid context for an active
                 # tenant that the bundle never validated.
-                "unserved-tenant": (build_production_tenant_runtime(other).resolver,
+                "unserved-tenant": (build_production_tenant_runtime(
+                    other, activation_policy=ActivationPolicy.NOT_ENFORCED).resolver,
                                     tenant_c.tenant_id, tenant_c.schema),
             }
             for label, record in forged.items():
