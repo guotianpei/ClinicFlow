@@ -99,6 +99,8 @@ RUNTIME = f"host=db.local port=5432 dbname={DB} user=rt password=p1"
 MIGRATOR = f"host=db.local port=5432 dbname={DB} user=mig password=p2"
 PROVISIONER = f"host=db.local port=5432 dbname={DB} user=prov password=p3"
 WATCHDOG = 5.0
+STOP_WAIT = 0.2
+BACKSTOP = 120.0  # process-level backstop (faulthandler), seconds per row
 LOGGER = "haloflow.synthetic"
 
 
@@ -311,9 +313,10 @@ async def test_sg_u08b_read_identity_closes_on_every_path() -> None:
                                                      connect=_connector(hanging, seen)))
     for _ in range(5):
         await asyncio.sleep(0)
+    assert hanging.executed == [module.IDENTITY_SQL]  # parked inside the query
     task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(task, WATCHDOG)
+    done, _ = await asyncio.wait({task}, timeout=WATCHDOG)  # independent observation
+    assert done and task.cancelled()
     assert hanging.closed == 1
     assert seen == [RUNTIME] * 4
 
@@ -419,12 +422,34 @@ async def test_sg_u14_close_all_parity(script: str) -> None:
 
 
 # --- lifespan rig -------------------------------------------------------------------------------
+#
+# Watchdog discipline (Codex d568580 review item 1): the harness deliberately keeps
+# awaiting a shielded stop when its caller is cancelled, so `asyncio.timeout` or
+# `wait_for` around the lifespan is NOT an independent deadline. Every row runs the
+# lifespan in its own task (`_Life`) and observes it only through `asyncio.wait(...,
+# timeout=...)`, which never cancels the observed task. Cleanup releases fakes
+# deterministically in `finally`; a process-level backstop (`faulthandler`, module
+# fixture) ends the run if a row still hangs. G-U07w proves the watchdog against a
+# stop that never returns.
+
+
+@pytest.fixture(autouse=True)
+def _process_backstop() -> Any:
+    import faulthandler
+
+    faulthandler.dump_traceback_later(BACKSTOP, exit=True)
+    yield
+    faulthandler.cancel_dump_traceback_later()
 
 
 @dataclass
 class _Journal:
     events: list[str] = field(default_factory=list)
     closed: list[str] = field(default_factory=list)
+    # what each closer observed at the moment it ran: (name, unpublished, scheduler state)
+    seen_at_close: list[tuple[str, bool, Any]] = field(default_factory=list)
+    app: Any = None
+    holder: dict[str, Any] = field(default_factory=dict)
 
 
 class _Spy:
@@ -481,6 +506,10 @@ def _steps(journal: _Journal, spy: _Spy, *, fail_at: str | None = None,
                 raise RuntimeError(f"fault-{name}")
             if closes:
                 async def close() -> None:
+                    sched = journal.holder.get("s")
+                    journal.seen_at_close.append(
+                        (name, journal.app.state.platform is None,
+                         None if sched is None else sched.state))
                     journal.closed.append(name)
 
                 return (f"res:{name}", close)
@@ -507,7 +536,16 @@ OPENED = ["tenant_pool", "admission_pool", "keyset"]
 
 
 class _Sched:
-    """A duck-typed scheduler using the real SchedulerState values."""
+    """A duck-typed scheduler using the real SchedulerState values.
+
+    Stop modes: ok; parked (stop waits on `stop_gate`); stubborn (the work ignores
+    cancellation, stop times out after STOP_WAIT -> STOP_FAILED); hang (stop never
+    returns until released, ignoring cancellation); raise-other; lie (returns while
+    RUNNING). Start modes: ok; raise; task-then-raise; stubborn-then-raise.
+    Worker-entry synchronisation (review item 3): the work sets `entered` as its first
+    action, and this fake's stop waits for `entered` (bounded) before cancelling, so a
+    cancellation can never land before the coroutine starts and fake a clean stop.
+    """
 
     def __init__(self, journal: _Journal, *, stop: str = "ok", start: str = "ok") -> None:
         from haloflow.m05.due_scheduler import SchedulerState
@@ -516,22 +554,27 @@ class _Sched:
         self.journal, self.stop_mode, self.start_mode = journal, stop, start
         self.state = SchedulerState.NEW
         self.task: asyncio.Task[None] | None = None
+        self.entered = asyncio.Event()
         self.release = asyncio.Event()
+        self.stop_gate = asyncio.Event()
+        self.stop_entered = asyncio.Event()
         self.stop_calls = 0
+
+    def _stubborn(self) -> bool:
+        return self.start_mode == "stubborn-then-raise" or self.stop_mode == "stubborn"
 
     def start(self) -> None:
         self.journal.events.append("scheduler.start")
-        if self.start_mode in ("task-then-raise", "stubborn-then-raise"):
-            self.task = asyncio.get_running_loop().create_task(self._work())
-            self.state = self.S.RUNNING
-            raise RuntimeError("start failed after creating work")
         if self.start_mode == "raise":
             raise RuntimeError("start failed")
         self.task = asyncio.get_running_loop().create_task(self._work())
         self.state = self.S.RUNNING
+        if self.start_mode in ("task-then-raise", "stubborn-then-raise"):
+            raise RuntimeError("start failed after creating work")
 
     async def _work(self) -> None:
-        if self.start_mode == "stubborn-then-raise" or self.stop_mode == "stubborn":
+        self.entered.set()
+        if self._stubborn():
             while not self.release.is_set():
                 try:
                     await self.release.wait()
@@ -545,27 +588,38 @@ class _Sched:
 
         self.stop_calls += 1
         self.journal.events.append("scheduler.stop")
+        self.stop_entered.set()
         if self.stop_mode == "raise-other":
             raise RuntimeError("stop broke")
         if self.stop_mode == "lie":
             return  # returns while still RUNNING
-        if self.stop_mode == "slow":
-            await asyncio.sleep(0.05)
+        if self.stop_mode == "parked":
+            await self.stop_gate.wait()
+        if self.stop_mode == "hang":
+            while not self.release.is_set():
+                try:
+                    await self.release.wait()
+                except asyncio.CancelledError:
+                    continue
         if self.task is not None:
+            await asyncio.wait({asyncio.ensure_future(self.entered.wait())}, timeout=STOP_WAIT)
+            assert self.entered.is_set(), "worker never started"
             self.task.cancel()
-            done, _ = await asyncio.wait({self.task}, timeout=0.2)
+            done, _ = await asyncio.wait({self.task}, timeout=STOP_WAIT)
             if not done:
                 self.state = self.S.STOP_FAILED
                 raise SchedulerStopFailed()
         self.state = self.S.STOPPED
 
-    async def cleanup(self) -> None:
-        """Test hygiene: end any retained task after the assertions."""
+    async def terminate(self) -> bool:
+        """Test hygiene: end retained work; True when the work task is gone."""
 
         self.release.set()
+        self.stop_gate.set()
         if self.task is not None and not self.task.done():
             self.task.cancel()
             await asyncio.wait({self.task}, timeout=WATCHDOG)
+        return self.task is None or self.task.done()
 
 
 @dataclass
@@ -575,28 +629,75 @@ class _Rig:
     app: Any
     verifier: _Verifier
 
+    @property
+    def sched(self) -> _Sched:
+        sched: _Sched = self.journal.holder["s"]
+        return sched
+
 
 def _rig(*, fail_at: str | None = None, stop: str = "ok", start: str = "ok",
          factory: Callable[..., Any] | None = None) -> _Rig:
     module = _mod()
     journal, spy, verifier = _Journal(), _Spy(), _Verifier()
-    holder: dict[str, _Sched] = {}
 
-    def default_factory(runner: Any, tenants: tuple[str, ...], interval: int) -> _Sched:
+    def default_factory(_runner: Any, tenants: tuple[str, ...], interval: int) -> _Sched:
         journal.events.append(f"factory:{tenants}:{interval}")
-        holder["s"] = _Sched(journal, stop=stop, start=start)
-        return holder["s"]
+        sched = _Sched(journal, stop=stop, start=start)
+        journal.holder["s"] = sched
+        return sched
 
     app = module.create_synthetic_app(_config(), steps=_steps(journal, spy, fail_at=fail_at,
                                                                verifier=verifier),
                                       scheduler_factory=factory or default_factory)
-    app.state.sg_holder = holder
+    journal.app = app
     return _Rig(journal, spy, app, verifier)
 
 
-def _sched(rig: _Rig) -> _Sched:
-    sched: _Sched = rig.app.state.sg_holder["s"]
-    return sched
+class _Life:
+    """The lifespan in its own task, observed only with asyncio.wait(timeout=...)."""
+
+    def __init__(self, app: Any, *, thrown: BaseException | None = None) -> None:
+        self.app, self.thrown = app, thrown
+        self.up, self.down = asyncio.Event(), asyncio.Event()
+        self.task = asyncio.ensure_future(self._run())
+
+    async def _run(self) -> None:
+        async with self.app.router.lifespan_context(self.app):
+            self.up.set()
+            await self.down.wait()
+            if self.thrown is not None:
+                raise self.thrown
+
+    async def started(self) -> bool:
+        waiter = asyncio.ensure_future(self.up.wait())
+        await asyncio.wait({waiter, self.task}, timeout=WATCHDOG,
+                           return_when=asyncio.FIRST_COMPLETED)
+        waiter.cancel()
+        return self.up.is_set() and not self.task.done()
+
+    def shut(self) -> None:
+        self.down.set()
+
+    async def settled(self, timeout: float = WATCHDOG) -> bool:
+        done, _ = await asyncio.wait({self.task}, timeout=timeout)
+        return bool(done)
+
+    async def abandon(self) -> None:
+        """Last-resort hygiene after the assertions: never awaits without a bound."""
+
+        if not self.task.done():
+            self.task.cancel()
+            await asyncio.wait({self.task}, timeout=WATCHDOG)
+        if self.task.done() and not self.task.cancelled():
+            self.task.exception()  # retrieved
+
+
+async def _until(event: asyncio.Event) -> bool:
+    waiter = asyncio.ensure_future(event.wait())
+    done, _ = await asyncio.wait({waiter}, timeout=WATCHDOG)
+    if not done:
+        waiter.cancel()
+    return event.is_set()
 
 
 @asynccontextmanager
@@ -611,145 +712,199 @@ def _errors(caplog: pytest.LogCaptureFixture) -> list[str]:
             if r.name == LOGGER and r.levelno >= logging.ERROR]
 
 
+def _quiet_close(rig: _Rig) -> list[tuple[str, bool, Any]]:
+    """Every closer ran after unpublish and after the scheduler was STOPPED."""
+
+    stopped = rig.sched.S.STOPPED
+    return [(name, True, stopped) for name in reversed(OPENED)]
+
+
 # --- G-U07 lifecycle ----------------------------------------------------------------------------
+
+
+async def test_sg_u07w_watchdog_is_independent_of_a_non_returning_stop() -> None:
+    rig = _rig(stop="hang")
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        life.shut()
+        assert await _until(rig.sched.stop_entered)
+        life.task.cancel()  # the harness shields the stop: this cancellation is absorbed
+        assert not await life.settled(timeout=0.3)  # observed, not hung: still parked
+        assert rig.journal.closed == []  # nothing closed beneath a live stop
+        rig.sched.release.set()  # the stop now returns and quiesces
+        assert await life.settled()
+        assert life.task.cancelled()  # the absorbed cancellation is re-raised after close
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07a_normal_start_and_stop_order(caplog: pytest.LogCaptureFixture) -> None:
     rig = _rig()
-    async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
         assert rig.journal.events == [*STEP_ORDER, f"factory:{(TENANT_A, TENANT_B)}:300",
                                       "scheduler.start"]
         platform = rig.app.state.platform
         assert platform is not None and platform.verifier is rig.verifier
         assert dict(rig.app.state.activation) == {TENANT_A: "active", TENANT_B: "inactive"}
         rig.journal.events.clear()
-    assert rig.app.state.platform is None
-    assert rig.journal.events == ["scheduler.stop"]
-    assert rig.journal.closed == list(reversed(OPENED))
-    assert _sched(rig).state is _sched(rig).S.STOPPED
-    assert _errors(caplog) == []
+        life.shut()
+        assert await life.settled()
+        assert life.task.exception() is None
+        assert rig.journal.events == ["scheduler.stop"]
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+        assert rig.app.state.platform is None
+        assert _errors(caplog) == []
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 @pytest.mark.parametrize("fail_at", STEP_ORDER)
 async def test_sg_u07_startup_failure_before_scheduler(fail_at: str) -> None:
     rig = _rig(fail_at=fail_at)
-    with pytest.raises(RuntimeError, match=f"fault-{fail_at}"):
-        async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-            raise AssertionError("must not start")
-    opened = [name for name in OPENED if STEP_ORDER.index(name) < STEP_ORDER.index(fail_at)]
-    assert rig.journal.closed == list(reversed(opened))
-    assert rig.app.state.platform is None and "s" not in rig.app.state.sg_holder
+    life = _Life(rig.app)
+    try:
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, RuntimeError) and str(error) == f"fault-{fail_at}"
+        opened = [n for n in OPENED if STEP_ORDER.index(n) < STEP_ORDER.index(fail_at)]
+        assert rig.journal.closed == list(reversed(opened))
+        assert all(seen == (name, True, None) for seen, name in
+                   zip(rig.journal.seen_at_close, reversed(opened), strict=True))
+        assert rig.app.state.platform is None and "s" not in rig.journal.holder
+    finally:
+        await life.abandon()
 
 
 async def test_sg_u07b_stop_timeout_retains_everything(
         caplog: pytest.LogCaptureFixture) -> None:
     module = _mod()
     rig = _rig(stop="stubborn")
+    life = _Life(rig.app)
     try:
-        with pytest.raises(module.ShutdownFailed) as caught:
-            async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-                pass
-        assert caught.value.code == "SCHEDULER_STOP_TIMEOUT"
-        assert caught.value.__cause__ is None
-        assert rig.journal.closed == []
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        life.shut()
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_STOP_TIMEOUT" and error.__cause__ is None
+        assert rig.journal.closed == [] and rig.app.state.platform is None
+        assert rig.sched.state is rig.sched.S.STOP_FAILED
+        assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_TIMEOUT"]
         retained = list(rig.app.state.retained)
         assert len(retained) == 3
-        for close in retained:  # retained in open order; each still closes its resource
+        assert rig.sched.task is not None and not rig.sched.task.done()  # still owned
+        assert await rig.sched.terminate()  # end the work FIRST (review item 3)
+        for close in retained:  # then the retained closers, in open order, still work
             await close()
         assert rig.journal.closed == OPENED
-        assert rig.app.state.platform is None
-        assert _sched(rig).state is _sched(rig).S.STOP_FAILED
-        assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_TIMEOUT"]
     finally:
-        await _sched(rig).cleanup()
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07c_cancelled_during_completing_stop() -> None:
-    rig = _rig(stop="slow")
-    entered = asyncio.Event()
-
-    async def driver() -> None:
-        lifespan = rig.app.router.lifespan_context(rig.app)
-        await lifespan.__aenter__()
-        entered.set()
-        await lifespan.__aexit__(None, None, None)
-
-    task = asyncio.ensure_future(driver())
-    async with asyncio.timeout(WATCHDOG):
-        await entered.wait()
-        while "scheduler.stop" not in rig.journal.events:
-            await asyncio.sleep(0)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-    assert _sched(rig).state is _sched(rig).S.STOPPED  # the stop ran to completion
-    assert rig.journal.closed == list(reversed(OPENED))
-    assert rig.app.state.platform is None
+    rig = _rig(stop="parked")
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        life.shut()
+        assert await _until(rig.sched.stop_entered)
+        life.task.cancel()
+        assert not await life.settled(timeout=0.2)  # the shielded stop is still awaited
+        assert rig.journal.closed == []
+        rig.sched.stop_gate.set()
+        assert await life.settled()
+        assert life.task.cancelled()
+        assert rig.sched.state is rig.sched.S.STOPPED
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07c2_cancelled_during_failing_stop(caplog: pytest.LogCaptureFixture) -> None:
     module = _mod()
     rig = _rig(stop="stubborn")
-
-    async def driver() -> None:
-        lifespan = rig.app.router.lifespan_context(rig.app)
-        await lifespan.__aenter__()
-        await lifespan.__aexit__(None, None, None)
-
-    task = asyncio.ensure_future(driver())
+    life = _Life(rig.app)
     try:
-        async with asyncio.timeout(WATCHDOG):
-            while "scheduler.stop" not in rig.journal.events:
-                await asyncio.sleep(0)
-            task.cancel()
-            with pytest.raises(module.ShutdownFailed) as caught:
-                await task
-        assert caught.value.code == "SCHEDULER_STOP_TIMEOUT"
-        assert isinstance(caught.value.__cause__, asyncio.CancelledError)
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        life.shut()
+        assert await _until(rig.sched.stop_entered)
+        life.task.cancel()
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_STOP_TIMEOUT"
+        assert isinstance(error.__cause__, asyncio.CancelledError)
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_TIMEOUT"]
     finally:
-        await _sched(rig).cleanup()
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07c3_error_thrown_into_lifetime_is_reraised_after_stop() -> None:
     rig = _rig()
-    with pytest.raises(LookupError, match="thrown"):
-        async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-            raise LookupError("thrown")
-    assert rig.journal.events[-1] == "scheduler.stop"
-    assert rig.journal.closed == list(reversed(OPENED))
-    assert rig.app.state.platform is None
+    life = _Life(rig.app, thrown=LookupError("thrown"))
+    try:
+        assert await life.started()
+        life.shut()
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, LookupError) and str(error) == "thrown"
+        assert rig.journal.events[-1] == "scheduler.stop"
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 @pytest.mark.parametrize("mode", ["raise", "task-then-raise"])
 async def test_sg_u07d_start_failure_stops_then_closes(mode: str) -> None:
     rig = _rig(start=mode)
-    with pytest.raises(RuntimeError, match="start failed"):
-        async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-            raise AssertionError("must not yield")
-    sched = _sched(rig)
-    assert sched.stop_calls == 1 and sched.state is sched.S.STOPPED
-    assert sched.task is None or sched.task.done()
-    assert rig.journal.closed == list(reversed(OPENED))
-    assert rig.app.state.platform is None
+    life = _Life(rig.app)
+    try:
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, RuntimeError) and str(error).startswith("start failed")
+        assert not life.up.is_set()
+        sched = rig.sched
+        assert sched.stop_calls == 1 and sched.state is sched.S.STOPPED
+        if mode == "task-then-raise":
+            assert sched.entered.is_set() and sched.task is not None and sched.task.done()
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07d2_start_failure_with_stubborn_work_retains(
         caplog: pytest.LogCaptureFixture) -> None:
     module = _mod()
     rig = _rig(start="stubborn-then-raise")
+    life = _Life(rig.app)
     try:
-        with pytest.raises(module.ShutdownFailed) as caught:
-            async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-                raise AssertionError("must not yield")
-        assert caught.value.code == "SCHEDULER_STOP_TIMEOUT"
-        assert isinstance(caught.value.__cause__, RuntimeError)
-        assert str(caught.value.__cause__) == "start failed after creating work"
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_STOP_TIMEOUT"
+        assert isinstance(error.__cause__, RuntimeError)
+        assert str(error.__cause__) == "start failed after creating work"
+        assert rig.sched.entered.is_set()  # the timeout is real, not a pre-start cancel
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_TIMEOUT"]
     finally:
-        await _sched(rig).cleanup()
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 @pytest.mark.parametrize("mode", ["raise-other", "lie"])
@@ -757,43 +912,50 @@ async def test_sg_u07ef_unverified_stop_retains(mode: str,
                                                 caplog: pytest.LogCaptureFixture) -> None:
     module = _mod()
     rig = _rig(stop=mode)
+    life = _Life(rig.app)
     try:
-        with pytest.raises(module.ShutdownFailed) as caught:
-            async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-                pass
-        assert caught.value.code == "SCHEDULER_STOP_UNVERIFIED"
-        assert caught.value.__cause__ is None
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        life.shut()
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_STOP_UNVERIFIED" and error.__cause__ is None
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_UNVERIFIED"]
     finally:
-        await _sched(rig).cleanup()
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 async def test_sg_u07g_factory_that_spawns_work_is_unverified(
         caplog: pytest.LogCaptureFixture) -> None:
     module = _mod()
     spawned: list[asyncio.Task[bool]] = []
-    journal_box: dict[str, _Sched] = {}
+    box: dict[str, _Sched] = {}
 
     def spawning(_runner: Any, _tenants: tuple[str, ...], _interval: int) -> Any:
         spawned.append(asyncio.get_running_loop().create_task(asyncio.Event().wait()))
-        journal_box["s"] = _Sched(_Journal())
-        return journal_box["s"]
+        box["s"] = _Sched(_Journal())
+        return box["s"]
 
     rig = _rig(factory=spawning)
+    life = _Life(rig.app)
     try:
-        with pytest.raises(module.ShutdownFailed) as caught:
-            async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-                raise AssertionError("must not yield")
-        assert caught.value.code == "SCHEDULER_FACTORY_UNVERIFIED"
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_FACTORY_UNVERIFIED"
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert rig.app.state.platform is None
-        assert journal_box["s"].journal.events == []  # never started
+        assert box["s"].journal.events == []  # neither started nor stopped
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_FACTORY_UNVERIFIED"]
     finally:
         for task in spawned:
             task.cancel()
-        await asyncio.wait(spawned, timeout=WATCHDOG)
+        if spawned:
+            await asyncio.wait(spawned, timeout=WATCHDOG)
+        await life.abandon()
 
 
 async def test_sg_u07g2_factory_returning_started_scheduler_is_unverified() -> None:
@@ -807,11 +969,15 @@ async def test_sg_u07g2_factory_returning_started_scheduler_is_unverified() -> N
         return sched
 
     rig = _rig(factory=started)
-    with pytest.raises(module.ShutdownFailed) as caught:
-        async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
-            raise AssertionError("must not yield")
-    assert caught.value.code == "SCHEDULER_FACTORY_UNVERIFIED"
-    assert rig.journal.closed == [] and box["s"].journal.events == []
+    life = _Life(rig.app)
+    try:
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_FACTORY_UNVERIFIED"
+        assert rig.journal.closed == [] and box["s"].journal.events == []
+    finally:
+        await life.abandon()
 
 
 # --- G-U10 / G-U11 routing and the real Gate ---------------------------------------------------
@@ -860,18 +1026,27 @@ async def test_sg_u10_same_routes_plus_exactly_the_ingress() -> None:
     assert {path for path, _ in production_routes} >= {p for _, p in PRODUCTION_REQUESTS[:2]}
     rig = _rig()
     production = _production_app(_Verifier())
-    async with (asyncio.timeout(WATCHDOG), production.router.lifespan_context(production),
-                rig.app.router.lifespan_context(rig.app), _client(production) as prod,
-                _client(rig.app) as harness):
-        for method, path in PRODUCTION_REQUESTS:
-            want = await prod.request(method, path, json={})
-            got = await harness.request(method, path, json={})
-            assert (got.status_code, got.content) == (want.status_code, want.content), path
-        absent = await prod.post(INGRESS, json={})
-        present = await harness.post(INGRESS, json={})
-    assert absent.status_code == 404
-    assert (present.status_code, present.json()) == (401, {"code": "INGRESS_UNAUTHENTICATED"})
-    assert rig.spy.contexts == [] and rig.spy.received == []
+    prod_life, life = _Life(production), _Life(rig.app)
+    try:
+        assert await prod_life.started() and await life.started()
+        async with _client(production) as prod, _client(rig.app) as harness:
+            for method, path in PRODUCTION_REQUESTS:
+                want = await prod.request(method, path, json={})
+                got = await harness.request(method, path, json={})
+                assert (got.status_code, got.content) == (want.status_code, want.content), path
+            absent = await prod.post(INGRESS, json={})
+            present = await harness.post(INGRESS, json={})
+        assert absent.status_code == 404
+        assert (present.status_code, present.json()) == (
+            401, {"code": "INGRESS_UNAUTHENTICATED"})
+        assert rig.spy.contexts == [] and rig.spy.received == []
+        prod_life.shut()
+        life.shut()
+        assert await prod_life.settled() and await life.settled()
+    finally:
+        await rig.sched.terminate()
+        await prod_life.abandon()
+        await life.abandon()
 
 
 def _ingress_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -884,43 +1059,102 @@ BODY = {"channel": "sms", "provider_message_id": "pm-1", "phone": "+15555550123"
         "text": "YES"}
 
 
-async def test_sg_u11_gate_refuses_before_publish_and_after_unpublish() -> None:
-    rig = _rig()
-    not_ready = (503, {"code": "NOT_READY"})
-    async with _client(rig.app) as client:
-        before = await client.post(INGRESS, json=BODY, headers=_ingress_headers())
-        staff_before = await client.get("/v1/followup/items",
-                                        headers={"authorization": "Bearer x.y.z"})
-        async with asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app):
+async def _asgi(app: Any, method: str, path: str, headers: list[tuple[bytes, bytes]],
+                body: bytes) -> tuple[int, bytes, int]:
+    """Drive the ASGI app directly; returns (status, body, receive() calls)."""
+
+    pending = [body]
+    receives = 0
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        nonlocal receives
+        receives += 1
+        if pending:
+            return {"type": "http.request", "body": pending.pop(), "more_body": False}
+        return {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+             "method": method, "scheme": "http", "path": path, "raw_path": path.encode(),
+             "query_string": b"", "headers": headers, "client": ("127.0.0.1", 1),
+             "server": ("t", 80), "root_path": "", "app": app}
+    await app(scope, receive, send)
+    status = next(m["status"] for m in sent if m["type"] == "http.response.start")
+    out = b"".join(m.get("body", b"") for m in sent if m["type"] == "http.response.body")
+    return status, out, receives
+
+
+async def _both_refused(rig: _Rig) -> None:
+    import json
+
+    ingress = await _asgi(rig.app, "POST", INGRESS,
+                          [(b"authorization", f"Bearer {SECRET_A}".encode()),
+                           (b"content-type", b"application/json")],
+                          json.dumps(BODY).encode())
+    staff = await _asgi(rig.app, "GET", "/v1/followup/items",
+                        [(b"authorization", b"Bearer x.y.z")], b"")
+    for status, body, receives in (ingress, staff):
+        assert (status, json.loads(body)) == (503, {"code": "NOT_READY"})
+        assert receives == 0  # the body was never read
+
+
+async def test_sg_u11_gate_refuses_before_during_and_after_shutdown() -> None:
+    """Review item 2: requests DURING a parked stop are refused by the real Gate, so
+    unpublish provably precedes the scheduler stop; closers then observe both."""
+
+    rig = _rig(stop="parked")
+    await _both_refused(rig)  # before publish
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        async with _client(rig.app) as client:
             live = await client.post(INGRESS, json=BODY, headers=_ingress_headers())
-            assert live.status_code == 202
-            assert rig.spy.contexts == [TENANT_A] and len(rig.spy.received) == 1
-            rig.spy.contexts.clear()
-            rig.spy.received.clear()
-            calls = rig.verifier.calls
-        after = await client.post(INGRESS, json=BODY, headers=_ingress_headers())
-        staff_after = await client.get("/v1/followup/items",
-                                       headers={"authorization": "Bearer x.y.z"})
-    for response in (before, staff_before, after, staff_after):
-        assert (response.status_code, response.json()) == not_ready
-    assert rig.spy.contexts == [] and rig.spy.received == []
-    assert rig.verifier.calls == calls
+        assert live.status_code == 202
+        assert rig.spy.contexts == [TENANT_A] and len(rig.spy.received) == 1
+        rig.spy.contexts.clear()
+        rig.spy.received.clear()
+        calls = rig.verifier.calls
+        life.shut()
+        assert await _until(rig.sched.stop_entered)  # the stop is parked now
+        assert rig.app.state.platform is None
+        await _both_refused(rig)  # during shutdown
+        assert rig.journal.closed == []  # nothing closed while the stop is parked
+        rig.sched.stop_gate.set()
+        assert await life.settled() and life.task.exception() is None
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+        await _both_refused(rig)  # after shutdown
+        assert rig.spy.contexts == [] and rig.spy.received == []
+        assert rig.verifier.calls == calls
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 @pytest.mark.parametrize(("name", "where"), [("x-tenant-id", "header"),
                                              ("tenant_id", "query")])
 async def test_sg_u11b_tenant_input_refused_on_ingress(name: str, where: str) -> None:
     rig = _rig()
-    async with (asyncio.timeout(WATCHDOG), rig.app.router.lifespan_context(rig.app),
-                _client(rig.app) as client):
-        if where == "header":
-            response = await client.post(INGRESS, json=BODY,
-                                         headers=_ingress_headers({name: TENANT_B}))
-        else:
-            response = await client.post(f"{INGRESS}?{name}={TENANT_B}", json=BODY,
-                                         headers=_ingress_headers())
-    assert (response.status_code, response.json()) == (400, {"code": "TENANT_INPUT_REFUSED"})
-    assert rig.spy.contexts == [] and rig.spy.received == []
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        async with _client(rig.app) as client:
+            if where == "header":
+                response = await client.post(INGRESS, json=BODY,
+                                             headers=_ingress_headers({name: TENANT_B}))
+            else:
+                response = await client.post(f"{INGRESS}?{name}={TENANT_B}", json=BODY,
+                                             headers=_ingress_headers())
+        assert (response.status_code, response.json()) == (
+            400, {"code": "TENANT_INPUT_REFUSED"})
+        assert rig.spy.contexts == [] and rig.spy.received == []
+        life.shut()
+        assert await life.settled()
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
 
 
 # --- G-S02 static -------------------------------------------------------------------------------
