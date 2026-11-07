@@ -1,10 +1,11 @@
 """L-1S package S-G1 (part a) — synthetic inbound-SMS ingress, unit rows (no database).
 
 Governing: S-G1 package v1 + v1r1 C3/C4 (Work Session 2026-11-07), Codex ALIGN for
-tests 20261107T171844Z. Every S-G import is deferred into the row body (class-B rule).
+tests 20261107T171844Z; placement per Codex ALIGN 20261107T174755Z (option A: m05).
+Every S-G import is deferred into the row body (class-B rule).
 Synthetic only: no provider, no signature claim, not composed into `platform/app.py`.
 
-Pinned API (`haloflow.platform.synthetic_ingress`):
+Pinned API (`haloflow.m05.synthetic_ingress`):
 - `MAX_BODY_BYTES = 16384`, `MAX_AUTH_BYTES = 512`, `MIN_SECRET_BYTES = 32`,
   `ROUTE = "/v1/synthetic/inbound-sms"`.
 - `IngressConfig.build(secrets: Mapping[str, str], served_tenants: tuple[str, ...])`
@@ -51,7 +52,7 @@ PHONE = "+15555550123"
 
 
 def _mod() -> Any:
-    import haloflow.platform.synthetic_ingress as module
+    import haloflow.m05.synthetic_ingress as module
 
     return module
 
