@@ -538,7 +538,9 @@ OPENED = ["tenant_pool", "admission_pool", "keyset"]
 class _Sched:
     """A duck-typed scheduler using the real SchedulerState values.
 
-    Stop modes: ok; parked (stop waits on `stop_gate`); stubborn (the work ignores
+    Stop modes: ok; parked (stop waits on `stop_gate`); self-cancelled (the stop raises
+    CancelledError of its own); cancel-caller (the stop completes STOPPED and cancels the
+    lifespan task in the same step); stubborn (the work ignores
     cancellation, stop times out after STOP_WAIT -> STOP_FAILED); hang (stop never
     returns until released, ignoring cancellation); raise-other; lie (returns while
     RUNNING). Start modes: ok; raise; task-then-raise; stubborn-then-raise.
@@ -559,6 +561,7 @@ class _Sched:
         self.stop_gate = asyncio.Event()
         self.stop_entered = asyncio.Event()
         self.stop_calls = 0
+        self.caller: asyncio.Task[None] | None = None
 
     def _stubborn(self) -> bool:
         return self.start_mode == "stubborn-then-raise" or self.stop_mode == "stubborn"
@@ -591,6 +594,8 @@ class _Sched:
         self.stop_entered.set()
         if self.stop_mode == "raise-other":
             raise RuntimeError("stop broke")
+        if self.stop_mode == "self-cancelled":
+            raise asyncio.CancelledError()  # the stop itself was cancelled independently
         if self.stop_mode == "lie":
             return  # returns while still RUNNING
         if self.stop_mode == "parked":
@@ -610,6 +615,8 @@ class _Sched:
                 self.state = self.S.STOP_FAILED
                 raise SchedulerStopFailed()
         self.state = self.S.STOPPED
+        if self.stop_mode == "cancel-caller" and self.caller is not None:
+            self.caller.cancel()  # coincident: the caller is cancelled as the stop completes
 
     async def terminate(self) -> bool:
         """Test hygiene: end retained work; True when the work task is gone."""
@@ -977,6 +984,97 @@ async def test_sg_u07g2_factory_returning_started_scheduler_is_unverified() -> N
         assert error.code == "SCHEDULER_FACTORY_UNVERIFIED"
         assert rig.journal.closed == [] and box["s"].journal.events == []
     finally:
+        await life.abandon()
+
+
+async def test_sg_u07g3_factory_raising_without_work_closes_and_reraises() -> None:
+    def failing(_runner: Any, _tenants: tuple[str, ...], _interval: int) -> Any:
+        raise LookupError("factory failed")
+
+    rig = _rig(factory=failing)
+    life = _Life(rig.app)
+    try:
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, LookupError) and str(error) == "factory failed"
+        assert rig.journal.closed == list(reversed(OPENED))
+        assert [seen[:2] for seen in rig.journal.seen_at_close] == [
+            (name, True) for name in reversed(OPENED)]
+    finally:
+        await life.abandon()
+
+
+async def test_sg_u07g4_factory_spawning_then_raising_is_unverified(
+        caplog: pytest.LogCaptureFixture) -> None:
+    """F-H1 (Codex c50951c review): work created by a factory call that then raises is
+    still live work; nothing is closed beneath it."""
+
+    module = _mod()
+    spawned: list[asyncio.Task[bool]] = []
+
+    def spawn_then_raise(_runner: Any, _tenants: tuple[str, ...], _interval: int) -> Any:
+        spawned.append(asyncio.get_running_loop().create_task(asyncio.Event().wait()))
+        raise LookupError("factory failed after spawning")
+
+    rig = _rig(factory=spawn_then_raise)
+    life = _Life(rig.app)
+    try:
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_FACTORY_UNVERIFIED"
+        assert isinstance(error.__cause__, LookupError)
+        assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
+        assert rig.app.state.platform is None
+        assert spawned and not spawned[0].done()  # still owned: never closed beneath it
+        assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_FACTORY_UNVERIFIED"]
+    finally:
+        for task in spawned:
+            task.cancel()
+        if spawned:
+            await asyncio.wait(spawned, timeout=WATCHDOG)
+        await life.abandon()
+
+
+async def test_sg_u07h_independently_cancelled_stop_is_unverified(
+        caplog: pytest.LogCaptureFixture) -> None:
+    """F-H2: a stop that ends in its own CancelledError is not a verified stop."""
+
+    module = _mod()
+    rig = _rig(stop="self-cancelled")
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        life.shut()
+        assert await life.settled()
+        error = life.task.exception()
+        assert isinstance(error, module.ShutdownFailed)
+        assert error.code == "SCHEDULER_STOP_UNVERIFIED" and error.__cause__ is None
+        assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
+        assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_STOP_UNVERIFIED"]
+    finally:
+        await rig.sched.terminate()
+        await life.abandon()
+
+
+async def test_sg_u07i_caller_cancel_coincident_with_stop_completion_is_kept() -> None:
+    """F-H2: the caller is cancelled in the same step the stop completes; the
+    cancellation must not be swallowed (closers run, then CancelledError propagates)."""
+
+    rig = _rig(stop="cancel-caller")
+    life = _Life(rig.app)
+    try:
+        assert await life.started()
+        assert await _until(rig.sched.entered)
+        rig.sched.caller = life.task
+        life.shut()
+        assert await life.settled()
+        assert life.task.cancelled()
+        assert rig.sched.state is rig.sched.S.STOPPED
+        assert rig.journal.seen_at_close == _quiet_close(rig)
+    finally:
+        await rig.sched.terminate()
         await life.abandon()
 
 

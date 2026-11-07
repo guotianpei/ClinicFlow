@@ -282,7 +282,7 @@ async def _stop_outcome(scheduler: Any) -> str | None:
         await scheduler.stop()
     except SchedulerStopFailed:
         return "SCHEDULER_STOP_TIMEOUT"
-    except Exception:  # noqa: BLE001
+    except (Exception, asyncio.CancelledError):  # noqa: BLE001 - never a verified stop
         return "SCHEDULER_STOP_UNVERIFIED"
     if scheduler.state is not SchedulerState.STOPPED:
         return "SCHEDULER_STOP_UNVERIFIED"
@@ -307,10 +307,10 @@ async def _shutdown(app: Any, scheduler: Any, closers: list[Close],
         try:
             await asyncio.shield(stop)
         except asyncio.CancelledError:
+            cancelled = True  # recorded FIRST: a coincident completion must not hide it
             if stop.done():
                 break
-            cancelled = True  # keep awaiting the bounded stop
-    code = stop.result()
+    code = "SCHEDULER_STOP_UNVERIFIED" if stop.cancelled() else stop.result()
     cause = original if original is not None else (
         asyncio.CancelledError() if cancelled else None)
     if code is not None:
@@ -355,8 +355,10 @@ def _lifespan(config: SyntheticConfig, steps: SyntheticSteps,
         before = asyncio.all_tasks()
         try:
             scheduler = factory(services.runner, config.served_tenants, config.interval_s)
-        except BaseException:
+        except BaseException as error:
             app.state.platform = None
+            if asyncio.all_tasks() - before:  # F-H1: live work survives the raise
+                _fail(app, closers, "SCHEDULER_FACTORY_UNVERIFIED", error)
             await close_all(closers)
             raise
         if asyncio.all_tasks() - before or getattr(scheduler, "state", None) is not (
