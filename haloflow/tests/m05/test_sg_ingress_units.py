@@ -150,13 +150,17 @@ def test_sg_u03b_comparison_visits_every_secret(monkeypatch: pytest.MonkeyPatch)
 
 
 class _Spy:
-    def __init__(self, error: BaseException | None = None) -> None:
+    def __init__(self, error: BaseException | None = None,
+                 context_error: BaseException | None = None) -> None:
         self.contexts: list[str] = []
         self.received: list[tuple[Any, Any]] = []
         self.error = error
+        self.context_error = context_error
 
     async def context_for(self, tenant_id: str) -> Any:
         self.contexts.append(tenant_id)
+        if self.context_error is not None:
+            raise self.context_error
         return ("ctx", tenant_id)
 
     async def receive(self, context: Any, message: Any) -> Any:
@@ -251,7 +255,7 @@ async def test_sg_u05b_media_type_refused_before_body(content_type: str) -> None
         response = await client.post(module.ROUTE, content=stream, headers=headers)
     assert (response.status_code, response.json()) == (
         415, {"code": "INBOUND_UNSUPPORTED_MEDIA"})
-    assert stream.read is False and spy.received == []
+    assert stream.read is False and spy.contexts == [] and spy.received == []
 
 
 async def test_sg_u05c_charset_utf8_accepted() -> None:
@@ -308,7 +312,7 @@ async def test_sg_u06_stream_cap_regardless_of_content_length(declared: bytes | 
     status, body, consumed = await _raw(_app(spy), headers, chunks)
     assert (status, json.loads(body)) == (413, {"code": "INBOUND_TOO_LARGE"})
     assert consumed <= 3  # stopped at the cap: the remaining chunks were never read
-    assert spy.received == []
+    assert spy.contexts == [] and spy.received == []
 
 
 async def test_sg_u06b_exact_cap_is_accepted() -> None:
@@ -323,6 +327,7 @@ async def test_sg_u06b_exact_cap_is_accepted() -> None:
     async with _client(_app(_Spy())) as client:
         over = await client.post(module.ROUTE, content=padded + b" ", headers=_auth())
     assert (over.status_code, over.json()) == (413, {"code": "INBOUND_TOO_LARGE"})
+    assert spy.contexts == [TENANT_A]  # only the accepted request reached the service
 
 
 MALFORMED: dict[str, bytes] = {
@@ -340,6 +345,11 @@ MALFORMED: dict[str, bytes] = {
     "bad-phone": json.dumps({**_body(), "phone": "5555550123"}).encode(),
     "bad-channel": json.dumps({**_body(), "channel": "email"}).encode(),
     "empty-id": json.dumps({**_body(), "provider_message_id": ""}).encode(),
+    "id-129": json.dumps({**_body(), "provider_message_id": "p" * 129}).encode(),
+    "id-int": json.dumps({**_body(), "provider_message_id": 12345}).encode(),
+    "phone-null": json.dumps({**_body(), "phone": None}).encode(),
+    "channel-list": json.dumps({**_body(), "channel": ["sms"]}).encode(),
+    "text-object": json.dumps({**_body(), "text": {"t": "yes"}}).encode(),
 }
 
 
@@ -351,6 +361,17 @@ async def test_sg_u07_malformed_bodies(case: str) -> None:
         response = await client.post(module.ROUTE, content=MALFORMED[case], headers=_auth())
     assert (response.status_code, response.json()) == (400, {"code": "INBOUND_MALFORMED"})
     assert MARKER not in response.text
+    assert spy.contexts == [] and spy.received == []  # refused before any service effect
+
+
+async def test_sg_u07b_id_at_limit_accepted() -> None:
+    module = _mod()
+    spy = _Spy()
+    async with _client(_app(spy)) as client:
+        response = await client.post(module.ROUTE, headers=_auth(), content=json.dumps(
+            {**_body(), "provider_message_id": "p" * 128}))
+    assert response.status_code == 202
+    assert spy.received[0][1].provider_message_id == "p" * 128
 
 
 def _error(name: str) -> BaseException:
@@ -366,6 +387,36 @@ def _error(name: str) -> BaseException:
         "runtime": RuntimeError(f"secret {MARKER} {PHONE}"),
     }
     return errors[name]
+
+
+_FORMATTER = logging.Formatter("%(name)s %(levelname)s %(message)s")
+
+
+def _formatted(records: list[logging.LogRecord]) -> list[str]:
+    """Each record as a handler would emit it, INCLUDING exc_info tracebacks and
+    stack_info (getMessage alone would miss them)."""
+
+    return [_FORMATTER.format(record) for record in records]
+
+
+def _no_leak(texts: list[str]) -> None:
+    for text in texts:
+        assert MARKER not in text and PHONE not in text and SECRET_A not in text, text
+
+
+def test_sg_u08n_log_oracle_sees_tracebacks() -> None:
+    """Negative control: a fixed message with a sensitive exception attached is caught
+    by the same oracle the mapping rows use."""
+
+    try:
+        raise RuntimeError(f"secret {MARKER}")
+    except RuntimeError:
+        import sys
+
+        record = logging.LogRecord("x", logging.ERROR, __file__, 1, "fixed message", None,
+                                   sys.exc_info())
+    with pytest.raises(AssertionError):
+        _no_leak(_formatted([record]))
 
 
 MAPPING = {"conflict": (409, "INBOUND_CONFLICT"), "inactive": (409, "CLINIC_NOT_ACTIVATED"),
@@ -384,8 +435,21 @@ async def test_sg_u08_error_mapping(name: str, caplog: pytest.LogCaptureFixture)
                                          headers=_auth())
     status, code = MAPPING[name]
     assert (response.status_code, response.json()) == (status, {"code": code})
-    for text in (response.text, *(r.getMessage() for r in caplog.records)):
-        assert MARKER not in text and PHONE not in text and SECRET_A not in text
+    _no_leak([response.text, *_formatted(caplog.records)])
+
+
+@pytest.mark.parametrize("name", ["runtime", "inactive"])
+async def test_sg_u08c_context_for_failure(name: str, caplog: pytest.LogCaptureFixture) -> None:
+    module = _mod()
+    spy = _Spy(context_error=_error(name))
+    with caplog.at_level(logging.DEBUG):
+        async with _client(_app(spy)) as client:
+            response = await client.post(module.ROUTE, content=json.dumps(_body()),
+                                         headers=_auth())
+    status, code = MAPPING[name]
+    assert (response.status_code, response.json()) == (status, {"code": code})
+    assert spy.contexts == [TENANT_A] and spy.received == []
+    _no_leak([response.text, *_formatted(caplog.records)])
 
 
 async def test_sg_u08b_reply_refused_is_malformed() -> None:
