@@ -76,6 +76,17 @@ def test_sf_u02b_python_unicode_case_control() -> None:
     assert module.classify("ｓｔｏｐ") == "unclear"
 
 
+def test_sf_u02c_unicode_whitespace_is_stripped() -> None:
+    """Python str.strip() removes Unicode whitespace (NBSP, em space, ideographic
+    space, line/paragraph separators) — the demonstrator's behaviour, kept."""
+
+    module = _mod()
+    assert module.classify("\u00a0YES\u2003") == "confirm"
+    assert module.classify("\u3000stop\u2028") == "stop"
+    assert module.classify("\u2029 2 \u00a0") == "reschedule"
+    assert module.classify("\u200bYES") == "unclear"  # zero-width space is not whitespace
+
+
 def test_sf_u03_length_boundary() -> None:
     module = _mod()
     assert module.MAX_TEXT == 1600
@@ -220,8 +231,13 @@ def test_sf_s01_not_composed() -> None:
                *sorted((SRC / "platform").glob("*.py"))]
     for path in targets:
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        names = {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
-        names |= {a.name for n in ast.walk(tree) if isinstance(n, ast.Import)
-                  for a in n.names}
+        names: set[str] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names |= {a.name for a in node.names}
+            elif isinstance(node, ast.ImportFrom):
+                base = node.module or ""
+                names.add(base)
+                names |= {f"{base}.{a.name}" for a in node.names}  # incl. `import x as y`
         assert not any("reply_classifier" in name for name in names), path
     assert pathlib.Path(_mod().__file__).name == "reply_classifier.py"

@@ -27,6 +27,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import m02_support
+import psycopg
 import pytest
 import sa_support as sa
 import sc_support as sc
@@ -128,19 +129,54 @@ def test_sf_p02_replay_is_by_class(sf_install: sc.SCInstall) -> None:
     asyncio.run(body())
 
 
-def _marker_columns(install: sc.SCInstall) -> list[tuple[str, str]]:
-    rows = sa.admin(install, "SELECT table_name, column_name FROM information_schema.columns"
-                             " WHERE table_schema = %s AND data_type IN ('text',"
-                             " 'character varying', 'character', 'json', 'jsonb', 'bytea')",
-                    (install.schema,))
+_SCANNED = ("text", "character varying", "character", "json", "jsonb", "bytea")
+
+
+def _marker_columns(conn: Any, schema: str) -> list[tuple[str, str]]:
+    """Every text-like or bytea column of `schema` holding MARKER. Text and JSON are
+    matched as text; bytea is matched on the raw bytes (bytea::text would be hex)."""
+
+    rows = conn.execute("SELECT table_name, column_name, data_type FROM"
+                        " information_schema.columns WHERE table_schema = %s"
+                        " AND data_type = ANY(%s)", (schema, list(_SCANNED))).fetchall()
     found: list[tuple[str, str]] = []
-    for table, column in rows:
-        statement = sql.SQL("SELECT count(*) FROM {t} WHERE {c}::text LIKE %s").format(
-            t=sql.Identifier(install.schema, table), c=sql.Identifier(column))
-        hit = sa.admin(install, statement, (f"%{MARKER}%",))
-        if hit[0][0]:
+    for table, column, data_type in rows:
+        if data_type == "bytea":
+            statement = sql.SQL("SELECT count(*) FROM {t} WHERE position(%s IN {c}) > 0")
+            param: Any = MARKER.encode()
+        else:
+            statement = sql.SQL("SELECT count(*) FROM {t} WHERE {c}::text LIKE %s")
+            param = f"%{MARKER}%"
+        query = statement.format(t=sql.Identifier(schema, table), c=sql.Identifier(column))
+        if conn.execute(query, (param,)).fetchone()[0]:
             found.append((table, column))
-    return found
+    return sorted(found)
+
+
+def _scan(install: sc.SCInstall) -> list[tuple[str, str]]:
+    with psycopg.connect(install.ids.admin, autocommit=True) as conn:
+        return _marker_columns(conn, install.schema)
+
+
+def test_sf_p03b_scanner_positive_control(sf_install: sc.SCInstall) -> None:
+    """The marker scanner finds the marker in text, jsonb and bytea columns (probe
+    table created and rolled back in one transaction; nothing persists)."""
+
+    sd.prepare(sf_install)
+    with psycopg.connect(sf_install.ids.admin) as conn:
+        probe = sql.Identifier(sf_install.schema, "sf_scan_probe")
+        conn.execute(sql.SQL("CREATE TABLE {p} (t text, j jsonb, b bytea, n text)").format(
+            p=probe))
+        conn.execute(sql.SQL("INSERT INTO {p} VALUES (%s, %s::jsonb, %s, %s)").format(
+            p=probe), (f"x {MARKER} y", f'{{"k": "{MARKER}"}}', b"\x00" + MARKER.encode(),
+                       "nothing here"))
+        assert _marker_columns(conn, sf_install.schema) == [
+            ("sf_scan_probe", "b"), ("sf_scan_probe", "j"), ("sf_scan_probe", "t")]
+        conn.rollback()
+    gone = sa.admin(sf_install, "SELECT count(*) FROM information_schema.tables"
+                                " WHERE table_schema = %s AND table_name = 'sf_scan_probe'",
+                    (sf_install.schema,))
+    assert gone == [(0,)]  # rolled back: nothing persists
 
 
 def _no_marker(error: BaseException) -> None:
@@ -158,11 +194,20 @@ def test_sf_p03_raw_text_never_kept(sf_install: sc.SCInstall,
             chain = sd.Chain(sf_install, rt)
             _, phone, (ref,) = sa.fresh_patient(sf_install)
             await chain.dispatch(ref)
-            message_id = sa.new_id()
-            ok = await _receive(chain, _message(phone, f"call me {MARKER}", message_id))
+            ok = await _receive(chain, _message(phone, f"call me {MARKER}"))
             assert ok.decision == "item"
-            with pytest.raises(IntakeFailed) as conflict:  # same id, different class
-                await _receive(chain, _message(phone, f"2 {MARKER}", message_id))
+            # Conflict: a recognised "yes" first, then a marker-bearing unclear text under
+            # the SAME provider id (different class) -> INBOUND_CONFLICT, zero deltas.
+            _, phone2, (ref2,) = sa.fresh_patient(sf_install)
+            await chain.dispatch(ref2)
+            seeded_id = sa.new_id()
+            seeded = await _receive(chain, _message(phone2, "yes", seeded_id))
+            assert seeded.decision == "recorded"
+            mark = sd.counts(sf_install)
+            with pytest.raises(IntakeFailed) as conflict:
+                await _receive(chain, _message(phone2, f"call me {MARKER}", seeded_id))
+            assert conflict.value.code == "INBOUND_CONFLICT"
+            sd.assert_no_change(sd.delta(mark, sd.counts(sf_install)))
             _no_marker(conflict.value)
             wrong = await sv.context(rt, sf_install, sa.W_INGRESS, sa.CAPS["dispatch"],
                                      kind="workload")
@@ -183,7 +228,7 @@ def test_sf_p03_raw_text_never_kept(sf_install: sc.SCInstall,
     with caplog.at_level(logging.DEBUG):
         asyncio.run(body())
     assert all(MARKER not in r.getMessage() for r in caplog.records)
-    assert _marker_columns(sf_install) == []
+    assert _scan(sf_install) == []
 
 
 def test_sf_p04_tenant_only_from_context(sf_install: sc.SCInstall,
