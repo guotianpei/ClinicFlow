@@ -18,6 +18,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
+from uuid import uuid4
 
 from psycopg.conninfo import conninfo_to_dict
 
@@ -407,3 +408,232 @@ def create_synthetic_app(config: SyntheticConfig, *, steps: SyntheticSteps,
     app.state.activation = None
     app.router.lifespan_context = _lifespan(config, steps, scheduler_factory)
     return app
+
+
+# --- PostgreSQL default wiring (PG packet spec v1 + v1r1; Codex gate 20261107T232856Z) ----------
+
+
+def _connector(dsn: str) -> Callable[[], Awaitable[Any]]:
+    async def connect() -> Any:
+        import psycopg
+
+        return await psycopg.AsyncConnection.connect(dsn, autocommit=True)
+
+    return connect
+
+
+async def _connect_identity(dsn: str) -> Any:
+    import psycopg
+
+    return await psycopg.AsyncConnection.connect(dsn, autocommit=True)
+
+
+@dataclass(frozen=True, slots=True)
+class SyntheticServices:
+    """The production step-4 bundle (m05, staff, resolver) on the target-46 runtime,
+    plus the synthetic intake path. `gateway` is the ONE ServedTenantGateway shared by
+    M05Service, StaffService, the intake foundation, the runner and readiness."""
+
+    m05: Any
+    staff: Any
+    resolver: Any
+    gateway: Any
+    intake: Any
+    reply: Any
+    runner: Any
+    served: tuple[str, ...]
+
+    async def ingress_context(self, tenant_id: str) -> Any:
+        import sa_support as sa
+
+        from haloflow.m01.context import (
+            CorrelationSource,
+            Principal,
+            PrincipalKind,
+            TrustedSource,
+        )
+
+        caps = frozenset(sa.CAPS["inbound"])
+        return await self.resolver.resolve(
+            principal=Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_INGRESS,
+                                auth_method="synthetic_ingress",
+                                authorized_tenant_ids=frozenset({tenant_id}),
+                                capabilities=caps),
+            tenant_hint=tenant_id, purpose="operations", capabilities=caps,
+            source=TrustedSource.HTTP, execution_id=uuid4(), correlation_id=uuid4(),
+            correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+
+
+def _timer_principal(served: tuple[str, ...]) -> Any:
+    import sa_support as sa
+
+    from haloflow.m01.context import Principal, PrincipalKind
+    from haloflow.m05.due_windows import TIMER_CAPS
+
+    return Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_TIMER, auth_method="worker",
+                     authorized_tenant_ids=frozenset(served), capabilities=TIMER_CAPS)
+
+
+def pg_steps(config: SyntheticConfig, *, keys: Any) -> SyntheticSteps:
+    """The default PostgreSQL steps. Test-side only (option A)."""
+
+    async def guard(cfg: SyntheticConfig) -> None:
+        runtime = await read_identity(cfg.runtime_dsn, connect=_connect_identity)
+        migrator = await read_identity(cfg.migrator_dsn, connect=_connect_identity)
+        check_identity(cfg, runtime, migrator)
+
+    async def open_pool(cfg: SyntheticConfig) -> tuple[Any, Close]:
+        from haloflow.m01.connections import open_tenant_pool
+
+        pool, close = await open_tenant_pool(cfg.runtime_dsn, min_size=1)
+        return pool, close
+
+    async def verify_tenants(cfg: SyntheticConfig, pool: Any) -> Any:
+        import sc_support as sc
+
+        from haloflow.m01.control_store import PsycopgControlStore
+        from haloflow.m01.runtime import TenantRuntimeDependencies
+
+        deps = TenantRuntimeDependencies(
+            pool=pool, control_store=PsycopgControlStore(pool),
+            migrator_connect=_connector(cfg.migrator_dsn),
+            provisioner_connect=forbid_provisioning())
+        plan = build_static_plan(sc.sc_registry())
+        validated: list[tuple[str, str, int]] = []
+        for index, tenant_id in enumerate(cfg.served_tenants):
+            outcome = await startup._verify_served_tenant(
+                deps, tenant_id=tenant_id, deployment=cfg.deployment, plan=plan)
+            if isinstance(outcome, str):
+                raise StartupRefused(outcome, index)
+            validated.append(outcome)
+        return deps, tuple(validated)
+
+    async def build_services(cfg: SyntheticConfig, _pool: Any, verified: Any) -> Any:
+        import sa_support as sa
+        import sc_support as sc
+
+        from haloflow.m01.activation import ActivationPolicy
+        from haloflow.m01.runtime import compose_tenant_runtime
+        from haloflow.m01.staff.service import StaffService
+        from haloflow.m02.observation import EventFoundation
+        from haloflow.m05.due_windows import DueWindowRunner
+        from haloflow.m05.intake import IntakeService
+        from haloflow.m05.notes import ProductionNoteKeys
+        from haloflow.m05.reply_classifier import ReplyIntake
+        from haloflow.m05.service import M05Service
+        from haloflow.startup import ServedTenantGateway, ServedTenantResolver
+
+        deps, validated = verified
+        runtime = compose_tenant_runtime(
+            deps, registry=sc.sc_registry(), catalog=sc.sc_catalog(),
+            supported_schema_versions=frozenset({sc.SC_TARGET}),
+            activation_policy=ActivationPolicy.ENFORCE)
+        pairs = frozenset((tenant, key) for tenant, key, _ in validated)
+        gateway = ServedTenantGateway(runtime.gateway, validated=pairs)
+        resolver = ServedTenantResolver(runtime.resolver,
+                                        allowed_ids=frozenset(cfg.served_tenants),
+                                        validated=pairs)
+        foundation = EventFoundation(gateway, producer_service="m05_followup")
+        intake = IntakeService(EventFoundation(gateway, producer_service=sa.PRODUCER))
+        runner = DueWindowRunner(gateway=gateway, resolver=resolver, intake=intake,
+                                 principal=_timer_principal(cfg.served_tenants),
+                                 page_limit=10, attempt_cap=50)
+        return SyntheticServices(
+            m05=M05Service(gateway, foundation=foundation, keys=ProductionNoteKeys()),
+            staff=StaffService(gateway), resolver=resolver, gateway=gateway,
+            intake=intake, reply=ReplyIntake(intake), runner=runner,
+            served=cfg.served_tenants)
+
+    async def readiness(cfg: SyntheticConfig, services: Any) -> Mapping[str, str]:
+        from psycopg.types.json import Jsonb
+
+        from haloflow.m01.context import CorrelationSource, TrustedSource
+        from haloflow.m05.due_statements import DUE_KEY
+        from haloflow.m05.due_windows import PURPOSE, SELECT_CAPS
+        from haloflow.m05.intake import _attribution
+
+        states: dict[str, str] = {}
+        principal = _timer_principal(cfg.served_tenants)
+        for index, tenant_id in enumerate(cfg.served_tenants):
+            error: BaseException | None = None
+            try:
+                context = await services.resolver.resolve(
+                    principal=principal, tenant_hint=tenant_id, purpose=PURPOSE,
+                    capabilities=SELECT_CAPS, source=TrustedSource.WORKER,
+                    execution_id=uuid4(), correlation_id=uuid4(),
+                    correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+                command = {"schema_version": 1, "after": None, "until": None, "limit": 1,
+                           "attribution": _attribution(context)}
+
+                async def callback(handle: Any, command: Any = command) -> Any:
+                    return await handle.fetch_all(DUE_KEY, {"command": Jsonb(command)})
+
+                await services.gateway.with_tenant_transaction(context, callback)
+            except Exception as caught:  # noqa: BLE001 - classified by code only
+                error = caught
+            try:
+                states[tenant_id] = classify_readiness(error)
+            except StartupRefused:
+                raise StartupRefused("SYNTHETIC_TENANT_NOT_READY", index) from None
+        return states
+
+    async def open_admission(cfg: SyntheticConfig) -> tuple[Any, Close]:
+        from haloflow.m01.connections import open_admission_pool
+
+        pool, close = await open_admission_pool(cfg.runtime_dsn, min_size=1)
+        return pool, close
+
+    async def open_keyset(_cfg: SyntheticConfig) -> tuple[Any, Close]:
+        async def nothing() -> None:
+            return None
+
+        return keys, nothing
+
+    async def build_verifier(_cfg: SyntheticConfig, keyset: Any) -> Any:
+        import sys
+        from pathlib import Path
+
+        platform_tests = str(Path(__file__).resolve().parent.parent / "platform")
+        if platform_tests not in sys.path:
+            sys.path.insert(0, platform_tests)
+        import l1w_support as s
+
+        from haloflow.platform.verify import TokenVerifier, VerifierConfig
+
+        return TokenVerifier(VerifierConfig(issuer=s.ISSUER, audience=s.AUDIENCE,
+                                            algorithms=frozenset({"ES256"})), keyset)
+
+    async def build_admission(admission_pool: Any) -> Any:
+        from haloflow.platform.admission import IdentityAdmission
+
+        return IdentityAdmission(admission_pool.connection)
+
+    del config  # the steps receive the config object at call time
+    return SyntheticSteps(guard=guard, open_tenant_pool=open_pool,
+                          verify_tenants=verify_tenants, build_services=build_services,
+                          readiness=readiness, open_admission_pool=open_admission,
+                          open_keyset=open_keyset, build_verifier=build_verifier,
+                          build_admission=build_admission)
+
+
+def default_scheduler_factory(*, clock: Callable[[], float],
+                              sleep: Callable[[float], Awaitable[None]]) -> SchedulerFactory:
+    def factory(runner: Any, tenants: tuple[str, ...], interval: int) -> Any:
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+
+        return DueWindowScheduler(runner, tenants, interval_s=interval, clock=clock,
+                                  sleep=sleep)
+
+    return factory
+
+
+def parked_scheduler_factory() -> SchedulerFactory:
+    """A real DueWindowScheduler whose sleep never returns: `_loop` sleeps BEFORE its
+    first tick, so it performs zero ticks; stop() cancels the parked sleep (verified)."""
+
+    import time
+
+    async def parked(_seconds: float) -> None:
+        await asyncio.Event().wait()
+
+    return default_scheduler_factory(clock=time.monotonic, sleep=parked)
