@@ -956,6 +956,7 @@ async def test_sg_u07g_factory_that_spawns_work_is_unverified(
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert rig.app.state.platform is None
         assert box["s"].journal.events == []  # neither started nor stopped
+        assert set(rig.app.state.retained_tasks) == set(spawned)
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_FACTORY_UNVERIFIED"]
     finally:
         for task in spawned:
@@ -1027,6 +1028,8 @@ async def test_sg_u07g4_factory_spawning_then_raising_is_unverified(
         assert rig.journal.closed == [] and len(rig.app.state.retained) == 3
         assert rig.app.state.platform is None
         assert spawned and not spawned[0].done()  # still owned: never closed beneath it
+        owned = rig.app.state.retained_tasks  # the harness holds its OWN strong references
+        assert set(owned) == set(spawned) and all(not task.done() for task in owned)
         assert _errors(caplog) == ["SHUTDOWN_FAILED reason_code=SCHEDULER_FACTORY_UNVERIFIED"]
     finally:
         for task in spawned:

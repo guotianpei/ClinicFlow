@@ -357,13 +357,16 @@ def _lifespan(config: SyntheticConfig, steps: SyntheticSteps,
             scheduler = factory(services.runner, config.served_tenants, config.interval_s)
         except BaseException as error:
             app.state.platform = None
-            if asyncio.all_tasks() - before:  # F-H1: live work survives the raise
+            spawned = asyncio.all_tasks() - before
+            if spawned:  # F-H1: live work survives the raise
+                app.state.retained_tasks = tuple(spawned)  # strong ownership, not just ids
                 _fail(app, closers, "SCHEDULER_FACTORY_UNVERIFIED", error)
             await close_all(closers)
             raise
-        if asyncio.all_tasks() - before or getattr(scheduler, "state", None) is not (
-                SchedulerState.NEW):
+        spawned = asyncio.all_tasks() - before
+        if spawned or getattr(scheduler, "state", None) is not SchedulerState.NEW:
             app.state.platform = None
+            app.state.retained_tasks = tuple(spawned)
             _fail(app, closers, "SCHEDULER_FACTORY_UNVERIFIED", None)
         try:
             scheduler.start()
@@ -395,6 +398,7 @@ def create_synthetic_app(config: SyntheticConfig, *, steps: SyntheticSteps,
     app.include_router(create_ingress_router(config.ingress, context_for=context_for,
                                              receive=receive))
     app.state.retained = ()
+    app.state.retained_tasks = ()
     app.state.activation = None
     app.router.lifespan_context = _lifespan(config, steps, scheduler_factory)
     return app
