@@ -324,10 +324,12 @@ async def test_sg_u06b_exact_cap_is_accepted() -> None:
     async with _client(_app(spy)) as client:
         response = await client.post(module.ROUTE, content=padded, headers=_auth())
     assert response.status_code == 202
-    async with _client(_app(_Spy())) as client:
+    assert spy.contexts == [TENANT_A] and len(spy.received) == 1
+    over_spy = _Spy()
+    async with _client(_app(over_spy)) as client:
         over = await client.post(module.ROUTE, content=padded + b" ", headers=_auth())
     assert (over.status_code, over.json()) == (413, {"code": "INBOUND_TOO_LARGE"})
-    assert spy.contexts == [TENANT_A]  # only the accepted request reached the service
+    assert over_spy.contexts == [] and over_spy.received == []
 
 
 MALFORMED: dict[str, bytes] = {
