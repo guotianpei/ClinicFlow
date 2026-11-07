@@ -349,11 +349,13 @@ async def test_se_u07_stop_timeout_then_retry() -> None:
     runner = se.fake_runner(resistant)
     s = se.scheduler(runner, (se.TENANT_A,), clock, stop_timeout_s=0.2)
     s.start()
+    created: list[Any] = []
     try:
         await asyncio.wait_for(parked.wait(), 5)
         # Watchdog: stop() runs as its own task, observed with a bounded wait, so a
         # stop that hangs fails this row instead of hanging it.
         first = asyncio.ensure_future(s.stop())
+        created.append(first)
         done, _ = await asyncio.wait({first}, timeout=5)
         assert first in done, "stop() did not return within the watchdog bound"
         error = first.exception()
@@ -364,13 +366,14 @@ async def test_se_u07_stop_timeout_then_retry() -> None:
             s.start()
         release.set()
         second = asyncio.ensure_future(s.stop())
+        created.append(second)
         done, _ = await asyncio.wait({second}, timeout=5)
         assert second in done and second.exception() is None
         assert s.state is module.SchedulerState.STOPPED
         assert len(runner.calls) == 1
     finally:  # release FIRST, then bounded drain: never leave the resistant double parked
         release.set()
-        await _drain(s)
+        await _drain(s, *created)
 
 
 async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
@@ -395,9 +398,11 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
     runner = se.fake_runner(slow_cleanup)
     s = se.scheduler(runner, (se.TENANT_A,), clock, stop_timeout_s=5)
     s.start()
+    created: list[Any] = []
     try:
         await asyncio.wait_for(parked.wait(), 5)
         first = asyncio.ensure_future(s.stop())
+        created.append(first)
         await asyncio.wait_for(entered.wait(), 5)  # the owned work is in its cleanup
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -405,6 +410,7 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
         assert s.state is module.SchedulerState.STOPPING
         second = asyncio.ensure_future(s.stop())
         third = asyncio.ensure_future(s.stop())
+        created += [second, third]
         await se.settle()
         # Before release: both stops wait on the SAME owned work, still in cleanup.
         assert not second.done() and not third.done()
@@ -416,7 +422,7 @@ async def test_se_u07b_caller_cancelled_stop_and_concurrent_stops() -> None:
         assert len(runner.calls) == 1  # no new work from repeated stops
     finally:
         release.set()
-        await _drain(s)
+        await _drain(s, *created)
 
 
 # --- SE-U08 latency envelope (fake clock) --------------------------------------------------
