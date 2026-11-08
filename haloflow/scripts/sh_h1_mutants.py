@@ -1,4 +1,4 @@
-"""L-1S package S-H H1 mutation controls, group family ``sh_h1`` (M1..M10).
+"""L-1S package S-H H1 mutation controls, group family ``sh_h1`` (M1..M12).
 
 Predeclared with the H1 red tests (relay 20261108T143131Z, Codex review of 9016dea and
 the target-56 correction): the frozen-start comparison dropped; lease expiry returns an
@@ -6,6 +6,8 @@ op to prepared; outcome skips the attempt check; register remaps an identity cha
 the unresolved-correlation guard dropped (v2); the guard ignores uncertain and
 accepted_unregistered; the registered-replay return removed; outcome bookkeeping made
 activation-protected; read ignores the lease; the worker sends after losing its claim.
+Added with the R1 correction (Codex source review of 35b2346): D1 ignores a
+pre-existing reminder window; prepare accepts a reminder id already in use.
 Kill sets are declared in scripts/sh_h1_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
@@ -83,6 +85,15 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M9", "read ignores the lease", UNITS,
      "       OR v_o.lease_until OPERATOR(pg_catalog.<=) pg_catalog.clock_timestamp() THEN\n",
      "       THEN\n"),
+    ("M11", "D1 ignores a pre-existing window for the reminder (R1)", UNITS,
+     "    IF v_code IS NULL AND EXISTS (SELECT 1 FROM {schema}.m05_reminder_windows AS w\n"
+     "                                   WHERE w.reminder_id = v_o.reminder_id) THEN\n"
+     "        v_code := 'REMINDER_IN_USE';\n"
+     "    END IF;\n",
+     ""),
+    ("M12", "prepare accepts a reminder id already in use (R1)", UNITS,
+     "        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'REMINDER_IN_USE';\n",
+     "        NULL;\n"),
     ("M10", "the worker sends after losing its claim", WORKER,
      '            return "not_claimed"\n',
      '            claimed = {"outcome": "claimed", "attempt_id": "lost"}\n'),

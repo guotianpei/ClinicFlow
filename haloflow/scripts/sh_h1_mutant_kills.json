@@ -46,5 +46,14 @@
   "tests/m05/test_sh_h1_units.py::test_h1_u02_lost_claim_zero_sends[claim]",
   "tests/m05/test_sh_h1_units.py::test_h1_u03_sender_failure_uncertain_no_resend[error]",
   "tests/m05/test_sh_h1_units.py::test_h1_u03_sender_failure_uncertain_no_resend[timeout]"
+ ],
+ "M11": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p21c_window_after_prepare_abandons_claim",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p21d_foreign_window_holds_registration",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p21e_service_appends_no_observation"
+ ],
+ "M12": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p21a_prepare_refuses_existing_window",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p21b_prepare_refuses_reminder_of_another_op"
  ]
 }

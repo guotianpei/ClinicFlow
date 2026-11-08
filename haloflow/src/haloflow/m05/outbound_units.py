@@ -138,6 +138,12 @@ _D1: Final = r"""
             v_code := 'OPTED_OUT';
         END IF;
     END IF;
+    -- R1: a window for this reminder that this op did not create (its own is created in
+    -- the same transaction that sets 'registered') is foreign: never send, never register.
+    IF v_code IS NULL AND EXISTS (SELECT 1 FROM {schema}.m05_reminder_windows AS w
+                                   WHERE w.reminder_id = v_o.reminder_id) THEN
+        v_code := 'REMINDER_IN_USE';
+    END IF;
 """
 
 _DECLARE_OP: Final = _DECLARE_COMMON + r"""
@@ -223,6 +229,11 @@ BEGIN""" + _TENANT + r"""
     END IF;
     IF v_opted THEN
         RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONTACT_OPTED_OUT';
+    END IF;
+    -- R1: the reminder id must be unused (no window, no other op), before any send.
+    IF EXISTS (SELECT 1 FROM {schema}.m05_reminder_windows AS w WHERE w.reminder_id = v_rem)
+       OR EXISTS (SELECT 1 FROM {schema}.m05_outbound_ops AS o WHERE o.reminder_id = v_rem) THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'REMINDER_IN_USE';
     END IF;
     v_now := pg_catalog.clock_timestamp();
     INSERT INTO {schema}.m05_outbound_ops (op_id, appointment_ref, reminder_id, patient_id,
@@ -428,6 +439,19 @@ BEGIN""" + _TENANT + r"""
     v_w := {schema}.m05_register_dispatch(pg_catalog.jsonb_build_object(
         'schema_version', 1, 'reminder_id', v_o.reminder_id::text,
         'appointment_ref', v_o.appointment_ref::text, 'attribution', v_attr));
+    -- R1 defensive: only a window created now, on the frozen identity, registers the op.
+    IF (v_w OPERATOR(pg_catalog.->>) 'outcome') IS DISTINCT FROM 'registered'
+       OR (v_w OPERATOR(pg_catalog.->>) 'reminder_id') IS DISTINCT FROM v_o.reminder_id::text
+       OR (v_w OPERATOR(pg_catalog.->>) 'appointment_ref')
+          IS DISTINCT FROM v_o.appointment_ref::text
+       OR (v_w OPERATOR(pg_catalog.->>) 'patient_id') IS DISTINCT FROM v_o.patient_id::text
+       OR (v_w OPERATOR(pg_catalog.->>) 'phone') IS DISTINCT FROM v_o.phone::text THEN
+        UPDATE {schema}.m05_outbound_ops AS o
+           SET state = 'accepted_unregistered', code = 'WINDOW_MISMATCH', updated_at = v_now
+         WHERE o.op_id = v_op RETURNING * INTO v_o;
+        RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', 'held',
+            'op_id', v_o.op_id::text, 'state', v_o.state, 'code', v_o.code);
+    END IF;
     v_result := pg_catalog.jsonb_build_object('schema_version', 1, 'outcome', 'registered',
         'op_id', v_o.op_id::text, 'state', 'registered', 'code', NULL,
         'reminder_id', v_w OPERATOR(pg_catalog.->>) 'reminder_id',

@@ -65,6 +65,12 @@ Each row is one scenario; a parametrised row counts once per parameter.
           (WORKLOAD_NOT_AUTHORIZED), protected or not.
 - H1-P20  gateway: a dispatch principal with the wrong capability set is refused by every
           OutboundService method, bookkeeping included (CAPABILITIES_INVALID), zero writes.
+- H1-P21  (Codex source review R1, 35b2346) a reminder id that already has a window, or
+          belongs to another op, never sends and never registers: P21a refused at prepare
+          (the exact P/X -> Q/Y shape); P21b a second op with the same reminder id refused;
+          P21c a window created after prepare abandons the claim; P21d a foreign window
+          created after acceptance holds registration with correlation open; P21e the
+          service appends no dispatch observation for it.
 """
 
 from __future__ import annotations
@@ -923,3 +929,120 @@ def test_h1_p16_revoked_clinic_refuses_new_work(sh_install: sh.SHInstall) -> Non
     asyncio.run(body())
     assert sh.ops_for(sh_install, ref) == 0
     sc.change(sh_install, "grant")
+
+
+# --- H1-P21: pre-existing reminder windows (Codex source review R1) -------------------------
+
+
+def _reassign(install: sa.SAInstall, ref: str) -> tuple[str, str]:
+    """Move appointment `ref` (start n=1) to a new patient Q on a new phone Y."""
+
+    other, other_phone, _ = sa.fresh_patient(install, appointments=0)
+    sa.directory(install, "appointment_put", appointment_ref=ref, patient_id=other,
+                 start_at=sa.FUTURE.format(n=1), status="booked")
+    return other, other_phone
+
+
+def _restore(install: sa.SAInstall, ref: str, patient: str) -> None:
+    sa.directory(install, "appointment_put", appointment_ref=ref, patient_id=patient,
+                 start_at=sa.FUTURE.format(n=1), status="booked")
+
+
+def test_h1_p21a_prepare_refuses_existing_window(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, phone, (ref,) = sa.fresh_patient(sh_install)
+    reminder = sa.new_id()
+    sa.dispatch(sh_install, reminder, ref)  # window R under P/X
+    _reassign(sh_install, ref)  # A now belongs to Q/Y
+    before = sa.window(sh_install, reminder)
+    digest = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref)))
+    _refused(sh_install, "m05_outbound_prepare",
+             sh.prepare_cmd(sa.new_id(), ref, reminder, digest), "REMINDER_IN_USE")
+    assert sh.ops_for(sh_install, ref) == 0
+    assert sa.window(sh_install, reminder) == before
+    assert before["phone"] == phone
+
+
+def test_h1_p21b_prepare_refuses_reminder_of_another_op(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, _phone, (ref_a, ref_b) = sa.fresh_patient(sh_install, appointments=2)
+    reminder = sa.new_id()
+    sh.prepare(sh_install, ref_a, reminder=reminder)
+    digest = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref_b)))
+    _refused(sh_install, "m05_outbound_prepare",
+             sh.prepare_cmd(sa.new_id(), ref_b, reminder, digest), "REMINDER_IN_USE")
+    assert sh.ops_for(sh_install, ref_b) == 0
+
+
+def test_h1_p21c_window_after_prepare_abandons_claim(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, _phone, (ref,) = sa.fresh_patient(sh_install)
+    reminder = sa.new_id()
+    op = sh.prepare(sh_install, ref, reminder=reminder)
+    sa.dispatch(sh_install, reminder, ref)  # same identity, but not this op's window
+    result = sh.claim(sh_install, op["op_id"], op["fence"])
+    assert (result["outcome"], result["code"], result.get("attempt_id")) == (
+        "abandoned", "REMINDER_IN_USE", None)
+    row = sh.op_row(sh_install, op["op_id"])
+    assert (row["state"], row["correlation_open"], row["attempt_id"]) == (
+        "abandoned", False, None)
+
+
+def _foreign_window_after_accept(install: sh.SHInstall) -> tuple[str, str, dict[str, Any]]:
+    """The R1 shape at registration: accepted op (P/X, R); a window for R created under
+    Q/Y; the directory restored to P/X so the D1 identity check alone would pass."""
+
+    patient, phone, (ref,) = sa.fresh_patient(install)
+    op_id, _attempt = sh.to_accepted(install, ref)
+    reminder = sh.op_row(install, op_id)["reminder_id"]
+    _other, other_phone = _reassign(install, ref)
+    sa.dispatch(install, reminder, ref)
+    _restore(install, ref, patient)
+    window = sa.window(install, reminder)
+    assert (window["phone"], window["patient_id"]) != (phone, patient)
+    assert window["phone"] == other_phone
+    return op_id, reminder, window
+
+
+def test_h1_p21d_foreign_window_holds_registration(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    op_id, reminder, window = _foreign_window_after_accept(sh_install)
+    for _ in range(2):
+        result = sh.register(sh_install, op_id)
+        assert (result["outcome"], result["state"], result["code"]) == (
+            "held", "accepted_unregistered", "REMINDER_IN_USE")
+        row = sh.op_row(sh_install, op_id)
+        assert (row["state"], row["correlation_open"], row["registered_result"]) == (
+            "accepted_unregistered", True, None)
+    assert sa.window(sh_install, reminder) == window
+
+
+def _dispatch_events(install: sa.SAInstall, reminder: str) -> int:
+    rows = sa.admin(install, sa.q(install, "SELECT count(*) FROM {s}.patient_events AS e"
+                                           " WHERE e.correlation_id = %s"), (reminder,))
+    count: int = rows[0][0]
+    return count
+
+
+def test_h1_p21e_service_appends_no_observation(sh_install: sh.SHInstall) -> None:
+    import sc_support as sc
+
+    sh_install.require()
+    sc.change(sh_install, "grant")
+    op_id, reminder, _window = _foreign_window_after_accept(sh_install)
+    events_before = _dispatch_events(sh_install, reminder)
+
+    async def body() -> dict[str, Any]:
+        from haloflow.m02.observation import EventFoundation
+        from haloflow.m05.outbound import OutboundService
+
+        async with sh.runtime(sh_install) as rt:
+            svc = OutboundService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
+            return await svc.register(await _ctx(rt, sh_install), op_id)
+
+    import asyncio
+
+    result = asyncio.run(body())
+    assert (result["outcome"], result["code"]) == ("held", "REMINDER_IN_USE")
+    assert _dispatch_events(sh_install, reminder) == events_before
+    assert sh.op_row(sh_install, op_id)["correlation_open"] is True
