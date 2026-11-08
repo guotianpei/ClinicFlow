@@ -52,8 +52,10 @@ Each row is one scenario; a parametrised row counts once per parameter.
 - H1-P17  held: lists uncertain / accepted_unregistered / refused with exactly the
           HELD_COLUMNS keys (no phone, name or text).
 - H1-P18  tenant isolation with IDENTICAL op/ref/reminder/patient/phone ids in two tenants:
-          every statement in A leaves B unchanged and invisible; A's guard does not
-          suppress B's matching.
+          A's guard does not suppress B's matching; A's sweep expires A's expired attempt
+          (control) but not B's genuinely expired attempt; neither tenant can read or
+          record the other's attempt; A's registration leaves B's op and windows
+          unchanged; held lists are per tenant.
 - H1-P19  SQL least privilege: the ingress workload is refused by every outbound function
           (WORKLOAD_NOT_AUTHORIZED), protected or not.
 - H1-P20  gateway: a dispatch principal with the wrong capability set is refused by every
@@ -561,40 +563,62 @@ def test_h1_p17_held_inspection_no_pii(sh_install: sh.SHInstall) -> None:
     assert all(set(row) == sh.HELD_COLUMNS for row in mine)
 
 
+def _expire_lease(install: sa.SAInstall, op_id: str) -> None:
+    sa.admin(install, sa.q(install, "UPDATE {s}.m05_outbound_ops SET lease_until ="
+                                    " now() - interval '1 second' WHERE op_id = %s"),
+             (op_id,))  # FIXTURE: time travel
+
+
 def test_h1_p18_tenant_isolation_identical_ids(sh_install: sh.SHInstall,
                                                sh_other: sh.SHInstall) -> None:
     sh_install.require()
     sh_other.require()
     patient, phone = sa.new_id(), sa.fresh_phone()
-    ref, ref2, op_id, reminder = sa.new_id(), sa.new_id(), sa.new_id(), sa.new_id()
+    ref, ref2, ref3 = sa.new_id(), sa.new_id(), sa.new_id()
+    op_x, rem_x, op_y, rem_y = sa.new_id(), sa.new_id(), sa.new_id(), sa.new_id()
     for install in (sh_install, sh_other):
-        sh.seed_same_ids(install, patient, phone, [ref, ref2])
-    digest = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref)))
+        sh.seed_same_ids(install, patient, phone, [ref, ref2, ref3])
+    def digest(r: str) -> str:
+        return sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, r)))
     for install in (sh_install, sh_other):
-        assert sh.prepare(install, ref, op_id=op_id, reminder=reminder,
-                          digest=digest)["outcome"] == "prepared"
+        assert sh.prepare(install, ref, op_id=op_x, reminder=rem_x,
+                          digest=digest(ref))["outcome"] == "prepared"
+        assert sh.prepare(install, ref3, op_id=op_y, reminder=rem_y,
+                          digest=digest(ref3))["outcome"] == "prepared"
     other_window = sa.new_id()
     sa.dispatch(sh_other, other_window, ref2)  # B: an ordinary current window
-    before_b = sh.op_row(sh_other, op_id)
-    # Tenant A drives its op through every statement.
-    attempt = sh.claim(sh_install, op_id, 0)["attempt_id"]
-    assert sh.read(sh_install, op_id, attempt)["attempt_id"] == attempt
-    sh.outcome(sh_install, op_id, attempt, "uncertain", code="A-ONLY")
-    sh.expire(sh_install)
-    assert [r["op_id"] for r in sh.held_ops(sh_install)["ops"]].count(op_id) == 1
-    # Tenant B is untouched and sees none of it.
-    assert sh.op_row(sh_other, op_id) == before_b
-    assert [r for r in sh.held_ops(sh_other)["ops"] if r["op_id"] == op_id] == []
-    _refused(sh_other, "m05_outbound_read",
-             {"schema_version": 1, "op_id": op_id, "attempt_id": attempt,
-              "attribution": sa.attribution(sa.W_DISPATCH)}, "CLAIM_STALE")
-    _refused(sh_other, "m05_outbound_outcome",
-             sh.outcome_cmd(op_id, attempt, "accepted", provider_ref="x"), "STALE_ATTEMPT")
-    # A's open op guards A's phone only; B's identical phone still matches normally.
+    # 1. A claims X; A's guard must not suppress B's identical phone.
+    attempt_a = sh.claim(sh_install, op_x, 0)["attempt_id"]
     reply_b = sa.inbound(sh_other, sa.new_id(), phone, "cancel")
     assert (reply_b["triage_kind"], reply_b["reminder_id"]) == ("cancel_request", other_window)
     reply_a = sa.inbound(sh_install, sa.new_id(), phone, "cancel")
     assert (reply_a["triage_kind"], reply_a["reminder_id"]) == ("unclear_reply", None)
+    # 2. B: a genuinely expired attempting X. A: an expired attempting X (control).
+    attempt_b = sh.claim(sh_other, op_x, 0)["attempt_id"]
+    _expire_lease(sh_other, op_x)
+    _expire_lease(sh_install, op_x)
+    b_before = sh.op_row(sh_other, op_x)
+    assert sh.expire(sh_install)["expired"] >= 1
+    assert sh.op_row(sh_install, op_x)["state"] == "uncertain"  # A control expired
+    assert sh.op_row(sh_other, op_x) == b_before  # B untouched by A's sweep
+    assert b_before["state"] == "attempting"
+    # 3. B cannot read or record A's attempt (and vice versa).
+    _refused(sh_other, "m05_outbound_read",
+             {"schema_version": 1, "op_id": op_x, "attempt_id": attempt_a,
+              "attribution": sa.attribution(sa.W_DISPATCH)}, "CLAIM_STALE")
+    _refused(sh_install, "m05_outbound_outcome",
+             sh.outcome_cmd(op_x, attempt_b, "accepted", provider_ref="x"), "STALE_ATTEMPT")
+    # 4. A registers Y; B's Y op and B's windows are unchanged.
+    b_y_before = sh.op_row(sh_other, op_y)
+    attempt_y = sh.claim(sh_install, op_y, 0)["attempt_id"]
+    sh.outcome(sh_install, op_y, attempt_y, "accepted", provider_ref="fake-a")
+    assert sh.register(sh_install, op_y)["outcome"] == "registered"
+    assert len(sh.windows_for(sh_install, ref3)) == 1
+    assert sh.op_row(sh_other, op_y) == b_y_before
+    assert sh.windows_for(sh_other, ref3) == []
+    # 5. held: each tenant lists only its own.
+    assert [r for r in sh.held_ops(sh_other)["ops"] if r["op_id"] == op_x] == []
+    assert [r["op_id"] for r in sh.held_ops(sh_install)["ops"]].count(op_x) == 1
 
 
 @pytest.mark.parametrize("function", ("m05_outbound_prepare", "m05_outbound_claim",
@@ -639,19 +663,24 @@ def test_h1_p20_gateway_wrong_capabilities_refused(sh_install: sh.SHInstall) -> 
             svc = OutboundService(rt.gateway)
             wrong = await sv.context(rt, sh_install, sa.W_DISPATCH, sa.CAPS["inbound"],
                                      kind="workload")
-            calls = (svc.prepare(wrong, ref, "00" * 32, op_id=sa.new_id(),
-                                 reminder_id=sa.new_id()),
-                     svc.claim(wrong, op["op_id"], 0),
-                     svc.read(wrong, op["op_id"], sa.new_id()),
-                     svc.record_outcome(wrong, op["op_id"], sa.new_id(), "uncertain",
-                                        code="X"),
-                     svc.expire(wrong),
-                     svc.register(wrong, op["op_id"]),
-                     svc.held(wrong))
-            for call in calls:
+            calls = (
+                lambda: svc.prepare(wrong, ref, "00" * 32, op_id=sa.new_id(),
+                                    reminder_id=sa.new_id()),
+                lambda: svc.claim(wrong, op["op_id"], 0),
+                lambda: svc.read(wrong, op["op_id"], sa.new_id()),
+                lambda: svc.record_outcome(wrong, op["op_id"], sa.new_id(), "uncertain",
+                                           code="X"),
+                lambda: svc.expire(wrong),
+                lambda: svc.register(wrong, op["op_id"]),
+                lambda: svc.held(wrong),
+            )
+            checked = 0
+            for call in calls:  # each method is invoked AND awaited inside its own check
                 with pytest.raises(OutboundRefused) as refused:
-                    await call
+                    await call()
                 assert refused.value.code == "CAPABILITIES_INVALID"
+                checked += 1
+            assert checked == 7
 
     import asyncio
 

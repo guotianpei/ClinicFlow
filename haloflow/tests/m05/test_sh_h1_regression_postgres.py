@@ -93,10 +93,10 @@ def _run(install: sa.SAInstall, name: str) -> list[Any]:
         if name == "redelivery":
             out.append(_norm(sa.inbound(install, message, phone, "reschedule"), windows))
         else:
-            try:
+            with pytest.raises(psycopg.Error) as conflict:
                 sa.inbound(install, message, phone, "cancel")
-            except psycopg.Error as error:
-                out.append(error.diag.message_primary)
+            assert conflict.value.diag.message_primary == "INBOUND_CONFLICT"
+            out.append("INBOUND_CONFLICT")
     elif name == "no_reply_close":
         _p, _phone, (ref,) = sa.fresh_patient(install)
         windows = [sa.new_id()]
