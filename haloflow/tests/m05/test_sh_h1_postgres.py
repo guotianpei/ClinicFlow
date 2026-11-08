@@ -288,7 +288,9 @@ def test_h1_p00c_old_target_runtime_refuses_sh_tenant(sh_install: sh.SHInstall) 
             with pytest.raises(Exception) as refused:
                 await sv.context(rt, sh_install, sa.W_DISPATCH, sa.CAPS["dispatch"],
                                  kind="workload")
-            assert getattr(refused.value, "reason_code", None) == "SCHEMA_VERSION_UNSUPPORTED"
+            # Measured at e807ff8 (CI 42493998221): the runtime's own refusal code for a
+            # tenant installed above its supported set.
+            assert getattr(refused.value, "reason_code", None) == "SCHEMA_VERSION_INCOMPATIBLE"
 
     import asyncio
 
@@ -800,10 +802,11 @@ def test_h1_p20_gateway_wrong_capabilities_refused(sh_install: sh.SHInstall) -> 
     before = sh.op_row(sh_install, op["op_id"])
 
     async def body() -> None:
+        from haloflow.m02.observation import EventFoundation
         from haloflow.m05.outbound import OutboundRefused, OutboundService
 
         async with sh.runtime(sh_install) as rt:
-            svc = OutboundService(rt.gateway)
+            svc = OutboundService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
             wrong = await sv.context(rt, sh_install, sa.W_DISPATCH, sa.CAPS["inbound"],
                                      kind="workload")
             calls = (
@@ -862,10 +865,11 @@ def test_h1_p15_revoke_after_attempt(sh_install: sh.SHInstall) -> None:
     _patient, _phone, (ref_a, ref_b) = sa.fresh_patient(sh_install, appointments=2)
 
     async def body() -> None:
+        from haloflow.m02.observation import EventFoundation
         from haloflow.m05.outbound import OutboundService
 
         async with sh.runtime(sh_install) as rt:
-            svc = OutboundService(rt.gateway)
+            svc = OutboundService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
             ctx = await _ctx(rt, sh_install)
             digest_a = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref_a)))
             digest_b = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref_b)))
@@ -903,10 +907,11 @@ def test_h1_p16_revoked_clinic_refuses_new_work(sh_install: sh.SHInstall) -> Non
     sc.change(sh_install, "revoke")
 
     async def body() -> None:
+        from haloflow.m02.observation import EventFoundation
         from haloflow.m05.outbound import OutboundService
 
         async with sh.runtime(sh_install) as rt:
-            svc = OutboundService(rt.gateway)
+            svc = OutboundService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
             ctx = await _ctx(rt, sh_install)
             with pytest.raises(Exception) as refused:
                 await svc.prepare(ctx, ref, "00" * 32, op_id=sa.new_id(),

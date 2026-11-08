@@ -4,9 +4,10 @@ Governing: S-H decision table v1r2 (D1-D6), Codex pins 1-6, the H1 packet as cor
 the versioned-ingress correction (target 56). Synthetic only. The only sender here is
 `FakeSender`; this module imports no provider, HTTP or network client.
 
-`OutboundService` runs one gateway transaction per call through the existing M02
-`EventFoundation` (the S-A pattern): before any I/O the principal must be a WORKLOAD
-and the context's capability set must EQUAL {m05.intake.dispatch, m02.observation.append}
+`OutboundService` runs one gateway transaction per call through an injected M02
+`EventFoundation` (the S-A pattern; producer `m05_intake`): before any I/O the principal
+must be a WORKLOAD and the context's capability set must EQUAL
+{m05.intake.dispatch, m02.observation.append}
 (`CAPABILITIES_INVALID` otherwise, bookkeeping included). A lost acknowledgement surfaces
 as `OutboundCommitUnknown`; every statement is idempotent for an identical retry.
 
@@ -41,7 +42,7 @@ from haloflow.m02.observation import (
     Observation,
     TransactionBinding,
 )
-from haloflow.m05.intake import PRODUCER, T_DISPATCHED, _attribution, _code
+from haloflow.m05.intake import T_DISPATCHED, _attribution, _code
 from haloflow.m05.intake_statements import DISPATCH_KEY
 from haloflow.m05.outbound_statements import (
     CLAIM_KEY,
@@ -149,8 +150,10 @@ class FakeSender:
 class OutboundService:
     __slots__ = ("__foundation",)
 
-    def __init__(self, gateway: Any) -> None:
-        self.__foundation = EventFoundation(gateway, producer_service=PRODUCER)
+    def __init__(self, foundation: EventFoundation) -> None:
+        # Injected (the IntakeService pattern): services are composed only in startup
+        # (control B5-K01); this module never constructs an EventFoundation.
+        self.__foundation = foundation
 
     def __repr__(self) -> str:
         return "OutboundService()"
