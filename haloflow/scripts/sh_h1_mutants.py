@@ -9,6 +9,12 @@ activation-protected; read ignores the lease; the worker sends after losing its 
 Added with the R1 correction (Codex source review of 35b2346): D1 ignores a
 pre-existing reminder window; prepare accepts a reminder id already in use.
 Kill sets are declared in scripts/sh_h1_mutant_kills.json before the CI run.
+Disclosed correction after CI 42494723730 / 42496294980: M1's declared set {P03, P04
+[start_moved]} was incomplete. sh_support.to_state reaches 'abandoned' and
+'accepted_unregistered' by moving the start, so six rows that use it (P09
+[accepted_unregistered-0/1/2], P10[abandoned], P11[accepted_unregistered], P17) also
+fail under M1, with an assertion-level failure in the helper. The set now lists all
+eight measured nodes; the code and the tests are unchanged.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/sc_activation_mutants.py: each group's control run must pass completely; a

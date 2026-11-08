@@ -1,7 +1,13 @@
 {
  "M1": [
   "tests/m05/test_sh_h1_postgres.py::test_h1_p03_claim_after_change_abandons[start_moved]",
-  "tests/m05/test_sh_h1_postgres.py::test_h1_p04_register_after_change_held[start_moved]"
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p04_register_after_change_held[start_moved]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted_unregistered-0]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted_unregistered-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted_unregistered-2]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p10_never_sent_does_not_block[abandoned]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p11_stop_precedence[accepted_unregistered]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p17_held_inspection_no_pii"
  ],
  "M2": [
   "tests/m05/test_sh_h1_postgres.py::test_h1_p08_expire_to_uncertain_never_prepared",
