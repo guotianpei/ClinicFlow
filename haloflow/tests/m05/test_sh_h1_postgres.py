@@ -107,9 +107,9 @@ def test_h1_p00_install_target_and_boundaries(sh_install: sh.SHInstall) -> None:
     from haloflow.m05.outbound_units import SH_TENANT_MIGRATIONS
 
     sh_install.require()
-    ids = tuple(unit.migration_id for unit in SH_TENANT_MIGRATIONS)
+    ids = tuple(SH_TENANT_MIGRATIONS)  # UnitDefinitions: a mapping keyed by unit id
     assert ids == sh.SH_UNIT_IDS
-    production_ids = {u.migration_id for group in APPROVED_TENANT_MIGRATIONS for u in group}
+    production_ids = {unit_id for group in APPROVED_TENANT_MIGRATIONS for unit_id in group}
     assert not production_ids & set(sh.SH_UNIT_IDS)
     for name in ("m05_outbound_prepare", "m05_outbound_claim", "m05_outbound_outcome",
                  "m05_outbound_expire", "m05_register_outbound", "m05_outbound_read",
