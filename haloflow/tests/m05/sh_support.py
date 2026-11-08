@@ -7,13 +7,22 @@ disposition.md), H1 packet v1 (04fdcaca...) as corrected by codex_sh-h1-packet-v
 Every import of S-H code is deferred into the row body (class-B red rule).
 
 Interface pins (asserted by the rows; the red package note discloses them):
-- `haloflow.m05.outbound_units`: SH_TENANT_MIGRATIONS (t047..t054, sequential, none
-  omitted) and SH_INSTALLED_STATE_PROFILES. Target 54. t053 replaces the body of
-  `m05_register_inbound` (same signature, owner and grants) in the TEST registry only.
+- `haloflow.m05.outbound_units`: SH_TENANT_MIGRATIONS (t047..t056, sequential, none
+  omitted), SH_INSTALLED_STATE_PROFILES and SH_ACL_AMENDMENTS. Target 56 (Codex ALIGN
+  20261108T145700Z, versioned ingress): t053 is a NEW typed function
+  `m05_register_inbound_v2` (t040's command/result/codes plus the D3 guard); t054 is a
+  remove-only `acl_closure_v1` unit (run as the M05 owner) whose single AclAmendment
+  removes haloflow_runtime EXECUTE from the UNCHANGED t040 `m05_register_inbound`; t055
+  `m05_outbound_read`; t056 `m05_outbound_held`. No accepted unit is rewritten.
+- Catalogue: the S-H TEST catalogue binds the EXISTING key `m05.intake.inbound` to
+  `SELECT m05_register_inbound_v2(%(command)s)` (outbound_statements.SH_INBOUND_STATEMENTS)
+  and drops only that key from the S-A input mapping, so IntakeService/ReplyIntake are
+  unchanged callers that now reach v2. Production registry/catalogue/supported set {36}
+  untouched.
 - SQL functions (runtime-executable, jsonb -> jsonb, P0001 closed codes):
   m05_outbound_prepare (t048), m05_outbound_claim (t049), m05_outbound_outcome (t050),
-  m05_outbound_expire (t051), m05_register_outbound (t052), m05_outbound_read and
-  m05_outbound_held (t054).
+  m05_outbound_expire (t051), m05_register_outbound (t052), m05_register_inbound_v2
+  (t053), m05_outbound_read (t055), m05_outbound_held (t056).
 - No close_correlation in H1 (Codex review point 2): potentially-sent ambiguity stays
   open and inspectable; only a definite refused/never-sent op never opens it.
 - `haloflow.m05.outbound_statements`: SH_STATEMENTS, SH_PROTECTED (prepare, claim,
@@ -53,9 +62,12 @@ import sc_support as sc
 SH_UNIT_IDS: Final = (
     "t047_m05_outbound_ops", "t048_m05_outbound_prepare", "t049_m05_outbound_claim",
     "t050_m05_outbound_outcome", "t051_m05_outbound_expire", "t052_m05_register_outbound",
-    "t053_m05_register_inbound_v2", "t054_m05_outbound_read_held",
+    "t053_m05_register_inbound_v2", "t054_m05_inbound_v1_runtime_closure",
+    "t055_m05_outbound_read", "t056_m05_outbound_held",
 )
-SH_TARGET: Final = 54
+SH_TARGET: Final = 56
+V1_INBOUND_UNIT: Final = "t040_m05_register_inbound"
+V2_INBOUND: Final = "m05_register_inbound_v2"
 SH_SUPPORTED: Final = range(SH_TARGET, SH_TARGET + 1)
 STATES: Final = frozenset({"prepared", "attempting", "accepted", "refused", "uncertain",
                            "registered", "accepted_unregistered", "abandoned"})
@@ -82,6 +94,12 @@ def sh_profiles() -> Any:
     return SH_INSTALLED_STATE_PROFILES
 
 
+def sh_amendments() -> Any:
+    from haloflow.m05.outbound_units import SH_ACL_AMENDMENTS
+
+    return SH_ACL_AMENDMENTS
+
+
 def sh_registry() -> Any:
     from haloflow.composition import (
         APPROVED_ACL_AMENDMENTS,
@@ -96,7 +114,7 @@ def sh_registry() -> Any:
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES, **sa.sa_profiles(),
                                   **sb.sb_profiles(), **sc.sc_profiles(), **sh_profiles()},
-        acl_amendments=APPROVED_ACL_AMENDMENTS,
+        acl_amendments=(*APPROVED_ACL_AMENDMENTS, *sh_amendments()),
     )
 
 
@@ -104,6 +122,20 @@ def sh_statements() -> Any:
     from haloflow.m05.outbound_statements import SH_STATEMENTS
 
     return SH_STATEMENTS
+
+
+def sh_inbound_statements() -> Any:
+    from haloflow.m05.outbound_statements import SH_INBOUND_STATEMENTS
+
+    return SH_INBOUND_STATEMENTS
+
+
+def sa_statements_without_inbound() -> Any:
+    from types import MappingProxyType
+
+    from haloflow.m05.intake_statements import INBOUND_KEY
+
+    return MappingProxyType({k: v for k, v in sa.sa_statements().items() if k != INBOUND_KEY})
 
 
 def protected() -> frozenset[str]:
@@ -116,13 +148,13 @@ def sh_catalog() -> Any:
     from haloflow.composition import APPROVED_MODULE_STATEMENTS
     from haloflow.m01.statements import build_statement_catalog
 
-    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS, sa.sa_statements(),
-                                   sb.sb_statements(), sh_statements(),
+    return build_statement_catalog(*APPROVED_MODULE_STATEMENTS, sa_statements_without_inbound(),
+                                   sb.sb_statements(), sh_statements(), sh_inbound_statements(),
                                    activation_protected=protected())
 
 
 class SHInstall(sa.SAInstall):
-    """The S-A install shape, provisioned through the S-H registry (target 54)."""
+    """The S-A install shape, provisioned through the S-H registry (target 56)."""
 
     def require(self) -> None:
         if not self._attempted:
@@ -156,7 +188,7 @@ def module_install(request: Any, ids: m02_support.Identities,
 
 @asynccontextmanager
 async def runtime(install: SHInstall, *, policy: str = "ENFORCE") -> AsyncIterator[Any]:
-    """An S-H TEST runtime (target 54, S-H catalogue, real resolver and gateway)."""
+    """An S-H TEST runtime (target 56, S-H catalogue, real resolver and gateway)."""
 
     import service_support as sv
 
@@ -366,3 +398,19 @@ def seed_same_ids(install: sa.SAInstall, patient: str, phone: str, refs: list[st
     for i, ref in enumerate(refs):
         sa.directory(install, "appointment_put", appointment_ref=ref, patient_id=patient,
                      start_at=sa.FUTURE.format(n=start_n + i), status="booked")
+
+
+def inbound(install: sa.SAInstall, message_id: str, phone: str, reply_class: str
+            ) -> dict[str, Any]:
+    """Direct SQL inbound on an S-H tenant: v2 (v1 is closed to the runtime by t054)."""
+
+    return sa.call(install, V2_INBOUND, sa.inbound_cmd(message_id, phone, reply_class))
+
+
+def inbound_any(install: sa.SAInstall, message_id: str, phone: str, reply_class: str
+                ) -> dict[str, Any]:
+    """v2 on an S-H tenant, v1 on any other (the regression matrix)."""
+
+    if isinstance(install, SHInstall):
+        return inbound(install, message_id, phone, reply_class)
+    return sa.inbound(install, message_id, phone, reply_class)

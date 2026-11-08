@@ -4,11 +4,16 @@ Governing: see `sh_support` docstring (decision table v1r2, Codex pins 1-6 and t
 packet review). Synthetic only; no sender is called from SQL; nothing is sent; no EHR.
 Each row is one scenario; a parametrised row counts once per parameter.
 
-- H1-P00  install: target 54, every unit t047..t054 present in order; production
-          registry/supported set {36} untouched; an S-C tenant (target 46) has none of
-          the S-H functions; t053 keeps m05_register_inbound's owner and grants and the
-          installed body is v2; production supported set is exactly {36}; the S-H
-          installed-state profiles cover every S-H unit.
+- H1-P00  install (versioned ingress, Codex ALIGN 20261108T145700Z): target 56 with units
+          t047..t056 in order; no production overlap; production supported set {36};
+          profiles exactly the typed S-H units; one amendment (t054 removes runtime
+          EXECUTE from t040); every new function owner + runtime ACL; v1 body equal to
+          an S-C tenant's, runtime privilege false (S-C control true); v2 holds the guard.
+- H1-P00d a raw runtime call of v1 on an S-H tenant -> 42501.
+- H1-P00e startup's per-tenant verification over the S-H registry (effective profiles)
+          passes twice (restart); an S-C registry cannot install a tenant at 56.
+- H1-P00f the unchanged IntakeService through the S-H runtime reaches the v2 guard via the
+          same-key catalogue binding.
 - H1-P00c an S-C runtime (supported {46}) refuses an S-H tenant: SCHEMA_VERSION_UNSUPPORTED.
 - H1-P01  prepare: one op per appointment_ref (a second op_id returns the original);
           same op_id with a different hash -> OP_CONFLICT, zero writes; unroutable and
@@ -102,34 +107,173 @@ def _function_exists(install: sa.SAInstall, name: str) -> bool:
 # --- H1-P00 ---------------------------------------------------------------------------------
 
 
-def test_h1_p00_install_target_and_boundaries(sh_install: sh.SHInstall) -> None:
-    from haloflow.composition import APPROVED_TENANT_MIGRATIONS
-    from haloflow.m05.outbound_units import SH_TENANT_MIGRATIONS
+def _prosrc(install: sa.SAInstall, name: str) -> str:
+    rows = sa.admin(install, "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n"
+                             " ON n.oid = p.pronamespace WHERE n.nspname = %s"
+                             " AND p.proname = %s", (install.schema, name))
+    assert len(rows) == 1, rows
+    text: str = rows[0][0]
+    return text.replace(install.schema, "{schema}")
+
+
+def _acl_of(install: sa.SAInstall, name: str) -> list[tuple[Any, ...]]:
+    return sorted(sa.admin(install, (
+        "SELECT CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END,"
+        " x.privilege_type, pg_get_userbyid(x.grantor), x.is_grantable"
+        " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace,"
+        " LATERAL aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) x"
+        " WHERE n.nspname = %s AND p.proname = %s"), (install.schema, name)))
+
+
+def _runtime_can_execute(install: sa.SAInstall, name: str) -> bool:
+    rows = sa.admin(install, "SELECT has_function_privilege(%s, p.oid, 'EXECUTE')"
+                             " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
+                             " WHERE n.nspname = %s AND p.proname = %s",
+                    (sa.RUNTIME, install.schema, name))
+    return bool(rows[0][0])
+
+
+def test_h1_p00_install_target_and_boundaries(sh_install: sh.SHInstall,
+                                              request: pytest.FixtureRequest,
+                                              m02_ids: m02_support.Identities,
+                                              m05_reset: Any) -> None:
+    import sc_support as sc
+
+    from haloflow.composition import (
+        APPROVED_ACL_AMENDMENTS,
+        APPROVED_SUPPORTED_SCHEMA_VERSIONS,
+        APPROVED_TENANT_MIGRATIONS,
+    )
+    from haloflow.m05.outbound_units import (
+        SH_ACL_AMENDMENTS,
+        SH_INSTALLED_STATE_PROFILES,
+        SH_TENANT_MIGRATIONS,
+    )
 
     sh_install.require()
-    ids = tuple(SH_TENANT_MIGRATIONS)  # UnitDefinitions: a mapping keyed by unit id
-    assert ids == sh.SH_UNIT_IDS
+    # Exact unit sequence and target; nothing shared with production.
+    assert tuple(SH_TENANT_MIGRATIONS) == sh.SH_UNIT_IDS
+    assert sh.sh_registry().target_version == sh.SH_TARGET == 56
     production_ids = {unit_id for group in APPROVED_TENANT_MIGRATIONS for unit_id in group}
     assert not production_ids & set(sh.SH_UNIT_IDS)
+    assert frozenset({36}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
+    assert not {a.activated_by for a in APPROVED_ACL_AMENDMENTS} & set(sh.SH_UNIT_IDS)
+    # Profiles: every typed S-H unit, and none for the closure unit.
+    typed = set(sh.SH_UNIT_IDS) - {"t047_m05_outbound_ops", "t054_m05_inbound_v1_runtime_closure"}
+    assert set(SH_INSTALLED_STATE_PROFILES) == typed
+    # Exactly one amendment: runtime EXECUTE removed from the unchanged t040 by t054.
+    ((amendment,),) = (SH_ACL_AMENDMENTS,)
+    assert (amendment.target_unit, amendment.activated_by, amendment.removes) == (
+        sh.V1_INBOUND_UNIT, "t054_m05_inbound_v1_runtime_closure",
+        ((sa.RUNTIME, "EXECUTE", sa.M05_OWNER, False),))
     for name in ("m05_outbound_prepare", "m05_outbound_claim", "m05_outbound_outcome",
                  "m05_outbound_expire", "m05_register_outbound", "m05_outbound_read",
-                 "m05_outbound_held"):
+                 "m05_outbound_held", sh.V2_INBOUND):
         assert _function_exists(sh_install, name), name
-    owner = sa.admin(sh_install, "SELECT pg_get_userbyid(p.proowner), p.proacl::text"
-                                 " FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
-                                 " WHERE n.nspname = %s AND p.proname = 'm05_register_inbound'",
-                     (sh_install.schema,))
-    assert owner[0][0] == sa.M05_OWNER
-    assert f"{sa.RUNTIME}=X/" in owner[0][1]
-    body = sa.admin(sh_install, "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n"
-                                " ON n.oid = p.pronamespace WHERE n.nspname = %s"
-                                " AND p.proname = 'm05_register_inbound'", (sh_install.schema,))
-    assert "m05_outbound_ops" in body[0][0]  # the installed body is v2 (t053)
-    from haloflow.composition import APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    from haloflow.m05.outbound_units import SH_INSTALLED_STATE_PROFILES
+        assert _acl_of(sh_install, name) == sorted([
+            (sa.M05_OWNER, "EXECUTE", sa.M05_OWNER, False),
+            (sa.RUNTIME, "EXECUTE", sa.M05_OWNER, False)]), name
+    # v1 stays installed, body unchanged (compared with an S-C tenant), runtime closed.
+    for old in sc.module_install(request, m02_ids, m05_reset, "h1-p00:sc"):
+        old.require()
+        assert _prosrc(sh_install, "m05_register_inbound") == _prosrc(old, "m05_register_inbound")
+        assert _runtime_can_execute(old, "m05_register_inbound") is True  # S-C control
+    assert _acl_of(sh_install, "m05_register_inbound") == [
+        (sa.M05_OWNER, "EXECUTE", sa.M05_OWNER, False)]
+    assert _runtime_can_execute(sh_install, "m05_register_inbound") is False
+    assert "m05_outbound_ops" in _prosrc(sh_install, sh.V2_INBOUND)
 
-    assert frozenset({36}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
-    assert set(sh.SH_UNIT_IDS) <= set(SH_INSTALLED_STATE_PROFILES)
+
+def test_h1_p00d_runtime_call_of_v1_denied(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, phone, (_ref,) = sa.fresh_patient(sh_install)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege) as denied:
+        sa.inbound(sh_install, sa.new_id(), phone, "confirm")  # v1, raw runtime call
+    assert denied.value.sqlstate == "42501"
+
+
+def test_h1_p00e_restart_reverification_and_old_target_refusal(
+        sh_install: sh.SHInstall, m02_ids: m02_support.Identities, m05_reset: Any) -> None:
+    """Startup's own per-tenant verification over the S-H registry (effective profiles,
+    incl. the t040 ACL as amended by t054) passes twice in a row; an S-C registry cannot
+    install a tenant at 56 (no service use before complete installation)."""
+
+    import sc_support as sc
+    import sg_harness as sg
+
+    from haloflow.m01.control_store import PsycopgControlStore
+    from haloflow.m01.pool import TenantPool
+    from haloflow.m01.runtime import TenantRuntimeDependencies
+    from haloflow.startup import Deployment, _verify_served_tenant
+
+    sh_install.require()
+
+    async def verify_once() -> Any:
+        pool = TenantPool(sh_install.ids.logins[sa.RUNTIME], min_size=1, max_size=2)
+        await pool.open()
+        try:
+            deps = TenantRuntimeDependencies(
+                pool=pool, control_store=PsycopgControlStore(pool),
+                migrator_connect=sg._connector(sh_install.ids.logins[sa.MIGRATOR]),
+                provisioner_connect=sg.forbid_provisioning())
+            return await _verify_served_tenant(
+                deps, tenant_id=sh_install.tenant_id, deployment=Deployment.NON_PRODUCTION,
+                plan=sg.build_static_plan(sh.sh_registry()))
+        finally:
+            await pool.close()
+
+    import asyncio
+
+    for _ in range(2):  # restart: the second verification sees the same installed state
+        outcome = asyncio.run(verify_once())
+        assert outcome == (sh_install.tenant_id, sh_install.schema, sh.SH_TARGET), outcome
+    fresh = m02_support.tenant_for("test_sh_h1_postgres:p00e-old")
+    m05_reset(fresh)
+    try:
+        with pytest.raises(Exception) as caught:
+            m02_support.provision_sync(m02_ids, sc.sc_registry(), fresh,
+                                       supported=sh.SH_SUPPORTED)
+        assert getattr(caught.value, "reason_code", None) == "SCHEMA_VERSION_UNSUPPORTED"
+    finally:
+        m05_reset(fresh)
+
+
+def test_h1_p00f_gateway_intake_reaches_v2_guard(sh_install: sh.SHInstall) -> None:
+    """The unchanged IntakeService, through the S-H catalogue's same-key binding, executes
+    the v2 guard (not a raw helper)."""
+
+    import sc_support as sc
+    import service_support as sv
+
+    sh_install.require()
+    sc.change(sh_install, "grant")
+    _patient, phone, (ref_a, ref_b) = sa.fresh_patient(sh_install, appointments=2)
+    reminder = sa.new_id()
+    sa.dispatch(sh_install, reminder, ref_b)
+    sh.to_state(sh_install, ref_a, "uncertain")
+
+    async def body() -> Any:
+        from haloflow.m02.observation import EventFoundation
+        from haloflow.m05.intake import InboundCommand, IntakeService
+
+        async with sh.runtime(sh_install) as rt:
+            intake = IntakeService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
+            ctx = await sv.context(rt, sh_install, sa.W_INGRESS, sa.CAPS["inbound"],
+                                   kind="workload")
+            return await intake.register_inbound(ctx, InboundCommand(
+                channel="sms", provider_message_id=sa.new_id(), phone=phone,
+                reply_class="cancel"))
+
+    import asyncio
+
+    result = asyncio.run(body())
+    assert (result.decision, result.triage_kind, result.reminder_id) == (
+        "item", "unclear_reply", None)
+    assert sa.window(sh_install, reminder)["state"] == "awaiting"
+    from haloflow.m05.intake_statements import INBOUND_KEY
+
+    resolved = sh.sh_catalog().catalog.resolve(INBOUND_KEY)
+    assert resolved.query == "SELECT m05_register_inbound_v2(%(command)s)"
 
 
 def test_h1_p00c_old_target_runtime_refuses_sh_tenant(sh_install: sh.SHInstall) -> None:
@@ -188,7 +332,7 @@ def test_h1_p01_prepare_refusals(sh_install: sh.SHInstall) -> None:
     _refused(sh_install, "m05_outbound_prepare",
              sh.prepare_cmd(sa.new_id(), ref, sa.new_id(), "00" * 32), "PREPARE_UNROUTABLE")
     _p2, phone2, (ref2,) = sa.fresh_patient(sh_install)
-    sa.inbound(sh_install, sa.new_id(), phone2, "stop")
+    sh.inbound(sh_install, sa.new_id(), phone2, "stop")
     _refused(sh_install, "m05_outbound_prepare",
              sh.prepare_cmd(sa.new_id(), ref2, sa.new_id(), "00" * 32), "CONTACT_OPTED_OUT")
     assert phone != phone2
@@ -268,7 +412,7 @@ def _change(install: sa.SAInstall, kind: str, patient: str, phone: str, ref: str
                                         ".appointment_ref = a.appointment_ref"), (ref,))
         return "START_PASSED"  # FIXTURE: frozen start kept equal so only time differs
     if kind == "opted_out":
-        sa.inbound(install, sa.new_id(), phone, "stop")
+        sh.inbound(install, sa.new_id(), phone, "stop")
         return "OPTED_OUT"
     if kind == "missing":
         sa.admin(install, sa.q(install, "DELETE FROM {s}.m05_appointments"
@@ -348,7 +492,7 @@ def test_h1_p06a_lost_ack_returns_stored_registration(sh_install: sh.SHInstall) 
     assert window["reminder_id"] == row["reminder_id"]  # one transaction, both changed
     assert row["correlation_open"] is False
     _change(sh_install, "cancelled", patient, phone, ref)
-    sa.inbound(sh_install, sa.new_id(), phone, "stop")
+    sh.inbound(sh_install, sa.new_id(), phone, "stop")
     _change(sh_install, "phone_swap", patient, phone, ref)
     retry = sh.register(sh_install, op_id)
     assert retry == {**first, "outcome": "existing"}
@@ -432,7 +576,7 @@ def test_h1_p09_guard_open_states(sh_install: sh.SHInstall, state: str, others: 
     reminders = _other_windows(sh_install, refs[1:], others)
     sh.to_state(sh_install, refs[0], state)
     before = [sa.window(sh_install, r) for r in reminders]
-    reply = sa.inbound(sh_install, sa.new_id(), phone, "reschedule")
+    reply = sh.inbound(sh_install, sa.new_id(), phone, "reschedule")
     assert (reply["decision"], reply["triage_kind"], reply["reminder_id"],
             reply["appointment_ref"]) == ("item", "unclear_reply", None, None)
     assert [sa.window(sh_install, r) for r in reminders] == before
@@ -447,7 +591,7 @@ def test_h1_p09b_guard_survives_past_start(sh_install: sh.SHInstall) -> None:
     reminder = sa.new_id()
     sa.dispatch(sh_install, reminder, new_ref)
     before = sa.window(sh_install, reminder)
-    reply = sa.inbound(sh_install, sa.new_id(), phone, "cancel")
+    reply = sh.inbound(sh_install, sa.new_id(), phone, "cancel")
     assert (reply["triage_kind"], reply["reminder_id"]) == ("unclear_reply", None)
     assert sa.window(sh_install, reminder) == before
 
@@ -459,7 +603,7 @@ def test_h1_p10_never_sent_does_not_block(sh_install: sh.SHInstall, state: str) 
     sh.to_state(sh_install, ref_a, state)
     reminder = sa.new_id()
     sa.dispatch(sh_install, reminder, ref_b)
-    reply = sa.inbound(sh_install, sa.new_id(), phone, "cancel")
+    reply = sh.inbound(sh_install, sa.new_id(), phone, "cancel")
     assert (reply["triage_kind"], reply["reminder_id"]) == ("cancel_request", reminder)
 
 
@@ -470,7 +614,7 @@ def test_h1_p11_stop_precedence(sh_install: sh.SHInstall, state: str) -> None:
     reminder = sa.new_id()
     sa.dispatch(sh_install, reminder, ref_b)
     sh.to_state(sh_install, ref_a, state)
-    reply = sa.inbound(sh_install, sa.new_id(), phone, "stop")
+    reply = sh.inbound(sh_install, sa.new_id(), phone, "stop")
     assert (reply["decision"], reply["triage_kind"]) == ("opt_out", None)
     assert sa.window(sh_install, reminder)["state"] == "opted_out"
     assert sa.contact(sh_install, phone)["opted_out"] is True  # type: ignore[index]
@@ -482,14 +626,14 @@ def test_h1_p12_replay_precedence(sh_install: sh.SHInstall) -> None:
     reminder = sa.new_id()
     sa.dispatch(sh_install, reminder, ref_b)
     early_id = sa.new_id()
-    early = sa.inbound(sh_install, early_id, phone, "confirm")  # before any op
+    early = sh.inbound(sh_install, early_id, phone, "confirm")  # before any op
     op_id = sh.to_state(sh_install, ref_a, "accepted")
-    assert sa.inbound(sh_install, early_id, phone, "confirm") == {**early, "outcome": "existing"}
+    assert sh.inbound(sh_install, early_id, phone, "confirm") == {**early, "outcome": "existing"}
     guarded_id = sa.new_id()
-    guarded = sa.inbound(sh_install, guarded_id, phone, "reschedule")
+    guarded = sh.inbound(sh_install, guarded_id, phone, "reschedule")
     assert guarded["triage_kind"] == "unclear_reply"
     assert sh.register(sh_install, op_id)["outcome"] == "registered"
-    assert sa.inbound(sh_install, guarded_id, phone, "reschedule") == {
+    assert sh.inbound(sh_install, guarded_id, phone, "reschedule") == {
         **guarded, "outcome": "existing"}
 
 
@@ -500,7 +644,7 @@ def test_h1_p13_claim_serialises_with_reply(sh_install: sh.SHInstall) -> None:
     sa.dispatch(sh_install, reminder, ref_b)
     op = sh.prepare(sh_install, ref_a)
     with sa.held(sh_install, "m05_outbound_claim", sh.claim_cmd(op["op_id"], 0)) as won:
-        waiter = sa.Waiter(sh_install, "m05_register_inbound",
+        waiter = sa.Waiter(sh_install, sh.V2_INBOUND,
                            sa.inbound_cmd(sa.new_id(), phone, "cancel")).start_and_block()
     assert won["outcome"] == "claimed"
     reply = waiter.join()
@@ -589,9 +733,9 @@ def test_h1_p18_tenant_isolation_identical_ids(sh_install: sh.SHInstall,
     sa.dispatch(sh_other, other_window, ref2)  # B: an ordinary current window
     # 1. A claims X; A's guard must not suppress B's identical phone.
     attempt_a = sh.claim(sh_install, op_x, 0)["attempt_id"]
-    reply_b = sa.inbound(sh_other, sa.new_id(), phone, "cancel")
+    reply_b = sh.inbound(sh_other, sa.new_id(), phone, "cancel")
     assert (reply_b["triage_kind"], reply_b["reminder_id"]) == ("cancel_request", other_window)
-    reply_a = sa.inbound(sh_install, sa.new_id(), phone, "cancel")
+    reply_a = sh.inbound(sh_install, sa.new_id(), phone, "cancel")
     assert (reply_a["triage_kind"], reply_a["reminder_id"]) == ("unclear_reply", None)
     # 2. B: a genuinely expired attempting X. A: an expired attempting X (control).
     attempt_b = sh.claim(sh_other, op_x, 0)["attempt_id"]

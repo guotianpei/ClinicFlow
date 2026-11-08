@@ -60,14 +60,14 @@ def _run(install: sa.SAInstall, name: str) -> list[Any]:
         _p, phone, (ref,) = sa.fresh_patient(install)
         windows = [sa.new_id()]
         sa.dispatch(install, windows[0], ref)
-        out.append(_norm(sa.inbound(install, sa.new_id(), phone, name), windows))
+        out.append(_norm(sh.inbound_any(install, sa.new_id(), phone, name), windows))
     elif name in ("stop_two_windows", "two_windows"):
         _p, phone, refs = sa.fresh_patient(install, appointments=2)
         windows = [sa.new_id(), sa.new_id()]
         for w, ref in zip(windows, refs, strict=True):
             sa.dispatch(install, w, ref)
         reply = "stop" if name == "stop_two_windows" else "reschedule"
-        out.append(_norm(sa.inbound(install, sa.new_id(), phone, reply), windows))
+        out.append(_norm(sh.inbound_any(install, sa.new_id(), phone, reply), windows))
         contact = sa.contact(install, phone)
         out.append(contact["opted_out"] if contact else None)
     elif name == "shared_phone":
@@ -76,25 +76,25 @@ def _run(install: sa.SAInstall, name: str) -> list[Any]:
         sa.directory(install, "contact_put", phone=phone, patient_id=p2)
         windows = [sa.new_id()]
         sa.dispatch(install, windows[0], ref)
-        out.append(_norm(sa.inbound(install, sa.new_id(), phone, "cancel"), windows))
+        out.append(_norm(sh.inbound_any(install, sa.new_id(), phone, "cancel"), windows))
         assert p1 != p2
     elif name == "late_reply":
         _p, phone, (ref,) = sa.fresh_patient(install)
         windows = [sa.new_id()]
         sa.dispatch(install, windows[0], ref)
         sa.shift_window(install, windows[0], -25)
-        out.append(_norm(sa.inbound(install, sa.new_id(), phone, "cancel"), windows))
+        out.append(_norm(sh.inbound_any(install, sa.new_id(), phone, "cancel"), windows))
     elif name in ("redelivery", "conflict"):
         _p, phone, (ref,) = sa.fresh_patient(install)
         windows = [sa.new_id()]
         sa.dispatch(install, windows[0], ref)
         message = sa.new_id()
-        out.append(_norm(sa.inbound(install, message, phone, "reschedule"), windows))
+        out.append(_norm(sh.inbound_any(install, message, phone, "reschedule"), windows))
         if name == "redelivery":
-            out.append(_norm(sa.inbound(install, message, phone, "reschedule"), windows))
+            out.append(_norm(sh.inbound_any(install, message, phone, "reschedule"), windows))
         else:
             with pytest.raises(psycopg.Error) as conflict:
-                sa.inbound(install, message, phone, "cancel")
+                sh.inbound_any(install, message, phone, "cancel")
             assert conflict.value.diag.message_primary == "INBOUND_CONFLICT"
             out.append("INBOUND_CONFLICT")
     elif name == "no_reply_close":
@@ -107,7 +107,7 @@ def _run(install: sa.SAInstall, name: str) -> list[Any]:
     elif name == "reply_no_window":
         _p, phone, (_ref,) = sa.fresh_patient(install)
         windows = []
-        out.append(_norm(sa.inbound(install, sa.new_id(), phone, "confirm"), windows))
+        out.append(_norm(sh.inbound_any(install, sa.new_id(), phone, "confirm"), windows))
     else:
         raise AssertionError(name)
     out.append(_states(install, windows))
