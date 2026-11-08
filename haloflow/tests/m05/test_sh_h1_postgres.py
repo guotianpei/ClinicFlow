@@ -6,11 +6,15 @@ Each row is one scenario; a parametrised row counts once per parameter.
 
 - H1-P00  install: target 54, every unit t047..t054 present in order; production
           registry/supported set {36} untouched; an S-C tenant (target 46) has none of
-          the S-H functions; t053 keeps m05_register_inbound's owner and grants.
+          the S-H functions; t053 keeps m05_register_inbound's owner and grants and the
+          installed body is v2; production supported set is exactly {36}; the S-H
+          installed-state profiles cover every S-H unit.
+- H1-P00c an S-C runtime (supported {46}) refuses an S-H tenant: SCHEMA_VERSION_UNSUPPORTED.
 - H1-P01  prepare: one op per appointment_ref (a second op_id returns the original);
           same op_id with a different hash -> OP_CONFLICT, zero writes; unroutable and
           opted-out refusals; snapshot frozen (patient, phone, start).
 - H1-P01b concurrent prepare, two op_ids, held-lock seam: exactly one row.
+- H1-P01c prepare lost acknowledgement: the identical retry returns the stored result.
 - H1-P02  concurrent claim: one attempting; the loser CLAIM_STALE.
 - H1-P03  claim after each directory change -> abandoned with the D1 code, no attempt.
 - H1-P04  register after accepted, each change -> held (accepted_unregistered), zero
@@ -20,8 +24,8 @@ Each row is one scenario; a parametrised row counts once per parameter.
 - H1-P05b reverse: the directory swap holds first; register waits, then held
           IDENTITY_CHANGED, zero windows.
 - H1-P06a lost acknowledgement: register commits (window + op registered in one
-          transaction); after cancel + STOP + phone swap, the retry returns the stored
-          registration unchanged; exactly one window.
+          transaction); after cancel, STOP and a phone swap, the retry returns the
+          stored registration unchanged; exactly one window.
 - H1-P06b rollback control: register inside a transaction that rolls back -> op still
           accepted, zero windows; the next call registers once.
 - H1-P07  outcome bookkeeping: identical retry -> existing; conflicting -> OUTCOME_CONFLICT;
@@ -41,10 +45,19 @@ Each row is one scenario; a parametrised row counts once per parameter.
           registered, returns its stored unclear disposition.
 - H1-P13  serialization: claim holds the contact lock; a concurrent reply waits, then
           sees the open op -> unclear_reply.
-- H1-P14  read: returns the frozen snapshot for the current attempt only.
+- H1-P14  read: after the directory start and phone change, returns the ORIGINAL frozen
+          start, phone and hash for the current attempt only.
+- H1-P14b an attempting op whose lease passed is unreadable before any sweep (paused
+          worker); its late outcome for the same attempt is still recordable.
 - H1-P17  held: lists uncertain / accepted_unregistered / refused with exactly the
           HELD_COLUMNS keys (no phone, name or text).
-- H1-P18  tenant isolation: the same ids in another tenant are invisible.
+- H1-P18  tenant isolation with IDENTICAL op/ref/reminder/patient/phone ids in two tenants:
+          every statement in A leaves B unchanged and invisible; A's guard does not
+          suppress B's matching.
+- H1-P19  SQL least privilege: the ingress workload is refused by every outbound function
+          (WORKLOAD_NOT_AUTHORIZED), protected or not.
+- H1-P20  gateway: a dispatch principal with the wrong capability set is refused by every
+          OutboundService method, bookkeeping included (CAPABILITIES_INVALID), zero writes.
 """
 
 from __future__ import annotations
@@ -106,6 +119,35 @@ def test_h1_p00_install_target_and_boundaries(sh_install: sh.SHInstall) -> None:
                      (sh_install.schema,))
     assert owner[0][0] == sa.M05_OWNER
     assert f"{sa.RUNTIME}=X/" in owner[0][1]
+    body = sa.admin(sh_install, "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n"
+                                " ON n.oid = p.pronamespace WHERE n.nspname = %s"
+                                " AND p.proname = 'm05_register_inbound'", (sh_install.schema,))
+    assert "m05_outbound_ops" in body[0][0]  # the installed body is v2 (t053)
+    from haloflow.composition import APPROVED_SUPPORTED_SCHEMA_VERSIONS
+    from haloflow.m05.outbound_units import SH_INSTALLED_STATE_PROFILES
+
+    assert frozenset({36}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
+    assert set(sh.SH_UNIT_IDS) <= set(SH_INSTALLED_STATE_PROFILES)
+
+
+def test_h1_p00c_old_target_runtime_refuses_sh_tenant(sh_install: sh.SHInstall) -> None:
+    """An S-C runtime (supported {46}) must refuse a tenant installed at target 54."""
+
+    import sd_support as sd
+    import service_support as sv
+
+    sh_install.require()
+
+    async def body() -> None:
+        async with sd.runtime(sh_install) as rt:  # type: ignore[arg-type]
+            with pytest.raises(Exception) as refused:
+                await sv.context(rt, sh_install, sa.W_DISPATCH, sa.CAPS["dispatch"],
+                                 kind="workload")
+            assert getattr(refused.value, "reason_code", None) == "SCHEMA_VERSION_UNSUPPORTED"
+
+    import asyncio
+
+    asyncio.run(body())
 
 
 def test_h1_p00b_sc_tenant_has_no_sh_units(request: pytest.FixtureRequest,
@@ -131,6 +173,7 @@ def test_h1_p01_prepare_one_per_ref_and_frozen_snapshot(sh_install: sh.SHInstall
     assert sh.ops_for(sh_install, ref) == 1
     row = sh.op_row(sh_install, first["op_id"])
     assert (row["patient_id"], row["phone"], row["correlation_open"]) == (patient, phone, False)
+    assert sh.frozen_start(sh_install, first["op_id"]) == sh.start_of(sh_install, ref)
     bad = sh.prepare_cmd(first["op_id"], ref, row["reminder_id"], "00" * 32)
     _refused(sh_install, "m05_outbound_prepare", bad, "OP_CONFLICT")
 
@@ -160,6 +203,18 @@ def test_h1_p01b_concurrent_prepare_one_row(sh_install: sh.SHInstall) -> None:
     second = waiter.join()
     assert (first["outcome"], second["outcome"]) == ("prepared", "existing")
     assert second["op_id"] == first["op_id"]
+    assert sh.ops_for(sh_install, ref) == 1
+
+
+def test_h1_p01c_prepare_lost_ack_converges(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, _phone, (ref,) = sa.fresh_patient(sh_install)
+    digest = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref)))
+    cmd = sh.prepare_cmd(sa.new_id(), ref, sa.new_id(), digest)
+    with sa.held(sh_install, "m05_outbound_prepare", cmd) as first:
+        pass  # committed on exit; the caller "never saw" the acknowledgement
+    retry = sa.call(sh_install, "m05_outbound_prepare", cmd)
+    assert retry == {**first, "outcome": "existing"}
     assert sh.ops_for(sh_install, ref) == 1
 
 
@@ -292,6 +347,7 @@ def test_h1_p06a_lost_ack_returns_stored_registration(sh_install: sh.SHInstall) 
     assert row["correlation_open"] is False
     _change(sh_install, "cancelled", patient, phone, ref)
     sa.inbound(sh_install, sa.new_id(), phone, "stop")
+    _change(sh_install, "phone_swap", patient, phone, ref)
     retry = sh.register(sh_install, op_id)
     assert retry == {**first, "outcome": "existing"}
     assert len(sh.windows_for(sh_install, ref)) == 1
@@ -456,16 +512,41 @@ def test_h1_p13_claim_serialises_with_reply(sh_install: sh.SHInstall) -> None:
 def test_h1_p14_read_frozen_snapshot_current_attempt(sh_install: sh.SHInstall) -> None:
     sh_install.require()
     patient, phone, (ref,) = sa.fresh_patient(sh_install)
+    original_start = sh.start_of(sh_install, ref)
+    original_hash = sh.text_hash(sh.render(sh.FIRST_NAME, original_start))
     op = sh.prepare(sh_install, ref)
     attempt = sh.claim(sh_install, op["op_id"], 0)["attempt_id"]
+    # The directory changes AFTER the claim: start moved and phone removed.
+    sa.directory(sh_install, "appointment_put", appointment_ref=ref, patient_id=patient,
+                 start_at=sa.FUTURE.format(n=7), status="booked")
     sa.directory(sh_install, "contact_remove", phone=phone, patient_id=patient)
     snap = sh.read(sh_install, op["op_id"], attempt)
     assert (snap["phone"], snap["patient_id"], snap["attempt_id"]) == (phone, patient, attempt)
-    assert snap["text_sha256"] == sh.text_hash(sh.render(sh.FIRST_NAME,
-                                                         sh.start_of(sh_install, ref)))
+    from datetime import datetime
+
+    assert datetime.fromisoformat(snap["start_at"]) == original_start
+    assert snap["text_sha256"] == original_hash
+    assert sh.start_of(sh_install, ref) != original_start  # the directory really moved
     _refused(sh_install, "m05_outbound_read",
              {"schema_version": 1, "op_id": op["op_id"], "attempt_id": sa.new_id(),
               "attribution": sa.attribution(sa.W_DISPATCH)}, "CLAIM_STALE")
+
+
+def test_h1_p14b_expired_lease_unreadable_before_sweeper(sh_install: sh.SHInstall) -> None:
+    sh_install.require()
+    _patient, _phone, (ref,) = sa.fresh_patient(sh_install)
+    op = sh.prepare(sh_install, ref)
+    attempt = sh.claim(sh_install, op["op_id"], 0, lease_seconds=30)["attempt_id"]
+    sa.admin(sh_install, sa.q(sh_install, "UPDATE {s}.m05_outbound_ops SET lease_until ="
+                                          " now() - interval '1 second' WHERE op_id = %s"),
+             (op["op_id"],))  # FIXTURE: the worker paused past its lease
+    assert sh.op_row(sh_install, op["op_id"])["state"] == "attempting"  # no sweep yet
+    _refused(sh_install, "m05_outbound_read",
+             {"schema_version": 1, "op_id": op["op_id"], "attempt_id": attempt,
+              "attribution": sa.attribution(sa.W_DISPATCH)}, "CLAIM_STALE")
+    # The paused worker's late outcome for the same attempt is still recordable (D6):
+    late = sh.outcome(sh_install, op["op_id"], attempt, "uncertain", code="PAUSED")
+    assert late["state"] == "uncertain"
 
 
 def test_h1_p17_held_inspection_no_pii(sh_install: sh.SHInstall) -> None:
@@ -480,13 +561,102 @@ def test_h1_p17_held_inspection_no_pii(sh_install: sh.SHInstall) -> None:
     assert all(set(row) == sh.HELD_COLUMNS for row in mine)
 
 
-def test_h1_p18_tenant_isolation(sh_install: sh.SHInstall, sh_other: sh.SHInstall) -> None:
+def test_h1_p18_tenant_isolation_identical_ids(sh_install: sh.SHInstall,
+                                               sh_other: sh.SHInstall) -> None:
     sh_install.require()
     sh_other.require()
+    patient, phone = sa.new_id(), sa.fresh_phone()
+    ref, ref2, op_id, reminder = sa.new_id(), sa.new_id(), sa.new_id(), sa.new_id()
+    for install in (sh_install, sh_other):
+        sh.seed_same_ids(install, patient, phone, [ref, ref2])
+    digest = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref)))
+    for install in (sh_install, sh_other):
+        assert sh.prepare(install, ref, op_id=op_id, reminder=reminder,
+                          digest=digest)["outcome"] == "prepared"
+    other_window = sa.new_id()
+    sa.dispatch(sh_other, other_window, ref2)  # B: an ordinary current window
+    before_b = sh.op_row(sh_other, op_id)
+    # Tenant A drives its op through every statement.
+    attempt = sh.claim(sh_install, op_id, 0)["attempt_id"]
+    assert sh.read(sh_install, op_id, attempt)["attempt_id"] == attempt
+    sh.outcome(sh_install, op_id, attempt, "uncertain", code="A-ONLY")
+    sh.expire(sh_install)
+    assert [r["op_id"] for r in sh.held_ops(sh_install)["ops"]].count(op_id) == 1
+    # Tenant B is untouched and sees none of it.
+    assert sh.op_row(sh_other, op_id) == before_b
+    assert [r for r in sh.held_ops(sh_other)["ops"] if r["op_id"] == op_id] == []
+    _refused(sh_other, "m05_outbound_read",
+             {"schema_version": 1, "op_id": op_id, "attempt_id": attempt,
+              "attribution": sa.attribution(sa.W_DISPATCH)}, "CLAIM_STALE")
+    _refused(sh_other, "m05_outbound_outcome",
+             sh.outcome_cmd(op_id, attempt, "accepted", provider_ref="x"), "STALE_ATTEMPT")
+    # A's open op guards A's phone only; B's identical phone still matches normally.
+    reply_b = sa.inbound(sh_other, sa.new_id(), phone, "cancel")
+    assert (reply_b["triage_kind"], reply_b["reminder_id"]) == ("cancel_request", other_window)
+    reply_a = sa.inbound(sh_install, sa.new_id(), phone, "cancel")
+    assert (reply_a["triage_kind"], reply_a["reminder_id"]) == ("unclear_reply", None)
+
+
+@pytest.mark.parametrize("function", ("m05_outbound_prepare", "m05_outbound_claim",
+                                      "m05_outbound_read", "m05_outbound_outcome",
+                                      "m05_outbound_expire", "m05_register_outbound",
+                                      "m05_outbound_held"))
+def test_h1_p19_sql_wrong_workload_refused(sh_install: sh.SHInstall, function: str) -> None:
+    """Least privilege at SQL: the ingress workload cannot run any outbound function."""
+
+    sh_install.require()
     _patient, _phone, (ref,) = sa.fresh_patient(sh_install)
     op = sh.prepare(sh_install, ref)
-    _refused(sh_other, "m05_outbound_claim", sh.claim_cmd(op["op_id"], 0), "CLAIM_STALE")
-    assert [r for r in sh.held_ops(sh_other)["ops"] if r["op_id"] == op["op_id"]] == []
+    commands = {
+        "m05_outbound_prepare": sh.prepare_cmd(sa.new_id(), ref, sa.new_id(), "00" * 32),
+        "m05_outbound_claim": sh.claim_cmd(op["op_id"], 0),
+        "m05_outbound_read": {"schema_version": 1, "op_id": op["op_id"],
+                              "attempt_id": sa.new_id()},
+        "m05_outbound_outcome": sh.outcome_cmd(op["op_id"], sa.new_id(), "uncertain",
+                                               code="X"),
+        "m05_outbound_expire": {"schema_version": 1, "limit": 10},
+        "m05_register_outbound": sh.register_cmd(op["op_id"]),
+        "m05_outbound_held": {"schema_version": 1, "limit": 10},
+    }
+    command = {**commands[function], "attribution": sa.attribution(sa.W_INGRESS)}
+    _refused(sh_install, function, command, "WORKLOAD_NOT_AUTHORIZED")
+
+
+def test_h1_p20_gateway_wrong_capabilities_refused(sh_install: sh.SHInstall) -> None:
+    """Gateway: unprotected bookkeeping is NOT an authorization exemption."""
+
+    import service_support as sv
+
+    sh_install.require()
+    _patient, _phone, (ref,) = sa.fresh_patient(sh_install)
+    op = sh.prepare(sh_install, ref)
+    before = sh.op_row(sh_install, op["op_id"])
+
+    async def body() -> None:
+        from haloflow.m05.outbound import OutboundRefused, OutboundService
+
+        async with sh.runtime(sh_install) as rt:
+            svc = OutboundService(rt.gateway)
+            wrong = await sv.context(rt, sh_install, sa.W_DISPATCH, sa.CAPS["inbound"],
+                                     kind="workload")
+            calls = (svc.prepare(wrong, ref, "00" * 32, op_id=sa.new_id(),
+                                 reminder_id=sa.new_id()),
+                     svc.claim(wrong, op["op_id"], 0),
+                     svc.read(wrong, op["op_id"], sa.new_id()),
+                     svc.record_outcome(wrong, op["op_id"], sa.new_id(), "uncertain",
+                                        code="X"),
+                     svc.expire(wrong),
+                     svc.register(wrong, op["op_id"]),
+                     svc.held(wrong))
+            for call in calls:
+                with pytest.raises(OutboundRefused) as refused:
+                    await call
+                assert refused.value.code == "CAPABILITIES_INVALID"
+
+    import asyncio
+
+    asyncio.run(body())
+    assert sh.op_row(sh_install, op["op_id"]) == before
 
 
 # --- H1-P15, P16: activation through the real gateway (D5) ----------------------------------
@@ -527,8 +697,10 @@ def test_h1_p15_revoke_after_attempt(sh_install: sh.SHInstall) -> None:
             ctx = await _ctx(rt, sh_install)
             digest_a = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref_a)))
             digest_b = sh.text_hash(sh.render(sh.FIRST_NAME, sh.start_of(sh_install, ref_b)))
-            a = await svc.prepare(ctx, ref_a, digest_a)
-            b = await svc.prepare(ctx, ref_b, digest_b)  # genuinely prepared second op
+            a = await svc.prepare(ctx, ref_a, digest_a, op_id=sa.new_id(),
+                                  reminder_id=sa.new_id())
+            b = await svc.prepare(ctx, ref_b, digest_b, op_id=sa.new_id(),
+                                  reminder_id=sa.new_id())  # genuinely prepared second op
             claimed = await svc.claim(ctx, a["op_id"], a["fence"])
             sc.change(sh_install, "revoke")
             ctx = await _ctx(rt, sh_install)
@@ -565,7 +737,8 @@ def test_h1_p16_revoked_clinic_refuses_new_work(sh_install: sh.SHInstall) -> Non
             svc = OutboundService(rt.gateway)
             ctx = await _ctx(rt, sh_install)
             with pytest.raises(Exception) as refused:
-                await svc.prepare(ctx, ref, "00" * 32)
+                await svc.prepare(ctx, ref, "00" * 32, op_id=sa.new_id(),
+                                  reminder_id=sa.new_id())
             assert _activation_code(refused.value) == "M05_NOT_ACTIVATED"
 
     import asyncio

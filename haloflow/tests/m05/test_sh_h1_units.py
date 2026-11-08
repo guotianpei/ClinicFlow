@@ -16,15 +16,20 @@ register), so these rows pin the worker's ordering, never the SQL.
 - H1-U04  outcome commit-unknown -> the identical outcome is retried once; one send.
 - H1-U05  register commit-unknown -> register retried; one send.
 - H1-U05b recover(accepted op) registers only: no claim, no read, no send.
-- H1-U06  privacy: log records (incl. exception text) and reprs carry no phone, name or
-          text; positive control proves the scan detects a leak.
-- H1-U07  no provider or network module is imported by haloflow.m05.outbound.
+- H1-U06  privacy, adversarial: the fake raises a chained exception whose text contains
+          the phone, name and message text; formatted logs (with exception chains), any
+          escaped traceback and all reprs are scanned and must be clean.
+- H1-U06b positive control: the same scanner finds all three in a careless
+          logger.exception of that error.
+- H1-U07  limited static guard: no provider/network import in haloflow.m05.outbound.
+- H1-U07b runtime tripwire: no socket connection attempt during run_one (fake only).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import traceback
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -205,27 +210,78 @@ def test_h1_u05b_recover_registers_only() -> None:
     assert sender.calls == []
 
 
-def test_h1_u06_privacy_logs_and_reprs(caplog: pytest.LogCaptureFixture) -> None:
+SECRETS = (PHONE, sh.FIRST_NAME, "appointment on")
+
+
+def _scan(text: str) -> list[str]:
+    """One scanner for both the oracle and its positive control."""
+
+    return [secret for secret in SECRETS if secret in text]
+
+
+def _formatted(records: list[logging.LogRecord]) -> str:
+    fmt = logging.Formatter("%(name)s %(levelname)s %(message)s")
+    return "\n".join(fmt.format(r) for r in records)  # includes exc_info chains
+
+
+def test_h1_u06_privacy_adversarial_sender_error(caplog: pytest.LogCaptureFixture) -> None:
+    """The fake raises an exception (with a chained cause) whose text CONTAINS the phone,
+    name and message text; nothing outward may carry them."""
+
     from haloflow.m05.outbound import FakeSender
 
-    secrets = (PHONE, sh.FIRST_NAME, "appointment on")
     caplog.set_level(logging.DEBUG)
-    sender, svc = FakeSender(fail="error"), Svc()
+    sender, svc = FakeSender(fail="leaky"), Svc()
     worker = _worker(svc, sender)
-    _run(worker.run_one(None, "op-1", 0))
-    blob = "\n".join(
-        logging.Formatter("%(message)s %(exc_text)s").format(r) for r in caplog.records)
-    blob += repr(worker) + repr(sender) + repr(svc.outcomes)
-    assert not any(s in blob for s in secrets), "phone, name or text leaked"
-    # positive control: the same scan finds a deliberate leak
-    logging.getLogger("haloflow.m05.outbound").warning("leak %s", PHONE)
-    leak = "\n".join(r.getMessage() for r in caplog.records)
-    assert PHONE in leak
+    escaped = ""
+    try:
+        _run(worker.run_one(None, "op-1", 0))
+    except BaseException as error:  # noqa: BLE001 - any escape is scanned too
+        escaped = "".join(traceback.format_exception(error))
+    assert [o for o, _ in svc.outcomes] == ["uncertain"]
+    outward = (_formatted(caplog.records) + escaped + repr(worker) + repr(sender)
+               + repr(svc.outcomes))
+    assert _scan(outward) == [], "phone, name or text leaked"
+
+
+def test_h1_u06b_scanner_positive_control(caplog: pytest.LogCaptureFixture) -> None:
+    from haloflow.m05.outbound import FakeSender
+
+    caplog.set_level(logging.DEBUG)
+    leak_log = logging.getLogger("haloflow.m05.outbound")
+    try:
+        _run(FakeSender(fail="leaky").send("op-1", PHONE, sh.render(sh.FIRST_NAME, START)))
+    except Exception:  # noqa: BLE001
+        leak_log.exception("deliberate leak")  # the exact path a careless worker would take
+    assert set(_scan(_formatted(caplog.records))) == set(SECRETS)
 
 
 def test_h1_u07_no_provider_or_network_import() -> None:
+    """Limited guard only: a static scan of the module's own imports."""
+
     import haloflow.m05.outbound as outbound
 
     banned = ("httpx", "requests", "haloflow.integrations", "haloflow.modules", "notifyre")
     source = open(outbound.__file__, encoding="utf-8").read()  # noqa: SIM115
     assert not any(f"import {b}" in source or f"from {b}" in source for b in banned)
+
+
+def test_h1_u07b_runtime_network_tripwire(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fake-only execution: any socket connection attempt during run_one is recorded."""
+
+    import socket
+
+    from haloflow.m05.outbound import FakeSender
+
+    attempts: list[Any] = []
+
+    def trip(*args: Any, **kwargs: Any) -> Any:
+        attempts.append(args[:2])
+        raise AssertionError("network attempted")
+
+    monkeypatch.setattr(socket.socket, "connect", trip)
+    monkeypatch.setattr(socket, "create_connection", trip)
+    sender, svc = FakeSender(), Svc()
+    _run(_worker(svc, sender).run_one(None, "op-1", 0))
+    assert attempts == []
+    assert len(sender.calls) == 1

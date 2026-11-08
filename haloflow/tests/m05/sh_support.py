@@ -21,6 +21,14 @@ Interface pins (asserted by the rows; the red package note discloses them):
 - `haloflow.m05.outbound`: OutboundService, Accepted / Refused / Uncertain, FakeSender,
   OutboundWorker(service, sender, render).run_one(context, op_id, fence) and
   .recover(context, op_id) (registration only; never claims or sends).
+- Principal (disclosed, Codex review 9e14672 item 2): NO new workload role. The outbound
+  statements run as the existing dispatch workload W_DISPATCH with exactly
+  sa.CAPS["dispatch"]; OutboundService refuses any other capability set with
+  OutboundRefused("CAPABILITIES_INVALID") before I/O, and the SQL functions refuse any
+  other workload with WORKLOAD_NOT_AUTHORIZED (activation exemption is never an
+  authorization exemption).
+- Stable identity: OutboundService.prepare(context, ref, digest, *, op_id, reminder_id) —
+  the caller supplies op_id and reminder_id so a lost-ack retry converges.
 - Codes: OP_CONFLICT, PREPARE_UNROUTABLE, CONTACT_OPTED_OUT, CLAIM_STALE, STALE_ATTEMPT,
   OUTCOME_CONFLICT, STATE_TERMINAL, NOT_ACCEPTED, COMMAND_MALFORMED; D1 codes in order
   IDENTITY_CHANGED, APPOINTMENT_MISSING, APPOINTMENT_CHANGED, START_PASSED, OPTED_OUT;
@@ -341,3 +349,20 @@ def op_row_by_ref(install: sa.SAInstall, ref: str) -> str:
                                            " WHERE appointment_ref = %s"), (ref,))
     assert len(rows) == 1, rows
     return str(rows[0][0])
+
+
+def frozen_start(install: sa.SAInstall, op_id: str) -> datetime:
+    rows = sa.admin(install, sa.q(install, "SELECT start_at FROM {s}.m05_outbound_ops"
+                                           " WHERE op_id = %s"), (op_id,))
+    value: datetime = rows[0][0]
+    return value
+
+
+def seed_same_ids(install: sa.SAInstall, patient: str, phone: str, refs: list[str],
+                  start_n: int = 1) -> None:
+    """Directory rows with CALLER-CHOSEN ids, so two tenants can hold identical ids."""
+
+    sa.directory(install, "contact_put", phone=phone, patient_id=patient)
+    for i, ref in enumerate(refs):
+        sa.directory(install, "appointment_put", appointment_ref=ref, patient_id=patient,
+                     start_at=sa.FUTURE.format(n=start_n + i), status="booked")
