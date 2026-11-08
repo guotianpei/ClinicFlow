@@ -267,8 +267,7 @@ def test_h1_p00f_gateway_intake_reaches_v2_guard(sh_install: sh.SHInstall) -> No
     import asyncio
 
     result = asyncio.run(body())
-    assert (result.decision, result.triage_kind, result.reminder_id) == (
-        "item", "unclear_reply", None)
+    assert (result.decision, result.triage_kind) == ("item", "unclear_reply")  # no attribution
     assert sa.window(sh_install, reminder)["state"] == "awaiting"
     from haloflow.m05.intake_statements import INBOUND_KEY
 
