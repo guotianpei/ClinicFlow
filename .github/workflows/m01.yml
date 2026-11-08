@@ -223,6 +223,14 @@ jobs:
           $VENV/bin/python -I scripts/sc_activation_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sc-activation-mutation"
+      # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
+      # statements against the PostgreSQL module, the worker against the unit module),
+      # kill sets in scripts/sh_h1_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sh_h1_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sh_h1_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sh-h1-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
