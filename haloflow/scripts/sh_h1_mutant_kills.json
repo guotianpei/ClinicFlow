@@ -1,0 +1,50 @@
+{
+ "M1": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p03_claim_after_change_abandons[start_moved]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p04_register_after_change_held[start_moved]"
+ ],
+ "M2": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p08_expire_to_uncertain_never_prepared",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p18_tenant_isolation_identical_ids"
+ ],
+ "M3": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p07_outcome_bookkeeping",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p18_tenant_isolation_identical_ids"
+ ],
+ "M4": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p04_register_after_change_held[phone_swap]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p04_register_after_change_held[reassigned]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p05b_directory_lock_first_then_held"
+ ],
+ "M5": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p00_install_target_and_boundaries",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p00f_gateway_intake_reaches_v2_guard",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[attempting-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[uncertain-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted_unregistered-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09b_guard_survives_past_start",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p12_replay_precedence",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p13_claim_serialises_with_reply"
+ ],
+ "M6": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p00f_gateway_intake_reaches_v2_guard",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[uncertain-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09_guard_open_states[accepted_unregistered-1]",
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p09b_guard_survives_past_start"
+ ],
+ "M7": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p06a_lost_ack_returns_stored_registration"
+ ],
+ "M8": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p15_revoke_after_attempt"
+ ],
+ "M9": [
+  "tests/m05/test_sh_h1_postgres.py::test_h1_p14b_expired_lease_unreadable_before_sweeper"
+ ],
+ "M10": [
+  "tests/m05/test_sh_h1_units.py::test_h1_u02_lost_claim_zero_sends[claim]",
+  "tests/m05/test_sh_h1_units.py::test_h1_u03_sender_failure_uncertain_no_resend[error]",
+  "tests/m05/test_sh_h1_units.py::test_h1_u03_sender_failure_uncertain_no_resend[timeout]"
+ ]
+}
