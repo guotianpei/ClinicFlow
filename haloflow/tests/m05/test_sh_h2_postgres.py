@@ -1234,6 +1234,9 @@ def _wait_any_blocked(install: sa.SAInstall, timeout_s: float = 20.0) -> None:
     raise AssertionError("the loser never blocked on the op row")
 
 
+_P24C_BOUND_S = 20.0
+
+
 def test_h2_p24c_paused_sending_winner(h2: sh2.SH2Install) -> None:
     import sc_support as sc
 
@@ -1261,10 +1264,20 @@ def test_h2_p24c_paused_sending_winner(h2: sh2.SH2Install) -> None:
         async with sh2.runtime(h2) as rt:
             worker, ctx = await _worker(h2, rt, sender)
             winner = asyncio.create_task(worker.run_claimed(ctx, op_id, attempt))
-            await sender.entered.wait()  # consume committed; the winner is inside send
-            loser = await worker.run_claimed(ctx, op_id, attempt)
-            sender.release.set()
-            return await winner, loser, len(sender.calls)
+            try:
+                # consume committed; the winner is inside send
+                await asyncio.wait_for(sender.entered.wait(), _P24C_BOUND_S)
+                try:
+                    # Bounded: a loser that re-consumes the spent ticket would itself
+                    # block inside send (mutant M10) and must fail the row, not hang it.
+                    loser = await asyncio.wait_for(
+                        worker.run_claimed(ctx, op_id, attempt), _P24C_BOUND_S)
+                except TimeoutError:
+                    raise AssertionError(
+                        "P24c: loser did not return; spent ticket re-consumed?") from None
+            finally:
+                sender.release.set()
+            return await asyncio.wait_for(winner, _P24C_BOUND_S), loser, len(sender.calls)
 
     assert asyncio.run(body()) == ("accepted", "not_sent", 1)
 
