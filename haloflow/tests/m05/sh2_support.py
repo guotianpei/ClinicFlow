@@ -12,7 +12,8 @@ Interface pins (asserted by the rows; the pins note discloses them):
 - `haloflow.m05.reminder_units`: SH2_TENANT_MIGRATIONS (t057..t073 in order, none
   omitted), SH2_INSTALLED_STATE_PROFILES (every typed H2 unit) and SH2_ACL_AMENDMENTS
   (t072 removes haloflow_runtime EXECUTE from the UNCHANGED t038 directory, t048 prepare,
-  t049 claim and t055 read). Target 73. No H1 or S-A unit is rewritten.
+  t049 claim and t055 read). Target 74 (t074: authority, staff owner). No H1 or S-A
+  unit is rewritten.
 - Typed functions (jsonb -> jsonb, P0001 closed codes): runtime-executable
   m05_directory_v2 (t063), m05_outbound_claim_v2 (t066), m05_outbound_read_v2 (t067),
   m05_outbound_ready (t068), m05_outbound_render_snapshot (t069), m05_outbound_examine
@@ -69,9 +70,9 @@ SH2_UNIT_IDS: Final = (
     "t067_m05_outbound_read_v2", "t068_m05_outbound_ready",
     "t069_m05_outbound_render_snapshot", "t070_m05_outbound_examine",
     "t071_m05_outbound_consume", "t072_m05_h2_runtime_closure",
-    "t073_m05_reminder_bootstrap",
+    "t073_m05_reminder_bootstrap", "t074_m05_reminder_settings_authority",
 )
-SH2_TARGET: Final = 73
+SH2_TARGET: Final = 74
 SH2_SUPPORTED: Final = range(SH2_TARGET, SH2_TARGET + 1)
 TABLE_UNITS: Final = frozenset(SH2_UNIT_IDS[:5]) | {"t073_m05_reminder_bootstrap"}
 CLOSURE_UNIT: Final = "t072_m05_h2_runtime_closure"
@@ -82,6 +83,11 @@ RUNTIME_FUNCTIONS: Final = (
 )
 OWNER_FUNCTIONS: Final = ("m05_reminder_decision", "m05_outbound_prepare_rendered")
 SUPPORT_FUNCTION: Final = "m05_reminder_settings_put"
+# Implementation correction (disclosed): the M05 owner has no read access to the shared
+# support tables, so the authority check is a staff-owned function (the t022 precedent)
+# that only the M05 owner may execute. Target 73 -> 74.
+AUTHORITY_FUNCTION: Final = "m05_reminder_settings_authority"
+STAFF_OWNER: Final = "haloflow_staff_owner"
 SUPPORT_ROLE: Final = "haloflow_support"
 SETTINGS_CAP: Final = "m05.reminder.settings"
 # Closed by t072 (the unchanged H1 / S-A bodies stay installed for owner-internal use).
@@ -204,7 +210,7 @@ def sh2_catalog() -> Any:
 
 
 class SH2Install(sa.SAInstall):
-    """The S-A install shape, provisioned through the H2 registry (target 73). After
+    """The S-A install shape, provisioned through the H2 registry (target 74). After
     install, FIXTURE: the clinic display name is set (the seeded default is NULL)."""
 
     def require(self) -> None:
@@ -240,7 +246,7 @@ def module_install(request: Any, ids: m02_support.Identities,
 
 @asynccontextmanager
 async def runtime(install: SH2Install, *, policy: str = "ENFORCE") -> AsyncIterator[Any]:
-    """An H2 TEST runtime (target 73, H2 catalogue, real resolver and gateway)."""
+    """An H2 TEST runtime (target 74, H2 catalogue, real resolver and gateway)."""
 
     import service_support as sv
 

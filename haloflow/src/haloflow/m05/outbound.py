@@ -344,6 +344,65 @@ class OutboundWorker:
         await self._record(context, op_id, attempt, "uncertain", code="SENDER_RESULT_INVALID")
         return "uncertain"
 
+    async def run_claimed(self, context: Any, op_id: Any, attempt_id: Any) -> str:
+        """H2 (D1 one-shot ticket): consume -> render(inputs) -> hash check -> send ONCE ->
+        outcome -> register. Only a COMMITTED `send` result authorises the sender call; a
+        refused consume never sends, and a commit-unknown consume is never retried and never
+        sends (the lease then expires to uncertain). The service must provide `consume`,
+        `record_outcome` and `register`."""
+
+        try:
+            consumed = await self._service.consume(context, op_id, attempt_id)
+        except OutboundCommitUnknown:
+            _LOG.info("outbound consume commit unknown; not sent")
+            return "consume_unknown"
+        except OutboundRefused as refused:
+            _LOG.info("outbound consume refused code=%s", refused.code)
+            return "not_sent"
+        if consumed.get("outcome") != "send":
+            _LOG.info("outbound consume refused code=%s", consumed.get("code"))
+            return "not_sent"
+        inputs = consumed["inputs"]
+        text = self._render(inputs)
+        if _digest(text) != inputs["text_sha256"]:
+            await self._record(context, op_id, attempt_id, "refused", code="RENDER_CHANGED")
+            return "refused"
+        return await self._send_once(context, op_id, attempt_id, str(inputs["phone"]), text)
+
+    async def _send_once(self, context: Any, op_id: Any, attempt: Any, phone: str,
+                         text: str) -> str:
+        """The H1 send-and-record sequence for an authorised attempt (used by run_claimed;
+        run_one keeps its own unchanged copy)."""
+
+        try:
+            result = await self._sender.send(str(op_id), phone, text)
+        except asyncio.CancelledError:
+            await self._record(context, op_id, attempt, "uncertain", code="SENDER_CANCELLED")
+            raise
+        except TimeoutError:
+            await self._record(context, op_id, attempt, "uncertain", code="SENDER_TIMEOUT")
+            return "uncertain"
+        except Exception:  # noqa: BLE001 - never logged with its text (privacy)
+            await self._record(context, op_id, attempt, "uncertain", code="SENDER_ERROR")
+            return "uncertain"
+        if isinstance(result, Accepted):
+            if not _valid_ref(result.provider_ref):
+                await self._record(context, op_id, attempt, "uncertain",
+                                   code="ACCEPTED_EVIDENCE_INVALID")
+                return "uncertain"
+            await self._record(context, op_id, attempt, "accepted",
+                               provider_ref=result.provider_ref)
+            await self._register(context, op_id)
+            return "accepted"
+        if isinstance(result, Refused):
+            await self._record(context, op_id, attempt, "refused", code=result.code)
+            return "refused"
+        if isinstance(result, Uncertain):
+            await self._record(context, op_id, attempt, "uncertain", code=result.code)
+            return "uncertain"
+        await self._record(context, op_id, attempt, "uncertain", code="SENDER_RESULT_INVALID")
+        return "uncertain"
+
     async def recover(self, context: Any, op_id: Any) -> Mapping[str, Any]:
         """Registration only: never claims, reads or sends."""
 

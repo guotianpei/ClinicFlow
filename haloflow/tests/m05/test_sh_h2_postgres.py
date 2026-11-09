@@ -12,7 +12,7 @@ needs while the database clock crosses a boundary (generous margins): a pre-lock
 transaction-start clock would give the opposite result.
 
 Rows (P = PostgreSQL; a parametrised row counts once per parameter):
-- P00   install: target 73, t057..t073 in order, no production overlap, profiles exactly the
+- P00   install: target 74, t057..t074 in order, no production overlap, profiles exactly the
         typed H2 units, four amendments (t072 closes runtime EXECUTE on t038/t048/t049/t055),
         ACLs (runtime / owner-only / support-only), PUBLIC none, H1 and S-A bodies
         byte-identical to an S-H tenant's, seeded settings defaults.
@@ -58,7 +58,7 @@ Rows (P = PostgreSQL; a parametrised row counts once per parameter):
         then succeed; no deadlock.
 - P19   crash: examine rolled back -> nothing; committed then no consume -> lease expiry
         uncertain; zero sends.
-- P20   bootstrap on upgrade 56 -> 73: no-op and prepared refs enqueued, others excluded;
+- P20   bootstrap on upgrade 56 -> 74: no-op and prepared refs enqueued, others excluded;
         PROFILE_MISSING; an H1-era prepared op -> abandoned NO_RENDER_INPUTS, zero sends;
         new H2 prepared inputs survive a re-run of the migration runner.
 - P21   settings validation and support authority (runtime 42501; not allow-listed, no
@@ -216,7 +216,7 @@ def test_h2_p00_install_target_and_boundaries(h2: sh2.SH2Install,
 
     h2.require()
     assert tuple(SH2_TENANT_MIGRATIONS) == sh2.SH2_UNIT_IDS
-    assert sh2.sh2_registry().target_version == sh2.SH2_TARGET == 73
+    assert sh2.sh2_registry().target_version == sh2.SH2_TARGET == 74
     production_ids = {unit_id for group in APPROVED_TENANT_MIGRATIONS for unit_id in group}
     assert not production_ids & set(sh2.SH2_UNIT_IDS)
     assert frozenset({36}) == APPROVED_SUPPORTED_SCHEMA_VERSIONS
@@ -234,6 +234,10 @@ def test_h2_p00_install_target_and_boundaries(h2: sh2.SH2Install,
         assert _function_acl(h2, name) == [owner], name
     assert _function_acl(h2, sh2.SUPPORT_FUNCTION) == sorted(
         [owner, (sh2.SUPPORT_ROLE, "EXECUTE", sa.M05_OWNER, False)])
+    assert _function_acl(h2, sh2.AUTHORITY_FUNCTION) == sorted(
+        [(sh2.STAFF_OWNER, "EXECUTE", sh2.STAFF_OWNER, False),
+         (sa.M05_OWNER, "EXECUTE", sh2.STAFF_OWNER, False)])
+    assert _runtime_can_execute(h2, sh2.AUTHORITY_FUNCTION) is False
     assert _volatility(h2, "m05_reminder_decision") == "s"  # STABLE
     for _unit, name in sh2.CLOSED:
         assert _function_acl(h2, name) == [owner], name
