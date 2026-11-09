@@ -16,7 +16,8 @@
  "M4": [
   "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[settings]",
   "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[name]",
-  "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[confirmation]"
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[confirmation]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p37_snapshot_during_directory_update"
  ],
  "M5": [
   "tests/m05/test_sh_h2_postgres.py::test_h2_p04_deferral_round_trip"
