@@ -22,9 +22,10 @@ Governing: H3 package v1 + v1r1 + v1r2 deltas and interface pins v1 (Work Sessio
 - One summary line per tick on logger `haloflow.m05.reminder_scheduler`.
 
 Rows: U01 inputs; U02 lifecycle; U03 fixed rate; U04 overrun; U05 phase order; U06 batch
-untouched; U07 phase isolation; U08 privacy; U09-U12 stop; U13-U14 static; U15-U17 stop
-during recovery / ready / context; U18-U19 manual-tick ownership; U20 item mapping; U21
-cursor; U22 report truth; U23 invocation ceiling; U24 summary line.
+untouched; U07 phase isolation; U07b typed failure classes per phase; U08 privacy;
+U09-U12 stop; U13-U14 static; U15-U17 stop during recovery / ready / context;
+U18-U19 manual-tick ownership; U20 item mapping; U21 cursor; U22 report truth;
+U23 invocation ceiling; U24 summary line.
 """
 
 from __future__ import annotations
@@ -466,6 +467,63 @@ async def test_h3_u07_a_raising_phase_never_stops_other_phases_or_tenants(phase:
     await _drain(s)
 
 
+def _typed_cases() -> dict[str, tuple[BaseException, str]]:
+    from haloflow.m01.errors import ActivationRefused, CapabilityDenied, TenantDenied
+    from haloflow.m05.outbound import OutboundCommitUnknown, OutboundRefused
+
+    return {
+        "activation": (ActivationRefused(), "ACTIVATION_REFUSED"),
+        "capability-denied": (CapabilityDenied(), "CAPABILITY_REFUSED"),
+        "tenant-denied": (TenantDenied(), "CAPABILITY_REFUSED"),
+        "caps-invalid": (OutboundRefused("CAPABILITIES_INVALID"), "CAPABILITY_REFUSED"),
+        "not-workload": (OutboundRefused("PRINCIPAL_NOT_WORKLOAD"), "CAPABILITY_REFUSED"),
+        "refused-other": (OutboundRefused("COMMAND_MALFORMED"), "REFUSED"),
+        "commit-unknown": (OutboundCommitUnknown(), "COMMIT_UNKNOWN"),
+        "unexpected": (RuntimeError("x"), "INTERNAL"),
+    }
+
+
+TYPED = ("activation", "capability-denied", "tenant-denied", "caps-invalid",
+         "not-workload", "refused-other", "commit-unknown", "unexpected")
+TYPED_PHASES = {"context": "contexts_fn", "expire": "expire_fn", "selector": "pending_fn",
+                "run_once": "run_fn"}
+
+
+@pytest.mark.parametrize("case", TYPED)
+@pytest.mark.parametrize("phase", sorted(TYPED_PHASES))
+async def test_h3_u07b_typed_phase_failure_class_and_continuation(phase: str,
+                                                                 case: str) -> None:
+    exc, failure_class = _typed_cases()[case]
+    world = World(se.FakeClock())
+    world.rows = {T_A: rows(1), T_B: rows(1)}
+    original = getattr(world, TYPED_PHASES[phase])
+
+    async def scoped(*args: Any) -> Any:
+        if str(args[0]).endswith(T_A):
+            raise exc
+        return await original(*args)
+
+    setattr(world, TYPED_PHASES[phase], scoped)
+    s = world.scheduler((T_A, T_B))
+    result = await asyncio.wait_for(s.tick(), BOUND_S)
+    a, b = result.tenants
+    statuses = {"context": a.context, "expire": a.expire.status,
+                "selector": a.recovery.status, "run_once": a.ready.status}
+    assert statuses[phase] == failure_class
+    assert a.code == "DEGRADED"
+    if phase == "context":
+        assert (a.expire.status, a.recovery.status, a.ready.status) == ("NOT_RUN",) * 3
+        assert world.kinds(T_A) == ["context"]
+    else:
+        assert a.context == "ok"
+        others = {k: v for k, v in statuses.items() if k not in (phase, "context")}
+        assert set(others.values()) == {"ok"}, others
+        assert world.kinds(T_A)[-1] == "run_once"  # continuation reached the ready phase
+    assert b.code == "COMPLETE"
+    assert world.kinds(T_B) == ["context", "expire", "pending", "recover", "run_once"]
+    await _drain(s)
+
+
 # --- U08 privacy -------------------------------------------------------------------------------
 
 
@@ -501,11 +559,25 @@ async def test_h3_u09_stop_before_any_tick_makes_no_call() -> None:
     assert world.calls == []
 
 
-def _blocking(world: World, *, swallow: bool) -> tuple[Script, asyncio.Event, list[str]]:
+def _phase_value(phase: str, args: tuple[Any, ...]) -> Any:
+    """A phase-correct return value, so a swallowed cancellation that returns normally
+    cannot hide a continuation error behind a wrong-typed result."""
+
+    if phase == "context":
+        return f"ctx:{args[0]}"
+    if phase == "recovery":
+        return {"schema_version": 1, "outcome": "registered", "op_id": str(args[1])}
+    from haloflow.m05.reminder import RunReport
+
+    return RunReport(examined=0, claimed=0, sent=0)
+
+
+def _blocking(world: World, *, swallow: bool, phase: str = "ready"
+              ) -> tuple[Script, asyncio.Event, list[str]]:
     release = asyncio.Event()
     seen: list[str] = []
 
-    async def block(*_a: Any) -> Any:
+    async def block(*args: Any) -> Any:
         seen.append("entered")
         while True:
             try:
@@ -515,11 +587,18 @@ def _blocking(world: World, *, swallow: bool) -> tuple[Script, asyncio.Event, li
                 seen.append("cancelled")
                 if not swallow:
                     raise
-        from haloflow.m05.reminder import RunReport
-
-        return RunReport(examined=0, claimed=0, sent=0)
+        seen.append("returned")
+        return _phase_value(phase, args)
 
     return block, release, seen
+
+
+async def _settled_stop(s: Any) -> None:
+    """After a hang is released, the owned task must finish: a further stop() completes
+    within the bound and the scheduler reaches STOPPED (no abandoned task)."""
+
+    await asyncio.wait_for(s.stop(), BOUND_S)
+    assert s.state is _state().STOPPED
 
 
 async def test_h3_u10_stop_during_blocked_ready_phase_cooperative() -> None:
@@ -586,7 +665,10 @@ async def test_h3_u12_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task(
         assert manual.value.code == "SCHEDULER_STOPPED"
     finally:
         release.set()  # fixture cleanup releases the hang (pin)
-        await asyncio.sleep(0.05)
+    before = list(world.calls)
+    await _settled_stop(s)
+    assert world.calls == before  # the released task did no further work
+    assert seen == ["entered", "cancelled", "returned"]
 
 
 # --- U13 / U14 static ---------------------------------------------------------------------------
@@ -620,6 +702,11 @@ def test_h3_u14_not_composed() -> None:
 
 
 STOP_PHASES = {"recovery": "recover_fn", "ready": "run_fn", "context": "contexts_fn"}
+LATER_WORK = {  # side effects that must never follow the blocked phase once stop began
+    "context": ["expire", "pending", "recover", "run_once"],
+    "recovery": ["run_once"],
+    "ready": [],
+}
 
 
 @pytest.mark.parametrize("swallow", [False, True], ids=["cooperative", "swallows"])
@@ -628,7 +715,7 @@ async def test_h3_u15_u17_stop_during_phase(phase: str, swallow: bool) -> None:
     module = _mod()
     world = World(se.FakeClock())
     world.rows = {T_A: rows(2)}
-    block, release, seen = _blocking(world, swallow=swallow)
+    block, release, seen = _blocking(world, swallow=swallow, phase=phase)
     setattr(world, STOP_PHASES[phase], block)
     s = world.scheduler((T_A, T_B), stop_timeout_s=0.2)
     s.start()
@@ -642,11 +729,20 @@ async def test_h3_u15_u17_stop_during_phase(phase: str, swallow: bool) -> None:
             await asyncio.wait_for(s.stop(), BOUND_S)
             assert s.state is _state().STOPPED
         assert seen.count("cancelled") == 1
-        assert seen.count("entered") == 1  # the blocked item is not retried
-        assert T_B not in [c[1] for c in world.calls if c[0] == "context"]
     finally:
         release.set()
-        await asyncio.sleep(0.05)
+    if swallow:
+        await _settled_stop(s)  # the owned task completes deterministically
+    # After the stop request, nothing further ran: not the blocked phase again, not the
+    # second recovery item, not a later phase, not another tenant (cancellation is
+    # re-checked before every side-effecting phase and item).
+    assert seen.count("entered") == 1
+    expected_recover = {"context": [], "recovery": [rows(2)[0]["op_id"]],
+                        "ready": [r["op_id"] for r in rows(2)]}[phase]
+    assert [c[2] for c in world.calls if c[0] == "recover"] == expected_recover
+    for kind in LATER_WORK[phase]:
+        assert kind not in world.kinds(T_A), (phase, kind)
+    assert T_B not in [c[1] for c in world.calls if c[0] == "context"]
 
 
 # --- U18 / U19 manual tick ownership ---------------------------------------------------------
