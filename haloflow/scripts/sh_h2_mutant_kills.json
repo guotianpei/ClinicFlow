@@ -1,0 +1,76 @@
+{
+ "M1": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p03_floor_exact",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p03b_floor_integration",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p03c_examine_uses_post_lock_clock",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p05b_consume_uses_post_lock_clock",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p09b_claim_v2_uses_post_lock_clock"
+ ],
+ "M2": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p02_window_boundaries[1900]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p02b_narrowed_window_and_lead3"
+ ],
+ "M3": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p09_confirmation_between_prepare_and_claim"
+ ],
+ "M4": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[settings]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[name]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p10_stale_snapshot[confirmation]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p37_snapshot_during_directory_update"
+ ],
+ "M5": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p04_deferral_round_trip"
+ ],
+ "M6": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p04_deferral_round_trip",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p15_backlog_bound",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p16_churn_rekeys",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p23_deactivated_config_only"
+ ],
+ "M7": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p35_skip_locked_schedule_row"
+ ],
+ "M8": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p05_gate_refusal_commits",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p05b_consume_uses_post_lock_clock"
+ ],
+ "M9": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p00_install_target_and_boundaries",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p22_runtime_denied[m05_outbound_prepare]"
+ ],
+ "M10": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p05_gate_refusal_commits",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p24_concurrent_run_claimed",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p24b_paused_sql_winner",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p24c_paused_sending_winner",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p25_duplicate_delivery",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p26_restart_after_consume"
+ ],
+ "M11": [
+  "tests/m05/test_sh_h2_units.py::test_h2_u03c_consume_commit_unknown_never_sends"
+ ],
+ "M12": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p28_stale_selection"
+ ],
+ "M13": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p32_change_after_claim_never_sends[stop]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p32_change_after_claim_never_sends[phone_swap]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p32_change_after_claim_never_sends[reassigned]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p32_change_after_claim_never_sends[start_moved]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p32_change_after_claim_never_sends[cancelled]"
+ ],
+ "M14": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p23_deactivated_config_only"
+ ],
+ "M15": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36_status_change_after_prepare[completed]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36_status_change_after_prepare[unsupported]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36_status_change_after_prepare[null]"
+ ],
+ "M16": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36b_status_change_after_claim[completed]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36b_status_change_after_claim[unsupported]",
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p36b_status_change_after_claim[null]"
+ ]
+}
