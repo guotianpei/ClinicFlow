@@ -657,6 +657,11 @@ def test_h2_p12_prepare_rendered_replay(h2: sh2.SH2Install) -> None:
     changed = sh2.prepare_rendered_cmd(ref, sh2.render_snapshot(h2, ref), op_id=cmd["op_id"],
                                        reminder=cmd["reminder_id"])
     assert changed["text_sha256"] == cmd["text_sha256"]
+    # The UNCHANGED original command, replayed after the versions moved (lost-ack replay):
+    before = sh2.h2_snapshot(h2)
+    late = sh2.owner_call(h2, "m05_outbound_prepare_rendered", cmd)
+    assert late["outcome"] == "existing" and late["inputs"] == first["inputs"]
+    assert sh2.h2_snapshot(h2) == before
     before = sh2.h2_snapshot(h2)
     with pytest.raises(psycopg.Error) as conflict:
         sh2.owner_call(h2, "m05_outbound_prepare_rendered", changed)
@@ -987,7 +992,7 @@ def _support_refused(install: sh2.SH2Install, conninfo: str, command: Any, code:
     {"send_time": "08:00"}, {"send_time": "19:00"}, {"window_start": "15:00",
                                                      "window_end": "12:00"},
     {"clinic_tz": "Mars/Olympus"}, {"clinic_display_name": "x" * 61},
-    {"clinic_display_name": "Clinic​"}, {"clinic_display_name": ""},
+    {"clinic_display_name": "Clinic\u200b"}, {"clinic_display_name": ""},
     {"send_time": "10:00:30"},
 ], ids=["lead1", "lead4", "widen-start", "widen-end", "send-before", "send-at-end",
         "inverted", "tz", "name-long", "name-format", "name-empty", "seconds"])
@@ -1047,6 +1052,19 @@ def test_h2_p21c_support_authority(clean_settings: sh2.SH2Install, env: db.L1WEn
             waiter.join()
         assert _code(late.value) == "SUPPORT_NOT_AUTHORIZED"
         assert (sh2.h2_snapshot(h2), sh2.settings_row(h2)) == before
+
+
+CLINIC_BAD = tuple(n for n in sh2.NAMES_BAD if n != "x" * 41) + ("x" * 61,)
+
+
+@pytest.mark.parametrize("name", CLINIC_BAD, ids=[f"bad{i}" for i in range(len(CLINIC_BAD))])
+def test_h2_p21d_clinic_name_rule(clean_settings: sh2.SH2Install, env: db.L1WEnv,
+                                  name: str) -> None:
+    h2 = clean_settings
+    h2.require()
+    with sh2.support_login(env, h2, "p21d") as support:
+        _support_refused(h2, support, sh2.settings_cmd(clinic_display_name=name),
+                         "SETTINGS_INVALID")
 
 
 @pytest.mark.parametrize("name", [n for _u, n in sh2.CLOSED] + list(sh2.OWNER_FUNCTIONS))
@@ -1332,21 +1350,122 @@ def test_h2_p27_consume_commit_unknown(h2: sh2.SH2Install, mode: str) -> None:
     assert sh2.consume(h2, op_id, attempt)["outcome"] == "refused"  # never `send`
 
 
+# --- P32..P34: H1 recipient/consent safety on the consume path (Codex d350083 item 3) ---
+
+
+def _after_claim(install: sa.SAInstall, kind: str, patient: str, phone: str, ref: str,
+                 zone: str) -> str:
+    """One change between claim and consume; returns the H1 D1 code it must produce."""
+
+    start = sh.start_of(install, ref)
+    if kind == "stop":
+        sh.inbound(install, sa.new_id(), phone, "stop")
+        return "OPTED_OUT"
+    if kind == "phone_swap":
+        sh2.directory2(install, "contact_remove", phone=phone, patient_id=patient)
+        sh2.contact_put(install, sa.fresh_phone(), patient)
+        return "IDENTITY_CHANGED"
+    if kind == "reassigned":
+        other = sa.new_id()
+        sh2.contact_put(install, sa.fresh_phone(), other)
+        sh2.appointment_put(install, ref, other, start, department_tz=zone)
+        return "IDENTITY_CHANGED"
+    if kind == "start_moved":
+        sh2.appointment_put(install, ref, patient, start + timedelta(days=1), department_tz=zone)
+        return "APPOINTMENT_CHANGED"
+    if kind == "cancelled":
+        sh2.appointment_put(install, ref, patient, start, department_tz=zone, status="cancelled")
+        return "APPOINTMENT_CHANGED"
+    raise AssertionError(kind)
+
+
+@pytest.mark.parametrize("kind", ["stop", "phone_swap", "reassigned", "start_moved",
+                                  "cancelled"])
+def test_h2_p32_change_after_claim_never_sends(h2: sh2.SH2Install, kind: str) -> None:
+    """consume re-checks the H1 D1 predicate under the contact lock (pins v1r2 D11): a STOP
+    or a recipient / appointment change after claim -> no send, no registration."""
+
+    import sc_support as sc
+
+    from haloflow.m05.outbound import FakeSender
+
+    h2.require()
+    sc.change(h2, "grant")
+    patient, phone, ref, zone = _sendable(h2)
+    assert phone is not None
+    op_id, attempt = sh2.claimed(h2, ref)
+    code = _after_claim(h2, kind, patient, phone, ref, zone)
+
+    async def body() -> tuple[str, int]:
+        sender = FakeSender()
+        async with sh2.runtime(h2) as rt:
+            worker, ctx = await _worker(h2, rt, sender)
+            return await worker.run_claimed(ctx, op_id, attempt), len(sender.calls)
+
+    assert asyncio.run(body()) == ("not_sent", 0)
+    row = sh.op_row(h2, op_id)
+    assert (row["state"], row["code"], row["correlation_open"]) == ("refused", code, False)
+    assert sh.windows_for(h2, ref) == []
+    ticket = sh2.ticket_row(h2, op_id)
+    assert ticket is not None and ticket["consumed_at"] is not None
+
+
+def test_h2_p34_frozen_inputs_after_edits(clean_settings: sh2.SH2Install) -> None:
+    """Name and clinic-name edits after claim do not change the text: the send uses the
+    frozen recipient, start and render inputs, and its hash equals the durable hash."""
+
+    import hashlib
+
+    import sc_support as sc
+
+    from haloflow.m05.outbound import FakeSender
+    from haloflow.m05.reminder_text import reminder_text
+
+    h2 = clean_settings
+    h2.require()
+    sc.change(h2, "grant")
+    patient, phone, ref, zone = _sendable(h2)
+    start = sh.start_of(h2, ref)
+    op_id, attempt = sh2.claimed(h2, ref)
+    durable = sh.op_row(h2, op_id)
+    sh2.appointment_put(h2, ref, patient, start, department_tz=zone, first_name="Edited")
+    sh2.settings_raw(h2, clinic_display_name="Edited Clinic")
+
+    async def body() -> tuple[str, list[Any]]:
+        sender = FakeSender()
+        async with sh2.runtime(h2) as rt:
+            worker, ctx = await _worker(h2, rt, sender)
+            return await worker.run_claimed(ctx, op_id, attempt), sender.calls
+
+    result, calls = asyncio.run(body())
+    expected = reminder_text(sh2.FIRST_NAME, start, zone, sh2.CLINIC)
+    assert result == "accepted"
+    assert calls == [(op_id, durable["phone"], expected)]
+    assert hashlib.sha256(expected.encode("utf-8")).hexdigest() == durable["text_sha256"]
+    assert phone == durable["phone"]
+
+
 # --- P28..P31 -----------------------------------------------------------------------------
 
 
 def test_h2_p28_stale_selection(clean_settings: sh2.SH2Install, env: db.L1WEnv) -> None:
+    """Independent of how settings_put re-keys (Codex d350083 item 1): a FRESH examination
+    moves the row into the future; the stale call, selected before, then writes nothing."""
+
     h2 = clean_settings
     h2.require()
     _p, _ph, ref, zone = _sendable(h2)
     assert ref in sh2.ready(h2, 1000)
-    snap = sh2.render_snapshot(h2, ref)
+    stale_snap = sh2.render_snapshot(h2, ref)  # the runner's selection and render
     with sh2.support_login(env, h2, "p28") as support:
-        sh2.settings_put(support, h2, send_time="18:30")  # due later today: re-keyed ahead
+        sh2.settings_put(support, h2, send_time="18:30")  # due later today (local 11-15 now)
+    fresh = sh2.examine(h2, ref)  # a fresh examination: not due -> re-keyed to the due
+    assert fresh["outcome"] in ("deferred", "not_ready"), fresh
     future = sh2.next_check(h2, ref)
+    assert future == sh2.at_local(sh2.db_now(h2), zone, 0, 18, 30)
     assert future > sh2.db_now(h2)
     before = sh2.h2_snapshot(h2)
-    result = sh2.examine(h2, ref, snap=snap)
+    result = sh2.examine(h2, ref, snap=stale_snap)
     assert (result["outcome"], result["code"]) == ("not_ready", "REKEYED")
     assert sh2.h2_snapshot(h2) == before
     assert sh2.next_check(h2, ref) == future
@@ -1404,18 +1523,79 @@ def test_h2_p30_gateway_capabilities_and_isolation(h2: sh2.SH2Install,
 
     assert asyncio.run(body()) == 6
     assert sh2.h2_snapshot(h2) == before
-    # Identical ids in two tenants: examine in A claims; B's row, op and inputs unchanged.
-    zone, start = sh2.in_window(h2)
-    patient, phone, same_ref = sa.new_id(), sa.fresh_phone(), sa.new_id()
+
+
+def test_h2_p30b_gateway_tenant_isolation(h2: sh2.SH2Install, h2_other: sh2.SH2Install
+                                          ) -> None:
+    """Identical patient / phone / appointment / op / reminder ids in tenants A and B with
+    DISTINCT payloads ("Alpha" / "Bravo"), every new gateway entry plus the rebound
+    directory key executed in both (Codex d350083 item 2)."""
+
+    import sc_support as sc
+
+    from haloflow.m05.outbound import OutboundRefused
+
     for install in (h2, h2_other):
-        sh2.contact_put(install, phone, patient)
-        sh2.appointment_put(install, same_ref, patient, start, department_tz=zone)
-    other_before = sh2.h2_snapshot(h2_other)
-    op_id, attempt = sh2.claimed(h2, same_ref)
-    assert sh2.h2_snapshot(h2_other) == other_before
-    sh2.refused(h2_other, "m05_outbound_consume", sh2.consume_cmd(op_id, attempt),
-                "NO_RENDER_INPUTS")
-    assert same_ref in sh2.ready(h2_other, 1000)
+        install.require()
+        sc.change(install, "grant")
+    zone, start = sh2.in_window(h2)
+    patient, phone, ref, ref2 = sa.new_id(), sa.fresh_phone(), sa.new_id(), sa.new_id()
+    op_id, reminder, op2, reminder2 = sa.new_id(), sa.new_id(), sa.new_id(), sa.new_id()
+    only_b = sa.new_id()
+
+    async def body() -> None:
+        async with sh2.runtime(h2) as ra, sh2.runtime(h2_other) as rb:
+            for rt, inst, name in ((ra, h2, "Alpha"), (rb, h2_other, "Bravo")):
+                await sh2.gateway_directory(rt, inst, "contact_put", phone=phone,
+                                            patient_id=patient)
+                for r in (ref, ref2):
+                    await sh2.gateway_directory(rt, inst, "appointment_put",
+                                                **sh2.appointment_fields(
+                                                    r, patient, start, department_tz=zone,
+                                                    first_name=name))
+            await sh2.gateway_directory(rb, h2_other, "appointment_put",
+                                        **sh2.appointment_fields(only_b, patient, start,
+                                                                 department_tz=zone))
+            svc_a, svc_b = sh2.service(ra), sh2.service(rb)
+            ca, cb = await sh2.dispatch_context(ra, h2), await sh2.dispatch_context(rb, h2_other)
+            snap_a = await svc_a.render_snapshot(ca, ref)
+            snap_b = await svc_b.render_snapshot(cb, ref)
+            assert (snap_a["first_name"], snap_b["first_name"]) == ("Alpha", "Bravo")
+            ready_a, ready_b = await svc_a.ready(ca, 1000), await svc_b.ready(cb, 1000)
+            assert ref in ready_a["refs"] and ref in ready_b["refs"]
+            assert only_b in ready_b["refs"] and only_b not in ready_a["refs"]
+            # examine: A claims; B unchanged; then B claims its own record (same ids).
+            before_b = sh2.h2_snapshot(h2_other)
+            ea = await svc_a.examine(ca, ref, **sh2.examine_kwargs(
+                snap_a, op_id=op_id, reminder_id=reminder))
+            assert ea["outcome"] == "claimed"
+            assert sh2.h2_snapshot(h2_other) == before_b
+            eb = await svc_b.examine(cb, ref, **sh2.examine_kwargs(
+                snap_b, op_id=op_id, reminder_id=reminder))
+            assert eb["outcome"] == "claimed" and eb["attempt_id"] != ea["attempt_id"]
+            # read v2: bound-tenant data only; A's attempt is stale in B.
+            assert (await svc_a.read_v2(ca, op_id, ea["attempt_id"]))["first_name"] == "Alpha"
+            with pytest.raises(OutboundRefused) as stale:
+                await svc_b.read_v2(cb, op_id, ea["attempt_id"])
+            assert stale.value.code == "CLAIM_STALE"
+            # consume: B refuses A's attempt and spends nothing; both tickets stay usable.
+            before_a, before_b = sh2.h2_snapshot(h2), sh2.h2_snapshot(h2_other)
+            assert (await svc_b.consume(cb, op_id, ea["attempt_id"]))["code"] == "CLAIM_STALE"
+            assert (sh2.h2_snapshot(h2), sh2.h2_snapshot(h2_other)) == (before_a, before_b)
+            got_a = await svc_a.consume(ca, op_id, ea["attempt_id"])
+            got_b = await svc_b.consume(cb, op_id, eb["attempt_id"])
+            assert (got_a["outcome"], got_a["inputs"]["first_name"]) == ("send", "Alpha")
+            assert (got_b["outcome"], got_b["inputs"]["first_name"]) == ("send", "Bravo")
+            # claim v2: the same op id prepared in both; claiming in A leaves B prepared.
+            sh2.prepare_rendered(h2, ref2, op_id=op2, reminder=reminder2)
+            sh2.prepare_rendered(h2_other, ref2, op_id=op2, reminder=reminder2)
+            before_b = sh2.h2_snapshot(h2_other)
+            fence = sh.op_row(h2, op2)["fence"]
+            assert (await svc_a.claim_v2(ca, op2, fence))["outcome"] == "claimed"
+            assert sh2.h2_snapshot(h2_other) == before_b
+            assert sh.op_row(h2_other, op2)["state"] == "prepared"
+
+    asyncio.run(body())
 
 
 def test_h2_p31_null_safety(clean_settings: sh2.SH2Install) -> None:

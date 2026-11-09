@@ -11,8 +11,11 @@ record_outcome and register, so these rows pin the worker's ordering, never the 
 - H2-U01b the H1 fixed test template (sh_support.render) and reminder_text agree when the
           clinic name is the H1 one (the shared case).
 - H2-U02  first_name_valid: every NAMES_OK accepted, every NAMES_BAD refused (emoji,
-          format, control, bidi, BOM, private use, non-NFC, 41 characters, empty,
-          surrounding whitespace); refused values never raise.
+          format incl. U+0600/U+06DD/U+070F/U+110BD, control, bidi, BOM, private use,
+          non-NFC, 41 characters, empty, surrounding whitespace).
+- H2-U02b every code point of a forbidden category (running unicodedata) or emoji range is
+          refused (Codex d350083 item 4).
+- H2-U02c clinic_display_name_valid: the same rule, 1-60 characters.
 - H2-U03  run_claimed: consume -> render(inputs) -> hash check -> exactly one send ->
           outcome accepted -> register. No claim and no H1 read are called.
 - H2-U03b consume refused (TICKET_SPENT / CLAIM_STALE / PRECALL_WINDOW_CLOSED) -> zero
@@ -52,9 +55,10 @@ GOLDEN = (
     ("Synth", datetime(2026, 11, 10, 17, 0, tzinfo=UTC), sh2.NY, "HaloVox Test Clinic",
      "Hi Synth, this is HaloVox Test Clinic. You have an appointment on Tuesday, Nov 10 at"
      " 12:00 PM." + TAIL),
-    ("Zoë", datetime(2027, 3, 14, 7, 30, tzinfo=UTC), sh2.NY, "Dr. Ana Núñez Family Practice",
-     "Hi Zoë, this is Dr. Ana Núñez Family Practice. You have an appointment on Sunday,"
-     " Mar 14 at 3:30 AM." + TAIL),
+    ("Zo\u00eb", datetime(2027, 3, 14, 7, 30, tzinfo=UTC), sh2.NY,
+     "Dr. Ana N\u00fa\u00f1ez Family Practice",
+     "Hi Zo\u00eb, this is Dr. Ana N\u00fa\u00f1ez Family Practice. You have an"
+     " appointment on Sunday, Mar 14 at 3:30 AM." + TAIL),
     ("Synth", datetime(2026, 10, 28, 13, 5, tzinfo=UTC), "America/Chicago",
      "HaloVox Demo Clinic",
      "Hi Synth, this is HaloVox Demo Clinic. You have an appointment on Wednesday, Oct 28 at"
@@ -89,9 +93,36 @@ def test_h2_u02_first_name_rule() -> None:
         assert first_name_valid(name) is True, name
     for name in sh2.NAMES_BAD:
         assert first_name_valid(name) is False, repr(name)
-    for lo, hi in sh2.FORBIDDEN_RANGES:  # every forbidden range, both ends
-        for cp in {lo, hi}:
-            assert first_name_valid(f"A{chr(cp)}B") is False, hex(cp)
+
+
+def test_h2_u02b_every_forbidden_code_point() -> None:
+    """Every code point of a forbidden general category (per the running unicodedata) and
+    every emoji-range code point is refused; letters, digits, hyphen and apostrophe are not."""
+
+    import unicodedata
+
+    from haloflow.m05.reminder_text import first_name_valid
+
+    refused_missing = []
+    for cp in range(0x110000):
+        char = chr(cp)
+        forbidden = unicodedata.category(char) in sh2.FORBIDDEN_CATEGORIES or any(
+            lo <= cp <= hi for lo, hi in sh2.EMOJI_RANGES)
+        if forbidden and first_name_valid(f"A{char}B"):
+            refused_missing.append(hex(cp))
+    assert refused_missing == []
+    for char in ("\u00e9", "\u4e00", "\u0661", "-", "'"):
+        assert first_name_valid(f"A{char}B") is True, repr(char)
+
+
+def test_h2_u02c_clinic_display_name_rule() -> None:
+    from haloflow.m05.reminder_text import clinic_display_name_valid
+
+    assert clinic_display_name_valid("x" * 60) is True
+    assert clinic_display_name_valid("x" * 61) is False
+    for name in sh2.NAMES_BAD:
+        if name != "x" * 41:  # 41 characters is a valid clinic name
+            assert clinic_display_name_valid(name) is False, repr(name)
 
 
 # --- worker double ----------------------------------------------------------------------------

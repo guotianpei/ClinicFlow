@@ -99,19 +99,26 @@ NY: Final = "America/New_York"
 FLOOR: Final = timedelta(hours=26)
 RECHECK: Final = timedelta(hours=1)
 
-# The name rule (pins D10): NFC, 1-40 characters, no leading/trailing whitespace, none of
-# these code points. Independent literal for both the Python and the SQL check.
-FORBIDDEN_RANGES: Final = (
-    (0x0000, 0x001F), (0x007F, 0x009F), (0x00AD, 0x00AD), (0x061C, 0x061C),
-    (0x180E, 0x180E), (0x200B, 0x200F), (0x2028, 0x202E), (0x2060, 0x206F),
-    (0x2600, 0x27BF), (0xE000, 0xF8FF), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF),
-    (0xFFF9, 0xFFFB), (0x1F000, 0x1FAFF), (0xE0000, 0xE007F),
+# The name rule (pins D10r1, Codex d350083 item 4): NFC, 1-40 characters (clinic display
+# name 1-60), no leading/trailing whitespace, and no code point whose Unicode general category
+# is in FORBIDDEN_CATEGORIES, nor any code point in EMOJI_RANGES. The implementation commits
+# one literal range table used by BOTH the SQL and the Python check; U02 verifies it against
+# the running unicodedata for every code point (so a missing Cf such as U+0600 fails).
+FORBIDDEN_CATEGORIES: Final = frozenset({"Cc", "Cf", "Co", "Cs", "Zl", "Zp"})
+EMOJI_RANGES: Final = ((0x2600, 0x27BF), (0xFE00, 0xFE0F), (0x1F000, 0x1FAFF),
+                       (0xE0100, 0xE01EF))
+NAMES_OK: Final = ("Synth", "Jos\u00e9", "Zo\u00eb", "Nguy\u1ec5n", "O'Brien", "Anne-Marie",
+                   "\u674e", "\u0645\u062d\u0645\u062f", "Ana Mar\u00eda", "x" * 40)
+# Representative refusals for the SQL rows (and the clinic display name): every class above,
+# including the Cf characters Codex found missing from the v1 table.
+NAMES_BAD: Final = (
+    "", " ", " Synth", "Synth ", "x" * 41,
+    "Syn\u200bth", "Syn\nth", "Syn\u0007th", "Syn\u0085th", "Synth\U0001f600",
+    "Syn\u2764th", "Syn\ufe0fth", "Syn\u202eth", "Syn\u2066th", "Syn\u00adth",
+    "Jose\u0301", "Syn\ufeffth", "Syn\ue000th", "Syn\u2028th",
+    "Syn\u0600th", "Syn\u06ddth", "Syn\u070fth", "Syn\U000110bdth", "Syn\U000e0001th",
+    "Syn\ufff9th", "Syn\U000f0000th",
 )
-NAMES_OK: Final = ("Synth", "José", "Zoë", "Nguyễn", "O'Brien", "Anne-Marie", "李",
-                   "محمد", "Ana María", "x" * 40)
-NAMES_BAD: Final = ("", " ", " Synth", "Synth ", "x" * 41, "Syn​th", "Syn\nth",
-                    "Syn\u0007th", "Synth\U0001F600", "Syn‮th", "José",
-                    "Syn﻿th", "Synth")
 
 
 # --- registry, catalogue, install ---------------------------------------------------------
@@ -693,3 +700,37 @@ def expire_lease(install: sa.SAInstall, op_id: str) -> None:
     sa.admin(install, sa.q(install, "UPDATE {s}.m05_outbound_ops SET lease_until ="
                                     " clock_timestamp() - interval '1 second'"
                                     " WHERE op_id = %s"), (op_id,))
+
+
+async def gateway_directory(rt: Any, install: sa.SAInstall, op: str, **fields: Any
+                            ) -> dict[str, Any]:
+    """The REBOUND gateway key m05.intake.directory (-> m05_directory_v2), executed through
+    the real resolver and gateway with the directory workload's capabilities."""
+
+    import service_support as sv
+
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.intake import _attribution
+    from haloflow.m05.intake_statements import DIRECTORY_KEY
+
+    ctx = await sv.context(rt, install, sa.W_DIRECTORY, sa.CAPS["directory"], kind="workload")
+    command = {"schema_version": 1, "op": op, **fields, "attribution": _attribution(ctx)}
+
+    async def body(binding: Any) -> dict[str, Any]:
+        rows = await binding.handle.fetch_all(DIRECTORY_KEY, {"command": Jsonb(command)})
+        assert len(rows) == 1, rows
+        return dict(rows[0][0])
+
+    result: dict[str, Any] = await EventFoundation(
+        rt.gateway, producer_service=sa.PRODUCER).run_in_transaction(ctx, body)
+    return result
+
+
+def examine_kwargs(snap: dict[str, Any], **kw: Any) -> dict[str, Any]:
+    """ReminderService.examine keyword arguments from a snapshot (the runner's render)."""
+
+    return {"op_id": kw.get("op_id") or sa.new_id(),
+            "reminder_id": kw.get("reminder_id") or sa.new_id(),
+            "lease_seconds": kw.get("lease_seconds", 120), "text_sha256": rendered_hash(snap),
+            "source_version": snap["source_version"],
+            "settings_version": snap["settings_version"]}
