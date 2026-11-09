@@ -245,6 +245,50 @@ def test_h3_p04_recovery_states(h3: sh3.SH3Install) -> None:
         "COMPLETE", sh3.zero_recovery(), {"expired": 0})
 
 
+def test_h3_p04e_lost_ack_retry_uses_the_real_worker_ceiling(h3: sh3.SH3Install) -> None:
+    """The real OutboundWorker._register: the first register COMMITS but its ack is lost;
+    the worker's single retry returns `existing`. Exactly two t052 invocations, one window,
+    one dispatch observation, zero sends; a third invocation would trip the trap."""
+
+    sh3.ready_install(h3)
+    accepted, ref = sh3.persisted_accepted_op(h3)
+    sh2.clear_schedule(h3)
+    before_events = sh3.dispatch_events(h3, accepted)
+    rig, (result,) = asyncio.run(_ticks(h3, 1, register_acks=("lose", "ok", "trap")))
+    rep = sh3.report(result, h3)
+    assert (rep.recovery.status, rep.recovery.counts) == (
+        "ok", sh3.zero_recovery(existing=1))
+    assert rep.code == "COMPLETE"
+    assert [c[1] for c in rig.service.calls("register")] == [accepted, accepted]
+    assert [c[2] for c in rig.service.calls("register_result")] == ["registered", "existing"]
+    assert sh3.op_state(h3, accepted)[0] == "registered"
+    assert len(sh.windows_for(h3, ref)) == 1
+    assert sh3.dispatch_events(h3, accepted) == before_events + 1
+    assert rig.sender.calls == []
+
+
+def test_h3_p04f_exhausted_unknown_is_counted_not_resent(h3: sh3.SH3Install) -> None:
+    """Both acknowledgements lost (the first call committed): the worker gives up after its
+    one retry -> `commit_unknown`, recovery DEGRADED_ITEMS; the op is in fact registered, so
+    the next tick selects nothing (no third invocation, no send)."""
+
+    sh3.ready_install(h3)
+    accepted, ref = sh3.persisted_accepted_op(h3)
+    sh2.clear_schedule(h3)
+    rig, (first, second) = asyncio.run(
+        _ticks(h3, 2, register_acks=("lose", "lose", "trap")))
+    rep = sh3.report(first, h3)
+    assert (rep.code, rep.recovery.status, rep.recovery.counts) == (
+        "DEGRADED", "DEGRADED_ITEMS", sh3.zero_recovery(commit_unknown=1))
+    assert [c[2] for c in rig.service.calls("register_result")] == ["registered", "existing"]
+    assert sh3.op_state(h3, accepted)[0] == "registered"
+    assert len(sh.windows_for(h3, ref)) == 1
+    rep2 = sh3.report(second, h3)
+    assert (rep2.code, rep2.recovery.counts) == ("COMPLETE", sh3.zero_recovery())
+    assert len(rig.service.calls("register")) == 2
+    assert rig.sender.calls == []
+
+
 def test_h3_p04b_held_backlog_does_not_hide_accepted(h3: sh3.SH3Install) -> None:
     limit = 3
     sh3.ready_install(h3)
@@ -606,6 +650,9 @@ def _malformed(case: str) -> dict[str, Any]:
         "after-ts-space": {"updated_at": "2026-11-09 10:00:00.000000Z", "op_id": op},
         "after-ts-millis": {"updated_at": "2026-11-09T10:00:00.000Z", "op_id": op},
         "after-ts-number": {"updated_at": 1, "op_id": op},
+        "after-ts-feb-30": {"updated_at": "2026-02-30T10:00:00.000000Z", "op_id": op},
+        "after-ts-hour-25": {"updated_at": "2026-11-09T25:00:00.000000Z", "op_id": op},
+        "after-ts-month-13": {"updated_at": "2026-13-01T10:00:00.000000Z", "op_id": op},
         "after-op-upper": {"updated_at": TS, "op_id": op.upper()},
         "after-op-bad": {"updated_at": TS, "op_id": "not-a-uuid"},
     }
@@ -626,7 +673,8 @@ MALFORMED = (
     "limit-huge", "after-list", "after-string", "after-number", "after-empty",
     "after-only-ts", "after-only-op", "after-extra", "after-ts-null", "after-op-null",
     "after-ts-no-micros", "after-ts-offset", "after-ts-space", "after-ts-millis",
-    "after-ts-number", "after-op-upper", "after-op-bad", "schema-version-2",
+    "after-ts-number", "after-ts-feb-30", "after-ts-hour-25", "after-ts-month-13",
+    "after-op-upper", "after-op-bad", "schema-version-2",
     "attribution-shape",
 )
 
@@ -726,7 +774,8 @@ def test_h3_p11d_accepted_only_ordered_strict_cursor_no_writes(shape: sh3.SH3Ins
     assert tail == [{"op_id": lo, "updated_at": TIE_TEXT}, {"op_id": hi, "updated_at": TIE_TEXT}]
     assert sh3.pending(shape, 1000, {"updated_at": TIE_TEXT, "op_id": lo}) == [tail[1]]
     assert sh3.pending(shape, 1000, {"updated_at": TIE_TEXT, "op_id": hi}) == []
-    assert sh3.pending(shape, 1, None)[0] == full[0]
+    remaining = [o for o in full if o["op_id"] not in (lo, hi)]  # recomputed after the move
+    assert sh3.pending(shape, 1, None) == remaining[:1]
 
 
 def test_h3_p11e_tenant_isolation_and_gateway_key(shape: sh3.SH3Install,

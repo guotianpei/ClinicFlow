@@ -266,7 +266,8 @@ def dispatch_contexts(rt: Any, installs: Iterable[sa.SAInstall], *,
 Hook = Callable[[dict[str, Any]], Awaitable[None]]
 
 
-def service(rt: Any, *, after_examine: Hook | None = None) -> Any:
+def service(rt: Any, *, after_examine: Hook | None = None,
+            register_acks: Iterable[str] | None = None) -> Any:
     """A real ReminderSchedulerService on the runtime gateway that records the calls the
     rows count (t052 via `register`, t075 via `accepted_pending`, t051 via `expire`,
     examine / consume). `after_examine` runs after a committed examine (test barrier)."""
@@ -280,8 +281,21 @@ def service(rt: Any, *, after_examine: Hook | None = None) -> Any:
             self.log: list[tuple[Any, ...]] = []
 
         async def register(self, context: Any, op_id: Any) -> dict[str, Any]:
+            """`register_acks` scripts each call (FIXTURE, lost-acknowledgement seam):
+            "ok" = the real register; "lose" = the real register COMMITS, then its
+            acknowledgement is lost (OutboundCommitUnknown); "trap" = a further call is a
+            test failure. With no script every call is "ok"."""
+
+            from haloflow.m05.outbound import OutboundCommitUnknown
+
             self.log.append(("register", str(op_id)))
+            mode = next(acks, "trap") if acks is not None else "ok"
+            if mode == "trap":
+                raise AssertionError("register invoked beyond the scripted ceiling")
             result: dict[str, Any] = await super().register(context, op_id)
+            self.log.append(("register_result", str(op_id), result.get("outcome")))
+            if mode == "lose":
+                raise OutboundCommitUnknown()
             return result
 
         async def accepted_pending(self, context: Any, limit: int, after: Any
@@ -313,6 +327,7 @@ def service(rt: Any, *, after_examine: Hook | None = None) -> Any:
         def calls(self, name: str) -> list[tuple[Any, ...]]:
             return [entry for entry in self.log if entry[0] == name]
 
+    acks = iter(tuple(register_acks)) if register_acks is not None else None
     return Recording(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
 
 
@@ -375,7 +390,8 @@ class Rig:
 
 def rig(rt: Any, installs: Iterable[sa.SAInstall], *, sender: Any = None,
         contexts: Contexts | None = None, fail_ops: Iterable[str] = (),
-        after_examine: Hook | None = None, recovery_limit: int = 100, batch: int = 10,
+        after_examine: Hook | None = None, register_acks: Iterable[str] | None = None,
+        recovery_limit: int = 100, batch: int = 10,
         interval_s: int = 300, stop_timeout_s: int = 10,
         tenants: tuple[str, ...] | None = None) -> Rig:
     """One ReminderScheduler wired to the real service/worker/runner on `rt` (unstarted;
@@ -387,7 +403,7 @@ def rig(rt: Any, installs: Iterable[sa.SAInstall], *, sender: Any = None,
 
     installs = tuple(installs)
     sender = sender if sender is not None else FakeSender()
-    svc = service(rt, after_examine=after_examine)
+    svc = service(rt, after_examine=after_examine, register_acks=register_acks)
     wrk = worker(svc, sender, fail_ops=fail_ops)
     runner = ReminderRunner(svc, wrk, batch=batch, lease_seconds=120)
     scheduler = ReminderScheduler(
@@ -472,6 +488,16 @@ def op_in_state(install: SH3Install, state: str) -> tuple[str, str]:
     sh.outcome(install, op_id, attempt, state, code=code)
     assert sh.op_row(install, op_id)["state"] == state
     return op_id, ref
+
+
+def dispatch_events(install: sa.SAInstall, op_id: str) -> int:
+    """M02 dispatch observations for the op's reminder (the H1 P21e counter)."""
+
+    reminder = str(sh.op_row(install, op_id)["reminder_id"])
+    rows = sa.admin(install, sa.q(install, "SELECT count(*) FROM {s}.patient_events AS e"
+                                           " WHERE e.correlation_id = %s"), (reminder,))
+    count: int = rows[0][0]
+    return count
 
 
 def op_state(install: sa.SAInstall, op_id: str) -> tuple[str, str | None]:
