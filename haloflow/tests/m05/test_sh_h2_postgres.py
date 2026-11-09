@@ -1445,7 +1445,9 @@ def test_h2_p34_frozen_inputs_after_edits(clean_settings: sh2.SH2Install) -> Non
     expected = reminder_text(sh2.FIRST_NAME, start, zone, sh2.CLINIC)
     assert result == "accepted"
     assert calls == [(op_id, durable["phone"], expected)]
-    assert hashlib.sha256(expected.encode("utf-8")).hexdigest() == durable["text_sha256"]
+    # to_jsonb renders the bytea column as "\\x<hex>"; compare the hex digits exactly.
+    assert "\\x" + hashlib.sha256(expected.encode("utf-8")).hexdigest() == durable[
+        "text_sha256"]
     assert phone == durable["phone"]
 
 
