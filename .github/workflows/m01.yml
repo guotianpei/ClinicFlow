@@ -231,7 +231,7 @@ jobs:
           $VENV/bin/python -I scripts/sh_h1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sh-h1-mutation"
-      # L-1S package S-H H2 scheduling / send-ticket mutation controls M1-M14 (M7 via the
+      # L-1S package S-H H2 scheduling / send-ticket mutation controls M1-M16 (M7 via the
       # P35 row-lock fixture): three groups (units and statements against the PostgreSQL
       # module, the worker against the unit module), kill sets in
       # scripts/sh_h2_mutant_kills.json.

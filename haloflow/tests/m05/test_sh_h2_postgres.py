@@ -82,6 +82,13 @@ Rows (P = PostgreSQL; a parametrised row counts once per parameter):
 - P35   SKIP LOCKED contention (Codex 011101Z): a FIXTURE holds ONLY the schedule row lock
         (no settings or contact lock); examine returns not_ready LOCKED at once, zero
         writes; under a 3 s lock_timeout a blocking examine would fail, never hang.
+- P36   (Codex 26edf09 I1) a prepared op, then the source status becomes completed /
+        unsupported / NULL -> examine removes it, op abandoned with the code, no ticket.
+- P36b  the same change after claim -> run_claimed not_sent, op refused with the code,
+        correlation closed, no window, ticket spent.
+- P37   (I2) a snapshot taken while a directory update is open sees the old start AND the
+        old version; after the commit that snapshot is STALE_SNAPSHOT; a fresh render claims
+        and freezes the NEW start.
 - P31   null-safety: clinic display name NULL -> SETTINGS_INCOMPLETE; department and clinic
         zone NULL -> TZ_UNRESOLVED; confirmation NULL -> sends (unknown); no profile row ->
         PROFILE_MISSING.
@@ -1646,3 +1653,71 @@ def test_h2_p35_skip_locked_schedule_row(h2: sh2.SH2Install) -> None:
         assert result == {"schema_version": 1, "outcome": "not_ready", "code": "LOCKED"}
         assert sh2.h2_snapshot(h2) == before
     assert sh2.examine(h2, ref)["outcome"] == "claimed"  # the lock released: examined
+
+
+STATUS_CHANGES = (("completed", "COMPLETED"), ("no_show", "STATUS_UNSUPPORTED"),
+                  (None, "STATUS_UNSUPPORTED"))
+
+
+@pytest.mark.parametrize(("status", "code"), STATUS_CHANGES,
+                         ids=["completed", "unsupported", "null"])
+def test_h2_p36_status_change_after_prepare(h2: sh2.SH2Install, status: str | None,
+                                            code: str) -> None:
+    h2.require()
+    patient, _ph, ref, zone = _sendable(h2)
+    op = sh2.prepare_rendered(h2, ref)
+    sh2.appointment_put(h2, ref, patient, sh.start_of(h2, ref), department_tz=zone,
+                        source_status=status)
+    result = sh2.examine(h2, ref)
+    assert (result["outcome"], result["code"]) == ("removed", code)
+    row = sh.op_row(h2, op["op_id"])
+    assert (row["state"], row["code"]) == ("abandoned", code)
+    assert sh2.ticket_row(h2, op["op_id"]) is None
+
+
+@pytest.mark.parametrize(("status", "code"), STATUS_CHANGES,
+                         ids=["completed", "unsupported", "null"])
+def test_h2_p36b_status_change_after_claim(h2: sh2.SH2Install, status: str | None,
+                                           code: str) -> None:
+    import sc_support as sc
+
+    from haloflow.m05.outbound import FakeSender
+
+    h2.require()
+    sc.change(h2, "grant")
+    patient, _ph, ref, zone = _sendable(h2)
+    op_id, attempt = sh2.claimed(h2, ref)
+    sh2.appointment_put(h2, ref, patient, sh.start_of(h2, ref), department_tz=zone,
+                        source_status=status)
+
+    async def body() -> tuple[str, int]:
+        sender = FakeSender()
+        async with sh2.runtime(h2) as rt:
+            worker, ctx = await _worker(h2, rt, sender)
+            return await worker.run_claimed(ctx, op_id, attempt), len(sender.calls)
+
+    assert asyncio.run(body()) == ("not_sent", 0)
+    row = sh.op_row(h2, op_id)
+    assert (row["state"], row["code"], row["correlation_open"]) == ("refused", code, False)
+    assert sh.windows_for(h2, ref) == []
+    ticket = sh2.ticket_row(h2, op_id)
+    assert ticket is not None and ticket["consumed_at"] is not None
+
+
+def test_h2_p37_snapshot_during_directory_update(h2: sh2.SH2Install) -> None:
+    h2.require()
+    patient, _ph, ref, zone = _sendable(h2)
+    old_start = sh.start_of(h2, ref)
+    new_start = old_start + timedelta(hours=1)
+    update = sa.directory_cmd("appointment_put", **sh2.appointment_fields(
+        ref, patient, new_start, department_tz=zone, first_name="During"))
+    with sa.held(h2, "m05_directory_v2", update):  # the update is open, not committed
+        during = sh2.render_snapshot(h2, ref)
+    assert (_ts(during["start_at"]), during["first_name"]) == (old_start, sh2.FIRST_NAME)
+    stale = sh2.examine(h2, ref, snap=during)
+    assert (stale["outcome"], stale["code"]) == ("not_ready", "STALE_SNAPSHOT")
+    assert sh2.op_for(h2, ref) is None
+    op_id, _attempt = sh2.claimed(h2, ref)
+    row = sh.op_row(h2, op_id)
+    assert (_ts(row["start_at"]), sh2.inputs_row(h2, op_id)["first_name"]) == (  # type: ignore[index]
+        new_start, "During")

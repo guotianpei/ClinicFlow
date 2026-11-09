@@ -597,6 +597,13 @@ _DECLARE_H2: Final = _DECLARE_COMMON + _C_NAME + r"""
 
 _SNAPSHOT_BODY: Final = (
     "\nDECLARE" + _DECLARE_H2 + r"""
+    v_sset bigint;
+    v_sname text;
+    v_stz text;
+    v_sstart timestamptz;
+    v_pfirst text;
+    v_ptz text;
+    v_psv bigint;
 BEGIN""" + _TENANT + r"""
     IF v_keys IS DISTINCT FROM ARRAY['appointment_ref', 'attribution',
                                      'schema_version']::text[]
@@ -605,19 +612,30 @@ BEGIN""" + _TENANT + r"""
     END IF;
 """ + _ATTRIBUTION + _workload("dispatch") + r"""
     v_ref := (p_command OPERATOR(pg_catalog.->>) 'appointment_ref')::uuid;
-    SELECT * INTO v_s FROM {schema}.m05_reminder_settings AS s;
-    SELECT a.patient_id, a.status, a.start_at INTO v_appt
-      FROM {schema}.m05_appointments AS a WHERE a.appointment_ref = v_ref;
-    SELECT p.* INTO v_p FROM {schema}.m05_appointment_profile AS p
-     WHERE p.appointment_ref = v_ref;
-""" + _RESOLVE_ZONE + r"""
+    -- Codex 26edf09 I2: ONE statement (one READ COMMITTED snapshot) reads settings,
+    -- appointment and profile, so a concurrent directory commit is seen wholly or not at
+    -- all (start_at and source_version always belong together).
+    SELECT s.settings_version, s.clinic_display_name, s.clinic_tz, a.start_at,
+           p.first_name, p.department_tz, p.source_version
+      INTO v_sset, v_sname, v_stz, v_sstart, v_pfirst, v_ptz, v_psv
+      FROM {schema}.m05_reminder_settings AS s
+      LEFT JOIN {schema}.m05_appointments AS a ON a.appointment_ref = v_ref
+      LEFT JOIN {schema}.m05_appointment_profile AS p ON p.appointment_ref = v_ref;
+    v_zone := NULL;
+    v_source := NULL;
+    IF """ + _zone_ok("v_ptz") + r""" THEN
+        v_zone := v_ptz;
+        v_source := 'department';
+    ELSIF """ + _zone_ok("v_stz") + r""" THEN
+        v_zone := v_stz;
+        v_source := 'clinic_fallback';
+    END IF;
     RETURN pg_catalog.jsonb_build_object('schema_version', 1,
-        'appointment_ref', v_ref::text, 'source_version', v_p.source_version,
-        'settings_version', v_s.settings_version, 'first_name', v_p.first_name,
-        'clinic_display_name', v_s.clinic_display_name, 'zone', v_zone,
-        'zone_source', v_source,
-        'start_at', CASE WHEN v_appt.start_at IS NULL THEN NULL ELSE """
-    + _ts("v_appt.start_at") + r""" END);
+        'appointment_ref', v_ref::text, 'source_version', v_psv,
+        'settings_version', v_sset, 'first_name', v_pfirst,
+        'clinic_display_name', v_sname, 'zone', v_zone, 'zone_source', v_source,
+        'start_at', CASE WHEN v_sstart IS NULL THEN NULL ELSE """
+    + _ts("v_sstart") + r""" END);
 END;
 """
 )
@@ -784,6 +802,15 @@ BEGIN""" + _TENANT + r"""
     IF v_p.confirmation = 'confirmed' THEN
         UPDATE {schema}.m05_outbound_ops AS o SET state = 'abandoned', code = 'CONFIRMED',
             updated_at = v_now WHERE o.op_id = v_op RETURNING * INTO v_o;
+        RETURN """ + _OP_RESULT.format(outcome="'abandoned'", attempt="NULL") + r""";
+    END IF;
+    -- Codex 26edf09 I1: the CURRENT source status still makes the appointment eligible.
+    IF v_p.source_status IS DISTINCT FROM 'booked' THEN
+        UPDATE {schema}.m05_outbound_ops AS o
+           SET state = 'abandoned',
+               code = CASE WHEN v_p.source_status = 'completed' THEN 'COMPLETED'
+                           ELSE 'STATUS_UNSUPPORTED' END,
+               updated_at = v_now WHERE o.op_id = v_op RETURNING * INTO v_o;
         RETURN """ + _OP_RESULT.format(outcome="'abandoned'", attempt="NULL") + r""";
     END IF;
     -- R-H2-02 with a fresh clock read after the locks; frozen zone and start, current
@@ -1112,6 +1139,16 @@ BEGIN""" + _TENANT + r"""
     -- D11: the H1 D1 predicate (recipient, appointment, start, STOP, reminder id) again.
 """ + _D1 + r"""
     IF v_code IS NOT NULL THEN
+        UPDATE {schema}.m05_outbound_ops AS o
+           SET state = 'refused', code = v_code, correlation_open = false,
+               updated_at = pg_catalog.clock_timestamp()
+         WHERE o.op_id = v_op;
+        """ + _refusal("v_code") + r"""
+    END IF;
+    -- Codex 26edf09 I1: the current source status, under the profile lock.
+    IF v_p.source_status IS DISTINCT FROM 'booked' THEN
+        v_code := CASE WHEN v_p.source_status = 'completed' THEN 'COMPLETED'
+                       ELSE 'STATUS_UNSUPPORTED' END;
         UPDATE {schema}.m05_outbound_ops AS o
            SET state = 'refused', code = v_code, correlation_open = false,
                updated_at = pg_catalog.clock_timestamp()

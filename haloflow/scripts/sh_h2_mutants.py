@@ -1,4 +1,4 @@
-"""L-1S package S-H H2 mutation controls, group family ``sh_h2`` (M1..M14).
+"""L-1S package S-H H2 mutation controls, group family ``sh_h2`` (M1..M16).
 
 Predeclared with the H2 implementation (package v1 section 3 and v1r1 delta, Codex
 source gate ffbab59): the 26 h floor; the window end; confirmation at claim (X3); the
@@ -100,6 +100,16 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M14", "consume is no longer activation-protected", STATEMENTS,
      "SH2_PROTECTED: Final[frozenset[str]] = frozenset({EXAMINE_KEY, CONSUME_KEY, CLAIM_V2_KEY})\n",
      "SH2_PROTECTED: Final[frozenset[str]] = frozenset({EXAMINE_KEY, CLAIM_V2_KEY})\n"),
+    ("M15", "claim v2 ignores the current source status (I1)", UNITS,
+     "    -- Codex 26edf09 I1: the CURRENT source status still makes the appointment eligible.\n"
+     "    IF v_p.source_status IS DISTINCT FROM 'booked' THEN\n",
+     "    -- Codex 26edf09 I1: the CURRENT source status still makes the appointment eligible.\n"
+     "    IF false THEN\n"),
+    ("M16", "consume ignores the current source status (I1)", UNITS,
+     "    -- Codex 26edf09 I1: the current source status, under the profile lock.\n"
+     "    IF v_p.source_status IS DISTINCT FROM 'booked' THEN\n",
+     "    -- Codex 26edf09 I1: the current source status, under the profile lock.\n"
+     "    IF false THEN\n"),
     ("M11", "the worker retries consume after a commit-unknown", WORKER,
      '            _LOG.info("outbound consume commit unknown; not sent")\n'
      '            return "consume_unknown"\n',
