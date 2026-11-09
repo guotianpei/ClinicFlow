@@ -134,13 +134,15 @@ def env(migrated_database: str) -> Iterator[db.L1WEnv]:
 
 @pytest.fixture
 def clean_settings(h2: sh2.SH2Install) -> Iterator[sh2.SH2Install]:
-    """Rows that change settings restore the defaults afterwards (FIXTURE)."""
+    """Rows that change settings restore the defaults afterwards (FIXTURE). The install
+    itself happens in the row body (class-B red rule); teardown resets only an installed
+    tenant."""
 
-    h2.require()
     try:
         yield h2
     finally:
-        sh2.reset_settings(h2)
+        if h2._attempted and h2._error is None:
+            sh2.reset_settings(h2)
 
 
 def _sendable(install: sh2.SH2Install, **kw: Any) -> tuple[str, str | None, str, str]:
@@ -442,6 +444,7 @@ def _local_hhmm(install: sa.SAInstall, zone: str) -> str:
 
 def test_h2_p04_deferral_round_trip(clean_settings: sh2.SH2Install, env: db.L1WEnv) -> None:
     h2 = clean_settings
+    h2.require()
     _p, _ph, ref, zone = _sendable(h2)
     op = sh2.prepare_rendered(h2, ref)
     fence_before = sh.op_row(h2, op["op_id"])["fence"]
@@ -477,6 +480,7 @@ def test_h2_p04_deferral_round_trip(clean_settings: sh2.SH2Install, env: db.L1WE
 
 def test_h2_p05_gate_refusal_commits(clean_settings: sh2.SH2Install) -> None:
     h2 = clean_settings
+    h2.require()
     _p, _ph, ref, zone = _sendable(h2)
     op_id, attempt = sh2.claimed(h2, ref)
     sh2.settings_raw(h2, window_end=_local_hhmm(h2, zone))
@@ -587,6 +591,7 @@ def test_h2_p09b_claim_v2_uses_post_lock_clock(h2: sh2.SH2Install) -> None:
 @pytest.mark.parametrize("change", ["settings", "name", "confirmation"])
 def test_h2_p10_stale_snapshot(clean_settings: sh2.SH2Install, change: str) -> None:
     h2 = clean_settings
+    h2.require()
     patient, _ph, ref, zone = _sendable(h2)
     snap = sh2.render_snapshot(h2, ref)
     start = sh.start_of(h2, ref)
@@ -680,6 +685,7 @@ def test_h2_p12_prepare_rendered_replay(h2: sh2.SH2Install) -> None:
 def test_h2_p13_timezone_resolution(clean_settings: sh2.SH2Install, department: str | None,
                                     clinic: str | None, expect: tuple[str, str]) -> None:
     h2 = clean_settings
+    h2.require()
     zone, start = sh2.in_window(h2)
     clinic_zone = {"valid": zone, "other": "Pacific/Kiritimati", None: None}.get(clinic, clinic)
     if clinic_zone is not None:
@@ -876,6 +882,7 @@ def test_h2_p17_two_concurrent_runners(h2_runner: sh2.SH2Install) -> None:
 
 def test_h2_p18_lock_order_no_deadlock(clean_settings: sh2.SH2Install, env: db.L1WEnv) -> None:
     h2 = clean_settings
+    h2.require()
     patient, _ph, ref, zone = _sendable(h2)
     start = sh.start_of(h2, ref)
     snap = sh2.render_snapshot(h2, ref)
@@ -987,6 +994,7 @@ def _support_refused(install: sh2.SH2Install, conninfo: str, command: Any, code:
 def test_h2_p21_settings_validation(clean_settings: sh2.SH2Install, env: db.L1WEnv,
                                     values: dict[str, Any]) -> None:
     h2 = clean_settings
+    h2.require()
     with sh2.support_login(env, h2, "p21v") as support:
         _support_refused(h2, support, sh2.settings_cmd(**values), "SETTINGS_INVALID")
 
@@ -994,6 +1002,7 @@ def test_h2_p21_settings_validation(clean_settings: sh2.SH2Install, env: db.L1WE
 def test_h2_p21b_settings_applied_and_malformed(clean_settings: sh2.SH2Install,
                                                 env: db.L1WEnv) -> None:
     h2 = clean_settings
+    h2.require()
     with sh2.support_login(env, h2, "p21a") as support:
         version = sh2.settings_row(h2)["settings_version"]
         result = sh2.settings_put(support, h2, lead_days=3, window_start="10:00",
@@ -1010,6 +1019,7 @@ def test_h2_p21b_settings_applied_and_malformed(clean_settings: sh2.SH2Install,
 def test_h2_p21c_support_authority(clean_settings: sh2.SH2Install, env: db.L1WEnv,
                                    h2_other: sh2.SH2Install) -> None:
     h2 = clean_settings
+    h2.require()
     h2_other.require()
     cmd = sh2.settings_cmd(lead_days=3)
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -1327,6 +1337,7 @@ def test_h2_p27_consume_commit_unknown(h2: sh2.SH2Install, mode: str) -> None:
 
 def test_h2_p28_stale_selection(clean_settings: sh2.SH2Install, env: db.L1WEnv) -> None:
     h2 = clean_settings
+    h2.require()
     _p, _ph, ref, zone = _sendable(h2)
     assert ref in sh2.ready(h2, 1000)
     snap = sh2.render_snapshot(h2, ref)
@@ -1409,6 +1420,7 @@ def test_h2_p30_gateway_capabilities_and_isolation(h2: sh2.SH2Install,
 
 def test_h2_p31_null_safety(clean_settings: sh2.SH2Install) -> None:
     h2 = clean_settings
+    h2.require()
     zone, start = sh2.in_window(h2)
     sh2.settings_raw(h2, clinic_display_name=None)
     _p, _ph, ref = sh2.seed(h2, start, zone=zone)
