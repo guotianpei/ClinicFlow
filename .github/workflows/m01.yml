@@ -240,6 +240,14 @@ jobs:
           $VENV/bin/python -I scripts/sh_h2_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sh-h2-mutation"
+      # L-1S package S-H H3 reminder-scheduler / t075 mutation controls X1-X19: three groups
+      # (scheduler against the unit module, X1p-X3p and the t075 SQL against the PostgreSQL
+      # module), kill sets in scripts/sh_h3_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sh_h3_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sh_h3_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sh-h3-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -92,7 +92,7 @@ async def _reminded(rt: Any, install: sh3.SH3Install, **kw: Any) -> tuple[str, s
 
 
 async def _reply_item(rt: Any, install: sh3.SH3Install, text: str, kind: str
-                      ) -> tuple[sd.Chain, uuid.UUID, uuid.UUID]:
+                      ) -> tuple[sd.Chain, uuid.UUID, uuid.UUID, str]:
     patient, phone, ref = await _reminded(rt, install)
     app = sh3.ingress_app(rt, {install.tenant_id: SECRET_A})
     before = sd.counts(install)  # type: ignore[arg-type]
@@ -105,7 +105,7 @@ async def _reply_item(rt: Any, install: sh3.SH3Install, text: str, kind: str
     (item,) = sa.items_for(install, patient)
     assert (item["item_kind"], item["source_event_id"]) == (kind, reply["event_id"])
     chain = sd.Chain(install, rt)  # type: ignore[arg-type]
-    return chain, uuid.UUID(item["item_id"]), uuid.UUID(reply["event_id"])
+    return chain, uuid.UUID(item["item_id"]), uuid.UUID(reply["event_id"]), ref
 
 
 async def _claim_resolve(chain: sd.Chain, item: uuid.UUID, outcome: str, kind: str,
@@ -150,7 +150,7 @@ def test_h3_e02_reply_2_reschedule_item_resolved(h3: sh3.SH3Install) -> None:
 
     async def body() -> None:
         async with sh3.runtime(h3) as rt:
-            chain, item, source = await _reply_item(rt, h3, "2", "reschedule_request")
+            chain, item, source, _ref = await _reply_item(rt, h3, "2", "reschedule_request")
             await _claim_resolve(chain, item, "rescheduled", "reschedule_request", source)
 
     asyncio.run(body())
@@ -161,12 +161,13 @@ def test_h3_e03_reply_3_cancel_item_staff_assertion_only(h3: sh3.SH3Install) -> 
 
     async def body() -> None:
         async with sh3.runtime(h3) as rt:
-            chain, item, source = await _reply_item(rt, h3, "3", "cancel_request")
-            row = sd.item_row(h3, item)  # type: ignore[arg-type]
-            appointment_before = sh3.appointment_rows(h3, row["appointment_ref"])
+            # CORRECTION (CI 42697963267): a follow-up item row has no appointment_ref
+            # column; the appointment is the one the reminder was sent for.
+            chain, item, source, ref = await _reply_item(rt, h3, "3", "cancel_request")
+            appointment_before = sh3.appointment_rows(h3, ref)
             await _claim_resolve(chain, item, "cancelled_in_ehr", "cancel_request", source)
             # A staff assertion only: the directory appointment is untouched (no EHR write).
-            assert sh3.appointment_rows(h3, row["appointment_ref"]) == appointment_before
+            assert sh3.appointment_rows(h3, ref) == appointment_before
             (appt,), _profile = appointment_before
             assert appt[0]["status"] == "booked"
 
