@@ -2,7 +2,7 @@
 
 Every mutant replaces exactly one span of its target, changes the text, has a unique
 id and a non-empty predeclared kill set naming collected tests of its group's module;
-the kill-set file names exactly the declared mutants (M1..M14, no M7).
+the kill-set file names exactly the declared mutants (M1..M14).
 """
 
 from __future__ import annotations

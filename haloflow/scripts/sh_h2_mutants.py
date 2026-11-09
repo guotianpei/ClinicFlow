@@ -1,4 +1,4 @@
-"""L-1S package S-H H2 mutation controls, group family ``sh_h2`` (M1..M14, no M7).
+"""L-1S package S-H H2 mutation controls, group family ``sh_h2`` (M1..M14).
 
 Predeclared with the H2 implementation (package v1 section 3 and v1r1 delta, Codex
 source gate ffbab59): the 26 h floor; the window end; confirmation at claim (X3); the
@@ -8,10 +8,10 @@ spent-ticket check; the worker retrying consume after a commit-unknown; examine 
 the post-lock next_check_at re-check (D2); consume without the D11 re-check; consume no
 longer activation-protected.
 
-Disclosed: M7 (examine without SKIP LOCKED) is NOT included. Under the pin-1 lock order
-every writer of a schedule row (directory v2, settings_put, another examine) holds a lock
-that examine takes earlier (contact or settings), so examine never meets a locked
-schedule row; the mutant is equivalent and SKIP LOCKED stays as a defensive guard.
+M7 (examine without SKIP LOCKED): under the pin-1 lock order every runtime writer of a
+schedule row also holds a lock examine takes first, so contention on the row alone is
+reached only by the P35 fixture (admin holds just the row lock); P35 kills M7 with a
+lock_timeout failure instead of a hang.
 
 Kill sets are declared in scripts/sh_h2_mutant_kills.json before the mutation CI run.
 A kill set lists every node the mutant may fail; nodes marked "may" in the review note
@@ -71,6 +71,9 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      '           " pg_catalog.timezone(t.zone, ((pg_catalog.timezone(t.zone, t.start_at))"\n'
      '           "::date OPERATOR(pg_catalog.-) s.lead_days::integer)"\n'
      '           " OPERATOR(pg_catalog.+) s.send_time) END")\n'),
+    ("M7", "examine waits for a locked schedule row (no SKIP LOCKED)", UNITS,
+     "     WHERE q.appointment_ref = v_ref FOR UPDATE SKIP LOCKED;\n",
+     "     WHERE q.appointment_ref = v_ref FOR UPDATE;\n"),
     ("M8", "consume drops the pre-call gate", UNITS,
      "    IF (v_d OPERATOR(pg_catalog.->>) 'verdict') <> 'send' THEN\n"
      "        UPDATE {schema}.m05_outbound_ops AS o\n"

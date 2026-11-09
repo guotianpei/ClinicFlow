@@ -27,6 +27,9 @@
   "tests/m05/test_sh_h2_postgres.py::test_h2_p16_churn_rekeys",
   "tests/m05/test_sh_h2_postgres.py::test_h2_p23_deactivated_config_only"
  ],
+ "M7": [
+  "tests/m05/test_sh_h2_postgres.py::test_h2_p35_skip_locked_schedule_row"
+ ],
  "M8": [
   "tests/m05/test_sh_h2_postgres.py::test_h2_p05_gate_refusal_commits",
   "tests/m05/test_sh_h2_postgres.py::test_h2_p05b_consume_uses_post_lock_clock"

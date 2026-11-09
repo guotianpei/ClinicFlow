@@ -79,6 +79,9 @@ Rows (P = PostgreSQL; a parametrised row counts once per parameter):
         NO_RENDER_INPUTS, zero writes.
 - P30   wrong capability on every new gateway method -> CAPABILITIES_INVALID; identical ids
         in two tenants stay isolated.
+- P35   SKIP LOCKED contention (Codex 011101Z): a FIXTURE holds ONLY the schedule row lock
+        (no settings or contact lock); examine returns not_ready LOCKED at once, zero
+        writes; under a 3 s lock_timeout a blocking examine would fail, never hang.
 - P31   null-safety: clinic display name NULL -> SETTINGS_INCOMPLETE; department and clinic
         zone NULL -> TZ_UNRESOLVED; confirmation NULL -> sends (unknown); no profile row ->
         PROFILE_MISSING.
@@ -1627,3 +1630,19 @@ def test_h2_p31_null_safety(clean_settings: sh2.SH2Install) -> None:
                           " next_check_at, examined_count, updated_at) VALUES (%s,"
                           " clock_timestamp(), 0, clock_timestamp())"), (ref,))  # FIXTURE
     assert sh2.examine(h2, ref)["code"] == "PROFILE_MISSING"
+
+
+def test_h2_p35_skip_locked_schedule_row(h2: sh2.SH2Install) -> None:
+    h2.require()
+    _p, _ph, ref, _zone = _sendable(h2)
+    cmd = sh2.examine_cmd(ref, snap=sh2.render_snapshot(h2, ref))
+    with psycopg.connect(h2.ids.admin) as holder, holder.transaction():
+        holder.execute(sa.q(h2, "SELECT 1 FROM {s}.m05_outbound_schedule"
+                                " WHERE appointment_ref = %s FOR UPDATE"), (ref,))  # FIXTURE
+        before = sh2.h2_snapshot(h2)
+        with sa.runtime_conn(h2) as conn, conn.transaction():
+            conn.execute("SET LOCAL lock_timeout = '3s'")
+            result = sa.call_in(conn, h2, "m05_outbound_examine", cmd)
+        assert result == {"schema_version": 1, "outcome": "not_ready", "code": "LOCKED"}
+        assert sh2.h2_snapshot(h2) == before
+    assert sh2.examine(h2, ref)["outcome"] == "claimed"  # the lock released: examined
