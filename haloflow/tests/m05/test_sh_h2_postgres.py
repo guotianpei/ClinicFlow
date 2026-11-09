@@ -89,6 +89,12 @@ Rows (P = PostgreSQL; a parametrised row counts once per parameter):
 - P37   (I2) a snapshot taken while a directory update is open sees the old start AND the
         old version; after the commit that snapshot is STALE_SNAPSHOT; a fresh render claims
         and freezes the NEW start.
+- P38   (Codex 005c074, I2 discriminator; TEST-ONLY seam, no production hook) an advisory-
+        lock barrier lets a directory update commit EXACTLY between two reads. A split-read
+        copy (appointment, barrier, profile) returns old start + new version (the hazard);
+        a clone of the installed one-statement snapshot with the barrier before its read
+        returns a coherent pair; the installed body reads settings, appointment and
+        profile in one statement.
 - P31   null-safety: clinic display name NULL -> SETTINGS_INCOMPLETE; department and clinic
         zone NULL -> TZ_UNRESOLVED; confirmation NULL -> sends (unknown); no profile row ->
         PROFILE_MISSING.
@@ -1721,3 +1727,101 @@ def test_h2_p37_snapshot_during_directory_update(h2: sh2.SH2Install) -> None:
     row = sh.op_row(h2, op_id)
     assert (_ts(row["start_at"]), sh2.inputs_row(h2, op_id)["first_name"]) == (  # type: ignore[index]
         new_start, "During")
+
+
+BARRIER_KEY = 4242001
+
+
+def _reader(install: sa.SAInstall, query: str, params: Any, name: str,
+            out: dict[str, Any]) -> Any:
+    import threading
+
+    def run() -> None:
+        try:
+            with psycopg.connect(install.ids.admin, autocommit=True,
+                                 application_name=name) as conn:
+                conn.execute("SELECT set_config('app.tenant_id', %s, false)",
+                             (install.tenant_id,))
+                out["result"] = conn.execute(query, params).fetchone()[0]  # type: ignore[index]
+        except BaseException as error:  # noqa: BLE001 - re-raised by the caller
+            out["error"] = error
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return thread
+
+
+def _through_barrier(install: sh2.SH2Install, query: str, params: Any, patient: str,
+                     ref: str, zone: str, new_start: datetime) -> dict[str, Any]:
+    """Hold the barrier; start the reader; let it block at the barrier; COMMIT a directory
+    update; release; return the reader's result."""
+
+    out: dict[str, Any] = {}
+    name = f"h2-p38-{sa.new_id()[:8]}"
+    with psycopg.connect(install.ids.admin, autocommit=True) as holder:
+        holder.execute("SELECT pg_advisory_lock(%s)", (BARRIER_KEY,))
+        try:
+            thread = _reader(install, query, params, name, out)
+            sa.wait_until_blocked(install, name)
+            sh2.appointment_put(install, ref, patient, new_start, department_tz=zone,
+                                first_name="Barrier")  # commits between the two reads
+        finally:
+            holder.execute("SELECT pg_advisory_unlock(%s)", (BARRIER_KEY,))
+    thread.join(timeout=30)
+    assert "error" not in out, out
+    value: dict[str, Any] = out["result"]
+    return value
+
+
+def test_h2_p38_snapshot_split_read_discriminator(h2: sh2.SH2Install) -> None:
+    h2.require()
+    patient, _ph, ref, zone = _sendable(h2)
+    start = sh.start_of(h2, ref)
+    barrier = f"PERFORM pg_catalog.pg_advisory_xact_lock_shared({BARRIER_KEY});"
+    split = sa.q(h2, "CREATE FUNCTION {s}.h2_p38_split(p_ref uuid) RETURNS jsonb"
+                     " LANGUAGE plpgsql AS $$ DECLARE v_start timestamptz; v_sv bigint;"
+                     " BEGIN SELECT a.start_at INTO v_start FROM {s}.m05_appointments a"
+                     " WHERE a.appointment_ref = p_ref; " + barrier
+                 + " SELECT p.source_version INTO v_sv FROM {s}.m05_appointment_profile p"
+                   " WHERE p.appointment_ref = p_ref; RETURN pg_catalog.jsonb_build_object("
+                   "'start_at', v_start, 'source_version', v_sv); END $$")
+    source = sa.admin(h2, "SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON"
+                          " n.oid = p.pronamespace WHERE n.nspname = %s AND p.proname ="
+                          " 'm05_outbound_render_snapshot'", (h2.schema,))[0][0]
+    anchor = "    SELECT s.settings_version, s.clinic_display_name"
+    assert source.count(anchor) == 1
+    # Static: the installed snapshot reads the three tables in ONE statement.
+    statement = source[source.index(anchor):].split(";", 1)[0]
+    for table in ("m05_reminder_settings", "m05_appointments", "m05_appointment_profile"):
+        assert table in statement and source.count(f".{table} ") == 1, table
+    coherent = source.replace(anchor, f"    {barrier}\n" + anchor)
+    sa.admin(h2, split)
+    sa.admin(h2, sa.q(h2, "CREATE FUNCTION {s}.h2_p38_coherent(p_command jsonb) RETURNS jsonb"
+                          " LANGUAGE plpgsql SET search_path = pg_catalog, {s}, pg_temp"
+                          " AS $body$") + sql_literal(coherent) + sa.q(h2, "$body$"))
+    try:
+        before = sh2.profile_row(h2, ref)["source_version"]  # type: ignore[index]
+        old = _through_barrier(h2, sa.q(h2, "SELECT {s}.h2_p38_split(%s)"), (ref,), patient,
+                               ref, zone, start + timedelta(hours=1))
+        # The hazard is real: the split read pairs the OLD start with the NEW version.
+        assert (_ts(old["start_at"]), old["source_version"]) == (start, before + 1)
+        new_start = start + timedelta(hours=2)
+        new = _through_barrier(h2, sa.q(h2, "SELECT {s}.h2_p38_coherent(%s)"),
+                               (sh2.jsonb(sh2.snapshot_cmd(ref)),), patient, ref, zone,
+                               new_start)
+        assert (_ts(new["start_at"]), new["source_version"]) == (new_start, before + 2)
+        assert new["first_name"] == "Barrier"
+        result = sh2.examine(h2, ref, snap=new)  # a coherent snapshot claims
+        assert result["outcome"] == "claimed", result
+        assert _ts(sh.op_row(h2, result["op_id"])["start_at"]) == new_start
+    finally:
+        sa.admin(h2, sa.q(h2, "DROP FUNCTION IF EXISTS {s}.h2_p38_split(uuid)"))
+        sa.admin(h2, sa.q(h2, "DROP FUNCTION IF EXISTS {s}.h2_p38_coherent(jsonb)"))
+
+
+def sql_literal(text: str) -> Any:
+    """The function body, schema-substituted by the caller's installed prosrc (FIXTURE)."""
+
+    from psycopg import sql
+
+    return sql.SQL(text)
