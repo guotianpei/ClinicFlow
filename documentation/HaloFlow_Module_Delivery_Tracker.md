@@ -4,6 +4,26 @@ Last updated: 2026-11-08 evening (**L-1S package S-H H1 merged** — PR #80, the
 
 ## Current position — read this first
 
+**HaloFlow — status as of 2026-11-10 morning. `main` is at `07e8138` (PR #83).** Since the 2026-11-08 evening paragraph below (times ET; main CI run id in brackets):
+
+| PR | Merged | Merge commit | Content |
+|---|---|---|---|
+| #81 | 11-08 18:38 | `2caf08a` | This tracker, 2026-11-08 evening paragraph |
+| #82 | 11-09 15:52 | `de1a23c` [42697128946] | L-1S package S-H H2 — synthetic reminder scheduling and the one-shot send ticket: `haloflow.m05.reminder_text`, `reminder_units` (t057–t074, TEST target 74), `reminder_statements`, `reminder` (`ReminderService`, `ReminderRunner`); `OutboundWorker.run_claimed` added (`run_one` unchanged). Reminder settings per owner decisions Q-SH2 and P-1. The only send path is examine (prepare + claim, one transaction) → consume (spends the ticket) → one fake-sender call. Installed only by an S-H TEST registry; **not composed** by `haloflow.platform`, `haloflow.startup` or `haloflow.composition`. Tests: `tests/m05/sh2_support.py`, `test_sh_h2_units.py`, `test_sh_h2_postgres.py`; mutation harness `sh_h2` M1–M16 |
+| #83 | 11-10 07:58 | `07e8138` [42820361918] | L-1S package S-H H3 — `haloflow.m05.reminder_scheduler.ReminderScheduler` (fixed-rate tick per configured tenant: context → expire (t051) → accepted recovery (t075 selector, keyset cursor, registration-only `recover`) → ready (`ReminderRunner.run_once`); per-phase and per-item isolation, cancellation never caught, bounded stop, interval 60–450 s, default 300 s) and t075 `m05_outbound_accepted_pending` (read-only, accepted ops only, ordered strict cursor). The module never calls a sender, examine, consume or claim. **Not composed**. Tests: 106 unit rows, 52 PostgreSQL rows, 8 synthetic end-to-end harness rows E01–E08; mutation harness `sh_h3` X1–X19 plus X1p–X3p (22 executions) |
+
+- PR #82 was accepted by Codex at its exact head `6bec293` (2026-11-09 3:18 PM ET; record `codex_h2-final-acceptance-6bec293.md`). Exact-head CI 42653137100 (synthetic merge `193fc6d` of `6bec293` into `2caf08a`): 5227 passed, trace 14 passed, `sh_h2` M1–M16 killed inside the corrected declared sets with clean controls and measured restoration. Disclosed limitation: P38's bad side is a reduced split-read fixture and its good side an instrumented clone of the installed body, not an unmodified old-versus-new production comparison.
+- PR #83 was accepted by Codex at its exact head `81e9175` (2026-11-10 7:54 AM ET; record `codex_h3-final-acceptance-81e9175.md`). Exact-head CI 42728436474 (synthetic merge `cd9c054` of `81e9175` into `de1a23c`): all 46 steps success, 5393 passed (E03 included), trace 14 passed, `sh_h3` 22 executions all killed inside declared sets, controls 106 / 52 / 52 with zero problems, all three targets restored. The merged tree of `07e8138` equals the tested tree of `cd9c054` (`c47a588`). Disclosed corrections, each Codex-aligned: the E03 correction (staff cancellation handling without appointment or profile mutation, `521246c`); X16's kill set adds P11e after CI 42701509464 measured it (`81e9175`, no source, test or oracle change). Disclosures: P05 is declared for X16 and allowed but did not fail; X17 covers normalisation only (no universal canonical-parser claim); there is no phase timeout, so a hung await blocks the rest of that tick (F-H3-2); examine/consume refusals swallowed by the ready pass are not reported (F-H3-1). Evidence files are in the Shared Workspace session folders `Work Session 2026-11-09` and `Work Session 2026-11-10`.
+- **Owner decision 2026-11-09:** OD-WB3 reconfirmed (about 7:05 PM ET; record `owner-reconfirmation-od-wb3-2026-11-09.md`) — the neutral-to-neutral re-read-to-write residual is accepted and change-feed detection is not required; real EHR write-back stays NO-GO.
+- Main CI on `2caf08a`, `de1a23c` (42697128946): success. Main CI on `07e8138` (42820361918): in progress when this paragraph was written (2026-11-10, about 8:05 AM ET).
+- Runtime supported schema set unchanged: `frozenset({36})`. The production registry and catalogue are unchanged; the H1–H3 units are installed only by S-H TEST registries.
+
+**Not claimed:** a real SMS provider or any live send, a composed or running scheduler, any activated clinic, EHR write-back of any kind (simulated or real), a real EHR, a measured wall-time latency, release readiness or L-1S closure. **Next, in order:**
+1. This tracker refresh.
+2. L-1S package S-I, simulated EHR confirmation write-back (synthetic only). The focused investigation is at v1r2 (`claude_si-focused-investigation-v1r2-and-bounded-package-2026-11-10.md`) and is with Codex for review. Requirements, architecture and red tests are to be aligned with Codex before any code. Two owner questions follow Codex agreement: staff item wording and escalation timing.
+
+**Holds (unchanged):** OD-D2, L-1W, L-1S, L-6, demo, live SMS, real EHR. **Open PRs:** #36 (L-6, draft, do not merge), #79 (S-H investigation, draft, do not merge). The 2026-11-08 evening paragraph below is kept as written.
+
 **HaloFlow — status as of 2026-11-08 evening. `main` is at `7ed7892` (PR #80).** Since the 2026-11-08 paragraph below (times ET; main CI run id in brackets):
 
 | PR | Merged | Merge commit | Content |
