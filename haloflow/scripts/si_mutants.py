@@ -1,5 +1,5 @@
-"""L-1S package S-I mutation controls, group family ``si`` (E1..E4, W1..W8, S1..S17,
-V1..V11).
+"""L-1S package S-I mutation controls, group family ``si`` (E1..E4, W1..W8, S1..S15,
+S17, V1..V11).
 
 Predeclared from the S-I mutation-to-assertion map v1 (Work Session 2026-11-10,
 `claude_si-mutation-map-v1-2026-11-10.md`). Five groups, one target and one test module
@@ -17,7 +17,15 @@ V2 and V5 have dedicated oracles (P-Q02: no reconcile fallback on an ordinary
 not_claimable; P-I07c: a check item bound to another op's check event). V9 removes only
 the recovery create's envelope binding, which the stored event-id check precedes; a
 survivor is a coverage gap until semantic equivalence is shown, and is reported, never
-silently dropped.
+silently dropped. Measured (2026-11-10, embedded PG 17.11): V9 survived the first
+pass and is now killed by P-A05[event_metadata]. S16 (discovery without the reply-class
+filter) is EQUIVALENT under the valid-intake invariant and is not run: in t040
+(`intake_units._INBOUND_BODY`) and in t053 (`outbound_units._INBOUND_V2_BODY`, t040's body
+with only the candidate-tail guard replaced) `decision` is 'recorded' only when the
+triage kind is NULL, i.e. only for class confirm (STOP -> opt_out; reschedule / cancel /
+unclear -> item; an ambiguous match -> unclear_reply item). The filter is kept as an
+explicit second guard. The equivalence does not extend to rows corrupted outside the
+intake functions (Codex 20261110T173351Z).
 
 Usage (from haloflow/):
     python3 -I scripts/si_mutants.py --pytest "$VENV/bin/pytest" \
@@ -144,9 +152,6 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("S15", "capture ignores the source version", SQL,
      "    IF v_p.source_version IS NULL OR v_p.source_version IS DISTINCT FROM v_i.source_version THEN\n",
      "    IF v_p.source_version IS NULL THEN\n"),
-    ("S16", "discovery takes every recorded reply class", SQL,
-     "             WHERE r.reply_class = 'confirm' AND r.decision = 'recorded'\n",
-     "             WHERE r.decision = 'recorded'\n"),
     ("S17", "directory v3 does not update provider_ref", SQL,
      '    "               provider_ref = EXCLUDED.provider_ref,\\n"\n',
      '    "               provider_ref = p.provider_ref,\\n"\n'),
@@ -204,7 +209,7 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
 GROUP_OF: dict[str, str] = {
     **{f"E{n}": "ehr-units" for n in range(1, 5)},
     **{f"W{n}": "worker-units" for n in range(1, 9)},
-    **{f"S{n}": "sql" for n in range(1, 18)},
+    **{f"S{n}": "sql" for n in range(1, 18) if n != 16},
     **{m: "service-py" for m in ("V1", "V2", "V3", "V6", "V11")},
     **{m: "service-sql" for m in ("V4", "V5", "V7", "V8", "V9", "V10")},
 }

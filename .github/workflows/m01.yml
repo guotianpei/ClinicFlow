@@ -248,6 +248,15 @@ jobs:
           $VENV/bin/python -I scripts/sh_h3_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sh-h3-mutation"
+      # L-1S package S-I write-back mutation controls E1-E4, W1-W8, S1-S15, S17, V1-V11: five
+      # groups (simulated EHR and workers against the unit module, the unit bodies against
+      # the SQL-path module, the service and its SQL against the service module), kill
+      # sets in scripts/si_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_si_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/si_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/si-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
