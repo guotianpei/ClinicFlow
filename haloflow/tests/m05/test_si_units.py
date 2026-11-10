@@ -68,25 +68,36 @@ Interface pins (the S-I Python contract these rows freeze):
   4. W1: exactly one `ehr.write_confirmation(appointment_id, permit_id=..,
      apply_deadline=..)`, bounded by write_timeout_s; a timeout or any Exception is
      write outcome "unknown" (attempted; never retried);
-  5. R2 = `ehr.read` (failure -> read None); `service.settle(context, op_id, fence,
-     permit_id, write_outcome, read)` -> {"outcome": "observed_positive" | "item"} ->
-     "observed_positive" / "item_raised"; WritebackRefused -> "stale".
+  5. R2 = `ehr.read` bounded by read_timeout_s (EhrUnavailable, any Exception or timeout
+     -> read None; never retried, never a second write); `service.settle(context, op_id,
+     fence, permit_id, write_outcome, read)` -> {"outcome": "observed_positive" | "item"}
+     -> "observed_positive" / "item_raised"; WritebackRefused -> "stale".
   Phase "reconcile" (a spent, unsettled permit, claimed only after its deadline + margin
-  in database time): `ehr.close_permit(permit_id)`, then R2 and settle with write outcome
-  "unknown". `asyncio.CancelledError` always propagates; any other exception from the
+  in database time): `ehr.close_permit(permit_id)` bounded by read_timeout_s, and it must
+  COMPLETE before the reconciliation read STARTS; a close that raises or times out ->
+  return "reconcile_failed" with no read and no settle (the op stays spent and unsettled
+  for a later run). Then R2 (bounded as in 5) and settle with write outcome "unknown".
+  Every port call is therefore bounded: read, write and close. `asyncio.CancelledError`
+  always propagates, including during R1, W1, R2 and close; any other exception from the
   service propagates too (the next run resumes from the persisted state). The worker never
-  logs a phone, name, provider, department, appointment id or exception text.
+  logs (message, arguments or traceback) a phone, name, provider, department, appointment
+  id or exception text.
 
 Rows (requirement in brackets, packet v1 numbering):
 U-W01..W05 [SI-R4] wrapper equivalence for each H2 run_claimed outcome; U-W06..W08 [R4]
-capture refused / raised / commit-unknown -> inner unchanged; U-W09 / W09b [R4]
-cancellation; U-W11 [R4] recover; U-W12 [R4] constructor; U-L01..L08 [R7] apply deadline,
-delayed lock acquisition, serialization, boundary, mutation-without-await (static), port
-clock, OLD delayed writer after the clock moves backwards (and across restart), inputs;
-U-T01..T04 [R10] retry delays, conditional worst case by simulation, immediate items, a
-later success; U-S06 / U-S07 [R6] one write per spent permit; U-K03 / U-K04 [R8] spend
-commit-unknown, write timeout; U-Q01 [R6/R8] reconcile phase; U-V01 [R16] privacy;
-U-N01 [R17] not composed.
+capture refused / raised / commit-unknown x every inner outcome -> inner unchanged (the
+PostgreSQL connection cleanup is a PG row); U-W09 / W09b [R4] cancellation; U-W11 [R4]
+recover; U-W12 [R4] constructor; U-L01..L08 [R7] apply deadline, delayed lock acquisition,
+serialization, boundary, mutation-without-await (static, supplemental to the behavioural
+rows), port clock, OLD delayed writer after the clock moves backwards (and across
+restart), inputs; U-T01..T04 [R10] retry delays, conditional worst case (MODEL-LEVEL
+evidence only: an in-memory service model; the SQL retry state is asserted by the PG rows),
+immediate items, a later success; U-S06 / U-S07 [R6] one write per spent permit; U-K03 /
+U-K04 [R8] spend commit-unknown, write timeout; U-H01..H04 [R8] hung R1 / R2 after the
+write / R2 in reconcile / cancellation while hung; U-Q01..Q05 [R6/R8] reconcile: ordered
+trace (close completes before the read starts), close raises / hangs / is cancelled ->
+no read and no settle; U-V01 [R16] privacy including formatted tracebacks; U-N01 [R17]
+not composed.
 """
 
 from __future__ import annotations
@@ -234,17 +245,26 @@ def test_si_uw01b_capture_runs_before_inner() -> None:
     asyncio.run(body())
 
 
+def _logged(caplog: pytest.LogCaptureFixture) -> str:
+    """Everything a handler could emit: formatted records INCLUDING tracebacks and stack
+    info (logger.exception would put the exception text there), plus caplog.text."""
+
+    formatter = logging.Formatter("%(levelname)s %(name)s %(message)s")
+    return caplog.text + "\n" + "\n".join(formatter.format(r) for r in caplog.records)
+
+
+@pytest.mark.parametrize("outcome", H2_OUTCOMES)
 @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
 def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
-        mode: str, caplog: pytest.LogCaptureFixture) -> None:
+        mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
     async def body() -> None:
-        inner = _inner("accepted")
+        inner = _inner(outcome)
         worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
         ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
         with caplog.at_level(logging.DEBUG, logger=LOGGER):
-            assert await _bounded(worker.run_claimed(ctx, op, att)) == "accepted"
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
         assert inner.calls == [("run_claimed", ctx, op, att)]
-        text = " ".join(r.getMessage() for r in caplog.records)
+        text = _logged(caplog)
         assert PHONE not in text and NAME not in text and "capture failed" not in text
         if mode == "raise":
             assert "RuntimeError" in text  # class name only
@@ -510,26 +530,57 @@ class Model:
 
 
 class CountingEhr:
-    """Wraps a SimulatedEhr and counts writes / closes (the real port does the work)."""
+    """Wraps a SimulatedEhr (the real port does the work) and records ONE ordered trace of
+    every call's start and end: ("read", "start"), ("read", "end"), ("write", ...),
+    ("close", ...). `hang` maps a call name to the 1-based call numbers that never return
+    (until cancelled); `fail` maps a call name to call numbers that raise RuntimeError."""
 
-    def __init__(self, ehr: Any, *, write_hang: bool = False) -> None:
+    def __init__(self, ehr: Any, *, write_hang: bool = False,
+                 hang: dict[str, set[int]] | None = None,
+                 fail: dict[str, set[int]] | None = None) -> None:
         self.ehr = ehr
-        self.write_calls = 0
+        self.trace: list[tuple[str, str]] = []
+        self.counts = {"read": 0, "write": 0, "close": 0}
         self.closes: list[str] = []
-        self.write_hang = write_hang
+        self.hang = {k: set(v) for k, v in (hang or {}).items()}
+        if write_hang:
+            self.hang.setdefault("write", set()).add(1)
+        self.fail = {k: set(v) for k, v in (fail or {}).items()}
+
+    @property
+    def write_calls(self) -> int:
+        return self.counts["write"]
+
+    async def _enter(self, name: str) -> None:
+        self.counts[name] += 1
+        number = self.counts[name]
+        self.trace.append((name, "start"))
+        if number in self.fail.get(name, set()):
+            self.trace.append((name, "raised"))
+            raise RuntimeError(f"{name} failed for {PHONE} {PROVIDER}")
+        if number in self.hang.get(name, set()):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.trace.append((name, "abandoned"))
 
     async def read(self, appointment_id: str) -> Any:
-        return await self.ehr.read(appointment_id)
+        await self._enter("read")
+        result = await self.ehr.read(appointment_id)
+        self.trace.append(("read", "end"))
+        return result
 
     async def write_confirmation(self, appointment_id: str, **kw: Any) -> Any:
-        self.write_calls += 1
-        if self.write_hang:
-            await asyncio.Event().wait()
-        return await self.ehr.write_confirmation(appointment_id, **kw)
+        await self._enter("write")
+        result = await self.ehr.write_confirmation(appointment_id, **kw)
+        self.trace.append(("write", "end"))
+        return result
 
     async def close_permit(self, permit_id: str) -> None:
         self.closes.append(permit_id)
+        await self._enter("close")
         await self.ehr.close_permit(permit_id)
+        self.trace.append(("close", "end"))
 
 
 def _worker(model: Model, ehr: Any, **kw: Any) -> Any:
@@ -659,13 +710,25 @@ def test_si_uk04_write_timeout_is_attempted_and_never_retried() -> None:
     asyncio.run(body())
 
 
-def test_si_uq01_reconcile_closes_the_permit_before_reading_and_never_writes() -> None:
+async def _until(predicate: Any, limit: int = 200) -> None:
+    """Yield to the loop until `predicate()` holds (bounded; a row fails if it never does)."""
+
+    for _ in range(limit):
+        if predicate():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("the expected stage was never reached")
+
+
+def test_si_uq01_reconcile_close_completes_before_the_read_starts() -> None:
     async def body() -> None:
         clock = Clock()
         model = Model(clock, phase="reconcile", settle_outcome="item")
         ehr = CountingEhr(_ehr(clock))
         assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
             == "item_raised"
+        assert ehr.trace == [("close", "start"), ("close", "end"), ("read", "start"),
+                             ("read", "end")]
         assert ehr.closes == ["permit-old"] and ehr.write_calls == 0
         assert model.calls("decide") == [] and model.calls("spend") == []
         assert model.calls("settle") == [("settle", "permit-old", "unknown", "neutral")]
@@ -673,20 +736,150 @@ def test_si_uq01_reconcile_closes_the_permit_before_reading_and_never_writes() -
     asyncio.run(body())
 
 
-def test_si_uq02_cancellation_propagates_from_the_worker() -> None:
+def test_si_uq02_a_close_still_in_progress_holds_the_read_back() -> None:
+    """Race discriminator: while close is in progress (blocked), no read has started;
+    once it completes the read follows."""
+
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock, phase="reconcile", settle_outcome="item")
+        ehr = CountingEhr(_ehr(clock))
+        release = asyncio.Event()
+        original = ehr.close_permit
+
+        async def slow_close(permit_id: str) -> None:
+            ehr.trace.append(("close", "waiting"))
+            await release.wait()
+            await original(permit_id)
+
+        ehr.close_permit = slow_close  # type: ignore[method-assign]
+        task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                   .run_one(object(), uuid.uuid4()))
+        await _until(lambda: ("close", "waiting") in ehr.trace)
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert ("read", "start") not in ehr.trace and model.calls("settle") == []
+        release.set()
+        assert await _bounded(task) == "item_raised"
+        assert ehr.trace.index(("close", "end")) < ehr.trace.index(("read", "start"))
+
+    asyncio.run(body())
+
+
+@pytest.mark.parametrize("how", ["raises", "hangs"])
+def test_si_uq03_04_a_failed_close_means_no_read_and_no_settle(how: str) -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock, phase="reconcile", settle_outcome="item")
+        kw = {"fail": {"close": {1}}} if how == "raises" else {"hang": {"close": {1}}}
+        ehr = CountingEhr(_ehr(clock), **kw)
+        result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                .run_one(object(), uuid.uuid4()))
+        assert result == "reconcile_failed"
+        assert ehr.counts["read"] == 0 and ehr.write_calls == 0
+        assert model.calls("settle") == [] and model.calls("decide") == []
+
+    asyncio.run(body())
+
+
+def test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle() -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock, phase="reconcile", settle_outcome="item")
+        ehr = CountingEhr(_ehr(clock), hang={"close": {1}})
+        task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                   .run_one(object(), uuid.uuid4()))
+        await _until(lambda: ehr.counts["close"] == 1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await _bounded(task)
+        assert ehr.counts["read"] == 0 and model.calls("settle") == []
+
+    asyncio.run(body())
+
+
+def test_si_uq06_cancellation_while_writing_propagates() -> None:
     async def body() -> None:
         clock = Clock()
         model = Model(clock)
         ehr = CountingEhr(_ehr(clock), write_hang=True)
         task = asyncio.create_task(_worker(model, ehr, write_timeout_s=60)
                                    .run_one(object(), uuid.uuid4()))
-        for _ in range(50):
-            await asyncio.sleep(0)
-            if ehr.write_calls:
-                break
+        await _until(lambda: ehr.write_calls == 1)
+        assert ehr.write_calls == 1  # cancelled at the intended stage: inside W1
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await _bounded(task)
+        assert ehr.write_calls == 1 and model.calls("settle") == []
+
+    asyncio.run(body())
+
+
+# --- U-H: hung reads (bounded; never retried; never a second write) -------------------------
+
+
+def test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend() -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock)
+        ehr = CountingEhr(_ehr(clock), hang={"read": {1}})
+        result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                .run_one(object(), uuid.uuid4()))
+        assert result == "deferred"
+        assert model.calls("decide") == [("decide", True, None)]
+        assert model.calls("spend") == [] and ehr.write_calls == 0
+        assert ("read", "abandoned") in ehr.trace
+
+    asyncio.run(body())
+
+
+@pytest.mark.parametrize("how", ["hangs", "raises"])
+def test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read(how: str) -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock, settle_outcome="item")
+        kw = {"hang": {"read": {2}}} if how == "hangs" else {"fail": {"read": {2}}}
+        ehr = CountingEhr(_ehr(clock), **kw)
+        result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                .run_one(object(), uuid.uuid4()))
+        assert result == "item_raised"
+        assert ehr.write_calls == 1 and ehr.counts["read"] == 2  # no retry, no 2nd write
+        assert model.calls("settle") == [("settle", "permit-1", "applied", None)]
+
+    asyncio.run(body())
+
+
+@pytest.mark.parametrize("how", ["hangs", "raises"])
+def test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read(how: str) -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock, phase="reconcile", settle_outcome="item")
+        kw = {"hang": {"read": {1}}} if how == "hangs" else {"fail": {"read": {1}}}
+        ehr = CountingEhr(_ehr(clock), **kw)
+        result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                .run_one(object(), uuid.uuid4()))
+        assert result == "item_raised"
+        assert ehr.counts["read"] == 1 and ehr.write_calls == 0
+        assert model.calls("settle") == [("settle", "permit-old", "unknown", None)]
+
+    asyncio.run(body())
+
+
+@pytest.mark.parametrize("stage", ["r1", "r2"])
+def test_si_uh04_cancellation_while_a_read_hangs_propagates(stage: str) -> None:
+    async def body() -> None:
+        clock = Clock()
+        model = Model(clock)
+        number = 1 if stage == "r1" else 2
+        ehr = CountingEhr(_ehr(clock), hang={"read": {number}})
+        task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                   .run_one(object(), uuid.uuid4()))
+        await _until(lambda: ehr.counts["read"] == number)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await _bounded(task)
+        assert model.calls("settle") == []
+        assert ehr.write_calls == (0 if stage == "r1" else 1)
 
     asyncio.run(body())
 
@@ -703,16 +896,22 @@ def test_si_uv01_no_sensitive_value_or_exception_text_is_logged(
             async def settle(self, *args: Any) -> dict[str, Any]:
                 raise RuntimeError(f"{PHONE} {NAME} {PROVIDER} {DEPARTMENT} {APPT}")
 
-        model = Leaky(clock)
-        with caplog.at_level(logging.DEBUG, logger=LOGGER), pytest.raises(RuntimeError):
-            await _bounded(_worker(model, _ehr(clock)).run_one(object(), uuid.uuid4()))
-        raw = _ehr(clock)
-        raw.fail_reads(1)
         with caplog.at_level(logging.DEBUG, logger=LOGGER):
-            await _bounded(_worker(Model(clock), raw).run_one(object(), uuid.uuid4()))
-        text = " ".join(r.getMessage() for r in caplog.records)
+            with pytest.raises(RuntimeError):
+                await _bounded(_worker(Leaky(clock), _ehr(clock))
+                               .run_one(object(), uuid.uuid4()))
+            # read, write and close failures whose exception text carries the secrets
+            await _bounded(_worker(Model(clock), CountingEhr(_ehr(clock), fail={"read": {1}}))
+                           .run_one(object(), uuid.uuid4()))
+            await _bounded(_worker(Model(clock, settle_outcome="item"),
+                                   CountingEhr(_ehr(clock), fail={"write": {1}}))
+                           .run_one(object(), uuid.uuid4()))
+            await _bounded(_worker(Model(clock, phase="reconcile"),
+                                   CountingEhr(_ehr(clock), fail={"close": {1}}))
+                           .run_one(object(), uuid.uuid4()))
+        text = _logged(caplog)
         for secret in (PHONE, NAME, PROVIDER, DEPARTMENT, APPT):
-            assert secret not in text
+            assert secret not in text, secret
 
     asyncio.run(body())
 
