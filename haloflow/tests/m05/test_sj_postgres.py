@@ -723,6 +723,11 @@ def test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes(
 def test_sj_j12_no_patient_text_in_any_log_line(sj_i: si.SIInstall,
                                                 caplog: pytest.LogCaptureFixture) -> None:
     install = _begin(sj_i)
+    # The install runs alembic, whose `fileConfig` disables every logger created before it
+    # (disable_existing_loggers=True); in a full run the S-J module logger already exists.
+    # Re-enable the two loggers this row reads, so a positive line is really observed.
+    for name in ("haloflow.m05.writeback_scheduler", "haloflow.m05.writeback"):
+        logging.getLogger(name).disabled = False
     caplog.set_level(logging.DEBUG)
 
     async def body() -> dict[str, str]:
