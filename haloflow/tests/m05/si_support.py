@@ -17,7 +17,7 @@ every command is a closed JSON object with `schema_version` 1 and the closed `at
 anything else is COMMAND_MALFORMED.
 
 Units (`haloflow.m05.writeback_units`: SI_TENANT_MIGRATIONS, SI_INSTALLED_STATE_PROFILES,
-SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
+SI_ACL_AMENDMENTS), TEST target 94, all additive, t001-t075 byte-unchanged:
 - t076 `m05_profile_identity_columns`: ADD `provider_ref`, `department_ref` text NULL,
   each CHECK char_length <= 64, on m05_appointment_profile.
 - t077 `m05_directory_v3`: function `m05_directory_v3(p_command)`; the t063 body with key
@@ -93,6 +93,14 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   event is returned.
 - t093 `m05_si_runtime_closure`: ACL closure; removes runtime EXECUTE on m05_create_item
   (t014) and the v2 actions (t030, t031).
+- t094 `m05_writeback_create_settled_item` {wb_op_id, fence, permit_id, source_event_id,
+  item_kind = ITEM_KIND} -> the t089 result (Codex 20261110T155135Z: the settlement's
+  recovery create, key `m05.followup.create_settled`, capability `m05.followup.create`, NOT
+  activation-protected). Refused (P0001 SETTLED_ITEM_NOT_ELIGIBLE) unless, under the op
+  lock: state 'item', op.fence = fence, op.event_id = source_event_id, op.item_id NULL,
+  the op's own live SPENT permit = permit_id (locked), and the event is this op's
+  canonical check event (type, contract 1, metadata wb_op_id and reason). Then t089 with
+  the same attribution. A decision's item uses `m05.followup.create` (protected).
 
 Statements (`haloflow.m05.writeback_statements`): SI_STATEMENTS, SI_REBOUND (the existing
 keys `m05.intake.directory`, `m05.followup.create`, `m05.followup.prepare`,
@@ -100,7 +108,9 @@ keys `m05.intake.directory`, `m05.followup.create`, `m05.followup.prepare`,
 spend), SI_CLOSED_KEYS. New keys: CAPTURE_KEY "m05.writeback.capture" (capability
 `m05.intake.dispatch`); DISCOVER / DUE / CLAIM / CLAIM_RECONCILE / DECIDE / SPEND / SETTLE
 "m05.writeback.*" (capability "m05.writeback"); REASON_KEY "m05.followup.reason"
-(capability `m05.followup.read`). `haloflow.m05.writeback.WritebackService(foundation)`
+(capability `m05.followup.read`); CREATE_SETTLED_KEY "m05.followup.create_settled" (t094,
+capability `m05.followup.create`, not protected; used by a settlement's item only).
+`haloflow.m05.writeback.WritebackService(foundation)`
 runs decide / settle in ONE gateway transaction with the M02 append and the item create
 (the IntakeService pattern); its CAPABILITIES = {"m05.writeback",
 "m02.observation.append", "m05.followup.create"}; item producer workload W_DISPATCH.
@@ -166,8 +176,9 @@ SI_UNIT_IDS: Final = (
     "t088_m05_writeback_check_contract", "t089_m05_create_item_v2",
     "t090_m05_prepare_action_v3", "t091_m05_apply_action_v3",
     "t092_m05_followup_reason", "t093_m05_si_runtime_closure",
+    "t094_m05_writeback_create_settled_item",
 )
-SI_TARGET: Final = 93
+SI_TARGET: Final = 94
 SI_SUPPORTED: Final = range(SI_TARGET, SI_TARGET + 1)
 CLOSURE_UNITS: Final = ("t078_m05_directory_v2_closure", "t093_m05_si_runtime_closure")
 TABLES: Final = ("m05_writeback_baselines", "m05_writeback_ops", "m05_writeback_permits")
@@ -178,7 +189,7 @@ FN: Final = {
     "decide": "m05_writeback_decide", "spend": "m05_writeback_spend",
     "settle": "m05_writeback_settle", "create": "m05_create_item_v2",
     "prepare": "m05_prepare_action_v3", "apply": "m05_apply_action_v3",
-    "reason": "m05_followup_reason",
+    "reason": "m05_followup_reason", "create_settled": "m05_writeback_create_settled_item",
 }
 CLOSED_FUNCTIONS: Final = ("m05_directory_v2", "m05_create_item", "m05_prepare_action_v2",
                            "m05_apply_action_v2")
@@ -285,7 +296,7 @@ INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_versio
 
 
 class SIInstall(sh3.SH3Install):
-    """The H3 install shape, provisioned through the S-I registry (target 93), with the S-I
+    """The H3 install shape, provisioned through the S-I registry (target 94), with the S-I
     test profile (FIXTURE: activates the check event type and maps the five reasons)."""
 
     def require(self) -> None:
@@ -329,7 +340,7 @@ def ready_install(install: SIInstall) -> SIInstall:
 @asynccontextmanager
 async def runtime(install: SIInstall, *, policy: str = "ENFORCE",
                   max_size: int = 4) -> AsyncIterator[Any]:
-    """An S-I TEST runtime (target 93, S-I catalogue, real resolver and gateway)."""
+    """An S-I TEST runtime (target 94, S-I catalogue, real resolver and gateway)."""
 
     import service_support as sv
 
@@ -695,6 +706,7 @@ KEYS: Final = {name: f"m05.writeback.{name}" for name in
                ("capture", "discover", "due", "claim", "claim_reconcile", "decide", "spend",
                 "settle")}
 CREATE_KEY: Final = "m05.followup.create"
+CREATE_SETTLED_KEY: Final = "m05.followup.create_settled"
 APPEND_KEY: Final = "m02.observation.append"
 
 

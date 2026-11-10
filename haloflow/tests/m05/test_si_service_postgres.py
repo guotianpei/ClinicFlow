@@ -30,7 +30,13 @@ Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
 - P-I08 [R11] nothing is sent to the patient: no sender call, no outbound op.
 - P-A01..A03 [R12] activation off: discover / check claim / decide / spend refused; a
   permit spent before the switch went off completes its single call; settlement and
-  reconcile continue.
+  reconcile continue (the settlement's item through the t094 recovery create).
+- P-A04..A06 [R12/R13] t094 controls (Codex 20261110T155135Z): the ordinary create key
+  stays protected (catalogue and a revoked transaction), decide stays protected; at the
+  SQL boundary the recovery create refuses a wrong fence, a foreign permit or event in
+  the same tenant, a non-check kind, a decision-path item and another tenant's op (each
+  with a positive control in the row); a repeated or concurrent recovery call is
+  refused: one item, linked once.
 - P-T01..T03 [R13] another tenant's op is not visible; a context without the S-I
   capabilities or not a workload is refused before any I/O (statement spy: no statement;
   gateway: no transaction). P-T04 [R13] spend / settle / capture with the other tenant's
@@ -172,7 +178,8 @@ def _restore_mapping(install: si.SIInstall, reason: str) -> None:
 
 def _create_stage_refusal(spy: si.StatementSpy, mark: int, step: str) -> None:
     calls = spy.since(mark)
-    assert [k for k, _ in calls][-3:] == [si.KEYS[step], si.APPEND_KEY, si.CREATE_KEY], calls
+    create = si.CREATE_SETTLED_KEY if step == "settle" else si.CREATE_KEY
+    assert [k for k, _ in calls][-3:] == [si.KEYS[step], si.APPEND_KEY, create], calls
     assert [o for _, o in calls][-3:-1] == ["ok", "ok"] and calls[-1][1].startswith("raised:")
 
 
@@ -546,6 +553,235 @@ def test_si_pa03_switch_off_settlement_and_reconcile_continue(si_install: si.SII
                                           None))
             assert settled["outcome"] == "item" and len(si.check_items(install)) == 1
             _ = flow
+
+    asyncio.run(body())
+
+
+def _foundation(rt: Any) -> Any:
+    from haloflow.m02.observation import EventFoundation
+
+    return EventFoundation(rt.gateway, producer_service=sa.PRODUCER)
+
+
+def _sql_command(ctx: Any, **fields: Any) -> Any:
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m05.intake import _attribution
+
+    return {"command": Jsonb({"schema_version": 1, **fields,
+                              "attribution": _attribution(ctx)})}
+
+
+async def _append_check(binding: Any, row: dict[str, Any]) -> None:
+    """The service's check observation for a settle/decide `item` row (same values)."""
+
+    from haloflow.m02.observation import Observation
+
+    wb = uuid.UUID(row["wb_op_id"])
+    await _foundation_of(binding).append_observation_in(binding, Observation(
+        event_id=uuid.UUID(row["event_id"]), event_type=si.T_CHECK, contract_version=1,
+        correlation_id=wb, producer_dedupe_key=f"wbcheck:{wb.hex}", links=(),
+        metadata={"wb_op_id": str(wb), "appointment_ref": row["appointment_ref"],
+                  "reason": row["reason"]},
+        patient_id=uuid.UUID(row["patient_id"]),
+        occurred_at=datetime.fromisoformat(row["occurred_at"]),
+        source_time_quality="trusted"))
+
+
+_FOUNDATIONS: dict[int, Any] = {}
+
+
+def _foundation_of(binding: Any) -> Any:
+    return _FOUNDATIONS[id(binding.handle)]
+
+
+async def _recovery_tx(rt: Any, ctx: Any, wb: str, fence: int, permit: str, /,
+                       **create_over: Any) -> dict[str, Any]:
+    """ONE gateway transaction at the SQL boundary (no WritebackService validation):
+    settle (unknown, no read -> could_not_verify item), append the check event, then the
+    t094 recovery create with `create_over` replacing command fields. A refusal raises
+    psycopg.Error and rolls the whole transaction back."""
+
+    foundation = _foundation(rt)
+
+    async def body(binding: Any) -> dict[str, Any]:
+        _FOUNDATIONS[id(binding.handle)] = foundation
+        try:
+            (settled,) = await binding.handle.fetch_all(si.KEYS["settle"], _sql_command(
+                ctx, wb_op_id=wb, fence=fence, permit_id=permit, write_outcome="unknown",
+                read=None))
+            row = dict(settled[0])
+            assert row["outcome"] == "item", row
+            await _append_check(binding, row)
+            fields = {"wb_op_id": wb, "fence": fence, "permit_id": permit,
+                      "source_event_id": row["event_id"], "item_kind": si.ITEM_KIND,
+                      **create_over}
+            (created,) = await binding.handle.fetch_all(si.CREATE_SETTLED_KEY,
+                                                        _sql_command(ctx, **fields))
+            return {"settled": row, "created": dict(created[0])}
+        finally:
+            _FOUNDATIONS.pop(id(binding.handle), None)
+
+    result: dict[str, Any] = await foundation.run_in_transaction(ctx, body)
+    return result
+
+
+def _not_eligible(error: BaseException) -> bool:
+    diag = getattr(error, "diag", None)
+    return diag is not None and diag.message_primary == "SETTLED_ITEM_NOT_ELIGIBLE"
+
+
+def test_si_pa04_revoked_activation_still_blocks_new_work_and_ordinary_create(
+        si_install: si.SIInstall) -> None:
+    """Controls for the t094 correction: the ordinary create key stays protected (the
+    catalogue AND a revoked transaction that calls it), decide stays protected, and the
+    recovery key is the only unprotected create."""
+
+    install = _begin(si_install)
+
+    async def body() -> None:
+        from haloflow.m01.errors import ActivationRefused
+
+        protected = si.si_catalog().activation_protected
+        assert si.CREATE_KEY in protected and si.CREATE_SETTLED_KEY not in protected
+        assert {si.KEYS[k] for k in ("discover", "claim", "decide", "spend")} <= protected
+        async with si.runtime(install) as rt:
+            flow, wb, fence = si.checked(install)
+            source = si.sent(install)
+            reply = await _b(sd.Chain(install, rt).inbound(  # type: ignore[arg-type]
+                source["phone"], "confirm"))
+            sc.change(install, "revoke")
+            ctx = await si.wb_context(rt, install)
+            before = (_counts(install), si.wb_op(install, wb))
+            with pytest.raises(ActivationRefused):  # a decision's item (new work)
+                await _b(si.wb_service(rt).decide(ctx, wb, fence,
+                                                  _read(install, flow, "negative"), False))
+
+            async def ordinary(handle: Any) -> Any:  # the ordinary create, alone
+                return await handle.fetch_all(si.CREATE_KEY, _sql_command(
+                    ctx, source_event_id=str(reply.event_id), item_kind="unclear_reply"))
+
+            with pytest.raises(ActivationRefused):
+                await _b(rt.gateway.with_tenant_transaction(ctx, ordinary))
+            assert (_counts(install), si.wb_op(install, wb)) == before
+
+    asyncio.run(body())
+
+
+@pytest.mark.parametrize("case", ["fence", "foreign_permit", "foreign_event", "kind",
+                                  "decide_item", "other_tenant"])
+def test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement(
+        si_install: si.SIInstall, si_other: si.SIInstall, case: str) -> None:
+    """Direct SQL-boundary negatives for t094, each against a POSITIVE control in the same
+    row (the unmutated call succeeds afterwards), so a refusal is the binding rule."""
+
+    install, other = _begin(si_install), _begin(si_other)
+
+    async def body() -> None:
+        async with si.runtime(install) as rt:
+            ctx = await si.wb_context(rt, install)
+            _flow, wb, fence, permit = si.permitted(install)
+            assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
+            over: dict[str, Any] = {}
+            target = (wb, fence, permit)
+            if case == "fence":
+                over = {"fence": fence + 1}
+            elif case == "foreign_permit":  # another op's spent permit, same tenant
+                _f2, wb2, fence2, permit2 = si.permitted(install)
+                assert si.spend(install, wb2, fence2, permit2)["outcome"] == "spent"
+                over = {"permit_id": permit2}
+            elif case == "foreign_event":  # another op's canonical check event, same tenant
+                _f3, wb3, _r3 = await _item_decision(rt, install)
+                over = {"source_event_id": si.wb_op(install, wb3)["event_id"]}
+            elif case == "kind":
+                over = {"item_kind": "unclear_reply"}
+            elif case == "decide_item":  # a decision-path item op: no spent permit
+                _f4, wb4, fence4 = si.checked(install)
+                decided = si.decide(install, wb4, fence4,
+                                    si.ehr_read(install, _f4, "negative"))
+                assert decided["outcome"] == "item", decided
+                over = {"wb_op_id": wb4, "fence": fence4,
+                        "source_event_id": decided["event_id"]}
+            else:  # another tenant's spent permit and op
+                _f5, wb5, fence5, permit5 = si.permitted(other)
+                assert si.spend(other, wb5, fence5, permit5)["outcome"] == "spent"
+                over = {"wb_op_id": wb5, "fence": fence5, "permit_id": permit5}
+            before = (_counts(install), _counts(other), si.wb_ops(install), si.wb_ops(other))
+            with pytest.raises(Exception) as refused:  # noqa: PT011 - checked by code below
+                await _b(_recovery_tx(rt, ctx, *target, **over))
+            if case == "kind":
+                assert getattr(refused.value, "diag", None) is not None
+                assert refused.value.diag.message_primary == "COMMAND_MALFORMED"
+            else:
+                assert _not_eligible(refused.value), repr(refused.value)
+            assert (_counts(install), _counts(other), si.wb_ops(install),
+                    si.wb_ops(other)) == before  # the whole transaction rolled back
+            done = await _b(_recovery_tx(rt, ctx, *target))  # positive control
+            item = done["created"]["item_id"]
+            assert si.wb_op(install, wb)["item_id"] == item
+            assert [i["item_id"] for i in si.check_items(install)].count(item) == 1
+
+    asyncio.run(body())
+
+
+def test_si_pa06_repeated_and_concurrent_recovery_create_one_item(
+        si_install: si.SIInstall) -> None:
+    """A repeat after the commit is refused; a concurrent recovery call waits on the op
+    lock, then is refused: exactly one item, linked once."""
+
+    install = _begin(si_install)
+
+    async def body() -> None:
+        async with si.runtime(install, max_size=4) as rt:
+            ctx_a, ctx_b = await si.wb_context(rt, install), await si.wb_context(rt, install)
+            _flow, wb, fence, permit = si.permitted(install)
+            assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
+            foundation = _foundation(rt)
+            created, release = asyncio.Event(), asyncio.Event()
+            event: dict[str, str] = {}
+
+            async def first(binding: Any) -> Any:
+                _FOUNDATIONS[id(binding.handle)] = foundation
+                (settled,) = await binding.handle.fetch_all(si.KEYS["settle"], _sql_command(
+                    ctx_a, wb_op_id=wb, fence=fence, permit_id=permit,
+                    write_outcome="unknown", read=None))
+                row = dict(settled[0])
+                await _append_check(binding, row)
+                event["id"] = row["event_id"]
+                (made,) = await binding.handle.fetch_all(si.CREATE_SETTLED_KEY, _sql_command(
+                    ctx_a, wb_op_id=wb, fence=fence, permit_id=permit,
+                    source_event_id=row["event_id"], item_kind=si.ITEM_KIND))
+                created.set()
+                await release.wait()  # hold the op lock open
+                return dict(made[0])
+
+            async def second(handle: Any) -> Any:
+                return await handle.fetch_all(si.CREATE_SETTLED_KEY, _sql_command(
+                    ctx_b, wb_op_id=wb, fence=fence, permit_id=permit,
+                    source_event_id=event["id"], item_kind=si.ITEM_KIND))
+
+            task_a = asyncio.create_task(foundation.run_in_transaction(ctx_a, first))
+            await _b(created.wait())
+            task_b = asyncio.create_task(rt.gateway.with_tenant_transaction(ctx_b, second))
+            await asyncio.sleep(0.5)
+            assert not task_b.done()  # waits on the op lock
+            release.set()
+            made = await _b(task_a)
+            with pytest.raises(Exception) as concurrent:  # noqa: PT011 - checked below
+                await _b(task_b)
+            assert _not_eligible(concurrent.value), repr(concurrent.value)
+
+            async def repeat(handle: Any) -> Any:
+                return await handle.fetch_all(si.CREATE_SETTLED_KEY, _sql_command(
+                    ctx_b, wb_op_id=wb, fence=fence, permit_id=permit,
+                    source_event_id=event["id"], item_kind=si.ITEM_KIND))
+
+            with pytest.raises(Exception) as repeated:  # noqa: PT011 - checked below
+                await _b(rt.gateway.with_tenant_transaction(ctx_b, repeat))
+            assert _not_eligible(repeated.value), repr(repeated.value)
+            (item,) = si.check_items(install)
+            assert item["item_id"] == made["item_id"] == si.wb_op(install, wb)["item_id"]
+            _FOUNDATIONS.clear()
 
     asyncio.run(body())
 
