@@ -257,6 +257,15 @@ jobs:
           $VENV/bin/python -I scripts/si_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/si-mutation"
+      # L-1S package S-J write-back scheduler mutation controls J-M1..J-M11 (J-M6a/b): three
+      # groups (the scheduler against the unit module and against the combined-lifespan
+      # PostgreSQL module; the TEST-ONLY harness orchestration against the PostgreSQL
+      # module), kill sets in scripts/sj_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_sj_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/sj_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/sj-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

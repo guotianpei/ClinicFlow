@@ -1,0 +1,42 @@
+{
+  "J-M1": [
+    "tests/m05/test_sj_units.py::test_sj_u03_pass_order_and_one_fresh_context_per_op"
+  ],
+  "J-M2": [
+    "tests/m05/test_sj_units.py::test_sj_u02_lifecycle_matrix"
+  ],
+  "J-M3": [
+    "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[pass_context]",
+    "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[pass_context]"
+  ],
+  "J-M4": [
+    "tests/m05/test_sj_units.py::test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns"
+  ],
+  "J-M5": [
+    "tests/m05/test_sj_units.py::test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task"
+  ],
+  "J-M6a": [
+    "tests/m05/test_sj_postgres.py::test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close",
+    "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+  ],
+  "J-M6b": [
+    "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+  ],
+  "J-M7": [
+    "tests/m05/test_sj_postgres.py::test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler",
+    "tests/m05/test_sj_postgres.py::test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route",
+    "tests/m05/test_sj_postgres.py::test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes"
+  ],
+  "J-M8": [
+    "tests/m05/test_sj_postgres.py::test_sj_j15_missing_capability_is_refused_without_change"
+  ],
+  "J-M9": [
+    "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[op_context]"
+  ],
+  "J-M10": [
+    "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[discover]"
+  ],
+  "J-M11": [
+    "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[run_one]"
+  ]
+}
