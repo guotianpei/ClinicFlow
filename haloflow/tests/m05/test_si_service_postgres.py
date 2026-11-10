@@ -35,8 +35,9 @@ Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
 - P-A04..A06 [R12/R13] t094 controls (Codex 20261110T155135Z): the ordinary create key
   stays protected (catalogue and a revoked transaction), decide stays protected; at the
   SQL boundary the recovery create refuses a wrong fence, a foreign permit or event in
-  the same tenant, a non-check kind, a decision-path item and another tenant's op (each
-  with a positive control in the row); a repeated or concurrent recovery call is
+  the same tenant, a non-check kind, a decision-path item, another tenant's op and the
+  op's own event id carrying another op's metadata (each with a positive control in the
+  row); a repeated or concurrent recovery call is
   refused: one item, linked once.
 - P-T01..T03 [R13] another tenant's op is not visible; a context without the S-I
   capabilities or not a workload is refused before any I/O (statement spy: no statement;
@@ -605,8 +606,10 @@ def _sql_command(ctx: Any, **fields: Any) -> Any:
                               "attribution": _attribution(ctx)})}
 
 
-async def _append_check(binding: Any, row: dict[str, Any]) -> None:
-    """The service's check observation for a settle/decide `item` row (same values)."""
+async def _append_check(binding: Any, row: dict[str, Any],
+                        metadata_wb: str | None = None) -> None:
+    """The service's check observation for a settle/decide `item` row (same values);
+    `metadata_wb` (FIXTURE) names another op in the metadata: a non-canonical event."""
 
     from haloflow.m02.observation import Observation
 
@@ -614,7 +617,7 @@ async def _append_check(binding: Any, row: dict[str, Any]) -> None:
     await _foundation_of(binding).append_observation_in(binding, Observation(
         event_id=uuid.UUID(row["event_id"]), event_type=si.T_CHECK, contract_version=1,
         correlation_id=wb, producer_dedupe_key=f"wbcheck:{wb.hex}", links=(),
-        metadata={"wb_op_id": str(wb), "appointment_ref": row["appointment_ref"],
+        metadata={"wb_op_id": metadata_wb or str(wb), "appointment_ref": row["appointment_ref"],
                   "reason": row["reason"]},
         patient_id=uuid.UUID(row["patient_id"]),
         occurred_at=datetime.fromisoformat(row["occurred_at"]),
@@ -636,6 +639,7 @@ async def _recovery_tx(rt: Any, ctx: Any, wb: str, fence: int, permit: str, /,
     psycopg.Error and rolls the whole transaction back."""
 
     foundation = _foundation(rt)
+    metadata_wb = create_over.pop("_metadata_wb", None)
 
     async def body(binding: Any) -> dict[str, Any]:
         _FOUNDATIONS[id(binding.handle)] = foundation
@@ -645,7 +649,7 @@ async def _recovery_tx(rt: Any, ctx: Any, wb: str, fence: int, permit: str, /,
                 read=None))
             row = dict(settled[0])
             assert row["outcome"] == "item", row
-            await _append_check(binding, row)
+            await _append_check(binding, row, metadata_wb)
             fields = {"wb_op_id": wb, "fence": fence, "permit_id": permit,
                       "source_event_id": row["event_id"], "item_kind": si.ITEM_KIND,
                       **create_over}
@@ -702,7 +706,7 @@ def test_si_pa04_revoked_activation_still_blocks_new_work_and_ordinary_create(
 
 
 @pytest.mark.parametrize("case", ["fence", "foreign_permit", "foreign_event", "kind",
-                                  "decide_item", "other_tenant"])
+                                  "decide_item", "other_tenant", "event_metadata"])
 def test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement(
         si_install: si.SIInstall, si_other: si.SIInstall, case: str) -> None:
     """Direct SQL-boundary negatives for t094, each against a POSITIVE control in the same
@@ -728,6 +732,9 @@ def test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement(
                 over = {"source_event_id": si.wb_op(install, wb3)["event_id"]}
             elif case == "kind":
                 over = {"item_kind": "unclear_reply"}
+            elif case == "event_metadata":  # the op's own event id, but its metadata names
+                _f6, wb6 = si.confirmed_op(install)  # another op: not the canonical event
+                over = {"_metadata_wb": wb6}
             elif case == "decide_item":  # a decision-path item op: no spent permit
                 _f4, wb4, fence4 = si.checked(install)
                 decided = si.decide(install, wb4, fence4,

@@ -257,6 +257,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence", required=True)
     parser.add_argument("--group", action="append", default=None,
                         help="run only the named group(s) (local measurement)")
+    parser.add_argument("--mutant", action="append", default=None,
+                        help="run only the named mutant(s) (local re-measurement)")
     args = parser.parse_args(argv)
     os.environ.update(bytecode_env(tempfile.mkdtemp(prefix="si-pycache-")))
     evidence = Path(args.evidence)
@@ -267,7 +269,10 @@ def main(argv: list[str] | None = None) -> int:
         checker = _load_checker()
         checker.TARGET = target
         checker.TESTS = tests
-        checker.MUTANTS = build_mutants(checker, label)
+        checker.MUTANTS = tuple(m for m in build_mutants(checker, label)
+                                if args.mutant is None or m.id in args.mutant)
+        if not checker.MUTANTS:
+            continue
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             code = int(checker.main(["--pytest", args.pytest,
