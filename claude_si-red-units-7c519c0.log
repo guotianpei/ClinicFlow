@@ -1,0 +1,2654 @@
+/tmp/claude-0/-home-claude/2460553b-30f1-5e0d-999b-51f945c7f785/scratchpad/venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:300: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the "fixture" caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-9.2.0, pluggy-1.7.0
+rootdir: /home/claude/clinicflow/haloflow
+configfile: pyproject.toml
+plugins: httpx-0.36.2, anyio-4.16.0, asyncio-1.4.1.post1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 66 items
+
+tests/m05/test_si_units.py FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF [ 68%]
+FFFFFFFFFFFFFFFFFFFFF                                                    [100%]
+
+=================================== FAILURES ===================================
+_____ test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[accepted] _____
+
+outcome = 'accepted'
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    def test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged(outcome: str) -> None:
+        async def body() -> None:
+            inner, capture = _inner(outcome), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert capture.calls == [(ctx, op, att)]
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:220: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_____ test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[refused] ______
+
+outcome = 'refused'
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    def test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged(outcome: str) -> None:
+        async def body() -> None:
+            inner, capture = _inner(outcome), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert capture.calls == [(ctx, op, att)]
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:220: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+____ test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[uncertain] _____
+
+outcome = 'uncertain'
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    def test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged(outcome: str) -> None:
+        async def body() -> None:
+            inner, capture = _inner(outcome), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert capture.calls == [(ctx, op, att)]
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:220: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_____ test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[not_sent] _____
+
+outcome = 'not_sent'
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    def test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged(outcome: str) -> None:
+        async def body() -> None:
+            inner, capture = _inner(outcome), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert capture.calls == [(ctx, op, att)]
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:220: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[consume_unknown] __
+
+outcome = 'consume_unknown'
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    def test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged(outcome: str) -> None:
+        async def body() -> None:
+            inner, capture = _inner(outcome), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert capture.calls == [(ctx, op, att)]
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:220: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+___________________ test_si_uw01b_capture_runs_before_inner ____________________
+
+    def test_si_uw01b_capture_runs_before_inner() -> None:
+        async def body() -> None:
+            order: list[str] = []
+            inner = _inner()
+            original = inner.run_claimed
+    
+            async def tracked(*args: Any) -> str:
+                order.append("inner")
+                result: str = await original(*args)
+                return result
+    
+            inner.run_claimed = tracked
+            worker = _wb_mod().BaselineWorker(inner, Capture(order=order))
+            await _bounded(worker.run_claimed(object(), uuid.uuid4(), uuid.uuid4()))
+            assert order == ["capture", "inner"]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:245: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:241: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(order=order))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted] _
+
+mode = 'refused', outcome = 'accepted'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac6d2660>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused] _
+
+mode = 'refused', outcome = 'refused'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac5334d0>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain] _
+
+mode = 'refused', outcome = 'uncertain'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac532fd0>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent] _
+
+mode = 'refused', outcome = 'not_sent'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac425480>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown] _
+
+mode = 'refused', outcome = 'consume_unknown'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac426ea0>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted] _
+
+mode = 'raise', outcome = 'accepted'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac587890>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused] _
+
+mode = 'raise', outcome = 'refused'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac529d00>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain] _
+
+mode = 'raise', outcome = 'uncertain'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac52ae00>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent] _
+
+mode = 'raise', outcome = 'not_sent'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac5b2750>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown] _
+
+mode = 'raise', outcome = 'consume_unknown'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac5b3050>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted] _
+
+mode = 'unknown', outcome = 'accepted'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac4f4b90>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused] _
+
+mode = 'unknown', outcome = 'refused'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac6c1d60>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain] _
+
+mode = 'unknown', outcome = 'uncertain'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac48c050>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent] _
+
+mode = 'unknown', outcome = 'not_sent'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac48e5f0>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_ test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown] _
+
+mode = 'unknown', outcome = 'consume_unknown'
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac5d76c0>
+
+    @pytest.mark.parametrize("outcome", H2_OUTCOMES)
+    @pytest.mark.parametrize("mode", ["refused", "raise", "unknown"])
+    def test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send(
+            mode: str, outcome: str, caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            inner = _inner(outcome)
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+            ctx, op, att = object(), uuid.uuid4(), uuid.uuid4()
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                assert await _bounded(worker.run_claimed(ctx, op, att)) == outcome
+            assert inner.calls == [("run_claimed", ctx, op, att)]
+            text = _logged(caplog)
+            assert PHONE not in text and NAME not in text and "capture failed" not in text
+            if mode == "raise":
+                assert "RuntimeError" in text  # class name only
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:272: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:262: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode=mode))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+____ test_si_uw09_cancellation_in_capture_propagates_without_the_inner_call ____
+
+    def test_si_uw09_cancellation_in_capture_propagates_without_the_inner_call() -> None:
+        async def body() -> None:
+            inner = _inner()
+            worker = _wb_mod().BaselineWorker(inner, Capture(mode="cancel"))
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(worker.run_claimed(object(), uuid.uuid4(), uuid.uuid4()))
+            assert inner.calls == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:278: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture(mode="cancel"))
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+________________ test_si_uw09b_cancellation_in_inner_propagates ________________
+
+    def test_si_uw09b_cancellation_in_inner_propagates() -> None:
+        async def body() -> None:
+            inner = _inner(raise_cancel=True)
+            worker = _wb_mod().BaselineWorker(inner, Capture())
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(worker.run_claimed(object(), uuid.uuid4(), uuid.uuid4()))
+            assert len(inner.calls) == 1
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:294: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:289: in body
+    worker = _wb_mod().BaselineWorker(inner, Capture())
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_______________ test_si_uw11_recover_forwards_and_never_captures _______________
+
+    def test_si_uw11_recover_forwards_and_never_captures() -> None:
+        async def body() -> None:
+            inner, capture = _inner(), Capture()
+            worker = _wb_mod().BaselineWorker(inner, capture)
+            ctx, op = object(), uuid.uuid4()
+            assert await _bounded(worker.recover(ctx, op)) == {"outcome": "registered"}
+            assert inner.calls == [("recover", ctx, op)]
+            assert capture.calls == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:300: in body
+    worker = _wb_mod().BaselineWorker(inner, capture)
+             ^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+__________ test_si_uw12_constructor_requires_an_outbound_worker[None] __________
+
+bad = None
+
+    @pytest.mark.parametrize("bad", [None, object(), "worker"])
+    def test_si_uw12_constructor_requires_an_outbound_worker(bad: Any) -> None:
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:311: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+__________ test_si_uw12_constructor_requires_an_outbound_worker[bad1] __________
+
+bad = <object object at 0x7f0facb6de00>
+
+    @pytest.mark.parametrize("bad", [None, object(), "worker"])
+    def test_si_uw12_constructor_requires_an_outbound_worker(bad: Any) -> None:
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:311: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+_________ test_si_uw12_constructor_requires_an_outbound_worker[worker] _________
+
+bad = 'worker'
+
+    @pytest.mark.parametrize("bad", [None, object(), "worker"])
+    def test_si_uw12_constructor_requires_an_outbound_worker(bad: Any) -> None:
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:311: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+________ test_si_ul01_delayed_writer_after_the_deadline_changes_nothing ________
+
+    def test_si_ul01_delayed_writer_after_the_deadline_changes_nothing() -> None:
+        async def body() -> None:
+            clock = Clock()
+            ehr, permit = _ehr(clock), str(uuid.uuid4())
+            deadline = clock.now + timedelta(seconds=10)
+            clock.advance(10 + 30)  # A paused between T4 and W1, past deadline + margin
+            before = await ehr.read(APPT)
+            result = await _bounded(ehr.write_confirmation(APPT, permit_id=permit,
+                                                           apply_deadline=deadline))
+            assert result.outcome == "deadline_passed"
+            assert ehr.writes == []
+            assert await ehr.read(APPT) == before
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:333: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:323: in body
+    ehr, permit = _ehr(clock), str(uuid.uuid4())
+                  ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__ test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired __
+
+    def test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired() -> None:
+        async def body() -> None:
+            clock = Clock()
+            ehr, permit = _ehr(clock), str(uuid.uuid4())
+            deadline = clock.now + timedelta(seconds=10)
+            await ehr.lock.acquire()  # A's call starts in time but cannot take the lock
+            task = asyncio.create_task(ehr.write_confirmation(APPT, permit_id=permit,
+                                                              apply_deadline=deadline))
+            await asyncio.sleep(0)
+            clock.advance(11)
+            ehr.lock.release()
+            assert (await _bounded(task)).outcome == "deadline_passed"
+            assert ehr.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:350: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:339: in body
+    ehr, permit = _ehr(clock), str(uuid.uuid4())
+                  ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+______ test_si_ul03_a_read_waits_for_a_write_in_progress_then_observes_it ______
+
+    def test_si_ul03_a_read_waits_for_a_write_in_progress_then_observes_it() -> None:
+        async def body() -> None:
+            clock = Clock()
+            ehr, permit = _ehr(clock), str(uuid.uuid4())
+            entered, release = asyncio.Event(), asyncio.Event()
+    
+            async def hold() -> None:
+                entered.set()
+                await release.wait()
+    
+            ehr.on_locked = hold
+            write = asyncio.create_task(ehr.write_confirmation(
+                APPT, permit_id=permit, apply_deadline=clock.now + timedelta(seconds=10)))
+            await _bounded(entered.wait())
+            read = asyncio.create_task(ehr.read(APPT))
+            await asyncio.sleep(0)
+            assert not read.done()  # serialized behind the write
+            release.set()
+            assert (await _bounded(write)).outcome == "applied"
+            assert (await _bounded(read)).status == "positive"
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:374: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:356: in body
+    ehr, permit = _ehr(clock), str(uuid.uuid4())
+                  ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________________ test_si_ul04_deadline_boundary_is_inclusive __________________
+
+    def test_si_ul04_deadline_boundary_is_inclusive() -> None:
+        async def body() -> None:
+            clock = Clock()
+            deadline = clock.now + timedelta(seconds=10)
+            ehr = _ehr(clock)
+            clock.now = deadline
+            assert (await ehr.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                                 apply_deadline=deadline)).outcome == "applied"
+            late = _ehr(Clock(deadline + timedelta(microseconds=1)))
+            assert (await late.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                                  apply_deadline=deadline)).outcome \
+                == "deadline_passed"
+            assert late.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:391: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:381: in body
+    ehr = _ehr(clock)
+          ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_____ test_si_ul05_deadline_check_and_mutation_share_one_synchronous_step ______
+
+    def test_si_ul05_deadline_check_and_mutation_share_one_synchronous_step() -> None:
+>       mod = _ehr_mod()
+              ^^^^^^^^^^
+
+tests/m05/test_si_units.py:395: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________________ test_si_ul06_port_time_never_goes_backwards __________________
+
+    def test_si_ul06_port_time_never_goes_backwards() -> None:
+        async def body() -> None:
+            clock = Clock()
+            ehr = _ehr(clock)
+            deadline = clock.now + timedelta(seconds=10)
+            clock.advance(20)
+            await ehr.read(APPT)  # the port has now seen T0 + 20 s
+            clock.now = T0  # the injected clock moves backwards
+            assert (await ehr.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                                 apply_deadline=deadline)).outcome \
+                == "deadline_passed"
+            assert ehr.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:427: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:417: in body
+    ehr = _ehr(clock)
+          ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__ test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False] __
+
+restart = False
+
+    @pytest.mark.parametrize("restart", [False, True])
+    def test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock(restart: bool) -> None:
+        async def body() -> None:
+            mod = _ehr_mod()
+            clock = Clock()
+            ehr, permit = _ehr(clock), str(uuid.uuid4())
+            deadline = clock.now + timedelta(seconds=10)  # A spent its permit at T0
+            clock.advance(60)  # B: past deadline + margin, closes the permit, then reads
+            await ehr.close_permit(permit)
+            assert (await ehr.read(APPT)).status == "neutral"
+            if restart:  # HaloFlow restarts; the synthetic EHR keeps its state
+                clock = Clock(T0)
+                ehr = mod.SimulatedEhr.restore(ehr.snapshot(), clock=clock)
+            else:
+                clock.now = T0  # the clock moves backwards before A resumes
+            result = await _bounded(ehr.write_confirmation(APPT, permit_id=permit,
+                                                           apply_deadline=deadline))
+            assert result.outcome == "permit_closed"
+            assert ehr.writes == []
+            assert (await ehr.read(APPT)).status == "neutral"
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:451: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:433: in body
+    mod = _ehr_mod()
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__ test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True] ___
+
+restart = True
+
+    @pytest.mark.parametrize("restart", [False, True])
+    def test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock(restart: bool) -> None:
+        async def body() -> None:
+            mod = _ehr_mod()
+            clock = Clock()
+            ehr, permit = _ehr(clock), str(uuid.uuid4())
+            deadline = clock.now + timedelta(seconds=10)  # A spent its permit at T0
+            clock.advance(60)  # B: past deadline + margin, closes the permit, then reads
+            await ehr.close_permit(permit)
+            assert (await ehr.read(APPT)).status == "neutral"
+            if restart:  # HaloFlow restarts; the synthetic EHR keeps its state
+                clock = Clock(T0)
+                ehr = mod.SimulatedEhr.restore(ehr.snapshot(), clock=clock)
+            else:
+                clock.now = T0  # the clock moves backwards before A resumes
+            result = await _bounded(ehr.write_confirmation(APPT, permit_id=permit,
+                                                           apply_deadline=deadline))
+            assert result.outcome == "permit_closed"
+            assert ehr.writes == []
+            assert (await ehr.read(APPT)).status == "neutral"
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:451: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:433: in body
+    mod = _ehr_mod()
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_____________ test_si_ul08_write_requires_an_aware_deadline[None] ______________
+
+deadline = None
+
+    @pytest.mark.parametrize("deadline", [None, datetime(2026, 11, 10, 15, 0), "2026-11-10"])
+    def test_si_ul08_write_requires_an_aware_deadline(deadline: Any) -> None:
+        async def body() -> None:
+            ehr = _ehr(Clock())
+            with pytest.raises((TypeError, ValueError)):
+                await ehr.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                             apply_deadline=deadline)
+            assert ehr.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:457: in body
+    ehr = _ehr(Clock())
+          ^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+___________ test_si_ul08_write_requires_an_aware_deadline[deadline1] ___________
+
+deadline = datetime.datetime(2026, 11, 10, 15, 0)
+
+    @pytest.mark.parametrize("deadline", [None, datetime(2026, 11, 10, 15, 0), "2026-11-10"])
+    def test_si_ul08_write_requires_an_aware_deadline(deadline: Any) -> None:
+        async def body() -> None:
+            ehr = _ehr(Clock())
+            with pytest.raises((TypeError, ValueError)):
+                await ehr.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                             apply_deadline=deadline)
+            assert ehr.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:457: in body
+    ehr = _ehr(Clock())
+          ^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__________ test_si_ul08_write_requires_an_aware_deadline[2026-11-10] ___________
+
+deadline = '2026-11-10'
+
+    @pytest.mark.parametrize("deadline", [None, datetime(2026, 11, 10, 15, 0), "2026-11-10"])
+    def test_si_ul08_write_requires_an_aware_deadline(deadline: Any) -> None:
+        async def body() -> None:
+            ehr = _ehr(Clock())
+            with pytest.raises((TypeError, ValueError)):
+                await ehr.write_confirmation(APPT, permit_id=str(uuid.uuid4()),
+                                             apply_deadline=deadline)
+            assert ehr.writes == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:463: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:457: in body
+    ehr = _ehr(Clock())
+          ^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__________ test_si_ut01_retry_delays_are_1_5_15_minutes_then_the_item __________
+
+    def test_si_ut01_retry_delays_are_1_5_15_minutes_then_the_item() -> None:
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:594: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+______ test_si_ut02_conditional_worst_case_target_by_simulation[60-1540] _______
+
+interval_s = 60, expected_s = 1540
+
+    @pytest.mark.parametrize(("interval_s", "expected_s"), [(60, 1540), (300, 2500), (450, 3100)])
+    def test_si_ut02_conditional_worst_case_target_by_simulation(interval_s: int,
+                                                                 expected_s: int) -> None:
+        """The C4 formula, then a tick simulation: with the reply recorded just after a tick
+        and every retry becoming due just after a tick (the worst phase), the item appears no
+        later than the formula; 300 s is about 42 minutes. A conditional target only: the
+        simulation assumes every tick runs and each read fails at its timeout."""
+    
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:609: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+______ test_si_ut02_conditional_worst_case_target_by_simulation[300-2500] ______
+
+interval_s = 300, expected_s = 2500
+
+    @pytest.mark.parametrize(("interval_s", "expected_s"), [(60, 1540), (300, 2500), (450, 3100)])
+    def test_si_ut02_conditional_worst_case_target_by_simulation(interval_s: int,
+                                                                 expected_s: int) -> None:
+        """The C4 formula, then a tick simulation: with the reply recorded just after a tick
+        and every retry becoming due just after a tick (the worst phase), the item appears no
+        later than the formula; 300 s is about 42 minutes. A conditional target only: the
+        simulation assumes every tick runs and each read fails at its timeout."""
+    
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:609: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+______ test_si_ut02_conditional_worst_case_target_by_simulation[450-3100] ______
+
+interval_s = 450, expected_s = 3100
+
+    @pytest.mark.parametrize(("interval_s", "expected_s"), [(60, 1540), (300, 2500), (450, 3100)])
+    def test_si_ut02_conditional_worst_case_target_by_simulation(interval_s: int,
+                                                                 expected_s: int) -> None:
+        """The C4 formula, then a tick simulation: with the reply recorded just after a tick
+        and every retry becoming due just after a tick (the worst phase), the item appears no
+        later than the formula; 300 s is about 42 minutes. A conditional target only: the
+        simulation assumes every tick runs and each read fails at its timeout."""
+    
+>       mod = _wb_mod()
+              ^^^^^^^^^
+
+tests/m05/test_si_units.py:609: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+______ test_si_ut03_other_reasons_raise_the_item_at_once[status_changed] _______
+
+reason = 'status_changed'
+
+    @pytest.mark.parametrize("reason", ["status_changed", "declined_or_unknown",
+                                        "could_not_verify", "no_baseline"])
+    def test_si_ut03_other_reasons_raise_the_item_at_once(reason: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, decide_outcome={"outcome": "item", "reason": reason})
+            ehr = CountingEhr(_ehr(clock, "negative"))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "item_raised"
+            assert model.calls("decide") == [("decide", False, "negative")]
+            assert model.calls("spend") == [] and ehr.write_calls == 0
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:649: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:643: in body
+    ehr = CountingEhr(_ehr(clock, "negative"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+____ test_si_ut03_other_reasons_raise_the_item_at_once[declined_or_unknown] ____
+
+reason = 'declined_or_unknown'
+
+    @pytest.mark.parametrize("reason", ["status_changed", "declined_or_unknown",
+                                        "could_not_verify", "no_baseline"])
+    def test_si_ut03_other_reasons_raise_the_item_at_once(reason: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, decide_outcome={"outcome": "item", "reason": reason})
+            ehr = CountingEhr(_ehr(clock, "negative"))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "item_raised"
+            assert model.calls("decide") == [("decide", False, "negative")]
+            assert model.calls("spend") == [] and ehr.write_calls == 0
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:649: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:643: in body
+    ehr = CountingEhr(_ehr(clock, "negative"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_____ test_si_ut03_other_reasons_raise_the_item_at_once[could_not_verify] ______
+
+reason = 'could_not_verify'
+
+    @pytest.mark.parametrize("reason", ["status_changed", "declined_or_unknown",
+                                        "could_not_verify", "no_baseline"])
+    def test_si_ut03_other_reasons_raise_the_item_at_once(reason: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, decide_outcome={"outcome": "item", "reason": reason})
+            ehr = CountingEhr(_ehr(clock, "negative"))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "item_raised"
+            assert model.calls("decide") == [("decide", False, "negative")]
+            assert model.calls("spend") == [] and ehr.write_calls == 0
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:649: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:643: in body
+    ehr = CountingEhr(_ehr(clock, "negative"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+________ test_si_ut03_other_reasons_raise_the_item_at_once[no_baseline] ________
+
+reason = 'no_baseline'
+
+    @pytest.mark.parametrize("reason", ["status_changed", "declined_or_unknown",
+                                        "could_not_verify", "no_baseline"])
+    def test_si_ut03_other_reasons_raise_the_item_at_once(reason: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, decide_outcome={"outcome": "item", "reason": reason})
+            ehr = CountingEhr(_ehr(clock, "negative"))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "item_raised"
+            assert model.calls("decide") == [("decide", False, "negative")]
+            assert model.calls("spend") == [] and ehr.write_calls == 0
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:649: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:643: in body
+    ehr = CountingEhr(_ehr(clock, "negative"))
+                      ^^^^^^^^^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_______ test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path _______
+
+    def test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            raw = _ehr(clock)
+            raw.fail_reads(2)
+            ehr = CountingEhr(raw)
+            worker = _worker(model, ehr)
+            outcomes = []
+            for _ in range(3):
+                clock.advance(1000)
+                outcomes.append(await _bounded(worker.run_one(object(), uuid.uuid4())))
+            assert outcomes == ["deferred", "deferred", "observed_positive"]
+            assert model.item_at is None and ehr.write_calls == 1
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:667: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:656: in body
+    raw = _ehr(clock)
+          ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________ test_si_us06_exactly_one_write_per_spent_permit_then_verify __________
+
+    def test_si_us06_exactly_one_write_per_spent_permit_then_verify() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            ehr = CountingEhr(_ehr(clock))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "observed_positive"
+            assert ehr.write_calls == 1
+            assert model.calls("settle") == [("settle", "permit-1", "applied", "positive")]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:683: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:677: in body
+    ehr = CountingEhr(_ehr(clock))
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_ test_si_us07_uk03_no_write_without_a_committed_spend[refused-spend_refused] __
+
+mode = 'refused', expected = 'spend_refused'
+
+    @pytest.mark.parametrize(("mode", "expected"), [("refused", "spend_refused"),
+                                                    ("unknown", "spend_unknown")])
+    def test_si_us07_uk03_no_write_without_a_committed_spend(mode: str, expected: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, spend_mode=mode)
+            ehr = CountingEhr(_ehr(clock))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) == expected
+            assert ehr.write_calls == 0 and model.calls("settle") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:696: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:692: in body
+    ehr = CountingEhr(_ehr(clock))
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_ test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown] __
+
+mode = 'unknown', expected = 'spend_unknown'
+
+    @pytest.mark.parametrize(("mode", "expected"), [("refused", "spend_refused"),
+                                                    ("unknown", "spend_unknown")])
+    def test_si_us07_uk03_no_write_without_a_committed_spend(mode: str, expected: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, spend_mode=mode)
+            ehr = CountingEhr(_ehr(clock))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) == expected
+            assert ehr.write_calls == 0 and model.calls("settle") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:696: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:692: in body
+    ehr = CountingEhr(_ehr(clock))
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__________ test_si_uk04_write_timeout_is_attempted_and_never_retried ___________
+
+    def test_si_uk04_write_timeout_is_attempted_and_never_retried() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, settle_outcome="item")
+            ehr = CountingEhr(_ehr(clock), write_hang=True)
+            result = await _bounded(_worker(model, ehr, write_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "item_raised"
+            assert ehr.write_calls == 1
+            assert model.calls("settle") == [("settle", "permit-1", "unknown", "neutral")]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:710: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:703: in body
+    ehr = CountingEhr(_ehr(clock), write_hang=True)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+________ test_si_uq01_reconcile_close_completes_before_the_read_starts _________
+
+    def test_si_uq01_reconcile_close_completes_before_the_read_starts() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            ehr = CountingEhr(_ehr(clock))
+            assert await _bounded(_worker(model, ehr).run_one(object(), uuid.uuid4())) \
+                == "item_raised"
+            assert ehr.trace == [("close", "start"), ("close", "end"), ("read", "start"),
+                                 ("read", "end")]
+            assert ehr.closes == ["permit-old"] and ehr.write_calls == 0
+            assert model.calls("decide") == [] and model.calls("spend") == []
+            assert model.calls("settle") == [("settle", "permit-old", "unknown", "neutral")]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:736: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:727: in body
+    ehr = CountingEhr(_ehr(clock))
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__________ test_si_uq02_a_close_still_in_progress_holds_the_read_back __________
+
+    def test_si_uq02_a_close_still_in_progress_holds_the_read_back() -> None:
+        """Race discriminator: while close is in progress (blocked), no read has started;
+        once it completes the read follows."""
+    
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            ehr = CountingEhr(_ehr(clock))
+            release = asyncio.Event()
+            original = ehr.close_permit
+    
+            async def slow_close(permit_id: str) -> None:
+                ehr.trace.append(("close", "waiting"))
+                await release.wait()
+                await original(permit_id)
+    
+            ehr.close_permit = slow_close  # type: ignore[method-assign]
+            task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                       .run_one(object(), uuid.uuid4()))
+            await _until(lambda: ("close", "waiting") in ehr.trace)
+            for _ in range(20):
+                await asyncio.sleep(0)
+            assert ("read", "start") not in ehr.trace and model.calls("settle") == []
+            release.set()
+            assert await _bounded(task) == "item_raised"
+            assert ehr.trace.index(("close", "end")) < ehr.trace.index(("read", "start"))
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:766: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:746: in body
+    ehr = CountingEhr(_ehr(clock))
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+______ test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises] ______
+
+how = 'raises'
+
+    @pytest.mark.parametrize("how", ["raises", "hangs"])
+    def test_si_uq03_04_a_failed_close_means_no_read_and_no_settle(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            kw = {"fail": {"close": {1}}} if how == "raises" else {"hang": {"close": {1}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "reconcile_failed"
+            assert ehr.counts["read"] == 0 and ehr.write_calls == 0
+            assert model.calls("settle") == [] and model.calls("decide") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:782: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:775: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+______ test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs] _______
+
+how = 'hangs'
+
+    @pytest.mark.parametrize("how", ["raises", "hangs"])
+    def test_si_uq03_04_a_failed_close_means_no_read_and_no_settle(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            kw = {"fail": {"close": {1}}} if how == "raises" else {"hang": {"close": {1}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "reconcile_failed"
+            assert ehr.counts["read"] == 0 and ehr.write_calls == 0
+            assert model.calls("settle") == [] and model.calls("decide") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:782: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:775: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_____ test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle _____
+
+    def test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            ehr = CountingEhr(_ehr(clock), hang={"close": {1}})
+            task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                       .run_one(object(), uuid.uuid4()))
+            await _until(lambda: ehr.counts["close"] == 1)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(task)
+            assert ehr.counts["read"] == 0 and model.calls("settle") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:798: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:789: in body
+    ehr = CountingEhr(_ehr(clock), hang={"close": {1}})
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+______________ test_si_uq06_cancellation_while_writing_propagates ______________
+
+    def test_si_uq06_cancellation_while_writing_propagates() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            ehr = CountingEhr(_ehr(clock), write_hang=True)
+            task = asyncio.create_task(_worker(model, ehr, write_timeout_s=60)
+                                       .run_one(object(), uuid.uuid4()))
+            await _until(lambda: ehr.write_calls == 1)
+            assert ehr.write_calls == 1  # cancelled at the intended stage: inside W1
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(task)
+            assert ehr.write_calls == 1 and model.calls("settle") == []
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:815: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:805: in body
+    ehr = CountingEhr(_ehr(clock), write_hang=True)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+________ test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend ________
+
+    def test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend() -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            ehr = CountingEhr(_ehr(clock), hang={"read": {1}})
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "deferred"
+            assert model.calls("decide") == [("decide", True, None)]
+            assert model.calls("spend") == [] and ehr.write_calls == 0
+            assert ("read", "abandoned") in ehr.trace
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:833: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:825: in body
+    ehr = CountingEhr(_ehr(clock), hang={"read": {1}})
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_ test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read[hangs] __
+
+how = 'hangs'
+
+    @pytest.mark.parametrize("how", ["hangs", "raises"])
+    def test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, settle_outcome="item")
+            kw = {"hang": {"read": {2}}} if how == "hangs" else {"fail": {"read": {2}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "item_raised"
+            assert ehr.write_calls == 1 and ehr.counts["read"] == 2  # no retry, no 2nd write
+            assert model.calls("settle") == [("settle", "permit-1", "applied", None)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:849: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:842: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_ test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read[raises] _
+
+how = 'raises'
+
+    @pytest.mark.parametrize("how", ["hangs", "raises"])
+    def test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, settle_outcome="item")
+            kw = {"hang": {"read": {2}}} if how == "hangs" else {"fail": {"read": {2}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "item_raised"
+            assert ehr.write_calls == 1 and ehr.counts["read"] == 2  # no retry, no 2nd write
+            assert model.calls("settle") == [("settle", "permit-1", "applied", None)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:849: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:842: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+___ test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read[hangs] ___
+
+how = 'hangs'
+
+    @pytest.mark.parametrize("how", ["hangs", "raises"])
+    def test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            kw = {"hang": {"read": {1}}} if how == "hangs" else {"fail": {"read": {1}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "item_raised"
+            assert ehr.counts["read"] == 1 and ehr.write_calls == 0
+            assert model.calls("settle") == [("settle", "permit-old", "unknown", None)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:865: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:858: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__ test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read[raises] ___
+
+how = 'raises'
+
+    @pytest.mark.parametrize("how", ["hangs", "raises"])
+    def test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read(how: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock, phase="reconcile", settle_outcome="item")
+            kw = {"hang": {"read": {1}}} if how == "hangs" else {"fail": {"read": {1}}}
+            ehr = CountingEhr(_ehr(clock), **kw)
+            result = await _bounded(_worker(model, ehr, read_timeout_s=0.05)
+                                    .run_one(object(), uuid.uuid4()))
+            assert result == "item_raised"
+            assert ehr.counts["read"] == 1 and ehr.write_calls == 0
+            assert model.calls("settle") == [("settle", "permit-old", "unknown", None)]
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:865: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:858: in body
+    ehr = CountingEhr(_ehr(clock), **kw)
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________ test_si_uh04_cancellation_while_a_read_hangs_propagates[r1] __________
+
+stage = 'r1'
+
+    @pytest.mark.parametrize("stage", ["r1", "r2"])
+    def test_si_uh04_cancellation_while_a_read_hangs_propagates(stage: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            number = 1 if stage == "r1" else 2
+            ehr = CountingEhr(_ehr(clock), hang={"read": {number}})
+            task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                       .run_one(object(), uuid.uuid4()))
+            await _until(lambda: ehr.counts["read"] == number)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(task)
+            assert model.calls("settle") == []
+            assert ehr.write_calls == (0 if stage == "r1" else 1)
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:884: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:874: in body
+    ehr = CountingEhr(_ehr(clock), hang={"read": {number}})
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________ test_si_uh04_cancellation_while_a_read_hangs_propagates[r2] __________
+
+stage = 'r2'
+
+    @pytest.mark.parametrize("stage", ["r1", "r2"])
+    def test_si_uh04_cancellation_while_a_read_hangs_propagates(stage: str) -> None:
+        async def body() -> None:
+            clock = Clock()
+            model = Model(clock)
+            number = 1 if stage == "r1" else 2
+            ehr = CountingEhr(_ehr(clock), hang={"read": {number}})
+            task = asyncio.create_task(_worker(model, ehr, read_timeout_s=60)
+                                       .run_one(object(), uuid.uuid4()))
+            await _until(lambda: ehr.counts["read"] == number)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await _bounded(task)
+            assert model.calls("settle") == []
+            assert ehr.write_calls == (0 if stage == "r1" else 1)
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:884: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:874: in body
+    ehr = CountingEhr(_ehr(clock), hang={"read": {number}})
+                      ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+_________ test_si_uv01_no_sensitive_value_or_exception_text_is_logged __________
+
+caplog = <_pytest.logging.LogCaptureFixture object at 0x7f0fac63fc50>
+
+    def test_si_uv01_no_sensitive_value_or_exception_text_is_logged(
+            caplog: pytest.LogCaptureFixture) -> None:
+        async def body() -> None:
+            clock = Clock()
+    
+            class Leaky(Model):
+                async def settle(self, *args: Any) -> dict[str, Any]:
+                    raise RuntimeError(f"{PHONE} {NAME} {PROVIDER} {DEPARTMENT} {APPT}")
+    
+            with caplog.at_level(logging.DEBUG, logger=LOGGER):
+                with pytest.raises(RuntimeError):
+                    await _bounded(_worker(Leaky(clock), _ehr(clock))
+                                   .run_one(object(), uuid.uuid4()))
+                # read, write and close failures whose exception text carries the secrets
+                await _bounded(_worker(Model(clock), CountingEhr(_ehr(clock), fail={"read": {1}}))
+                               .run_one(object(), uuid.uuid4()))
+                await _bounded(_worker(Model(clock, settle_outcome="item"),
+                                       CountingEhr(_ehr(clock), fail={"write": {1}}))
+                               .run_one(object(), uuid.uuid4()))
+                await _bounded(_worker(Model(clock, phase="reconcile"),
+                                       CountingEhr(_ehr(clock), fail={"close": {1}}))
+                               .run_one(object(), uuid.uuid4()))
+            text = _logged(caplog)
+            for secret in (PHONE, NAME, PROVIDER, DEPARTMENT, APPT):
+                assert secret not in text, secret
+    
+>       asyncio.run(body())
+
+tests/m05/test_si_units.py:916: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_si_units.py:901: in body
+    await _bounded(_worker(Leaky(clock), _ehr(clock))
+                                         ^^^^^^^^^^^
+tests/m05/test_si_units.py:162: in _ehr
+    ehr = _ehr_mod().SimulatedEhr(clock=clock)
+          ^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _ehr_mod() -> Any:
+>       import haloflow.m05.simulated_ehr as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.simulated_ehr'
+
+tests/m05/test_si_units.py:128: ModuleNotFoundError
+__________ test_si_un01_writeback_and_simulated_ehr_are_not_composed ___________
+
+    def test_si_un01_writeback_and_simulated_ehr_are_not_composed() -> None:
+>       _wb_mod(), _ehr_mod()  # the modules exist (red until they do)
+        ^^^^^^^^^
+
+tests/m05/test_si_units.py:923: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _wb_mod() -> Any:
+>       import haloflow.m05.writeback as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback'
+
+tests/m05/test_si_units.py:134: ModuleNotFoundError
+- generated xml file: /tmp/claude-0/-home-claude/2460553b-30f1-5e0d-999b-51f945c7f785/scratchpad/ev7c519c0/units.xml -
+=========================== short test summary info ============================
+FAILED tests/m05/test_si_units.py::test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[accepted]
+FAILED tests/m05/test_si_units.py::test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[refused]
+FAILED tests/m05/test_si_units.py::test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[uncertain]
+FAILED tests/m05/test_si_units.py::test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[not_sent]
+FAILED tests/m05/test_si_units.py::test_si_uw01_05_wrapper_returns_every_h2_outcome_unchanged[consume_unknown]
+FAILED tests/m05/test_si_units.py::test_si_uw01b_capture_runs_before_inner - ...
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent]
+FAILED tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown]
+FAILED tests/m05/test_si_units.py::test_si_uw09_cancellation_in_capture_propagates_without_the_inner_call
+FAILED tests/m05/test_si_units.py::test_si_uw09b_cancellation_in_inner_propagates
+FAILED tests/m05/test_si_units.py::test_si_uw11_recover_forwards_and_never_captures
+FAILED tests/m05/test_si_units.py::test_si_uw12_constructor_requires_an_outbound_worker[None]
+FAILED tests/m05/test_si_units.py::test_si_uw12_constructor_requires_an_outbound_worker[bad1]
+FAILED tests/m05/test_si_units.py::test_si_uw12_constructor_requires_an_outbound_worker[worker]
+FAILED tests/m05/test_si_units.py::test_si_ul01_delayed_writer_after_the_deadline_changes_nothing
+FAILED tests/m05/test_si_units.py::test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired
+FAILED tests/m05/test_si_units.py::test_si_ul03_a_read_waits_for_a_write_in_progress_then_observes_it
+FAILED tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive
+FAILED tests/m05/test_si_units.py::test_si_ul05_deadline_check_and_mutation_share_one_synchronous_step
+FAILED tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards
+FAILED tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False]
+FAILED tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True]
+FAILED tests/m05/test_si_units.py::test_si_ul08_write_requires_an_aware_deadline[None]
+FAILED tests/m05/test_si_units.py::test_si_ul08_write_requires_an_aware_deadline[deadline1]
+FAILED tests/m05/test_si_units.py::test_si_ul08_write_requires_an_aware_deadline[2026-11-10]
+FAILED tests/m05/test_si_units.py::test_si_ut01_retry_delays_are_1_5_15_minutes_then_the_item
+FAILED tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[60-1540]
+FAILED tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[300-2500]
+FAILED tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[450-3100]
+FAILED tests/m05/test_si_units.py::test_si_ut03_other_reasons_raise_the_item_at_once[status_changed]
+FAILED tests/m05/test_si_units.py::test_si_ut03_other_reasons_raise_the_item_at_once[declined_or_unknown]
+FAILED tests/m05/test_si_units.py::test_si_ut03_other_reasons_raise_the_item_at_once[could_not_verify]
+FAILED tests/m05/test_si_units.py::test_si_ut03_other_reasons_raise_the_item_at_once[no_baseline]
+FAILED tests/m05/test_si_units.py::test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path
+FAILED tests/m05/test_si_units.py::test_si_us06_exactly_one_write_per_spent_permit_then_verify
+FAILED tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[refused-spend_refused]
+FAILED tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown]
+FAILED tests/m05/test_si_units.py::test_si_uk04_write_timeout_is_attempted_and_never_retried
+FAILED tests/m05/test_si_units.py::test_si_uq01_reconcile_close_completes_before_the_read_starts
+FAILED tests/m05/test_si_units.py::test_si_uq02_a_close_still_in_progress_holds_the_read_back
+FAILED tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]
+FAILED tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]
+FAILED tests/m05/test_si_units.py::test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle
+FAILED tests/m05/test_si_units.py::test_si_uq06_cancellation_while_writing_propagates
+FAILED tests/m05/test_si_units.py::test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend
+FAILED tests/m05/test_si_units.py::test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read[hangs]
+FAILED tests/m05/test_si_units.py::test_si_uh02_r2_after_the_write_hangs_or_raises_settles_with_no_read[raises]
+FAILED tests/m05/test_si_units.py::test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read[hangs]
+FAILED tests/m05/test_si_units.py::test_si_uh03_r2_in_reconcile_hangs_or_raises_settles_with_no_read[raises]
+FAILED tests/m05/test_si_units.py::test_si_uh04_cancellation_while_a_read_hangs_propagates[r1]
+FAILED tests/m05/test_si_units.py::test_si_uh04_cancellation_while_a_read_hangs_propagates[r2]
+FAILED tests/m05/test_si_units.py::test_si_uv01_no_sensitive_value_or_exception_text_is_logged
+FAILED tests/m05/test_si_units.py::test_si_un01_writeback_and_simulated_ehr_are_not_composed
+============================== 66 failed in 2.94s ==============================
