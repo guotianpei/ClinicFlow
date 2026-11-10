@@ -20,8 +20,7 @@ is sent to the patient by write-back; the S-A side-effect guard is active.
        write.
 - E05  restart after the spend: a new runtime reconciles; exactly one outcome, no second
        write.
-- E06  STOP (and a later reply 1 for that appointment's window cannot exist) -> no
-       write-back op, no write, no item.
+- E06  STOP -> no write-back op, no write, no item.
 """
 
 from __future__ import annotations

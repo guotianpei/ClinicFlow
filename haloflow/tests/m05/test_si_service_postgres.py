@@ -34,7 +34,10 @@ Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
 - P-T01..T03 [R13] another tenant's op is not visible; a context without the S-I
   capabilities or not a workload is refused before any I/O (statement spy: no statement;
   gateway: no transaction). P-T04 [R13] spend / settle / capture with the other tenant's
-  ids from this tenant's context change nothing in either tenant.
+  ids (independent, otherwise-eligible fixtures: a capturable op, an unspent permit, a
+  spent permit) from this tenant's context get the documented refusals (OP_NOT_FOUND /
+  OP_NOT_FOUND / stale) and change nothing in either tenant; the same calls on this
+  tenant's equivalent ids succeed (same-tenant controls).
 - P-Q01 [R8/R9] an ACTIVE clinic: a restarted worker on a spent, unsettled op goes check
   claim (not_claimable PERMIT_SPENT) -> reconcile claim -> close -> read -> settle, in
   that measured order.
@@ -593,31 +596,81 @@ def test_si_pt02_03_admission_is_refused_before_any_io(
     asyncio.run(body())
 
 
+def _capturable(install: si.SIInstall) -> tuple[str, str]:
+    """An otherwise-eligible capture fixture: a reminder examined (claimed), its ticket's
+    attempt current, not consumed, not captured: (op_id, attempt_id)."""
+
+    _patient, _phone, ref, _zone = si.seed3(install)
+    return sh2.claimed(install, ref)
+
+
+def _tenant_state(install: si.SIInstall, wbs: list[str], ops: list[str]) -> Any:
+    return (si.wb_ops(install), [si.permits(install, wb) for wb in wbs],
+            [si.baseline(install, op) for op in ops], si.check_events(install),
+            si.check_items(install))
+
+
 def test_si_pt04_another_tenants_ids_change_nothing_anywhere(
         si_install: si.SIInstall, si_other: si.SIInstall) -> None:
+    """Three INDEPENDENT, otherwise-eligible fixtures in EACH tenant (a capturable op, an
+    unspent permit, a spent unsettled permit). Through this tenant's service and context the
+    other tenant's ids get exactly the documented refusals (capture "refused" with code
+    OP_NOT_FOUND, spend "refused" with code OP_NOT_FOUND, settle "stale"), and neither
+    tenant changes; the SAME calls with this tenant's own equivalent ids then succeed
+    (captured, spent, observed_positive), so the refusal is the tenant boundary and not
+    an ineligible fixture."""
+
     install, other = _begin(si_install), _begin(si_other)
 
     async def body() -> None:
+        fixtures: dict[str, dict[str, Any]] = {}
+        for name, tenant in (("a", install), ("b", other)):
+            _f1, spend_wb, spend_fence, spend_permit = si.permitted(tenant)
+            settle_flow, settle_wb, settle_fence, settle_permit = si.permitted(tenant)
+            assert si.spend(tenant, settle_wb, settle_fence, settle_permit)["outcome"] \
+                == "spent"
+            cap_op, cap_attempt = _capturable(tenant)  # last: holds its ticket claimed
+            fixtures[name] = {
+                "spend": (spend_wb, spend_fence, spend_permit),
+                "settle": (settle_wb, settle_fence, settle_permit, settle_flow),
+                "capture": (cap_op, cap_attempt),
+                "wbs": [spend_wb, settle_wb], "ops": [cap_op]}
+        a, b = fixtures["a"], fixtures["b"]
+        mine = _tenant_state(install, a["wbs"], a["ops"])
+        theirs = _tenant_state(other, b["wbs"], b["ops"])
+        assert si.baseline(other, b["capture"][0]) is None  # eligible, not yet captured
+
         async with si.runtime(install) as rt:
-            flow_b, wb_b, fence_b, permit_b = si.permitted(other)
-            mine = si.wb_ops(install)
-            theirs = (si.wb_ops(other), si.permits(other, wb_b), si.baseline(other,
-                                                                              flow_b["op_id"]))
             svc, ctx = si.wb_service(rt), await si.wb_context(rt, install)
-            for call in (svc.spend(ctx, wb_b, fence_b, permit_b),
-                         svc.settle(ctx, wb_b, fence_b, permit_b, "unknown", None)):
-                try:
-                    result = await _b(call)
-                except Exception as error:  # noqa: BLE001 - a refusal of any class is fine
-                    result = {"outcome": type(error).__name__}
-                assert result["outcome"] not in ("spent", "item", "observed_positive"), result
             dispatch = await sh3.dispatch_context(rt, install)
-            captured = await _b(svc.capture_baseline(dispatch, flow_b["op_id"],
-                                                     flow_b["attempt"]))
-            assert captured == "refused"
-            assert si.wb_ops(install) == mine
-            assert (si.wb_ops(other), si.permits(other, wb_b),
-                    si.baseline(other, flow_b["op_id"])) == theirs
+
+            # the other tenant's ids: the documented refusals, nothing changes anywhere
+            wb, fence, permit = b["spend"]
+            spent = await _b(svc.spend(ctx, wb, fence, permit))
+            assert (spent["outcome"], spent["code"]) == ("refused", "OP_NOT_FOUND"), spent
+            wb, fence, permit, flow = b["settle"]
+            settled = await _b(svc.settle(ctx, wb, fence, permit, "applied",
+                                          _read(other, flow, "positive")))
+            assert settled["outcome"] == "stale", settled
+            assert settled.get("event_id") is None and settled.get("reason") is None
+            op, attempt = b["capture"]
+            assert await _b(svc.capture_baseline(dispatch, op, attempt)) == "refused"
+            sql = si.call(install, "capture", op_id=op, attempt_id=attempt)
+            assert (sql["outcome"], sql["code"]) == ("refused", "OP_NOT_FOUND"), sql
+            assert _tenant_state(install, a["wbs"], a["ops"]) == mine
+            assert _tenant_state(other, b["wbs"], b["ops"]) == theirs
+
+            # same-tenant controls: the same calls on this tenant's equivalent ids succeed
+            wb, fence, permit = a["spend"]
+            assert (await _b(svc.spend(ctx, wb, fence, permit)))["outcome"] == "spent"
+            wb, fence, permit, flow = a["settle"]
+            own = await _b(svc.settle(ctx, wb, fence, permit, "applied",
+                                      _read(install, flow, "positive")))
+            assert own["outcome"] == "observed_positive", own
+            op, attempt = a["capture"]
+            assert await _b(svc.capture_baseline(dispatch, op, attempt)) == "captured"
+            assert si.baseline(install, op) is not None
+            assert _tenant_state(other, b["wbs"], b["ops"]) == theirs  # still unchanged
 
     asyncio.run(body())
 

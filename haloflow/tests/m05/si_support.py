@@ -44,6 +44,7 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   outcome: "captured" | "refused", code}; the t071 lock order (chain, then ticket row FOR
   UPDATE); refuses unless op claimed, ticket.attempt_id = attempt, consumed_at NULL, profile
   source_version = render_inputs.source_version; a second capture is refused.
+  An op_id that is not this tenant's -> "refused" with code "OP_NOT_FOUND".
 - t081 `m05_writeback_discover` {limit 1..1000} -> {schema_version, discovered}: one op per
   inbound reply with reply_class 'confirm' and decision 'recorded' matched to a reminder of
   an outbound op (ON CONFLICT DO NOTHING); never for any other reply class.
@@ -72,9 +73,11 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   "spent" | "refused", code, apply_deadline}; one conditional UPDATE: spent_at NULL,
   voided_at NULL, issued_fence = fence, op.fence = fence, op.state 'permitted',
   op.lease_until > clock_timestamp(); apply_deadline := clock_timestamp() + WRITE_TIMEOUT_S.
+  A wb_op_id that is not this tenant's -> "refused" with code "OP_NOT_FOUND".
 - t087 `m05_writeback_settle` {wb_op_id, fence, permit_id, write_outcome, read} ->
   {schema_version, outcome: "observed_positive" | "item" | "stale", reason, event_id,
-  patient_id}; fenced; NOT activation-protected.
+  patient_id}; fenced; NOT activation-protected. A wb_op_id that is not this tenant's ->
+  "stale" (reason and event_id null).
 - t088 `m05_writeback_check_contract`: event type `m05_writeback_check_raised` v1
   (family m05_intake, metadata {wb_op_id, appointment_ref, reason}), its envelope
   allowlist rows, the item-kind CHECK on m05_intake_map and m05_followup_items REPLACED
