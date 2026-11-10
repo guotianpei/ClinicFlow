@@ -309,7 +309,8 @@
   "tests/m05/test_sh_h3_postgres.py::test_h3_p05_failed_prefix_backlog_drains",
   "tests/m05/test_sh_h3_postgres.py::test_h3_p07_clinic_off_full_page_then_wrap",
   "tests/m05/test_sh_h3_postgres.py::test_h3_p07b_clinic_off_cap_plus_one",
-  "tests/m05/test_sh_h3_postgres.py::test_h3_p11d_accepted_only_ordered_strict_cursor_no_writes"
+  "tests/m05/test_sh_h3_postgres.py::test_h3_p11d_accepted_only_ordered_strict_cursor_no_writes",
+  "tests/m05/test_sh_h3_postgres.py::test_h3_p11e_tenant_isolation_and_gateway_key"
  ],
  "X17": [
   "tests/m05/test_sh_h3_postgres.py::test_h3_p11b_command_malformed[after-ts-feb-30]",
