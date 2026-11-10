@@ -7,31 +7,46 @@ fresh S-I tenant in its body, so the expected red cause is ModuleNotFoundError f
 Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
 - P-I01 [SI-R11] an item decision appends exactly one check event and creates exactly one
   item, atomically, under the real gateway (pin 3).
-- P-I02 [R11] a failure inside the item transaction (create refused) rolls back the
-  decision, the event and the item: no orphan; the later decision mints one identity.
-- P-I03 [R11] the retry after a committed item never creates a second event or item (the
-  op is no longer claimable; the stored identity is reused) (pin 3).
-- P-I04 [R11/R14] two concurrent settlements of one op with distinct candidate events:
-  one event, one item, the other stale (pin 3).
+- P-I02 / P-I02b [R11] a refusal AT THE CREATE STAGE (after the SQL decision and the M02
+  append, proved by the statement spy) rolls back the decision / settlement, the event and
+  the item: no orphan; the later call mints one identity.
+- P-I03 [R11] ordinary replay: a second full worker run after a committed item creates
+  nothing. P-I03b [R11] a REAL lost acknowledgement (the transaction commits, then the
+  acknowledgement is lost) -> WritebackCommitUnknown; the committed state, event and item
+  are exactly one each; the retry changes nothing and keeps the identity (pin 3).
+- P-I04 [R11/R14] two concurrent settlements of one op: the first locks the op and mints
+  and stores the event id; the second waits, sees the terminal state and is stale,
+  appending nothing; the winner's identity is the stored one (pin 3).
 - P-I05 [R11] the real staff path: claim -> resolve through prepare -> M02 append (contract
   v2) -> apply -> history (pin 1).
-- P-I06 [R11] the four existing kinds still resolve through v3 with contract v2 events, and
-  the S-I tenant still creates them through intake (regression).
+- P-I06 [R11] the four existing kinds (reschedule, cancel, unclear, no_reply) are still
+  created on the S-I tenant and resolve through v3 with contract v2 events. P-I06b [R11]
+  v1 compatibility: an existing kind resolved by the ORIGINAL M05Service (contract v1
+  event) through the rebound v3 apply is still applied.
 - P-I07 [R11] the authorized reason read: one of the five reasons, exactly the pinned keys;
   an old-kind item, an unknown item and another tenant's item are ITEM_NOT_FOUND; no
-  read capability -> refused (pin 2).
+  read capability -> refused (pin 2). P-I07b a check item whose source event is not its
+  check event (same tenant, FIXTURE) -> ITEM_NOT_FOUND, nothing of that event returned.
 - P-I08 [R11] nothing is sent to the patient: no sender call, no outbound op.
 - P-A01..A03 [R12] activation off: discover / check claim / decide / spend refused; a
   permit spent before the switch went off completes its single call; settlement and
   reconcile continue.
 - P-T01..T03 [R13] another tenant's op is not visible; a context without the S-I
-  capabilities or not a workload is refused before any I/O.
+  capabilities or not a workload is refused before any I/O (statement spy: no statement;
+  gateway: no transaction). P-T04 [R13] spend / settle / capture with the other tenant's
+  ids from this tenant's context change nothing in either tenant.
+- P-Q01 [R8/R9] an ACTIVE clinic: a restarted worker on a spent, unsettled op goes check
+  claim (not_claimable PERMIT_SPENT) -> reconcile claim -> close -> read -> settle, in
+  that measured order.
 - P-P01 [R15] restart between every step resumes and never writes twice.
 - P-V01 [R16] the check event metadata is exactly {wb_op_id, appointment_ref, reason}; no
   phone, name, provider or department in events, items or logs.
-- P-W10 / P-W11 [R4] BaselineWorker on the real runtime: a capture that FAILS in the
-  database (permission denied) leaves a usable connection for the inner send; the H3 tick
-  with the wrapper injected gives the identical ready counts and a baseline.
+- P-W10 / P-W10b / P-W11 [R4] BaselineWorker on the real runtime (one-connection pool,
+  composed and used BEFORE the fault): a capture that FAILS in the database (permission
+  revoked after composition; the spy shows the capture statement raised) and a capture
+  whose acknowledgement is lost after commit both leave a usable connection and the inner
+  send unchanged; the H3 tick with the wrapper gives the identical ready counts and a
+  baseline.
 """
 
 from __future__ import annotations
@@ -135,30 +150,50 @@ def test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically(
     asyncio.run(body())
 
 
-def test_si_pi02_a_failed_item_transaction_leaves_no_orphan(si_install: si.SIInstall) -> None:
+def _remove_mapping(install: si.SIInstall, reason: str) -> None:
+    """FIXTURE: the intake map row for `reason` removed, so create (v2) refuses with
+    SOURCE_NOT_ELIGIBLE after the SQL decision and the M02 append have run."""
+
+    sa.admin(install, sa.q(install, "DELETE FROM {s}.m05_intake_map WHERE source_event_type ="
+                                    " %s AND discriminator_value = %s"), (si.T_CHECK, reason))
+
+
+def _restore_mapping(install: si.SIInstall, reason: str) -> None:
+    sa.admin(install, sa.q(install, "INSERT INTO {s}.m05_intake_map (source_event_type,"
+                                    " source_contract_version, discriminator_path,"
+                                    " discriminator_value, item_kind, producer_workload_id,"
+                                    " active_in_production) VALUES (%s, 1, 'reason', %s, %s,"
+                                    " %s, false)"),
+             (si.T_CHECK, reason, si.ITEM_KIND, sa.W_DISPATCH))
+
+
+def _create_stage_refusal(spy: si.StatementSpy, mark: int, step: str) -> None:
+    calls = spy.since(mark)
+    assert [k for k, _ in calls][-3:] == [si.KEYS[step], si.APPEND_KEY, si.CREATE_KEY], calls
+    assert [o for _, o in calls][-3:-1] == ["ok", "ok"] and calls[-1][1].startswith("raised:")
+
+
+def test_si_pi02_a_create_stage_refusal_rolls_the_decision_back(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
     install = _begin(si_install)
 
     async def body() -> None:
+        from haloflow.m05.writeback import WritebackFailed
+
         async with si.runtime(install) as rt:
             flow, wb, fence = si.checked(install)
-            mapping = sa.q(install, "DELETE FROM {s}.m05_intake_map WHERE source_event_type = %s"
-                                    " AND discriminator_value = 'declined_or_unknown'")
-            sa.admin(install, mapping, (si.T_CHECK,))  # FIXTURE: create v2 must refuse
-            svc = si.wb_service(rt)
-            ctx = await si.wb_context(rt, install)
-            with pytest.raises(Exception):  # noqa: B017, PT011 - any refusal class
+            _remove_mapping(install, "declined_or_unknown")
+            svc, ctx = si.wb_service(rt), await si.wb_context(rt, install)
+            spy = si.spy_statements(monkeypatch)
+            with pytest.raises(WritebackFailed) as failed:
                 await _b(svc.decide(ctx, wb, fence, _read(install, flow, "negative"), False))
+            assert failed.value.reason_code == "SOURCE_NOT_ELIGIBLE"
+            _create_stage_refusal(spy, 0, "decide")
             op = si.wb_op(install, wb)
             assert (op["state"], op["event_id"], op["item_id"]) == ("eligible_check", None,
                                                                     None)
             assert si.check_events(install) == [] and si.check_items(install) == []
-            sa.admin(install, sa.q(install, "INSERT INTO {s}.m05_intake_map (source_event_type,"
-                                            " source_contract_version, discriminator_path,"
-                                            " discriminator_value, item_kind,"
-                                            " producer_workload_id, active_in_production)"
-                                            " VALUES (%s, 1, 'reason', 'declined_or_unknown',"
-                                            " %s, %s, false)"),
-                     (si.T_CHECK, si.ITEM_KIND, sa.W_DISPATCH))
+            _restore_mapping(install, "declined_or_unknown")
             again = await _b(svc.decide(ctx, wb, fence, _read(install, flow, "negative"),
                                         False))
             assert again["outcome"] == "item", again
@@ -167,7 +202,37 @@ def test_si_pi02_a_failed_item_transaction_leaves_no_orphan(si_install: si.SIIns
     asyncio.run(body())
 
 
-def test_si_pi03_a_retry_after_a_committed_item_creates_nothing(
+def test_si_pi02b_a_create_stage_refusal_rolls_the_settlement_back(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    install = _begin(si_install)
+
+    async def body() -> None:
+        from haloflow.m05.writeback import WritebackFailed
+
+        async with si.runtime(install) as rt:
+            _flow, wb, fence, permit = si.permitted(install)
+            assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
+            spent = si.permit(install, wb)
+            _remove_mapping(install, "could_not_verify")
+            svc, ctx = si.wb_service(rt), await si.wb_context(rt, install)
+            spy = si.spy_statements(monkeypatch)
+            with pytest.raises(WritebackFailed) as failed:
+                await _b(svc.settle(ctx, wb, fence, permit, "unknown", None))
+            assert failed.value.reason_code == "SOURCE_NOT_ELIGIBLE"
+            _create_stage_refusal(spy, 0, "settle")
+            op = si.wb_op(install, wb)
+            assert (op["state"], op["event_id"], op["item_id"]) == ("spent", None, None)
+            assert si.permit(install, wb) == spent
+            assert si.check_events(install) == [] and si.check_items(install) == []
+            _restore_mapping(install, "could_not_verify")
+            again = await _b(svc.settle(ctx, wb, fence, permit, "unknown", None))
+            assert again["outcome"] == "item", again
+            assert len(si.check_events(install)) == 1 and len(si.check_items(install)) == 1
+
+    asyncio.run(body())
+
+
+def test_si_pi03_a_replay_after_a_committed_item_creates_nothing(
         si_install: si.SIInstall) -> None:
     install = _begin(si_install)
 
@@ -177,7 +242,7 @@ def test_si_pi03_a_retry_after_a_committed_item_creates_nothing(
         async with si.runtime(install) as rt:
             flow, wb, _result = await _item_decision(rt, install)
             before = _counts(install)
-            # the acknowledgement was lost: the worker runs the whole op again
+            # ordinary replay: the worker runs the whole op again
             ctx = await si.wb_context(rt, install)
             ehr = si.ehr_from_flow(install, flow, si.db_clock(install), "negative")
             outcome = await _b(WritebackWorker(si.wb_service(rt), ehr).run_one(ctx, wb))
@@ -188,16 +253,49 @@ def test_si_pi03_a_retry_after_a_committed_item_creates_nothing(
     asyncio.run(body())
 
 
-def test_si_pi04_concurrent_settlements_make_one_event_and_one_item(
+def test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity(
         si_install: si.SIInstall) -> None:
     install = _begin(si_install)
 
     async def body() -> None:
+        from haloflow.m05.writeback import WritebackCommitUnknown, WritebackWorker
+
+        async with si.runtime(install) as rt:
+            flow, wb, fence = si.checked(install)
+            lossy = si.AckGateway(rt.gateway, lose=(1,))
+            ctx = await si.wb_context(rt, install)
+            with pytest.raises(WritebackCommitUnknown):
+                await _b(si.wb_service_on(lossy).decide(
+                    ctx, wb, fence, _read(install, flow, "negative"), False))
+            assert lossy.transactions == 1
+            op = si.wb_op(install, wb)  # the transaction DID commit
+            (event,) = si.check_events(install)
+            (item,) = si.check_items(install)
+            assert (op["state"], op["event_id"], op["item_id"]) == (
+                "item", event["event_id"], item["item_id"])
+            before = (_counts(install), op)
+            ehr = si.ehr_from_flow(install, flow, si.db_clock(install), "negative")
+            assert await _b(WritebackWorker(si.wb_service(rt), ehr).run_one(ctx, wb)) \
+                == "not_claimed"
+            assert (_counts(install), si.wb_op(install, wb)) == before
+
+    asyncio.run(body())
+
+
+def test_si_pi04_concurrent_settlements_make_one_event_and_one_item(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The first settlement locks the op and mints + stores the event id; the second waits
+    on that lock, then sees the terminal state: stale, nothing appended."""
+
+    install = _begin(si_install)
+
+    async def body() -> None:
         async with si.runtime(install, max_size=4) as rt:
-            flow, wb, fence, permit = si.permitted(install)
+            _flow, wb, fence, permit = si.permitted(install)
             assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
             svc = si.wb_service(rt)
             ctx_a, ctx_b = (await si.wb_context(rt, install), await si.wb_context(rt, install))
+            spy = si.spy_statements(monkeypatch)
             results = await _b(asyncio.gather(
                 svc.settle(ctx_a, wb, fence, permit, "unknown", None),
                 svc.settle(ctx_b, wb, fence, permit, "unknown", None),
@@ -205,8 +303,12 @@ def test_si_pi04_concurrent_settlements_make_one_event_and_one_item(
             outcomes = sorted(r["outcome"] if isinstance(r, dict) else type(r).__name__
                               for r in results)
             assert outcomes == ["item", "stale"], results
-            assert len(si.check_events(install)) == 1 and len(si.check_items(install)) == 1
-            assert si.wb_op(install, wb)["event_id"] == si.check_events(install)[0]["event_id"]
+            (winner,) = [r for r in results if isinstance(r, dict) and r["outcome"] == "item"]
+            (event,) = si.check_events(install)
+            assert winner["event_id"] == event["event_id"] == si.wb_op(install, wb)["event_id"]
+            assert len(si.check_items(install)) == 1
+            appends = [c for c in spy.calls if c[0] == si.APPEND_KEY]
+            assert appends == [(si.APPEND_KEY, "ok")]  # the loser appended nothing
 
     asyncio.run(body())
 
@@ -231,26 +333,60 @@ def test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event(
     asyncio.run(body())
 
 
-@pytest.mark.parametrize(("reply_class", "kind"), [("reschedule", "reschedule_request"),
-                                                   ("cancel", "cancel_request"),
-                                                   ("unclear", "unclear_reply")])
+async def _existing_item(rt: Any, install: si.SIInstall, kind: str) -> tuple[uuid.UUID,
+                                                                            uuid.UUID]:
+    """An item of an EXISTING kind created on the S-I tenant through intake."""
+
+    flow = si.sent(install)
+    if kind == "no_reply":
+        reminder = str(sh.op_row(install, flow["op_id"])["reminder_id"])
+        sa.shift_window(install, reminder, -25)
+        chain = sd.Chain(install, rt)  # type: ignore[arg-type]
+        closed = await _b(chain.close(uuid.UUID(reminder)))
+        assert closed.decision == "no_reply", closed
+    else:
+        reply = {"reschedule_request": "reschedule", "cancel_request": "cancel",
+                 "unclear_reply": "unclear"}[kind]
+        assert si.replied(install, flow, reply)["decision"] == "item"
+    (row,) = sa.items_for(install, flow["patient"])
+    assert row["item_kind"] == kind
+    return uuid.UUID(row["item_id"]), uuid.UUID(row["source_event_id"])
+
+
+@pytest.mark.parametrize("kind", ["reschedule_request", "cancel_request", "unclear_reply",
+                                  "no_reply"])
 def test_si_pi06_existing_kinds_still_work_through_v3(si_install: si.SIInstall,
-                                                       reply_class: str, kind: str) -> None:
+                                                       kind: str) -> None:
     install = _begin(si_install)
 
     async def body() -> None:
         async with si.runtime(install) as rt:
-            flow = si.sent(install)
-            result = si.replied(install, flow, reply_class)
-            assert result["decision"] == "item", result
+            item, source = await _existing_item(rt, install, kind)
             staff = si.StaffChain(install, rt)
-            (row,) = sa.items_for(install, flow["patient"])
-            item, source = uuid.UUID(row["item_id"]), uuid.UUID(row["source_event_id"])
-            assert row["item_kind"] == kind
             assert (await _b(staff.chain.claim(item))).outcome == "applied"
             assert (await _b(staff.chain.resolve(item, "rescheduled"))).outcome == "applied"
             await sd.assert_resolved(staff.chain, item, "rescheduled", kind=kind,
                                      source_event=source)
+            (event,) = sd.resolution_events(install, item)  # type: ignore[arg-type]
+            assert event["contract_version"] == 2
+
+    asyncio.run(body())
+
+
+def test_si_pi06b_a_contract_v1_resolution_is_still_applied_through_v3(
+        si_install: si.SIInstall) -> None:
+    install = _begin(si_install)
+
+    async def body() -> None:
+        async with si.runtime(install) as rt:
+            item, source = await _existing_item(rt, install, "reschedule_request")
+            chain = sd.Chain(install, rt)  # type: ignore[arg-type]  # ORIGINAL M05Service
+            assert (await _b(chain.claim(item))).outcome == "applied"
+            assert (await _b(chain.resolve(item, "rescheduled"))).outcome == "applied"
+            await sd.assert_resolved(chain, item, "rescheduled", kind="reschedule_request",
+                                     source_event=source)
+            (event,) = sd.resolution_events(install, item)  # type: ignore[arg-type]
+            assert event["contract_version"] == 1
 
     asyncio.run(body())
 
@@ -282,6 +418,30 @@ def test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local(
                 await _b(staff.reason(item, caps=frozenset({sv.PREPARE})))
             assert "CAPABILITY" in repr(denied.value).upper()
             assert other_flow["patient"] != mine["patient"]
+
+    asyncio.run(body())
+
+
+def test_si_pi07b_a_check_item_with_a_foreign_source_event_is_not_read(
+        si_install: si.SIInstall) -> None:
+    install = _begin(si_install)
+
+    async def body() -> None:
+        from haloflow.m05.service import ReadFailed
+
+        async with si.runtime(install) as rt:
+            _flow, _wb, result = await _item_decision(rt, install)
+            other = si.sent(install)
+            reply = si.replied(install, other, "reschedule")
+            foreign = reply["event_id"]
+            sa.admin(install, sa.q(install, "UPDATE {s}.m05_followup_items SET source_event_id"
+                                            " = %s WHERE item_id = %s"),
+                     (foreign, result["item_id"]))  # FIXTURE: a mismatched source binding
+            staff = si.StaffChain(install, rt)
+            with pytest.raises(ReadFailed) as failed:
+                await _b(staff.reason(uuid.UUID(result["item_id"])))
+            assert failed.value.reason_code == "ITEM_NOT_FOUND"
+            assert "reschedule" not in repr(failed.value)
 
     asyncio.run(body())
 
@@ -400,15 +560,15 @@ def test_si_pt01_another_tenants_op_is_not_visible(si_install: si.SIInstall,
 
 
 @pytest.mark.parametrize("case", ["missing_capability", "extra_capability", "actor"])
-def test_si_pt02_03_admission_is_refused_before_any_io(si_install: si.SIInstall,
-                                                       case: str) -> None:
+def test_si_pt02_03_admission_is_refused_before_any_io(
+        si_install: si.SIInstall, case: str, monkeypatch: pytest.MonkeyPatch) -> None:
     install = _begin(si_install)
 
     async def body() -> None:
         from haloflow.m05.writeback import WritebackRefused
 
         async with si.runtime(install) as rt:
-            _flow, wb = si.confirmed_op(install)
+            flow, wb = si.confirmed_op(install)
             caps = si.wb_caps()
             if case == "missing_capability":
                 ctx = await si.wb_context(rt, install, caps=frozenset(caps - {si.WB_CAP}))
@@ -417,10 +577,83 @@ def test_si_pt02_03_admission_is_refused_before_any_io(si_install: si.SIInstall,
             else:
                 ctx = await si.wb_context(rt, install, principal=sd.STAFF, kind="actor")
             before = si.wb_op(install, wb)
-            with pytest.raises(WritebackRefused) as refused:
-                await _b(si.wb_service(rt).claim(ctx, wb))
-            assert refused.value.code in ("CAPABILITIES_INVALID", "PRINCIPAL_NOT_WORKLOAD")
+            counting = si.AckGateway(rt.gateway)
+            svc = si.wb_service_on(counting)
+            spy = si.spy_statements(monkeypatch)
+            for call in (svc.claim(ctx, wb), svc.discover(ctx, 10), svc.due(ctx, 10),
+                         svc.decide(ctx, wb, 1, _read(install, flow), False),
+                         svc.spend(ctx, wb, 1, si.new_uuid()),
+                         svc.settle(ctx, wb, 1, si.new_uuid(), "unknown", None)):
+                with pytest.raises(WritebackRefused) as refused:
+                    await _b(call)
+                assert refused.value.code in ("CAPABILITIES_INVALID", "PRINCIPAL_NOT_WORKLOAD")
+            assert spy.calls == [] and counting.transactions == 0  # no I/O at all
             assert si.wb_op(install, wb) == before
+
+    asyncio.run(body())
+
+
+def test_si_pt04_another_tenants_ids_change_nothing_anywhere(
+        si_install: si.SIInstall, si_other: si.SIInstall) -> None:
+    install, other = _begin(si_install), _begin(si_other)
+
+    async def body() -> None:
+        async with si.runtime(install) as rt:
+            flow_b, wb_b, fence_b, permit_b = si.permitted(other)
+            mine = si.wb_ops(install)
+            theirs = (si.wb_ops(other), si.permits(other, wb_b), si.baseline(other,
+                                                                              flow_b["op_id"]))
+            svc, ctx = si.wb_service(rt), await si.wb_context(rt, install)
+            for call in (svc.spend(ctx, wb_b, fence_b, permit_b),
+                         svc.settle(ctx, wb_b, fence_b, permit_b, "unknown", None)):
+                try:
+                    result = await _b(call)
+                except Exception as error:  # noqa: BLE001 - a refusal of any class is fine
+                    result = {"outcome": type(error).__name__}
+                assert result["outcome"] not in ("spent", "item", "observed_positive"), result
+            dispatch = await sh3.dispatch_context(rt, install)
+            captured = await _b(svc.capture_baseline(dispatch, flow_b["op_id"],
+                                                     flow_b["attempt"]))
+            assert captured == "refused"
+            assert si.wb_ops(install) == mine
+            assert (si.wb_ops(other), si.permits(other, wb_b),
+                    si.baseline(other, flow_b["op_id"])) == theirs
+
+    asyncio.run(body())
+
+
+def test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    install = _begin(si_install)
+
+    async def body() -> None:
+        from haloflow.m05.writeback import WritebackWorker
+
+        flow, wb, fence, permit = si.permitted(install)
+        assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
+        si.age(install, wb, lease=si.LEASE_S + 1,
+               deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+        async with si.runtime(install) as rt:  # the clinic stays ACTIVE (granted)
+            ehr = si.ehr_from_flow(install, flow, si.db_clock(install))
+            order: list[str] = []
+            original_close, original_read = ehr.close_permit, ehr.read
+
+            async def close(permit_id: str) -> None:
+                order.append("close")
+                await original_close(permit_id)
+
+            async def read(appointment_id: str) -> Any:
+                order.append("read")
+                return await original_read(appointment_id)
+
+            ehr.close_permit, ehr.read = close, read
+            spy = si.spy_statements(monkeypatch)
+            ctx = await si.wb_context(rt, install)
+            assert await _b(WritebackWorker(si.wb_service(rt), ehr).run_one(ctx, wb)) \
+                == "item_raised"
+            keys = [k for k in spy.ordered_keys() if k.startswith("m05.writeback.")]
+            assert keys == [si.KEYS["claim"], si.KEYS["claim_reconcile"], si.KEYS["settle"]]
+            assert order == ["close", "read"] and ehr.writes == []
 
     asyncio.run(body())
 
@@ -501,28 +734,55 @@ def test_si_pv01_events_items_and_logs_carry_no_sensitive_value(
 # --- P-W: BaselineWorker on the real runtime ------------------------------------------------
 
 
+async def _wrapped_send(rt: Any, install: si.SIInstall, capture_service: Any
+                        ) -> tuple[str, str]:
+    from haloflow.m05.outbound import FakeSender
+    from haloflow.m05.writeback import BaselineWorker
+
+    svc = sh3.service(rt)
+    inner = sh3.worker(svc, FakeSender())
+    wrapper = BaselineWorker(inner, capture_service.capture_baseline)
+    _p, _ph, ref, _z = si.seed3(install)
+    op_id, attempt = sh2.claimed(install, ref)
+    ctx = await sh3.dispatch_context(rt, install)
+    outcome: str = await _b(wrapper.run_claimed(ctx, op_id, attempt))
+    return outcome, op_id
+
+
 def test_si_pw10_a_capture_failing_in_the_database_leaves_a_usable_connection(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    install = _begin(si_install)
+
+    async def body() -> None:
+        async with si.runtime(install, max_size=1) as rt:  # ONE connection, reused
+            await sh3.dispatch_context(rt, install)  # composed and used before the fault
+            sa.admin(install, sa.q(install, "REVOKE EXECUTE ON FUNCTION"
+                                            " {s}.m05_writeback_capture_baseline(jsonb)"
+                                            " FROM haloflow_runtime"))  # FIXTURE
+            spy = si.spy_statements(monkeypatch)
+            outcome, op_id = await _wrapped_send(rt, install, si.wb_service(rt))
+            assert outcome == "accepted", outcome
+            capture = [c for c in spy.calls if c[0] == si.KEYS["capture"]]
+            assert len(capture) == 1 and capture[0][1].startswith("raised:"), capture
+            later = spy.ordered_keys()[spy.ordered_keys().index(si.KEYS["capture"]) + 1:]
+            assert "m05.outbound.consume" in later  # the same pool served the inner send
+            assert si.baseline(install, op_id) is None
+            assert sh.op_row(install, op_id)["state"] in ("accepted", "registered")
+
+    asyncio.run(body())
+
+
+def test_si_pw10b_a_capture_whose_acknowledgement_is_lost_still_sends(
         si_install: si.SIInstall) -> None:
     install = _begin(si_install)
 
     async def body() -> None:
-        from haloflow.m05.writeback import BaselineWorker
-
-        sa.admin(install, sa.q(install, "REVOKE EXECUTE ON FUNCTION"
-                                        " {s}.m05_writeback_capture_baseline(jsonb)"
-                                        " FROM haloflow_runtime"))  # FIXTURE: capture fails
-        async with si.runtime(install, max_size=1) as rt:  # ONE connection: must be reused
-            svc = sh3.service(rt)
-            from haloflow.m05.outbound import FakeSender
-
-            inner = sh3.worker(svc, FakeSender())
-            wrapper = BaselineWorker(inner, si.wb_service(rt).capture_baseline)
-            _p, _ph, ref, _z = si.seed3(install)
-            op_id, attempt = sh2.claimed(install, ref)
-            ctx = await sh3.dispatch_context(rt, install)
-            outcome = await _b(wrapper.run_claimed(ctx, op_id, attempt))
+        async with si.runtime(install, max_size=1) as rt:
+            lossy = si.AckGateway(rt.gateway, lose=(1,))  # the capture commits, ack lost
+            outcome, op_id = await _wrapped_send(rt, install, si.wb_service_on(lossy))
             assert outcome == "accepted", outcome
-            assert si.baseline(install, op_id) is None
+            assert lossy.transactions == 1
+            assert si.baseline(install, op_id) is not None  # it did commit
             assert sh.op_row(install, op_id)["state"] in ("accepted", "registered")
 
     asyncio.run(body())

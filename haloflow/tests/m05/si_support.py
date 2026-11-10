@@ -53,8 +53,9 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   through due -> claim (void) -> a fresh decide -> a new permit) or "reconcile" (spent,
   unsettled, clock_timestamp() > apply_deadline + RECONCILE_MARGIN_S); read only.
 - t083 `m05_writeback_claim` {wb_op_id, lease_seconds} -> {schema_version, outcome:
-  "claimed" | "not_due" | "not_claimable", fence, phase: "check", appointment_ref}; the
-  check phase only (pending, eligible_check or permitted, lease expired or free); fence :=
+  "claimed" | "not_due" | "not_claimable", code, fence, phase: "check", appointment_ref};
+  an op whose permit is spent and unsettled is "not_claimable" with code "PERMIT_SPENT";
+  the check phase only (pending, eligible_check or permitted, lease expired or free); fence :=
   fence + 1, state := eligible_check; the live unspent permit from an older fence is
   VOIDED (voided_at) in the same transaction; a spent permit makes the op not_claimable.
 - t084 `m05_writeback_claim_reconcile` {wb_op_id, lease_seconds} -> {..., phase:
@@ -100,14 +101,22 @@ spend), SI_CLOSED_KEYS. New keys: CAPTURE_KEY "m05.writeback.capture" (capabilit
 runs decide / settle in ONE gateway transaction with the M02 append and the item create
 (the IntakeService pattern); its CAPABILITIES = {"m05.writeback",
 "m02.observation.append", "m05.followup.create"}; item producer workload W_DISPATCH.
-Constants: WRITE_TIMEOUT_S = 10, RECONCILE_MARGIN_S = 30, LEASE_S = 60.
+Constants: WRITE_TIMEOUT_S = 10, RECONCILE_MARGIN_S = 30, LEASE_S = 60. Statement key
+values (`haloflow.m05.writeback_statements`): CAPTURE_KEY "m05.writeback.capture",
+DISCOVER_KEY "m05.writeback.discover", DUE_KEY "m05.writeback.due", CLAIM_KEY
+"m05.writeback.claim", CLAIM_RECONCILE_KEY "m05.writeback.claim_reconcile", DECIDE_KEY
+"m05.writeback.decide", SPEND_KEY "m05.writeback.spend", SETTLE_KEY "m05.writeback.settle",
+REASON_KEY "m05.followup.reason".
 
 Service pins (`haloflow.m05.writeback`):
 - `WritebackService(foundation)`: `capture_baseline(context, op_id, attempt_id) -> str`
   (dispatch context; the capture statement only); `discover(context, limit=100) -> int`;
   `due(context, limit=100) -> list[{"wb_op_id", "phase"}]`; `claim(context, wb_op_id) ->
-  dict` (the protected check claim; on ActivationRefused it tries the unprotected
-  reconcile claim; returns the claim result, "phase" included); `decide(context, wb_op_id,
+  dict`: the protected check claim (CLAIM_KEY) first; ONLY when it returns
+  {"outcome": "not_claimable", "code": "PERMIT_SPENT"} or raises ActivationRefused, the
+  unprotected reconcile claim (CLAIM_RECONCILE_KEY) follows and its result is returned;
+  every other result is returned as is and every other refusal (TenantDenied,
+  CapabilityDenied, WritebackRefused, WritebackFailed) propagates; `decide(context, wb_op_id,
   fence, read, read_failed) -> dict`; `spend(context, wb_op_id, fence, permit_id) ->
   dict`; `settle(context, wb_op_id, fence, permit_id, write_outcome, read) -> dict`.
   `read` is a `simulated_ehr.EhrRead` or None. An "item" decision or settlement runs in
@@ -115,10 +124,12 @@ Service pins (`haloflow.m05.writeback`):
   M02 append of `m05_writeback_check_raised` v1 (correlation_id = wb_op_id,
   producer_dedupe_key "wbcheck:<wb_op_id hex>", metadata exactly {wb_op_id,
   appointment_ref, reason}), and `m05.followup.create` (v2) with item_kind
-  ITEM_KIND; the result carries "item_id". A failure anywhere rolls all three back; after
-  the commit marker a lost acknowledgement is WritebackCommitUnknown (the IntakeService
-  rule). Admission before any I/O: a WORKLOAD principal and context capabilities EQUAL
-  to CAPABILITIES (capture: the dispatch set) else WritebackRefused
+  ITEM_KIND; the result carries "item_id". A failure anywhere rolls all three back; a
+  database refusal is WritebackFailed(reason_code) (the P0001 message, else
+  "DATABASE_ERROR", as IntakeFailed); after the commit marker a lost acknowledgement is
+  WritebackCommitUnknown (the IntakeService rule). Admission before any I/O: a WORKLOAD
+  principal and context capabilities EQUAL to CAPABILITIES (capture: the dispatch set)
+  else WritebackRefused
   ("PRINCIPAL_NOT_WORKLOAD" / "CAPABILITIES_INVALID").
 - `StaffServiceV3(M05Service)`: identical to M05Service except that the resolution
   observation is appended at contract_version 2 (every kind), plus `reason(context,
@@ -673,3 +684,79 @@ class StaffChain:
 
         actor = await self.chain.actor(sv.READ_ONLY_CAPS if caps is None else caps)
         return await self.chain.staff.reason(actor, item)
+
+
+# --- test seams: statement spy and lost-acknowledgement gateway ------------------------------
+
+KEYS: Final = {name: f"m05.writeback.{name}" for name in
+               ("capture", "discover", "due", "claim", "claim_reconcile", "decide", "spend",
+                "settle")}
+CREATE_KEY: Final = "m05.followup.create"
+APPEND_KEY: Final = "m02.observation.append"
+
+
+class StatementSpy:
+    """Every statement the tenant handle runs (execute / fetch_one / fetch_all), in order,
+    as (key, "ok" | "raised:<ExceptionClass>")."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    def ordered_keys(self) -> list[str]:
+        return [key for key, _ in self.calls]
+
+    def since(self, mark: int) -> list[tuple[str, str]]:
+        return self.calls[mark:]
+
+
+def spy_statements(monkeypatch: Any) -> StatementSpy:
+    """Patch TenantRepositoryHandle for ONE row (pytest's monkeypatch undoes it)."""
+
+    from haloflow.m01.gateway import TenantRepositoryHandle
+
+    spy = StatementSpy()
+    for name in ("execute", "fetch_one", "fetch_all"):
+        original = getattr(TenantRepositoryHandle, name)
+
+        def make(method: Any) -> Any:
+            async def recorded(self: Any, statement_key: str, params: Any = None) -> Any:
+                try:
+                    result = await method(self, statement_key, params)
+                except BaseException as error:
+                    spy.calls.append((statement_key, f"raised:{type(error).__name__}"))
+                    raise
+                spy.calls.append((statement_key, "ok"))
+                return result
+
+            return recorded
+
+        monkeypatch.setattr(TenantRepositoryHandle, name, make(original))
+    return spy
+
+
+class AckGateway:
+    """Wraps the runtime gateway: counts tenant transactions and, for the transaction
+    numbers in `lose`, lets the transaction COMMIT and then raises ConnectionError (the
+    acknowledgement is lost after the commit)."""
+
+    def __init__(self, gateway: Any, lose: tuple[int, ...] = ()) -> None:
+        self.gateway = gateway
+        self.lose = frozenset(lose)
+        self.transactions = 0
+
+    async def with_tenant_transaction(self, context: Any, callback: Any) -> Any:
+        self.transactions += 1
+        result = await self.gateway.with_tenant_transaction(context, callback)
+        if self.transactions in self.lose:
+            raise ConnectionError("acknowledgement lost after commit")
+        return result
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.gateway, name)
+
+
+def wb_service_on(gateway: Any) -> Any:
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.writeback import WritebackService
+
+    return WritebackService(EventFoundation(gateway, producer_service=sa.PRODUCER))

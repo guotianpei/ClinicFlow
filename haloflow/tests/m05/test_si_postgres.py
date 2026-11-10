@@ -565,7 +565,8 @@ def test_si_pk01_reconcile_only_after_the_deadline_plus_margin(si_install: si.SI
         seconds=si.RECONCILE_MARGIN_S)
     assert horizon > si.db_now(install)  # explicit: still before the reconcile horizon
     assert si.due(install, wb) == []
-    assert si.claim(install, wb)["outcome"] == "not_claimable"
+    blocked = si.claim(install, wb)
+    assert (blocked["outcome"], blocked["code"]) == ("not_claimable", "PERMIT_SPENT"), blocked
     early = si.call(install, "claim_reconcile", wb_op_id=wb, lease_seconds=si.LEASE_S)
     assert early["outcome"] == "not_claimable", early
     si.age(install, wb, deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
