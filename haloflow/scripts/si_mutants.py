@@ -13,9 +13,11 @@ each (the shared checker binds a mutant to exactly one module):
 
 Kill sets are MEASURED (scripts/si_mutant_kills.json): every node a mutant may fail; a
 mutant is killed only if it fails and every failure is in its set (the part-A rule).
-Disclosed in the map: V2 (fallback on every not_claimable), V5 (reason-read op binding)
-and V9 (recovery-create envelope binding) are defence in depth behind another check and
-may measure as equivalent; an equivalent mutant is reported, not silently dropped.
+V2 and V5 have dedicated oracles (P-Q02: no reconcile fallback on an ordinary
+not_claimable; P-I07c: a check item bound to another op's check event). V9 removes only
+the recovery create's envelope binding, which the stored event-id check precedes; a
+survivor is a coverage gap until semantic equivalence is shown, and is reported, never
+silently dropped.
 
 Usage (from haloflow/):
     python3 -I scripts/si_mutants.py --pytest "$VENV/bin/pytest" \
@@ -108,8 +110,10 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "          OR v_r_provider IS NULL OR v_r_department IS NULL THEN\n"
      "        v_reason := 'could_not_verify';\n", ""),
     ("S5", "the no-baseline check is removed", SQL,
-     "    IF NOT FOUND THEN\n        v_reason := 'no_baseline';\n    ELSIF v_failed THEN\n",
-     "    IF false THEN\n        v_reason := 'no_baseline';\n    ELSIF v_failed THEN\n"),
+     "    IF NOT FOUND THEN\n        v_reason := 'no_baseline';\n"
+     "    ELSIF v_b.confirmation IS NULL OR v_b.confirmation = 'unknown' THEN\n",
+     "    IF false THEN\n        v_reason := 'no_baseline';\n"
+     "    ELSIF v_b.confirmation IS NULL OR v_b.confirmation = 'unknown' THEN\n"),
     ("S6", "the first retry delay is 300 s", SQL,
      '.replace("@@D1@@", str(RETRY_DELAYS_S[0]))', '.replace("@@D1@@", "300")'),
     ("S7", "spend ignores the lease", SQL,
