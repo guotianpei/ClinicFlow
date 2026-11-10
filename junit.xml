@@ -1,0 +1,3197 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="99" skipped="0" tests="107" time="31.250" timestamp="2026-11-10T18:04:46.203288-05:00" hostname="vm"><testcase classname="tests.m05.test_sj_units" name="test_sj_u00a_writeback_worker_and_service_interface" time="0.031" /><testcase classname="tests.m05.test_sj_units" name="test_sj_u00b_worker_outcome_vocabulary_is_closed" time="0.014" /><testcase classname="tests.m05.test_sj_units" name="test_sj_u00c_activation_protected_set_is_the_accepted_one" time="0.000" /><testcase classname="tests.m05.test_sj_units" name="test_sj_u00d_lifecycle_precedent_present" time="0.010" /><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[batch-0]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'batch-0'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[batch-1001]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'batch-1001'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[batch-bool]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'batch-bool'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[batch-float]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'batch-float'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[contexts-none]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'contexts-none'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[contexts-str]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'contexts-str'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[interval-29]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'interval-29'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[interval-301]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'interval-301'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[interval-bool]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'interval-bool'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[interval-float]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'interval-float'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[service-object]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'service-object'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[tenants-1001]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'tenants-1001'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[tenants-dup]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'tenants-dup'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[tenants-empty]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'tenants-empty'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[tenants-list]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'tenants-list'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[tenants-pattern]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'tenants-pattern'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[timeout-0]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'timeout-0'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[timeout-61]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'timeout-61'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[timeout-bool]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'timeout-bool'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[timeout-nan]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'timeout-nan'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01_inputs_refused_before_any_call[worker-object]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">case = 'worker-object'
+
+    @pytest.mark.parametrize("case", sorted(BAD_INPUTS))
+    def test_sj_u01_inputs_refused_before_any_call(case: str) -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:329: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u01b_bounds_and_defaults" time="0.000"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">def test_sj_u01b_bounds_and_defaults() -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:343: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u02_lifecycle_matrix" time="0.002"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u02_lifecycle_matrix() -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:360: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u03_pass_order_and_one_fresh_context_per_op" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u03_pass_order_and_one_fresh_context_per_op() -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: []}
+&gt;       s = world.scheduler((T_A, T_B), batch_limit=3)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:389: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns() -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(i) for i in range(5)]}  # due() ignores the limit (misbehaving)
+&gt;       s = world.scheduler(batch_limit=3)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:418: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05_a_failure_never_stops_later_ops_or_tenants[pass_context]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'pass_context'
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u05_a_failure_never_stops_later_ops_or_tenants(phase: str) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        boom = RuntimeError("boom")
+        original_ctx, original_run = world.contexts_fn, world.run_fn
+        built_for_a = 0
+    
+        async def ctx_fn(tenant: str) -&gt; Any:
+            nonlocal built_for_a
+            if tenant == T_A:
+                built_for_a += 1
+                if (phase == "pass_context" and built_for_a == 1) or \
+                        (phase == "op_context" and built_for_a == 2):
+                    raise boom
+            return await original_ctx(tenant)
+    
+        async def run_fn(ctx: Any, op_id: str) -&gt; Any:
+            if phase == "run_one" and op_id == op(1):
+                raise boom
+            return await original_run(ctx, op_id)
+    
+        async def scoped_raise(ctx: Any, limit: int) -&gt; Any:
+            if ctx.tenant == T_A:
+                raise boom
+            return await (World._discover(world, ctx, limit) if phase == "discover"
+                          else World._due(world, ctx, limit))
+    
+        world.contexts_fn, world.run_fn = ctx_fn, run_fn
+        if phase in ("discover", "due"):
+            setattr(world, f"{phase}_fn", scoped_raise)
+&gt;       s = world.scheduler((T_A, T_B))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05_a_failure_never_stops_later_ops_or_tenants[discover]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover'
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u05_a_failure_never_stops_later_ops_or_tenants(phase: str) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        boom = RuntimeError("boom")
+        original_ctx, original_run = world.contexts_fn, world.run_fn
+        built_for_a = 0
+    
+        async def ctx_fn(tenant: str) -&gt; Any:
+            nonlocal built_for_a
+            if tenant == T_A:
+                built_for_a += 1
+                if (phase == "pass_context" and built_for_a == 1) or \
+                        (phase == "op_context" and built_for_a == 2):
+                    raise boom
+            return await original_ctx(tenant)
+    
+        async def run_fn(ctx: Any, op_id: str) -&gt; Any:
+            if phase == "run_one" and op_id == op(1):
+                raise boom
+            return await original_run(ctx, op_id)
+    
+        async def scoped_raise(ctx: Any, limit: int) -&gt; Any:
+            if ctx.tenant == T_A:
+                raise boom
+            return await (World._discover(world, ctx, limit) if phase == "discover"
+                          else World._due(world, ctx, limit))
+    
+        world.contexts_fn, world.run_fn = ctx_fn, run_fn
+        if phase in ("discover", "due"):
+            setattr(world, f"{phase}_fn", scoped_raise)
+&gt;       s = world.scheduler((T_A, T_B))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05_a_failure_never_stops_later_ops_or_tenants[due]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due'
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u05_a_failure_never_stops_later_ops_or_tenants(phase: str) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        boom = RuntimeError("boom")
+        original_ctx, original_run = world.contexts_fn, world.run_fn
+        built_for_a = 0
+    
+        async def ctx_fn(tenant: str) -&gt; Any:
+            nonlocal built_for_a
+            if tenant == T_A:
+                built_for_a += 1
+                if (phase == "pass_context" and built_for_a == 1) or \
+                        (phase == "op_context" and built_for_a == 2):
+                    raise boom
+            return await original_ctx(tenant)
+    
+        async def run_fn(ctx: Any, op_id: str) -&gt; Any:
+            if phase == "run_one" and op_id == op(1):
+                raise boom
+            return await original_run(ctx, op_id)
+    
+        async def scoped_raise(ctx: Any, limit: int) -&gt; Any:
+            if ctx.tenant == T_A:
+                raise boom
+            return await (World._discover(world, ctx, limit) if phase == "discover"
+                          else World._due(world, ctx, limit))
+    
+        world.contexts_fn, world.run_fn = ctx_fn, run_fn
+        if phase in ("discover", "due"):
+            setattr(world, f"{phase}_fn", scoped_raise)
+&gt;       s = world.scheduler((T_A, T_B))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05_a_failure_never_stops_later_ops_or_tenants[op_context]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'op_context'
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u05_a_failure_never_stops_later_ops_or_tenants(phase: str) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        boom = RuntimeError("boom")
+        original_ctx, original_run = world.contexts_fn, world.run_fn
+        built_for_a = 0
+    
+        async def ctx_fn(tenant: str) -&gt; Any:
+            nonlocal built_for_a
+            if tenant == T_A:
+                built_for_a += 1
+                if (phase == "pass_context" and built_for_a == 1) or \
+                        (phase == "op_context" and built_for_a == 2):
+                    raise boom
+            return await original_ctx(tenant)
+    
+        async def run_fn(ctx: Any, op_id: str) -&gt; Any:
+            if phase == "run_one" and op_id == op(1):
+                raise boom
+            return await original_run(ctx, op_id)
+    
+        async def scoped_raise(ctx: Any, limit: int) -&gt; Any:
+            if ctx.tenant == T_A:
+                raise boom
+            return await (World._discover(world, ctx, limit) if phase == "discover"
+                          else World._due(world, ctx, limit))
+    
+        world.contexts_fn, world.run_fn = ctx_fn, run_fn
+        if phase in ("discover", "due"):
+            setattr(world, f"{phase}_fn", scoped_raise)
+&gt;       s = world.scheduler((T_A, T_B))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05_a_failure_never_stops_later_ops_or_tenants[run_one]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'run_one'
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u05_a_failure_never_stops_later_ops_or_tenants(phase: str) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        boom = RuntimeError("boom")
+        original_ctx, original_run = world.contexts_fn, world.run_fn
+        built_for_a = 0
+    
+        async def ctx_fn(tenant: str) -&gt; Any:
+            nonlocal built_for_a
+            if tenant == T_A:
+                built_for_a += 1
+                if (phase == "pass_context" and built_for_a == 1) or \
+                        (phase == "op_context" and built_for_a == 2):
+                    raise boom
+            return await original_ctx(tenant)
+    
+        async def run_fn(ctx: Any, op_id: str) -&gt; Any:
+            if phase == "run_one" and op_id == op(1):
+                raise boom
+            return await original_run(ctx, op_id)
+    
+        async def scoped_raise(ctx: Any, limit: int) -&gt; Any:
+            if ctx.tenant == T_A:
+                raise boom
+            return await (World._discover(world, ctx, limit) if phase == "discover"
+                          else World._due(world, ctx, limit))
+    
+        world.contexts_fn, world.run_fn = ctx_fn, run_fn
+        if phase in ("discover", "due"):
+            setattr(world, f"{phase}_fn", scoped_raise)
+&gt;       s = world.scheduler((T_A, T_B))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:461: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-activation]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'activation'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-capability]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'capability'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-tenant]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'tenant'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-refused-caps]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'refused-caps'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-refused-workload]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'refused-workload'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-refused-other]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'refused-other'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-failed]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'failed'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[discover-other]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover', case = 'other'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-activation]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'activation'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-capability]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'capability'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-tenant]" time="0.002"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'tenant'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-refused-caps]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'refused-caps'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-refused-workload]" time="0.002"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'refused-workload'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-refused-other]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'refused-other'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-failed]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'failed'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u05b_typed_phase_failure_class[due-other]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due', case = 'other'
+
+    @pytest.mark.parametrize("case", TYPED_CASES)
+    @pytest.mark.parametrize("phase", ["discover", "due"])
+    async def test_sj_u05b_typed_phase_failure_class(phase: str, case: str) -&gt; None:
+        exc, failure_class = _typed_cases()[case]
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        setattr(world, f"{phase}_fn", _raiser(exc))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:515: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[observed_positive]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'observed_positive'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[item_raised]" time="0.002"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'item_raised'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[skipped]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'skipped'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[deferred]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'deferred'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[not_claimed]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'not_claimed'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[stale]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'stale'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[spend_unknown]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'spend_unknown'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[spend_refused]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'spend_refused'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[reconcile_failed]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'reconcile_failed'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[unknown-word]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 'unknown-word'
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[None]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = None
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06_run_one_outcome_mapping[7]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">outcome = 7
+
+    @pytest.mark.parametrize("outcome", [*WORKER_OUTCOMES, "unknown-word", None, 7])
+    async def test_sj_u06_run_one_outcome_mapping(outcome: Any) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        world.outcomes = {op(1): outcome}
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:531: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing[not-a-list]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">rows = 'not-a-list'
+
+    @pytest.mark.parametrize("rows", [
+        "not-a-list", [{"phase": "check"}], [{"wb_op_id": 5}], ["x"]])
+    async def test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing(rows: Any) -&gt; None:
+        world = World(se.FakeClock())
+    
+        async def due(ctx: Any, limit: int) -&gt; Any:
+            return rows
+    
+        world.due_fn = due
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing[rows1]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">rows = [{'phase': 'check'}]
+
+    @pytest.mark.parametrize("rows", [
+        "not-a-list", [{"phase": "check"}], [{"wb_op_id": 5}], ["x"]])
+    async def test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing(rows: Any) -&gt; None:
+        world = World(se.FakeClock())
+    
+        async def due(ctx: Any, limit: int) -&gt; Any:
+            return rows
+    
+        world.due_fn = due
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing[rows2]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">rows = [{'wb_op_id': 5}]
+
+    @pytest.mark.parametrize("rows", [
+        "not-a-list", [{"phase": "check"}], [{"wb_op_id": 5}], ["x"]])
+    async def test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing(rows: Any) -&gt; None:
+        world = World(se.FakeClock())
+    
+        async def due(ctx: Any, limit: int) -&gt; Any:
+            return rows
+    
+        world.due_fn = due
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing[rows3]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">rows = ['x']
+
+    @pytest.mark.parametrize("rows", [
+        "not-a-list", [{"phase": "check"}], [{"wb_op_id": 5}], ["x"]])
+    async def test_sj_u06b_malformed_due_rows_are_internal_and_run_nothing(rows: Any) -&gt; None:
+        world = World(se.FakeClock())
+    
+        async def due(ctx: Any, limit: int) -&gt; Any:
+            return rows
+    
+        world.due_fn = due
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:550: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u07_u08_stop_mid_pass_runs_no_later_op[run_one-cooperative]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">where = 'run_one', swallow = False
+
+    @pytest.mark.parametrize("swallow", [False, True], ids=["cooperative", "swallows"])
+    @pytest.mark.parametrize("where", ["run_one", "op_context"])
+    async def test_sj_u07_u08_stop_mid_pass_runs_no_later_op(where: str, swallow: bool) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        original_ctx = world.contexts_fn
+        builds = 0
+        if where == "run_one":
+            block, release, seen = _blocking(swallow=swallow, value="observed_positive")
+    
+            async def run(ctx: Any, op_id: str) -&gt; Any:
+                return await block() if op_id == op(1) else "observed_positive"
+    
+            world.run_fn = run
+        else:
+            block, release, seen = _blocking(swallow=swallow, value=Ctx(T_A, 99))
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                return await block() if builds == 2 else await original_ctx(tenant)
+    
+            world.contexts_fn = ctx_fn
+&gt;       s = world.scheduler((T_A, T_B), stop_timeout_s=0.2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:603: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u07_u08_stop_mid_pass_runs_no_later_op[run_one-swallows]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">where = 'run_one', swallow = True
+
+    @pytest.mark.parametrize("swallow", [False, True], ids=["cooperative", "swallows"])
+    @pytest.mark.parametrize("where", ["run_one", "op_context"])
+    async def test_sj_u07_u08_stop_mid_pass_runs_no_later_op(where: str, swallow: bool) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        original_ctx = world.contexts_fn
+        builds = 0
+        if where == "run_one":
+            block, release, seen = _blocking(swallow=swallow, value="observed_positive")
+    
+            async def run(ctx: Any, op_id: str) -&gt; Any:
+                return await block() if op_id == op(1) else "observed_positive"
+    
+            world.run_fn = run
+        else:
+            block, release, seen = _blocking(swallow=swallow, value=Ctx(T_A, 99))
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                return await block() if builds == 2 else await original_ctx(tenant)
+    
+            world.contexts_fn = ctx_fn
+&gt;       s = world.scheduler((T_A, T_B), stop_timeout_s=0.2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:603: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u07_u08_stop_mid_pass_runs_no_later_op[op_context-cooperative]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">where = 'op_context', swallow = False
+
+    @pytest.mark.parametrize("swallow", [False, True], ids=["cooperative", "swallows"])
+    @pytest.mark.parametrize("where", ["run_one", "op_context"])
+    async def test_sj_u07_u08_stop_mid_pass_runs_no_later_op(where: str, swallow: bool) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        original_ctx = world.contexts_fn
+        builds = 0
+        if where == "run_one":
+            block, release, seen = _blocking(swallow=swallow, value="observed_positive")
+    
+            async def run(ctx: Any, op_id: str) -&gt; Any:
+                return await block() if op_id == op(1) else "observed_positive"
+    
+            world.run_fn = run
+        else:
+            block, release, seen = _blocking(swallow=swallow, value=Ctx(T_A, 99))
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                return await block() if builds == 2 else await original_ctx(tenant)
+    
+            world.contexts_fn = ctx_fn
+&gt;       s = world.scheduler((T_A, T_B), stop_timeout_s=0.2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:603: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u07_u08_stop_mid_pass_runs_no_later_op[op_context-swallows]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">where = 'op_context', swallow = True
+
+    @pytest.mark.parametrize("swallow", [False, True], ids=["cooperative", "swallows"])
+    @pytest.mark.parametrize("where", ["run_one", "op_context"])
+    async def test_sj_u07_u08_stop_mid_pass_runs_no_later_op(where: str, swallow: bool) -&gt; None:
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)], T_B: [op(3)]}
+        original_ctx = world.contexts_fn
+        builds = 0
+        if where == "run_one":
+            block, release, seen = _blocking(swallow=swallow, value="observed_positive")
+    
+            async def run(ctx: Any, op_id: str) -&gt; Any:
+                return await block() if op_id == op(1) else "observed_positive"
+    
+            world.run_fn = run
+        else:
+            block, release, seen = _blocking(swallow=swallow, value=Ctx(T_A, 99))
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                return await block() if builds == 2 else await original_ctx(tenant)
+    
+            world.contexts_fn = ctx_fn
+&gt;       s = world.scheduler((T_A, T_B), stop_timeout_s=0.2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:603: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u09_stop_before_any_tick_makes_no_call" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u09_stop_before_any_tick_makes_no_call() -&gt; None:
+        world = World(se.FakeClock())
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:623: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task() -&gt; None:
+        """The stop is observed by an independently bounded `asyncio.wait`, never by awaiting
+        stop() itself: an unbounded stop (mutant J-M5) fails the bounded assertion instead of
+        hanging the row, and the hold is always released in `finally`."""
+    
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:634: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u11_fixed_rate_and_strict_lateness" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75db9282f0&gt;
+
+    async def test_sj_u11_fixed_rate_and_strict_lateness(caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.INFO, logger=LOGGER)
+        clock = se.FakeClock(1000.0)
+        world = World(clock)
+        world.ops = {T_A: [op(1)]}
+        lengths = iter([0.0, 150.0, 0.0, 0.0])  # tick 2 lasts 2.5 intervals
+    
+        async def run(ctx: Any, op_id: str) -&gt; Any:
+            clock.now += next(lengths, 0.0)
+            await asyncio.sleep(0)
+            return "observed_positive"
+    
+        world.run_fn = run
+&gt;       s = world.scheduler(interval_s=60)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:682: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u12_no_secret_text_anywhere[pass_context]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'pass_context'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75db925950&gt;
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u12_no_secret_text_anywhere(phase: str,
+                                                  caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.DEBUG)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        leak = ValueError(f"{PHONE} {NAME} Reply 1 to confirm secret=hunter2")
+        if phase in ("pass_context", "op_context"):
+            original = world.contexts_fn
+            builds = 0
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                if builds == (1 if phase == "pass_context" else 2):
+                    raise leak
+                return await original(tenant)
+    
+            world.contexts_fn = ctx_fn
+        else:
+            setattr(world, {"discover": "discover_fn", "due": "due_fn",
+                            "run_one": "run_fn"}[phase], _raiser(leak))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:720: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u12_no_secret_text_anywhere[discover]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'discover'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75db925a90&gt;
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u12_no_secret_text_anywhere(phase: str,
+                                                  caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.DEBUG)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        leak = ValueError(f"{PHONE} {NAME} Reply 1 to confirm secret=hunter2")
+        if phase in ("pass_context", "op_context"):
+            original = world.contexts_fn
+            builds = 0
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                if builds == (1 if phase == "pass_context" else 2):
+                    raise leak
+                return await original(tenant)
+    
+            world.contexts_fn = ctx_fn
+        else:
+            setattr(world, {"discover": "discover_fn", "due": "due_fn",
+                            "run_one": "run_fn"}[phase], _raiser(leak))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:720: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u12_no_secret_text_anywhere[due]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'due'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75dba02780&gt;
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u12_no_secret_text_anywhere(phase: str,
+                                                  caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.DEBUG)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        leak = ValueError(f"{PHONE} {NAME} Reply 1 to confirm secret=hunter2")
+        if phase in ("pass_context", "op_context"):
+            original = world.contexts_fn
+            builds = 0
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                if builds == (1 if phase == "pass_context" else 2):
+                    raise leak
+                return await original(tenant)
+    
+            world.contexts_fn = ctx_fn
+        else:
+            setattr(world, {"discover": "discover_fn", "due": "due_fn",
+                            "run_one": "run_fn"}[phase], _raiser(leak))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:720: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u12_no_secret_text_anywhere[op_context]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'op_context'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75db9c8050&gt;
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u12_no_secret_text_anywhere(phase: str,
+                                                  caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.DEBUG)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        leak = ValueError(f"{PHONE} {NAME} Reply 1 to confirm secret=hunter2")
+        if phase in ("pass_context", "op_context"):
+            original = world.contexts_fn
+            builds = 0
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                if builds == (1 if phase == "pass_context" else 2):
+                    raise leak
+                return await original(tenant)
+    
+            world.contexts_fn = ctx_fn
+        else:
+            setattr(world, {"discover": "discover_fn", "due": "due_fn",
+                            "run_one": "run_fn"}[phase], _raiser(leak))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:720: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u12_no_secret_text_anywhere[run_one]" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">phase = 'run_one'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75dc952d50&gt;
+
+    @pytest.mark.parametrize("phase", ISOLATION)
+    async def test_sj_u12_no_secret_text_anywhere(phase: str,
+                                                  caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.DEBUG)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1)]}
+        leak = ValueError(f"{PHONE} {NAME} Reply 1 to confirm secret=hunter2")
+        if phase in ("pass_context", "op_context"):
+            original = world.contexts_fn
+            builds = 0
+    
+            async def ctx_fn(tenant: str) -&gt; Any:
+                nonlocal builds
+                builds += 1
+                if builds == (1 if phase == "pass_context" else 2):
+                    raise leak
+                return await original(tenant)
+    
+            world.contexts_fn = ctx_fn
+        else:
+            setattr(world, {"discover": "discover_fn", "due": "due_fn",
+                            "run_one": "run_fn"}[phase], _raiser(leak))
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:720: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u13_one_summary_line_per_tick" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75dbc0e9c0&gt;
+
+    async def test_sj_u13_one_summary_line_per_tick(caplog: pytest.LogCaptureFixture) -&gt; None:
+        caplog.set_level(logging.INFO, logger=LOGGER)
+        world = World(se.FakeClock())
+        world.ops = {T_A: [op(1), op(2)]}
+        world.outcomes = {op(2): "item_raised"}
+    
+        async def discover(ctx: Any, limit: int) -&gt; int:
+            return 2
+    
+        world.discover_fn = discover
+&gt;       s = world.scheduler()
+            ^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_units.py:744: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:185: in scheduler
+    return _mod().WritebackScheduler(
+           ^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u14_only_discover_due_run_one_and_no_network_or_platform_import" time="0.000"><failure message="FileNotFoundError: [Errno 2] No such file or directory: '/home/claude/sj/haloflow/src/haloflow/m05/writeback_scheduler.py'">def test_sj_u14_only_discover_due_run_one_and_no_network_or_platform_import() -&gt; None:
+&gt;       tree = ast.parse(_source())
+                         ^^^^^^^^^
+
+tests/m05/test_sj_units.py:762: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/m05/test_sj_units.py:758: in _source
+    return MODULE_FILE.read_text(encoding="utf-8")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/pathlib/_local.py:546: in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/pathlib/_abc.py:632: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = PosixPath('/home/claude/sj/haloflow/src/haloflow/m05/writeback_scheduler.py')
+mode = 'r', buffering = -1, encoding = 'utf-8', errors = None, newline = None
+
+    def open(self, mode='r', buffering=-1, encoding=None,
+             errors=None, newline=None):
+        """
+        Open the file pointed to by this path and return a file object, as
+        the built-in open() function does.
+        """
+        if "b" not in mode:
+            encoding = io.text_encoding(encoding)
+&gt;       return io.open(self, mode, buffering, encoding, errors, newline)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       FileNotFoundError: [Errno 2] No such file or directory: '/home/claude/sj/haloflow/src/haloflow/m05/writeback_scheduler.py'
+
+/usr/local/lib/python3.13/pathlib/_local.py:537: FileNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u15_not_composed" time="0.000"><failure message="AssertionError: assert False&#10; +  where False = exists()&#10; +    where exists = PosixPath('/home/claude/sj/haloflow/src/haloflow/m05/writeback_scheduler.py').exists">def test_sj_u15_not_composed() -&gt; None:
+&gt;       assert MODULE_FILE.exists()
+E       AssertionError: assert False
+E        +  where False = exists()
+E        +    where exists = PosixPath('/home/claude/sj/haloflow/src/haloflow/m05/writeback_scheduler.py').exists
+
+tests/m05/test_sj_units.py:782: AssertionError</failure></testcase><testcase classname="tests.m05.test_sj_units" name="test_sj_u16_manual_tick_owns_the_scheduler" time="0.001"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">async def test_sj_u16_manual_tick_owns_the_scheduler() -&gt; None:
+&gt;       module = _mod()
+                 ^^^^^^
+
+tests/m05/test_sj_units.py:794: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _mod() -&gt; Any:
+&gt;       import haloflow.m05.writeback_scheduler as module
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/test_sj_units.py:70: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j11c_reason_and_get_over_the_test_route_bind_the_item" time="1.662" /><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j13_wrong_actor_is_refused_without_change" time="1.502" /><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j14_wrong_tenant_is_refused_without_change" time="1.445" /><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j15_missing_capability_is_refused_without_change" time="1.448" /><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler" time="1.031"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db812ea0&gt;
+
+    def test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack)
+                _put(install, ehr, flow)
+                result = await stack.tick_writeback()
+                assert _wb_counts(result)["observed_positive"] == 1, result
+                assert result.tenants[0].discover.counts == {"discovered": 1}
+                assert [w[0] for w in ehr.writes] == [flow["ref"]]
+                assert len(stack.sender.calls) == 1
+                assert si.check_items(install) == []
+                (wb,) = si.wb_ops(install)
+                assert wb["state"] == "observed_positive"
+                again = await stack.tick_writeback()  # nothing left; no second write
+                assert sum(_wb_counts(again).values()) == 0 and len(ehr.writes) == 1
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:226: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:209: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db812ea0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route" time="1.011"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db637bf0&gt;
+
+    def test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack)
+                _put(install, ehr, flow, provider_ref="prov-other")
+                result = await stack.tick_writeback()
+                assert _wb_counts(result)["item_raised"] == 1
+                assert ehr.writes == []
+                (item,) = si.check_items(install)
+                app = sj.staff_app(install, stack.rt)
+                path = sj.item_path(install, str(item["item_id"]))
+                status, reason = await sj.http(app, "GET", path + "/reason",
+                                               headers=sj.staff_headers(caps="read"))
+                assert (status, reason.get("reason")) == (200, "status_changed"), reason
+                status, out = await sj.http(app, "POST", path + "/claim",
+                                            headers=sj.staff_headers(), body={"version": 1})
+                assert (status, out.get("outcome")) == (200, "applied"), out
+                status, out = await sj.http(app, "POST", path + "/resolve",
+                                            headers=sj.staff_headers(),
+                                            body={"version": 2, "outcome": "reached_no_change"})
+                assert (status, out.get("outcome")) == (200, "applied"), out
+                resolutions = si.rows(install, "patient_events", "event_type = %s",
+                                      (si.T_RESOLUTION,))
+                assert len(resolutions) == 1
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:264: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:238: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db637bf0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j03_j04_non_confirm_replies_create_no_write_back[2]" time="1.046"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db6cff00&gt;, text = '2'
+
+    @pytest.mark.parametrize("text", sorted(H3_ITEM))
+    def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
+                                                                 text: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack, text)
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    result = await stack.tick_all()
+                    assert sum(_wb_counts(result["writeback"]).values()) == 0
+                assert si.wb_ops(install) == [] and ehr.writes == []
+                assert si.check_items(install) == []
+                assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
+                items = sa.items_for(install, flow["patient"])
+                if H3_ITEM[text] is None:
+                    assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                    assert items == []
+                else:
+                    reply = sh3.reply_row(install, flow["message"])
+                    (item,) = items  # exactly one H3 staff item, bound to this reply
+                    assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                        H3_ITEM[text], reply["event_id"], flow["patient"])
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:284: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db6cff00&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j03_j04_non_confirm_replies_create_no_write_back[3]" time="1.051"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db6cf680&gt;, text = '3'
+
+    @pytest.mark.parametrize("text", sorted(H3_ITEM))
+    def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
+                                                                 text: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack, text)
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    result = await stack.tick_all()
+                    assert sum(_wb_counts(result["writeback"]).values()) == 0
+                assert si.wb_ops(install) == [] and ehr.writes == []
+                assert si.check_items(install) == []
+                assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
+                items = sa.items_for(install, flow["patient"])
+                if H3_ITEM[text] is None:
+                    assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                    assert items == []
+                else:
+                    reply = sh3.reply_row(install, flow["message"])
+                    (item,) = items  # exactly one H3 staff item, bound to this reply
+                    assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                        H3_ITEM[text], reply["event_id"], flow["patient"])
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:284: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db6cf680&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j03_j04_non_confirm_replies_create_no_write_back[NO]" time="1.197"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75dc966650&gt;, text = 'NO'
+
+    @pytest.mark.parametrize("text", sorted(H3_ITEM))
+    def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
+                                                                 text: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack, text)
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    result = await stack.tick_all()
+                    assert sum(_wb_counts(result["writeback"]).values()) == 0
+                assert si.wb_ops(install) == [] and ehr.writes == []
+                assert si.check_items(install) == []
+                assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
+                items = sa.items_for(install, flow["patient"])
+                if H3_ITEM[text] is None:
+                    assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                    assert items == []
+                else:
+                    reply = sh3.reply_row(install, flow["message"])
+                    (item,) = items  # exactly one H3 staff item, bound to this reply
+                    assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                        H3_ITEM[text], reply["event_id"], flow["patient"])
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:284: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75dc966650&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j03_j04_non_confirm_replies_create_no_write_back[STOP]" time="1.039"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db809b50&gt;, text = 'STOP'
+
+    @pytest.mark.parametrize("text", sorted(H3_ITEM))
+    def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
+                                                                 text: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack, text)
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    result = await stack.tick_all()
+                    assert sum(_wb_counts(result["writeback"]).values()) == 0
+                assert si.wb_ops(install) == [] and ehr.writes == []
+                assert si.check_items(install) == []
+                assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
+                items = sa.items_for(install, flow["patient"])
+                if H3_ITEM[text] is None:
+                    assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                    assert items == []
+                else:
+                    reply = sh3.reply_row(install, flow["message"])
+                    (item,) = items  # exactly one H3 staff item, bound to this reply
+                    assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                        H3_ITEM[text], reply["event_id"], flow["patient"])
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:284: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db809b50&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j03_j04_non_confirm_replies_create_no_write_back[maybe later]" time="0.986"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db64f980&gt;, text = 'maybe later'
+
+    @pytest.mark.parametrize("text", sorted(H3_ITEM))
+    def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
+                                                                 text: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack, text)
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    result = await stack.tick_all()
+                    assert sum(_wb_counts(result["writeback"]).values()) == 0
+                assert si.wb_ops(install) == [] and ehr.writes == []
+                assert si.check_items(install) == []
+                assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
+                items = sa.items_for(install, flow["patient"])
+                if H3_ITEM[text] is None:
+                    assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                    assert items == []
+                else:
+                    reply = sh3.reply_row(install, flow["message"])
+                    (item,) = items  # exactly one H3 staff item, bound to this reply
+                    assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                        H3_ITEM[text], reply["event_id"], flow["patient"])
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:306: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:284: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db64f980&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j05_forged_ingress_creates_no_op_or_item" time="1.137"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db64e210&gt;
+
+    def test_sj_j05_forged_ingress_creates_no_op_or_item(sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await sj.ingest(stack)
+                _put(install, ehr, flow)
+                await stack.tick_reminder()
+                status, _out = await sj.reply(stack, flow, "1", secret="e" * 32 + "-forged")
+                assert status in (401, 403)
+                result = await stack.tick_writeback()
+                assert sum(_wb_counts(result).values()) == 0
+                assert si.wb_ops(install) == [] and si.check_items(install) == []
+                assert ehr.writes == []
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:331: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:317: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db64e210&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j06_duplicate_yes_is_one_op_and_one_write" time="1.065"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75da140bb0&gt;
+
+    def test_sj_j06_duplicate_yes_is_one_op_and_one_write(sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack)
+                await sj.reply(stack, flow, "YES")  # a second confirm, new provider message id
+                _put(install, ehr, flow)
+                for _ in range(2):
+                    await stack.tick_writeback()
+                assert len(si.wb_ops(install)) == 1 and len(ehr.writes) == 1
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:353: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:342: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75da140bb0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j07_unknown_write_is_never_repeated" time="0.997"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75da1c52b0&gt;
+
+    def test_sj_j07_unknown_write_is_never_repeated(sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, RaisingAfterApply(ehr))
+            try:
+                flow = await _sent_and_replied(stack)
+                _put(install, ehr, flow)
+                await stack.tick_writeback()
+                await stack.tick_writeback()
+                assert len(ehr.writes) == 1  # applied once; never re-dispatched
+                (wb,) = si.wb_ops(install)
+                assert wb["state"] in ("observed_positive", "item"), wb
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:391: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:379: in body
+    stack = await sj.build(install, RaisingAfterApply(ehr))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75da1c52b0&gt;
+ehr = &lt;test_sj_postgres.RaisingAfterApply object at 0x7f75dbaf8d70&gt;
+recorder = None, policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2
+wb_contexts = None, write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08a1_restart_with_an_accepted_unregistered_send_registers_once" time="1.241"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75d9f5a820&gt;
+
+    def test_sj_j08a1_restart_with_an_accepted_unregistered_send_registers_once(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            # the crash state (the sh3.persisted_accepted_op shape, on directory v3): examine -&gt;
+            # consume -&gt; outcome accepted; the worker dies before register
+            _p, _ph, ref, _zone = si.seed3(install)
+            op_id, attempt = sh2.claimed(install, ref)
+            assert sh2.consume(install, op_id, attempt)["outcome"] == "send"
+            sh.outcome(install, op_id, attempt, "accepted", provider_ref="fake-sj-accepted")
+            assert sh.op_row(install, op_id)["state"] == "accepted"
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)  # the restarted lifespan
+            try:
+                await stack.tick_all()
+                await stack.tick_all()
+                assert sh.op_row(install, op_id)["state"] == "registered"
+                assert sh3.dispatch_events(install, op_id) == 1
+                assert stack.sender.calls == []  # no new sender call
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:410: in body
+    stack = await sj.build(install, ehr)  # the restarted lifespan
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75d9f5a820&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08a2_restart_after_consume_with_unknown_outcome_never_resends" time="1.353"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db70cd10&gt;
+
+    def test_sj_j08a2_restart_after_consume_with_unknown_outcome_never_resends(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            _p, _ph, ref, _zone = si.seed3(install)
+            op_id, attempt = sh2.claimed(install, ref)
+            assert sh2.consume(install, op_id, attempt)["outcome"] == "send"
+            sh2.expire_lease(install, op_id)  # the crash may have fallen before the send
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                await stack.tick_all()
+                await stack.tick_all()
+                assert sh.op_row(install, op_id)["state"] == "uncertain"
+                assert stack.sender.calls == []
+                assert si.wb_ops(install) == [] and ehr.writes == []
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:443: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:433: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db70cd10&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08b_restart_after_the_reply_before_discovery_discovers_once" time="1.009"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db70d190&gt;
+
+    def test_sj_j08b_restart_after_the_reply_before_discovery_discovers_once(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            first = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(first)
+            finally:
+                assert await first.shutdown() == {}
+            _put(install, ehr, flow)
+            second = await sj.build(install, ehr)
+            try:
+                result = await second.tick_writeback()
+                assert result.tenants[0].discover.counts == {"discovered": 1}
+                await second.tick_writeback()
+                assert len(si.wb_ops(install)) == 1 and len(ehr.writes) == 1
+            finally:
+                assert await second.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:467: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:452: in body
+    first = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db70d190&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08c_restart_after_spend_with_the_write_never_issued_reconciles_only" time="1.093"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db63b3e0&gt;
+
+    def test_sj_j08c_restart_after_spend_with_the_write_never_issued_reconciles_only(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            first = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(first)
+                _put(install, ehr, flow)
+                wb = await _spent_without_write(first, flow, ehr)  # the crash: no write issued
+            finally:
+                assert await first.shutdown() == {}
+            si.age(install, wb, lease=si.LEASE_S + 1,
+                   deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+            second = await sj.build(install, ehr)
+            try:
+                await second.tick_writeback()
+                await second.tick_writeback()
+                assert ehr.writes == []  # 0 after the restart and 0 in total (Codex 201829Z)
+                assert si.wb_op(install, wb)["reason"] == "could_not_verify"
+                assert len(si.check_items(install)) == 1
+            finally:
+                assert await second.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:509: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:490: in body
+    first = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db63b3e0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08d_restart_after_an_issued_uncertain_write_is_at_most_one_write" time="1.003"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db9bb120&gt;
+
+    def test_sj_j08d_restart_after_an_issued_uncertain_write_is_at_most_one_write(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            first = await sj.build(install, ehr, wb_stop_timeout_s=2)
+            try:
+                flow = await _sent_and_replied(first)
+                _put(install, ehr, flow)
+                first.port.hang_after_write = True
+                first.writeback.start()  # the loop issues the write, then "crashes" (hangs)
+                await _b(first.port.entered.wait())
+                await _b(_until_applied(first.port))
+            finally:
+                assert await first.shutdown() == {}  # cooperative cancel: clean stop
+            (wb,) = si.wb_ops(install)
+            assert wb["state"] == "spent"
+            si.age(install, str(wb["wb_op_id"]), lease=si.LEASE_S + 1,
+                   deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+            second = await sj.build(install, ehr)
+            try:
+                await second.tick_writeback()
+                await second.tick_writeback()
+                assert len(ehr.writes) == 1  # at most one in total; reconcile, never re-write
+                assert si.wb_op(install, str(wb["wb_op_id"]))["state"] in (
+                    "observed_positive", "item")
+            finally:
+                assert await second.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:542: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:518: in body
+    first = await sj.build(install, ehr, wb_stop_timeout_s=2)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db9bb120&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08e_restart_after_settle_commit_before_ack_changes_nothing[observed_positive]" time="1.033"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db89e3f0&gt;
+fixture = 'observed_positive'
+
+    @pytest.mark.parametrize("fixture", ["observed_positive", "could_not_verify"])
+    def test_sj_j08e_restart_after_settle_commit_before_ack_changes_nothing(
+            sj_i: si.SIInstall, fixture: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            first = await sj.build(install, ehr, wb_service=LostSettleAck)
+            try:
+                flow = await _sent_and_replied(first)
+                if fixture == "observed_positive":
+                    _put(install, ehr, flow)
+                    result = await first.tick_writeback()  # settle commits, ack lost
+                    assert _wb_counts(result)["failed"] == 1
+                else:
+                    _put(install, ehr, flow)
+                    wb = await _spent_without_write(first, flow, ehr)
+                    si.age(install, wb, lease=si.LEASE_S + 1,
+                           deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+                    result = await first.tick_writeback()
+                    assert _wb_counts(result)["failed"] == 1
+            finally:
+                assert await first.shutdown() == {}
+            (wb_row,) = si.wb_ops(install)
+            items, events = si.check_items(install), si.check_events(install)
+            if fixture == "observed_positive":
+                assert wb_row["state"] == "observed_positive" and items == [] and events == []
+            else:
+                assert wb_row["reason"] == "could_not_verify"
+                assert len(items) == 1 and len(events) == 1
+            second = await sj.build(install, ehr)
+            try:
+                await second.tick_writeback()
+                await second.tick_writeback()
+            finally:
+                assert await second.shutdown() == {}
+            assert si.wb_ops(install) == [wb_row]
+            assert si.check_items(install) == items and si.check_events(install) == events
+            assert len(ehr.writes) == (1 if fixture == "observed_positive" else 0)
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:608: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:575: in body
+    first = await sj.build(install, ehr, wb_service=LostSettleAck)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db89e3f0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = &lt;class 'test_sj_postgres.LostSettleAck'&gt;
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j08e_restart_after_settle_commit_before_ack_changes_nothing[could_not_verify]" time="1.071"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75db9a87d0&gt;
+fixture = 'could_not_verify'
+
+    @pytest.mark.parametrize("fixture", ["observed_positive", "could_not_verify"])
+    def test_sj_j08e_restart_after_settle_commit_before_ack_changes_nothing(
+            sj_i: si.SIInstall, fixture: str) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            first = await sj.build(install, ehr, wb_service=LostSettleAck)
+            try:
+                flow = await _sent_and_replied(first)
+                if fixture == "observed_positive":
+                    _put(install, ehr, flow)
+                    result = await first.tick_writeback()  # settle commits, ack lost
+                    assert _wb_counts(result)["failed"] == 1
+                else:
+                    _put(install, ehr, flow)
+                    wb = await _spent_without_write(first, flow, ehr)
+                    si.age(install, wb, lease=si.LEASE_S + 1,
+                           deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+                    result = await first.tick_writeback()
+                    assert _wb_counts(result)["failed"] == 1
+            finally:
+                assert await first.shutdown() == {}
+            (wb_row,) = si.wb_ops(install)
+            items, events = si.check_items(install), si.check_events(install)
+            if fixture == "observed_positive":
+                assert wb_row["state"] == "observed_positive" and items == [] and events == []
+            else:
+                assert wb_row["reason"] == "could_not_verify"
+                assert len(items) == 1 and len(events) == 1
+            second = await sj.build(install, ehr)
+            try:
+                await second.tick_writeback()
+                await second.tick_writeback()
+            finally:
+                assert await second.shutdown() == {}
+            assert si.wb_ops(install) == [wb_row]
+            assert si.check_items(install) == items and si.check_events(install) == events
+            assert len(ehr.writes) == (1 if fixture == "observed_positive" else 0)
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:608: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:575: in body
+    first = await sj.build(install, ehr, wb_service=LostSettleAck)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75db9a87d0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = &lt;class 'test_sj_postgres.LostSettleAck'&gt;
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes" time="1.061"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75da18a720&gt;
+
+    def test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes(
+            sj_i: si.SIInstall) -&gt; None:
+        import sc_support as sc
+    
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                f1 = await _sent_and_replied(stack)
+                f2 = await _sent_and_replied(stack)
+                for f in (f1, f2):
+                    _put(install, ehr, f)
+                stack.port.hold = asyncio.Event()
+                tick = asyncio.ensure_future(stack.tick_writeback())
+                await _b(stack.port.entered.wait())  # op 1 spent; its write is held
+                f3 = await _sent_and_replied(stack)  # replied while on, not yet discovered
+                _put(install, ehr, f3)
+                sc.change(install, "revoke")
+                stack.port.hold.set()
+                first = await _b(tick)
+                counts = _wb_counts(first)
+                assert counts["observed_positive"] == 1  # the spent write + settle completed
+                assert counts["not_claimed"] == 1  # op 2: no NEW check claim while off
+                ops_off = {r["wb_op_id"]: r["state"] for r in si.wb_ops(install)}
+                off = await stack.tick_writeback()
+                assert off.tenants[0].discover.status == "ACTIVATION_REFUSED"
+                assert {r["wb_op_id"]: r["state"] for r in si.wb_ops(install)} == ops_off
+                assert len(ehr.writes) == 1
+                sc.change(install, "grant")
+                for _ in range(2):
+                    await stack.tick_writeback()
+                states = sorted(r["state"] for r in si.wb_ops(install))
+                assert states == ["observed_positive"] * 3
+                assert sorted(w[0] for w in ehr.writes) == sorted(f["ref"] for f in (f1, f2, f3))
+                assert si.check_items(install) == []
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:654: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:622: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75da18a720&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close" time="0.999"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75d9f7bbd0&gt;
+
+    def test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close(
+            sj_i: si.SIInstall) -&gt; None:
+        """A lifecycle oracle only (DISCLOSED, Codex 20261110T225403Z): the three loops run a
+        real first tick on an EMPTY workload, then park; this row does not prove live-task
+        end-to-end transfer between the loops. The chain itself is covered by the manually
+        ticked rows (J01, J02)."""
+    
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr, parked=True)
+            stack.start_all()
+            for name in sj.PRODUCERS:  # each loop finished its first tick and parked
+                await _b(stack.sleeps[name].parked.wait())
+            assert await stack.shutdown() == {}
+            events = stack.recorder.events
+            assert [e[0] for e in events] == ["ehr", "pool"]
+            for _what, states, live in events:
+                assert states == {"writeback": "STOPPED", "reminder": "STOPPED", "due": "STOPPED"}
+                assert live == 0  # no scheduler task left when a shared resource closes
+            assert stack.recorder.misuse == []
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:683: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:671: in body
+    stack = await sj.build(install, ehr, parked=True)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75d9f7bbd0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = True, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes" time="1.025"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75da1b7850&gt;
+
+    def test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes(
+            sj_i: si.SIInstall) -&gt; None:
+        install = _begin(sj_i)
+    
+        async def body() -&gt; None:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr, wb_stop_timeout_s=0.2, write_timeout_s=60)
+            flow = await _sent_and_replied(stack)
+            _put(install, ehr, flow)
+            stack.port.hold = asyncio.Event()
+            stack.port.ignore_cancel = True
+            stack.writeback.start()
+            try:
+                await _b(stack.port.entered.wait())
+                failed = await stack.shutdown()
+                assert set(failed) == {"writeback"}
+                assert stack.writeback.state.name == "STOP_FAILED"
+                assert stack.recorder.events == []  # nothing closed under the unfinished task
+                assert not stack.port.closed
+                stack.port.hold.set()  # the held write completes against an OPEN port and pool
+                assert await stack.shutdown() == {}
+                assert [e[0] for e in stack.recorder.events] == ["ehr", "pool"]
+                assert stack.recorder.misuse == []
+                assert len(ehr.writes) == 1
+            finally:  # bounded teardown: a failing row must never leave the held task behind
+                stack.port.hold.set()
+                with contextlib.suppress(Exception):
+                    await _b(stack.writeback.stop())
+                with contextlib.suppress(Exception):
+                    await _b(stack.runtime.close())
+    
+&gt;       asyncio.run(body())
+
+tests/m05/test_sj_postgres.py:717: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:692: in body
+    stack = await sj.build(install, ehr, wb_stop_timeout_s=0.2, write_timeout_s=60)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75da1b7850&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 0.2, wb_contexts = None
+write_timeout_s = 60, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase><testcase classname="tests.m05.test_sj_postgres" name="test_sj_j12_no_patient_text_in_any_log_line" time="1.137"><failure message="ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'">sj_i = &lt;si_support.SIInstall object at 0x7f75dbb736d0&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x7f75dbade030&gt;
+
+    def test_sj_j12_no_patient_text_in_any_log_line(sj_i: si.SIInstall,
+                                                    caplog: pytest.LogCaptureFixture) -&gt; None:
+        install = _begin(sj_i)
+        caplog.set_level(logging.DEBUG)
+    
+        async def body() -&gt; dict[str, str]:
+            ehr, _ = await _flow_ehr(install)
+            stack = await sj.build(install, ehr)
+            try:
+                flow = await _sent_and_replied(stack)
+                _put(install, ehr, flow, provider_ref="prov-other")
+                await stack.tick_all()
+                return flow
+            finally:
+                assert await stack.shutdown() == {}
+    
+&gt;       flow = asyncio.run(body())
+               ^^^^^^^^^^^^^^^^^^^
+
+tests/m05/test_sj_postgres.py:739: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/local/lib/python3.13/asyncio/runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/local/lib/python3.13/asyncio/base_events.py:726: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/m05/test_sj_postgres.py:730: in body
+    stack = await sj.build(install, ehr)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+install = &lt;si_support.SIInstall object at 0x7f75dbb736d0&gt;
+ehr = SimulatedEhr(appointments=0, writes=0), recorder = None
+policy = 'ENFORCE', parked = False, wb_stop_timeout_s = 2, wb_contexts = None
+write_timeout_s = 10, wb_service = None
+
+    async def build(install: si.SIInstall, ehr: Any, *, recorder: Recorder | None = None,
+                    policy: str = "ENFORCE", parked: bool = False, wb_stop_timeout_s: float = 2,
+                    wb_contexts: Callable[[str], Awaitable[Any]] | None = None,
+                    write_timeout_s: float = si.WRITE_TIMEOUT_S,
+                    wb_service: Callable[[Any], Any] | None = None) -&gt; Stack:
+        import time
+    
+        from haloflow.m05.due_scheduler import DueWindowScheduler
+        from haloflow.m05.outbound import FakeSender
+        from haloflow.m05.reminder import ReminderRunner
+        from haloflow.m05.reminder_scheduler import ReminderScheduler
+        from haloflow.m05.writeback import BaselineWorker, WritebackWorker
+&gt;       from haloflow.m05.writeback_scheduler import WritebackScheduler
+E       ModuleNotFoundError: No module named 'haloflow.m05.writeback_scheduler'
+
+tests/m05/sj_harness.py:257: ModuleNotFoundError</failure></testcase></testsuite></testsuites>

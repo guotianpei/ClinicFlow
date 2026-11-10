@@ -1,0 +1,13 @@
+module absent: yes
+commit: 383afb3eb97d2168e8f10536bb104477037f0eba
+parent: 05e0206cd7e84800ecb80589aa7111fe979356ce
+git status: []
+python: Python 3.13.18
+pytest: pytest 9.2.0
+postgres: PostgreSQL 17.11 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 7.5.0-3ubuntu1~18.04) 7.5.0, 64-bit
+database: haloflow_test_m01 on localhost:54318 (disposable local cluster, initdb 2026-11-10)
+cwd: haloflow/; PYTHONPATH=worktree src
+7afa3382ea01ebacf597ceab1cd7bcf8a8803f26d9e2e3f969984651e4189677  tests/m05/test_sj_units.py
+ee79adf2db3faa229ea9d06b9693c096848c57138ee40fb8d8b98b1fdcc22b5b  tests/m05/sj_harness.py
+6da17e88c928bcaea3858747dc076b3fd03e22511d323a352b57f9a832d0ff6b  tests/m05/test_sj_postgres.py
+ruff 0.17.4
