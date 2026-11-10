@@ -101,6 +101,30 @@ runs decide / settle in ONE gateway transaction with the M02 append and the item
 (the IntakeService pattern); its CAPABILITIES = {"m05.writeback",
 "m02.observation.append", "m05.followup.create"}; item producer workload W_DISPATCH.
 Constants: WRITE_TIMEOUT_S = 10, RECONCILE_MARGIN_S = 30, LEASE_S = 60.
+
+Service pins (`haloflow.m05.writeback`):
+- `WritebackService(foundation)`: `capture_baseline(context, op_id, attempt_id) -> str`
+  (dispatch context; the capture statement only); `discover(context, limit=100) -> int`;
+  `due(context, limit=100) -> list[{"wb_op_id", "phase"}]`; `claim(context, wb_op_id) ->
+  dict` (the protected check claim; on ActivationRefused it tries the unprotected
+  reconcile claim; returns the claim result, "phase" included); `decide(context, wb_op_id,
+  fence, read, read_failed) -> dict`; `spend(context, wb_op_id, fence, permit_id) ->
+  dict`; `settle(context, wb_op_id, fence, permit_id, write_outcome, read) -> dict`.
+  `read` is a `simulated_ehr.EhrRead` or None. An "item" decision or settlement runs in
+  ONE gateway transaction: the SQL call (which mints and stores the event id once), the
+  M02 append of `m05_writeback_check_raised` v1 (correlation_id = wb_op_id,
+  producer_dedupe_key "wbcheck:<wb_op_id hex>", metadata exactly {wb_op_id,
+  appointment_ref, reason}), and `m05.followup.create` (v2) with item_kind
+  ITEM_KIND; the result carries "item_id". A failure anywhere rolls all three back; after
+  the commit marker a lost acknowledgement is WritebackCommitUnknown (the IntakeService
+  rule). Admission before any I/O: a WORKLOAD principal and context capabilities EQUAL
+  to CAPABILITIES (capture: the dispatch set) else WritebackRefused
+  ("PRINCIPAL_NOT_WORKLOAD" / "CAPABILITIES_INVALID").
+- `StaffServiceV3(M05Service)`: identical to M05Service except that the resolution
+  observation is appended at contract_version 2 (every kind), plus `reason(context,
+  item_id) -> {"schema_version": 1, "item_id", "reason"}` through REASON_KEY (ReadFailed
+  ITEM_NOT_FOUND otherwise). `haloflow.m05.service.M05Service` and every production
+  binding are unchanged.
 """
 
 from __future__ import annotations
@@ -576,3 +600,76 @@ def db_now(install: sa.SAInstall) -> datetime:
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
+
+
+# --- service-level helpers (runtime) ---------------------------------------------------------
+
+
+def wb_caps() -> frozenset[str]:
+    from haloflow.m05.writeback import CAPABILITIES
+
+    return frozenset(CAPABILITIES)
+
+
+async def wb_context(rt: Any, install: sa.SAInstall, caps: frozenset[str] | None = None,
+                     principal: str = sa.W_DISPATCH, kind: str = "workload") -> Any:
+    import service_support as sv
+
+    return await sv.context(rt, install, principal, wb_caps() if caps is None else caps,
+                            kind=kind)
+
+
+def wb_service(rt: Any) -> Any:
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.writeback import WritebackService
+
+    return WritebackService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
+
+
+def ehr_from_flow(install: sa.SAInstall, flow: dict[str, str], clock: Any,
+                  status: str = "neutral", **over: Any) -> Any:
+    """A SimulatedEhr holding one appointment whose read matches the flow's baseline."""
+
+    from haloflow.m05.simulated_ehr import EhrRead, SimulatedEhr
+
+    ehr = SimulatedEhr(clock=clock)
+    fields: dict[str, Any] = {"status": status, "appointment_id": flow["ref"],
+                              "start_at": sh.start_of(install, flow["ref"]),
+                              "provider_ref": PROVIDER, "department_ref": DEPARTMENT,
+                              "replaced_by": None}
+    fields.update(over)
+    ehr.put(EhrRead(**fields))
+    return ehr
+
+
+def db_clock(install: sa.SAInstall) -> Callable[[], datetime]:
+    """The SimulatedEhr clock on the test database's clock_timestamp() (one time base)."""
+
+    def clock() -> datetime:
+        value: datetime = sa.admin(install, "SELECT clock_timestamp()")[0][0]
+        return value
+
+    return clock
+
+
+class StaffChain:
+    """The S-D staff chain with the S-I staff service (resolution contract v2)."""
+
+    def __init__(self, install: Any, rt: Any) -> None:
+        import sd_support as sd
+        import service_support as sv
+
+        from haloflow.m02.observation import EventFoundation
+        from haloflow.m05.writeback import StaffServiceV3
+
+        self.install, self.rt = install, rt
+        self.chain = sd.Chain(install, rt)
+        self.chain.staff = StaffServiceV3(
+            rt.gateway, foundation=EventFoundation(rt.gateway, producer_service=sv.PRODUCER),
+            keys=self.chain.keys)
+
+    async def reason(self, item: uuid.UUID, caps: frozenset[str] | None = None) -> Any:
+        import service_support as sv
+
+        actor = await self.chain.actor(sv.READ_ONLY_CAPS if caps is None else caps)
+        return await self.chain.staff.reason(actor, item)
