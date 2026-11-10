@@ -341,16 +341,17 @@ async def _existing_item(rt: Any, install: si.SIInstall, kind: str) -> tuple[uui
     """An item of an EXISTING kind created on the S-I tenant through intake."""
 
     flow = si.sent(install)
+    chain = sd.Chain(install, rt)  # type: ignore[arg-type]
     if kind == "no_reply":
         reminder = str(sh.op_row(install, flow["op_id"])["reminder_id"])
         sa.shift_window(install, reminder, -25)
-        chain = sd.Chain(install, rt)  # type: ignore[arg-type]
         closed = await _b(chain.close(uuid.UUID(reminder)))
         assert closed.decision == "no_reply", closed
-    else:
+    else:  # through the intake SERVICE: the SQL registration alone creates no item
         reply = {"reschedule_request": "reschedule", "cancel_request": "cancel",
                  "unclear_reply": "unclear"}[kind]
-        assert si.replied(install, flow, reply)["decision"] == "item"
+        registered = await _b(chain.inbound(flow["phone"], reply))
+        assert registered.decision == "item", registered
     (row,) = sa.items_for(install, flow["patient"])
     assert row["item_kind"] == kind
     return uuid.UUID(row["item_id"]), uuid.UUID(row["source_event_id"])
@@ -399,7 +400,7 @@ def test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local(
     install, other = _begin(si_install), _begin(si_other)
 
     async def body() -> None:
-        from haloflow.m05.service import ReadFailed
+        from haloflow.m05.service import ReadFailed, RouteDenied
 
         async with si.runtime(install) as rt:
             mine, _wb, result = await _item_decision(rt, install)
@@ -409,7 +410,9 @@ def test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local(
             assert read == {"schema_version": 1, "item_id": str(item),
                             "reason": "declined_or_unknown"}
             old = si.sent(install)
-            si.replied(install, old, "reschedule")
+            old_reply = await _b(sd.Chain(install, rt).inbound(  # type: ignore[arg-type]
+                old["phone"], "reschedule"))
+            assert old_reply.decision == "item", old_reply
             (old_item,) = sa.items_for(install, old["patient"])
             other_flow, _owb, other_result = await _item_decision(rt, other)
             for missing in (uuid.UUID(old_item["item_id"]), uuid.uuid4(),
@@ -417,9 +420,8 @@ def test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local(
                 with pytest.raises(ReadFailed) as failed:
                     await _b(staff.reason(missing))
                 assert failed.value.reason_code == "ITEM_NOT_FOUND", missing
-            with pytest.raises(Exception) as denied:  # noqa: PT011 - capability refusal
+            with pytest.raises(RouteDenied):  # the staff route refusal (no read capability)
                 await _b(staff.reason(item, caps=frozenset({sv.PREPARE})))
-            assert "CAPABILITY" in repr(denied.value).upper()
             assert other_flow["patient"] != mine["patient"]
 
     asyncio.run(body())
