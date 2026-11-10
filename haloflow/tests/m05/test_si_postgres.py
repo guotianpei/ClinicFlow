@@ -16,6 +16,11 @@ Rows (requirement in brackets, packet v1 numbering):
   provider or department baseline null > status (Codex pin 5: a replaced or wrong
   appointment with a positive status is never observed_positive or skipped).
 - P-M20 [SI-R5] persisted NO / STOP / ambiguous replies never create write-back.
+- P-Y01 [SI-R10] R1 failures: stored r1_failures and next_at at 60 / 300 / 900 s, then the
+  fourth raises ehr_unreachable (owner C5).
+- P-S06 [SI-R6] an unspent permit whose lease lapsed is recovered through due -> claim
+  (void) -> a fresh decide -> a new permit.
+- P-G02 [SI-R1/R17] the real S-I catalogue binds each rebound key exactly once.
 - P-S01..S05 [SI-R6] one spend; stale fence; lease expired then void on the next claim;
   voided permit; op not permitted.
 - P-K01 [SI-R8] a spent, unsettled permit is reconcile-only, and only after
@@ -433,10 +438,10 @@ def test_si_pm21_discovery_is_idempotent_per_reply(si_install: si.SIInstall) -> 
     assert (op["op_id"], op["state"], op["fence"]) == (flow["op_id"], "pending", 0)
 
 
-# --- P-T: retry bookkeeping (owner C5) -------------------------------------------------------
+# --- P-Y: retry bookkeeping (owner C5) -------------------------------------------------------
 
 
-def test_si_pt01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable(
+def test_si_py01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable(
         si_install: si.SIInstall) -> None:
     install = _ready(si_install)
     _flow, wb = si.confirmed_op(install)
