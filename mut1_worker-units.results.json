@@ -1,0 +1,194 @@
+{
+  "target": "src/haloflow/m05/writeback.py",
+  "target_sha256": "e4cac1e28f694438f285b9730420eed965a2b2b350fe831339f2d2495111160c",
+  "tests": "tests/m05/test_si_units.py",
+  "mutants": [
+    {
+      "id": "W1",
+      "description": "a capture exception propagates (no inner send)",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain]"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted]": "L208:RuntimeError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown]": "L208:RuntimeError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent]": "L208:RuntimeError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused]": "L208:RuntimeError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain]": "L208:RuntimeError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted]": "L210:WritebackCommitUnknown",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown]": "L210:WritebackCommitUnknown",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent]": "L210:WritebackCommitUnknown",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused]": "L210:WritebackCommitUnknown",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain]": "L210:WritebackCommitUnknown"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W2",
+      "description": "the inner send is skipped when capture is refused",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused]",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain]"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted]": "L265:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown]": "L265:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent]": "L266:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused]": "L265:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain]": "L265:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused], tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W3",
+      "description": "an unknown write is retried (a second write)",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uk04_write_timeout_is_attempted_and_never_retried"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uk04_write_timeout_is_attempted_and_never_retried": "L707:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uk04_write_timeout_is_attempted_and_never_retried"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W4",
+      "description": "the reconcile read does not wait for close",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uq01_reconcile_close_completes_before_the_read_starts",
+        "tests/m05/test_si_units.py::test_si_uq02_a_close_still_in_progress_holds_the_read_back",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]",
+        "tests/m05/test_si_units.py::test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uq01_reconcile_close_completes_before_the_read_starts": "L730:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uq02_a_close_still_in_progress_holds_the_read_back": "L761:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]": "L778:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]": "L778:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle": "L794:DID NOT RAISE CancelledError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uq01_reconcile_close_completes_before_the_read_starts, tests/m05/test_si_units.py::test_si_uq02_a_close_still_in_progress_holds_the_read_back, tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs], tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises], tests/m05/test_si_units.py::test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W5",
+      "description": "a failed close is ignored",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]": "L778:AssertionError",
+        "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]": "L778:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs], tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W6",
+      "description": "an R1 failure is passed as read_failed=False",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[300-2500]",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[450-3100]",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[60-1540]",
+        "tests/m05/test_si_units.py::test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend": "L828:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[300-2500]": "L627:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[450-3100]": "L627:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[60-1540]": "L627:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path": "L664:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend, tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[300-2500], tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[450-3100], tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[60-1540], tests/m05/test_si_units.py::test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W7",
+      "description": "exception text is logged",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_uv01_no_sensitive_value_or_exception_text_is_logged"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_uv01_no_sensitive_value_or_exception_text_is_logged": "L914:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_uv01_no_sensitive_value_or_exception_text_is_logged"
+      ],
+      "killed": false
+    },
+    {
+      "id": "W8",
+      "description": "a spend commit-unknown proceeds to the write",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown]"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown]": "L693:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown]"
+      ],
+      "killed": false
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 66,
+    "problems": []
+  },
+  "restored": true,
+  "ok": false
+}

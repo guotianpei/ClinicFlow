@@ -1,0 +1,123 @@
+{
+  "target": "src/haloflow/m05/writeback.py",
+  "target_sha256": "e4cac1e28f694438f285b9730420eed965a2b2b350fe831339f2d2495111160c",
+  "tests": "tests/m05/test_si_service_postgres.py",
+  "mutants": [
+    {
+      "id": "V1",
+      "description": "claim never falls back to the reconcile claim",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[spend]",
+        "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[write]",
+        "tests/m05/test_si_service_postgres.py::test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[spend]": "L1044:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[write]": "L1044:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order": "L976:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[spend], tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[write], tests/m05/test_si_service_postgres.py::test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V2",
+      "description": "claim falls back on every not_claimable",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pq02_an_ordinary_refusal_never_falls_back_to_reconcile"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pq02_an_ordinary_refusal_never_falls_back_to_reconcile": "L998:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pq02_an_ordinary_refusal_never_falls_back_to_reconcile"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V3",
+      "description": "the decision item path skips the create",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically",
+        "tests/m05/test_si_service_postgres.py::test_si_pi02_a_create_stage_refusal_rolls_the_decision_back",
+        "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity",
+        "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically": "L151:ValueError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi02_a_create_stage_refusal_rolls_the_decision_back": "L200:DID NOT RAISE WritebackFailed",
+        "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity": "L285:ValueError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event": "L108:ActionRefused",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local": "L108:ReadFailed",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read": "L108:ReadFailed"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically, tests/m05/test_si_service_postgres.py::test_si_pi02_a_create_stage_refusal_rolls_the_decision_back, tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity, tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event, tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local, tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V6",
+      "description": "the resolution is appended at contract v1",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[cancel_request]",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[no_reply]",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[reschedule_request]",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[unclear_reply]"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event": "L108:AppendFailed",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[cancel_request]": "L384:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[no_reply]": "L384:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[reschedule_request]": "L384:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[unclear_reply]": "L384:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event, tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[cancel_request], tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[no_reply], tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[reschedule_request], tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[unclear_reply]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V11",
+      "description": "settle creates through the ordinary (protected) create",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pa03_switch_off_settlement_and_reconcile_continue",
+        "tests/m05/test_si_service_postgres.py::test_si_pi02b_a_create_stage_refusal_rolls_the_settlement_back"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pa03_switch_off_settlement_and_reconcile_continue": "L108:ActivationRefused",
+        "tests/m05/test_si_service_postgres.py::test_si_pi02b_a_create_stage_refusal_rolls_the_settlement_back": "L184:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pa03_switch_off_settlement_and_reconcile_continue, tests/m05/test_si_service_postgres.py::test_si_pi02b_a_create_stage_refusal_rolls_the_settlement_back"
+      ],
+      "killed": false
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 42,
+    "problems": []
+  },
+  "restored": true,
+  "ok": false
+}

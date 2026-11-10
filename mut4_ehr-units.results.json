@@ -1,0 +1,94 @@
+{
+  "target": "src/haloflow/m05/simulated_ehr.py",
+  "target_sha256": "6725f269091bad4b5cc48ddd5c8ebc343c69332a028267297333d94c7f74b7e5",
+  "tests": "tests/m05/test_si_units.py",
+  "mutants": [
+    {
+      "id": "E1",
+      "description": "the deadline is never checked",
+      "declared_kills": [
+        "tests/m05/test_si_units.py::test_si_ul01_delayed_writer_after_the_deadline_changes_nothing",
+        "tests/m05/test_si_units.py::test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired",
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive",
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_ul01_delayed_writer_after_the_deadline_changes_nothing",
+        "tests/m05/test_si_units.py::test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired",
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive",
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_ul01_delayed_writer_after_the_deadline_changes_nothing": "L329:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired": "L347:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive": "L386:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards": "L422:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "E2",
+      "description": "a closed permit is not refused",
+      "declared_kills": [
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False]",
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True]"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False]",
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True]"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False]": "L447:AssertionError",
+        "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True]": "L447:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "E3",
+      "description": "the port time follows the raw clock",
+      "declared_kills": [
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards": "L422:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "E4",
+      "description": "the deadline boundary is exclusive",
+      "declared_kills": [
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive"
+      ],
+      "sites": {
+        "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive": "L383:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 66,
+    "problems": []
+  },
+  "restored": true,
+  "ok": true
+}

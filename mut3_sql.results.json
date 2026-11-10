@@ -1,0 +1,31 @@
+{
+  "target": "src/haloflow/m05/writeback_units.py",
+  "target_sha256": "083e342f663ad3b89fb205bac5a55e44f4453fa4c28da3482647b116207299ad",
+  "tests": "tests/m05/test_si_postgres.py",
+  "mutants": [
+    {
+      "id": "S5",
+      "description": "the no-baseline check is removed",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pm16_no_baseline_goes_to_staff_before_any_read_matters"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pm16_no_baseline_goes_to_staff_before_any_read_matters": "L300:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pm16_no_baseline_goes_to_staff_before_any_read_matters"
+      ],
+      "killed": false
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 67,
+    "problems": []
+  },
+  "restored": true,
+  "ok": false
+}

@@ -1,0 +1,184 @@
+{
+ "E1": [
+  "tests/m05/test_si_units.py::test_si_ul01_delayed_writer_after_the_deadline_changes_nothing",
+  "tests/m05/test_si_units.py::test_si_ul02_delayed_lock_acquisition_is_checked_when_the_lock_is_acquired",
+  "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive",
+  "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+ ],
+ "E2": [
+  "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[False]",
+  "tests/m05/test_si_units.py::test_si_ul07_old_spent_writer_after_reconcile_and_a_backwards_clock[True]"
+ ],
+ "E3": [
+  "tests/m05/test_si_units.py::test_si_ul06_port_time_never_goes_backwards"
+ ],
+ "E4": [
+  "tests/m05/test_si_units.py::test_si_ul04_deadline_boundary_is_inclusive"
+ ],
+ "W1": [
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-accepted]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-consume_unknown]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-not_sent]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-refused]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[raise-uncertain]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-accepted]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-consume_unknown]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-not_sent]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-refused]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[unknown-uncertain]"
+ ],
+ "W2": [
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-accepted]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-consume_unknown]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-not_sent]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-refused]",
+  "tests/m05/test_si_units.py::test_si_uw06_08_capture_failure_never_blocks_or_alters_the_send[refused-uncertain]"
+ ],
+ "W3": [
+  "tests/m05/test_si_units.py::test_si_uk04_write_timeout_is_attempted_and_never_retried"
+ ],
+ "W4": [
+  "tests/m05/test_si_units.py::test_si_uq01_reconcile_close_completes_before_the_read_starts",
+  "tests/m05/test_si_units.py::test_si_uq02_a_close_still_in_progress_holds_the_read_back",
+  "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]",
+  "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]",
+  "tests/m05/test_si_units.py::test_si_uq05_a_cancelled_close_propagates_with_no_read_and_no_settle"
+ ],
+ "W5": [
+  "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[hangs]",
+  "tests/m05/test_si_units.py::test_si_uq03_04_a_failed_close_means_no_read_and_no_settle[raises]"
+ ],
+ "W6": [
+  "tests/m05/test_si_units.py::test_si_uh01_a_hung_r1_is_a_failed_read_deferred_without_spend",
+  "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[300-2500]",
+  "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[450-3100]",
+  "tests/m05/test_si_units.py::test_si_ut02_conditional_worst_case_target_by_simulation[60-1540]",
+  "tests/m05/test_si_units.py::test_si_ut04_a_read_that_succeeds_on_retry_takes_the_normal_path"
+ ],
+ "W7": [
+  "tests/m05/test_si_units.py::test_si_uv01_no_sensitive_value_or_exception_text_is_logged"
+ ],
+ "W8": [
+  "tests/m05/test_si_units.py::test_si_us07_uk03_no_write_without_a_committed_spend[unknown-spend_unknown]"
+ ],
+ "S1": [
+  "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_in-skipped]",
+  "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_out-skipped]",
+  "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[positive-skipped]"
+ ],
+ "S2": [
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced]",
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_negative]",
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]",
+  "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]"
+ ],
+ "S3": [
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]",
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[start_moved_positive]",
+  "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[wrong_appt_positive]",
+  "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+ ],
+ "S4": [
+  "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline0-neutral]",
+  "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline1-neutral]",
+  "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+ ],
+ "S5": [
+  "tests/m05/test_si_postgres.py::test_si_pm16_no_baseline_goes_to_staff_before_any_read_matters"
+ ],
+ "S6": [
+  "tests/m05/test_si_postgres.py::test_si_py01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable"
+ ],
+ "S7": [
+  "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids"
+ ],
+ "S8": [
+  "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[-1]",
+  "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[1]"
+ ],
+ "S9": [
+  "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids",
+  "tests/m05/test_si_postgres.py::test_si_ps04_a_voided_permit_is_never_spendable",
+  "tests/m05/test_si_postgres.py::test_si_ps06_an_unspent_permit_whose_lease_lapsed_is_recovered_through_due"
+ ],
+ "S10": [
+  "tests/m05/test_si_postgres.py::test_si_pk01_reconcile_only_after_the_deadline_plus_margin"
+ ],
+ "S11": [
+  "tests/m05/test_si_postgres.py::test_si_pk02_deadline_passed_but_not_the_margin_is_not_reconcilable"
+ ],
+ "S12": [
+  "tests/m05/test_si_postgres.py::test_si_pl06_guards_use_clock_timestamp_not_the_transaction_start"
+ ],
+ "S13": [
+  "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]",
+  "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over1]",
+  "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over2]"
+ ],
+ "S14": [
+  "tests/m05/test_si_postgres.py::test_si_pc03_capture_after_consume_is_refused",
+  "tests/m05/test_si_postgres.py::test_si_pc06b_consume_first_refuses_the_capture"
+ ],
+ "S15": [
+  "tests/m05/test_si_postgres.py::test_si_pc02_a_profile_moved_after_prepare_is_refused"
+ ],
+ "S17": [
+  "tests/m05/test_si_postgres.py::test_si_pd01_directory_v3_stores_identity_and_always_bumps_the_version"
+ ],
+ "V1": [
+  "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[spend]",
+  "tests/m05/test_si_service_postgres.py::test_si_pp01_restart_between_steps_never_writes_twice[write]",
+  "tests/m05/test_si_service_postgres.py::test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order"
+ ],
+ "V2": [
+  "tests/m05/test_si_service_postgres.py::test_si_pq02_an_ordinary_refusal_never_falls_back_to_reconcile"
+ ],
+ "V3": [
+  "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically",
+  "tests/m05/test_si_service_postgres.py::test_si_pi02_a_create_stage_refusal_rolls_the_decision_back",
+  "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity",
+  "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event",
+  "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local",
+  "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+ ],
+ "V4": [
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[decide_item]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[event_metadata]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[fence]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_event]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[kind]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[other_tenant]",
+  "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item",
+  "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically",
+  "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity",
+  "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local",
+  "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+ ],
+ "V5": [
+  "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+ ],
+ "V6": [
+  "tests/m05/test_si_service_postgres.py::test_si_pi05_staff_claim_and_resolve_through_v3_with_a_contract_v2_event",
+  "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[cancel_request]",
+  "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[no_reply]",
+  "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[reschedule_request]",
+  "tests/m05/test_si_service_postgres.py::test_si_pi06_existing_kinds_still_work_through_v3[unclear_reply]"
+ ],
+ "V7": [
+  "tests/m05/test_si_service_postgres.py::test_si_pi06b_a_contract_v1_resolution_is_still_applied_through_v3"
+ ],
+ "V8": [
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]"
+ ],
+ "V9": [
+  "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[event_metadata]"
+ ],
+ "V10": [
+  "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item"
+ ],
+ "V11": [
+  "tests/m05/test_si_service_postgres.py::test_si_pa03_switch_off_settlement_and_reconcile_continue",
+  "tests/m05/test_si_service_postgres.py::test_si_pi02b_a_create_stage_refusal_rolls_the_settlement_back"
+ ]
+}

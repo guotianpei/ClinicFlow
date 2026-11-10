@@ -1,0 +1,327 @@
+{
+  "target": "src/haloflow/m05/writeback_units.py",
+  "target_sha256": "083e342f663ad3b89fb205bac5a55e44f4453fa4c28da3482647b116207299ad",
+  "tests": "tests/m05/test_si_postgres.py",
+  "mutants": [
+    {
+      "id": "S1",
+      "description": "a positive / checked-in R1 issues a permit",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_in-skipped]",
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_out-skipped]",
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[positive-skipped]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_in-skipped]": "L342:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_out-skipped]": "L342:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[positive-skipped]": "L342:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_in-skipped], tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[checked_out-skipped], tests/m05/test_si_postgres.py::test_si_pm02_04_already_confirmed_or_checked_in_is_a_quiet_skip[positive-skipped]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S2",
+      "description": "the replaced_by identity check is removed",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced]",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_negative]",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_negative]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]": "L312:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced], tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_negative], tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive], tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S3",
+      "description": "status judged before identity",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[start_moved_positive]",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[wrong_appt_positive]",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[start_moved_positive]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[wrong_appt_positive]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]": "L300:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[replaced_positive], tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[start_moved_positive], tests/m05/test_si_postgres.py::test_si_pm05_13_identity_and_schedule_changes_are_status_changed[wrong_appt_positive], tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S4",
+      "description": "a null provider / department is not could_not_verify",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline0-neutral]",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline1-neutral]",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline0-neutral]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline1-neutral]": "L300:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]": "L300:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline0-neutral], tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline1-neutral], tests/m05/test_si_postgres.py::test_si_pm15_a_null_identity_baseline_cannot_be_verified[baseline2-positive]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S5",
+      "description": "the no-baseline check is removed",
+      "declared_kills": [],
+      "applied": false,
+      "occurrences": 0,
+      "killed": false,
+      "problems": [
+        "old text occurs 0 times"
+      ]
+    },
+    {
+      "id": "S6",
+      "description": "the first retry delay is 300 s",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_py01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_py01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable": "L507:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_py01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S7",
+      "description": "spend ignores the lease",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids": "L548:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S8",
+      "description": "spend ignores the issued fence and the op fence",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[-1]",
+        "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[1]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[-1]": "L538:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[1]": "L538:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[-1], tests/m05/test_si_postgres.py::test_si_ps02_a_stale_or_future_fence_cannot_spend[1]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S9",
+      "description": "a check claim does not void a live unspent permit",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids",
+        "tests/m05/test_si_postgres.py::test_si_ps04_a_voided_permit_is_never_spendable",
+        "tests/m05/test_si_postgres.py::test_si_ps06_an_unspent_permit_whose_lease_lapsed_is_recovered_through_due"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids": "L551:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_ps04_a_voided_permit_is_never_spendable": "L565:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_ps06_an_unspent_permit_whose_lease_lapsed_is_recovered_through_due": "L589:UniqueViolation"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids, tests/m05/test_si_postgres.py::test_si_ps04_a_voided_permit_is_never_spendable, tests/m05/test_si_postgres.py::test_si_ps06_an_unspent_permit_whose_lease_lapsed_is_recovered_through_due"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S10",
+      "description": "a spent permit is not PERMIT_SPENT on the check claim",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pk01_reconcile_only_after_the_deadline_plus_margin"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pk01_reconcile_only_after_the_deadline_plus_margin": "L616:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pk01_reconcile_only_after_the_deadline_plus_margin"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S11",
+      "description": "the reconcile margin is removed",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pk02_deadline_passed_but_not_the_margin_is_not_reconcilable"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pk02_deadline_passed_but_not_the_margin_is_not_reconcilable": "L645:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pk02_deadline_passed_but_not_the_margin_is_not_reconcilable"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S12",
+      "description": "the reconcile guard reads now()",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pl06_guards_use_clock_timestamp_not_the_transaction_start"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pl06_guards_use_clock_timestamp_not_the_transaction_start": "L742:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pl06_guards_use_clock_timestamp_not_the_transaction_start"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S13",
+      "description": "settle: any positive read is observed_positive",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over1]",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over2]"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0]": "L312:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over1]": "L312:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over2]": "L312:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over0], tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over1], tests/m05/test_si_postgres.py::test_si_pr02_positive_but_changed_is_never_observed_positive[over2]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S14",
+      "description": "capture ignores consumed_at",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pc03_capture_after_consume_is_refused",
+        "tests/m05/test_si_postgres.py::test_si_pc06b_consume_first_refuses_the_capture"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pc03_capture_after_consume_is_refused": "L209:AssertionError",
+        "tests/m05/test_si_postgres.py::test_si_pc06b_consume_first_refuses_the_capture": "L282:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pc03_capture_after_consume_is_refused, tests/m05/test_si_postgres.py::test_si_pc06b_consume_first_refuses_the_capture"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S15",
+      "description": "capture ignores the source version",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pc02_a_profile_moved_after_prepare_is_refused"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pc02_a_profile_moved_after_prepare_is_refused": "L200:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pc02_a_profile_moved_after_prepare_is_refused"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S16",
+      "description": "discovery takes every recorded reply class",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 0,
+      "failed": [],
+      "sites": {},
+      "problems": [
+        "exit 0, expected 1 (completed run with test failures)",
+        "session exitstatus 0",
+        "no assertion-level failure"
+      ],
+      "killed": false
+    },
+    {
+      "id": "S17",
+      "description": "directory v3 does not update provider_ref",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_postgres.py::test_si_pd01_directory_v3_stores_identity_and_always_bumps_the_version"
+      ],
+      "sites": {
+        "tests/m05/test_si_postgres.py::test_si_pd01_directory_v3_stores_identity_and_always_bumps_the_version": "L98:AssertionError"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_postgres.py::test_si_pd01_directory_v3_stores_identity_and_always_bumps_the_version"
+      ],
+      "killed": false
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 67,
+    "problems": []
+  },
+  "restored": true,
+  "ok": false
+}

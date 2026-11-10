@@ -1,0 +1,134 @@
+{
+  "target": "src/haloflow/m05/writeback_units.py",
+  "target_sha256": "083e342f663ad3b89fb205bac5a55e44f4453fa4c28da3482647b116207299ad",
+  "tests": "tests/m05/test_si_service_postgres.py",
+  "mutants": [
+    {
+      "id": "V4",
+      "description": "create v2 does not link item_id onto the op",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[decide_item]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[fence]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_event]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[kind]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[other_tenant]",
+        "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item",
+        "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically",
+        "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[decide_item]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[fence]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_event]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[kind]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[other_tenant]": "L754:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item": "L803:DID NOT RAISE Exception",
+        "tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically": "L156:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity": "L286:AssertionError",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local": "L108:ReadFailed",
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read": "L108:ReadFailed"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[decide_item], tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[fence], tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_event], tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit], tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[kind], tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[other_tenant], tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item, tests/m05/test_si_service_postgres.py::test_si_pi01_an_item_decision_is_one_event_and_one_item_atomically, tests/m05/test_si_service_postgres.py::test_si_pi03b_a_real_lost_acknowledgement_keeps_one_identity, tests/m05/test_si_service_postgres.py::test_si_pi07_the_reason_read_is_authorized_narrow_and_tenant_local, tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V5",
+      "description": "the reason read skips its op binding",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read": "L485:DID NOT RAISE ReadFailed"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V7",
+      "description": "apply v3 refuses a contract v1 resolution",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pi06b_a_contract_v1_resolution_is_still_applied_through_v3"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pi06b_a_contract_v1_resolution_is_still_applied_through_v3": "L108:ActionRefused"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pi06b_a_contract_v1_resolution_is_still_applied_through_v3"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V8",
+      "description": "the recovery create accepts any live spent permit",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]": "L743:DID NOT RAISE Exception"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pa05_the_recovery_create_refuses_anything_but_its_own_settlement[foreign_permit]"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V9",
+      "description": "the recovery create skips the canonical-event check",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 0,
+      "failed": [],
+      "sites": {},
+      "problems": [
+        "exit 0, expected 1 (completed run with test failures)",
+        "session exitstatus 0",
+        "no assertion-level failure"
+      ],
+      "killed": false
+    },
+    {
+      "id": "V10",
+      "description": "the recovery create does not require an unlinked op",
+      "declared_kills": [],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item"
+      ],
+      "sites": {
+        "tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item": "L803:DID NOT RAISE Exception"
+      },
+      "problems": [
+        "unrelated failure(s): tests/m05/test_si_service_postgres.py::test_si_pa06_repeated_and_concurrent_recovery_create_one_item"
+      ],
+      "killed": false
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 42,
+    "problems": []
+  },
+  "restored": true,
+  "ok": false
+}
