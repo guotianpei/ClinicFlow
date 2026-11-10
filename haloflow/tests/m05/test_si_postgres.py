@@ -287,11 +287,29 @@ def _decided(install: si.SIInstall, read_over: dict[str, Any] | None = None, *,
 
 
 def _assert_item(install: si.SIInstall, result: dict[str, Any], wb: str, reason: str) -> None:
+    """A DECISION (before any permit) that raised the staff item: no permit ever issued."""
+
     assert (result["outcome"], result["reason"]) == ("item", reason), result
     uuid.UUID(result["event_id"])
     op = si.wb_op(install, wb)
     assert (op["state"], op["reason"], op["event_id"]) == ("item", reason, result["event_id"])
-    assert si.permit(install, wb) is None
+    assert si.permits(install, wb) == []
+
+
+def _assert_settled_item(install: si.SIInstall, result: dict[str, Any], wb: str, reason: str,
+                         spent: dict[str, Any]) -> None:
+    """A SETTLEMENT (after the spend) that raised the staff item: the spent permit is KEPT
+    with the same identity and timestamps (the no-repeat proof), never deleted."""
+
+    assert (result["outcome"], result["reason"]) == ("item", reason), result
+    uuid.UUID(result["event_id"])
+    op = si.wb_op(install, wb)
+    assert (op["state"], op["reason"], op["event_id"]) == ("item", reason, result["event_id"])
+    after = si.permit(install, wb)
+    assert after is not None
+    for key in ("permit_id", "issued_fence", "apply_deadline", "spent_at", "spent_fence",
+                "voided_at", "r1_digest"):
+        assert after[key] == spent[key], key
 
 
 def test_si_pm01_neutral_matching_read_issues_one_permit(si_install: si.SIInstall) -> None:
@@ -436,7 +454,7 @@ def test_si_pt01_r1_failures_defer_1_5_15_minutes_then_raise_ehr_unreachable(
             delay = (datetime.fromisoformat(op["next_at"]) - before).total_seconds()
             assert expected[attempt - 1] - 2 <= delay <= expected[attempt - 1] + 2
             assert si.claim(install, wb)["outcome"] == "not_due"
-            si.age(install, wb, expected[attempt - 1] + 1)
+            si.age(install, wb, lease=si.LEASE_S + 1, next_at=expected[attempt - 1] + 1)
         else:
             _assert_item(install, decided, wb, "ehr_unreachable")
 
@@ -474,24 +492,25 @@ def test_si_ps03_lease_expired_before_spend_then_the_next_claim_voids(
         si_install: si.SIInstall) -> None:
     install = _ready(si_install)
     _flow, wb, fence, permit = si.permitted(install)
-    si.age(install, wb, si.LEASE_S + 1)
+    si.age(install, wb, lease=si.LEASE_S + 1)
     assert si.spend(install, wb, fence, permit)["outcome"] == "refused"
     again = si.claim(install, wb)
     assert again["outcome"] == "claimed" and int(again["fence"]) == fence + 1, again
-    row = si.permit(install, wb)
-    assert row is not None and row["voided_at"] is not None and row["spent_at"] is None
+    assert si.permit(install, wb) is None  # no live permit after the void
+    (old,) = si.permits(install, wb)
+    assert (old["permit_id"], old["spent_at"]) == (permit, None) and old["voided_at"]
     assert si.wb_op(install, wb)["state"] == "eligible_check"
 
 
 def test_si_ps04_a_voided_permit_is_never_spendable(si_install: si.SIInstall) -> None:
     install = _ready(si_install)
     _flow, wb, fence, permit = si.permitted(install)
-    si.age(install, wb, si.LEASE_S + 1)
+    si.age(install, wb, lease=si.LEASE_S + 1)
     new_fence = int(si.claim(install, wb)["fence"])
     assert si.spend(install, wb, new_fence, permit)["outcome"] == "refused"
     assert si.spend(install, wb, fence, permit)["outcome"] == "refused"
-    row = si.permit(install, wb)
-    assert row is not None and row["spent_at"] is None
+    (old,) = si.permits(install, wb)
+    assert old["spent_at"] is None and old["voided_at"] is not None
 
 
 def test_si_ps05_an_op_that_is_not_permitted_cannot_spend(si_install: si.SIInstall) -> None:
@@ -502,6 +521,31 @@ def test_si_ps05_an_op_that_is_not_permitted_cannot_spend(si_install: si.SIInsta
     assert si.spend(install, wb, fence, si.new_uuid())["outcome"] == "refused"
 
 
+def test_si_ps06_an_unspent_permit_whose_lease_lapsed_is_recovered_through_due(
+        si_install: si.SIInstall) -> None:
+    """due -> claim (voids the old permit) -> a FRESH decide -> a NEW permit -> spend. The
+    old token stays refused for ever; the op is never stuck and no old token returns."""
+
+    install = _ready(si_install)
+    flow, wb, fence, old_permit = si.permitted(install)
+    assert si.due(install, wb) == []  # still leased
+    si.age(install, wb, lease=si.LEASE_S + 1)
+    assert si.due(install, wb) == ["check"]
+    claimed = si.claim(install, wb)
+    assert (claimed["outcome"], int(claimed["fence"])) == ("claimed", fence + 1), claimed
+    new_fence = int(claimed["fence"])
+    fresh = si.decide(install, wb, new_fence, si.ehr_read(install, flow))
+    assert fresh["outcome"] == "permitted" and fresh["permit_id"] != old_permit, fresh
+    assert si.spend(install, wb, new_fence, old_permit)["outcome"] == "refused"
+    spent = si.spend(install, wb, new_fence, fresh["permit_id"])
+    assert spent["outcome"] == "spent", spent
+    history = si.permits(install, wb)
+    assert [p["permit_id"] for p in history] == [old_permit, fresh["permit_id"]]
+    assert history[0]["voided_at"] is not None and history[0]["spent_at"] is None
+    assert history[1]["voided_at"] is None and history[1]["spent_fence"] == new_fence
+    assert si.spend(install, wb, fence, old_permit)["outcome"] == "refused"
+
+
 # --- P-K: a spent, unsettled permit is reconcile-only ------------------------------------------
 
 
@@ -509,15 +553,18 @@ def test_si_pk01_reconcile_only_after_the_deadline_plus_margin(si_install: si.SI
     install = _ready(si_install)
     _flow, wb, fence, permit = si.permitted(install)
     assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
-    si.age(install, wb, si.LEASE_S + 1)  # the writer's lease lapsed; deadline not + margin
-    due = si.call(install, "due", limit=100)
-    assert [o for o in due["ops"] if o["wb_op_id"] == wb] == []
+    si.age(install, wb, lease=si.LEASE_S + 1)  # the lease lapsed; deadline + margin has not
+    row = si.permit(install, wb)
+    assert row is not None
+    horizon = datetime.fromisoformat(row["apply_deadline"]) + timedelta(
+        seconds=si.RECONCILE_MARGIN_S)
+    assert horizon > si.db_now(install)  # explicit: still before the reconcile horizon
+    assert si.due(install, wb) == []
     assert si.claim(install, wb)["outcome"] == "not_claimable"
     early = si.call(install, "claim_reconcile", wb_op_id=wb, lease_seconds=si.LEASE_S)
     assert early["outcome"] == "not_claimable", early
-    si.age(install, wb, si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S)
-    due = si.call(install, "due", limit=100)
-    assert [o["phase"] for o in due["ops"] if o["wb_op_id"] == wb] == ["reconcile"]
+    si.age(install, wb, deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+    assert si.due(install, wb) == ["reconcile"]
     assert si.claim(install, wb)["outcome"] == "not_claimable"  # never a second check/write
     late = si.call(install, "claim_reconcile", wb_op_id=wb, lease_seconds=si.LEASE_S)
     assert (late["outcome"], late["phase"], late["permit_id"]) == ("claimed", "reconcile",
@@ -533,6 +580,12 @@ def _spent(install: si.SIInstall) -> tuple[dict[str, str], str, int, str]:
     flow, wb, fence, permit = si.permitted(install)
     assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
     return flow, wb, fence, permit
+
+
+def _spent_row(install: si.SIInstall, wb: str) -> dict[str, Any]:
+    row = si.permit(install, wb)
+    assert row is not None and row["spent_at"] is not None
+    return row
 
 
 def test_si_pr01_positive_fully_matching_read_is_observed_positive(
@@ -553,9 +606,10 @@ def test_si_pr02_positive_but_changed_is_never_observed_positive(
         si_install: si.SIInstall, over: dict[str, Any]) -> None:
     install = _ready(si_install)
     flow, wb, fence, permit = _spent(install)
+    spent = _spent_row(install, wb)
     result = si.settle(install, wb, fence, permit, "applied",
                        si.ehr_read(install, flow, "positive", **over))
-    _assert_item(install, result, wb, "status_changed")
+    _assert_settled_item(install, result, wb, "status_changed", spent)
 
 
 @pytest.mark.parametrize(("write_outcome", "read_status"), [("unknown", None),
@@ -566,16 +620,18 @@ def test_si_pr03_no_positive_read_could_not_verify(si_install: si.SIInstall,
                                                    read_status: str | None) -> None:
     install = _ready(si_install)
     flow, wb, fence, permit = _spent(install)
+    spent = _spent_row(install, wb)
     read = None if read_status is None else si.ehr_read(install, flow, read_status)
     result = si.settle(install, wb, fence, permit, write_outcome, read)
-    _assert_item(install, result, wb, "could_not_verify")
+    _assert_settled_item(install, result, wb, "could_not_verify", spent)
 
 
 def test_si_pr04_a_stale_writer_cannot_settle_over_the_reconciler(
         si_install: si.SIInstall) -> None:
     install = _ready(si_install)
     flow, wb, fence, permit = _spent(install)
-    si.age(install, wb, si.LEASE_S + si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
+    si.age(install, wb, lease=si.LEASE_S + 1,
+           deadline=si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S + 1)
     reconcile = si.call(install, "claim_reconcile", wb_op_id=wb, lease_seconds=si.LEASE_S)
     assert reconcile["outcome"] == "claimed"
     b_fence = int(reconcile["fence"])
@@ -592,16 +648,22 @@ def test_si_pr04_a_stale_writer_cannot_settle_over_the_reconciler(
 
 def test_si_pl06_guards_use_clock_timestamp_not_the_transaction_start(
         si_install: si.SIInstall) -> None:
-    """Inside ONE open transaction whose start predates the deadline, a reconcile claim
-    made after the deadline + margin has passed in wall time succeeds only if the guard
-    reads clock_timestamp(): now() would still be the transaction start."""
+    """One open transaction starts BEFORE the reconcile horizon; the call is made after the
+    horizon has passed in wall time. It is claimed only if the guard reads
+    clock_timestamp(); now() (the transaction start) is still before the horizon. Both
+    orderings are asserted explicitly: tx start < horizon < call time."""
 
     install = _ready(si_install)
-    _flow, wb, fence, permit = _spent(install)
-    si.age(install, wb, si.LEASE_S + si.WRITE_TIMEOUT_S + si.RECONCILE_MARGIN_S - 2)
+    _flow, wb, _fence, _permit = _spent(install)
+    si.age(install, wb, lease=si.LEASE_S + 1)
     with sa.runtime_conn(install) as conn, conn.transaction():
-        conn.execute("SELECT 1")  # the transaction (and now()) starts here
-        time.sleep(3)
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)", (install.tenant_id,))
+        tx_start = conn.execute("SELECT now()").fetchone()[0]  # type: ignore[index]
+        horizon = tx_start + timedelta(seconds=1.5)
+        si.set_deadline(install, wb, horizon - timedelta(seconds=si.RECONCILE_MARGIN_S))
+        time.sleep(2.5)
+        wall, tx_now = conn.execute("SELECT clock_timestamp(), now()").fetchone()  # type: ignore[misc]
+        assert tx_now == tx_start < horizon < wall
         result = sa.call_in(conn, install, si.FN["claim_reconcile"],
                             si.cmd(wb_op_id=wb, lease_seconds=si.LEASE_S))
     assert result["outcome"] == "claimed", result
@@ -620,3 +682,26 @@ def test_si_pg01_runtime_executes_every_si_function_and_touches_no_si_table(
             found = sa.admin(install, "SELECT has_table_privilege(%s, %s, %s)",
                              (sa.RUNTIME, f"{install.schema}.{table}", privilege))
             assert found[0][0] is False, (table, privilege)
+
+
+def test_si_pg02_each_rebound_key_has_exactly_one_binding_to_the_si_function() -> None:
+    """The real S-I TEST catalogue builds (no duplicate key from any contributing part)
+    and each rebound key resolves to its S-I function; nothing else binds those
+    functions' predecessors."""
+
+    from haloflow.m05.writeback_statements import SI_REBOUND
+
+    catalog = si.si_catalog().catalog
+    expected = {"m05.intake.directory": "m05_directory_v3",
+                "m05.followup.create": "m05_create_item_v2",
+                "m05.followup.prepare": "m05_prepare_action_v3",
+                "m05.followup.apply": "m05_apply_action_v3"}
+    assert set(SI_REBOUND) == set(expected)
+    registered = catalog.keys()  # a tuple of every registered key
+    for key, function in expected.items():
+        assert registered.count(key) == 1
+        assert f"{function}(" in catalog.resolve(key).query, key
+    for key in registered:
+        query = catalog.resolve(key).query
+        for closed in si.CLOSED_FUNCTIONS:
+            assert f"{closed}(" not in query, (key, closed)

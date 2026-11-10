@@ -34,9 +34,12 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   'observed_positive', 'item', 'skipped'), fence integer, lease_until, r1_failures,
   next_at, reason (one of REASONS or NULL), event_id uuid UNIQUE NULL, item_id uuid NULL,
   created_at, updated_at).
-  m05_writeback_permits(wb_op_id uuid PK, permit_id uuid UNIQUE, issued_fence,
-  r1_digest bytea (32 bytes), apply_deadline NULL, spent_at NULL, spent_fence NULL,
-  voided_at NULL, closed_at NULL).
+  m05_writeback_permits(permit_id uuid PK, wb_op_id uuid -> m05_writeback_ops,
+  issued_fence, r1_digest bytea (32 bytes), apply_deadline NULL, spent_at NULL,
+  spent_fence NULL, voided_at NULL, closed_at NULL, created_at), with a partial UNIQUE
+  index on (wb_op_id) WHERE voided_at IS NULL: AT MOST ONE LIVE permit per op. A voided
+  permit row is KEPT (history) and is never spendable again; a later decide may issue a
+  NEW permit (new permit_id) for the same op. A permit is never deleted or un-voided.
 - t080 `m05_writeback_capture_baseline` {op_id, attempt_id} -> {schema_version,
   outcome: "captured" | "refused", code}; the t071 lock order (chain, then ticket row FOR
   UPDATE); refuses unless op claimed, ticket.attempt_id = attempt, consumed_at NULL, profile
@@ -45,12 +48,15 @@ SI_ACL_AMENDMENTS), TEST target 92, all additive, t001-t075 byte-unchanged:
   inbound reply with reply_class 'confirm' and decision 'recorded' matched to a reminder of
   an outbound op (ON CONFLICT DO NOTHING); never for any other reply class.
 - t082 `m05_writeback_due` {limit} -> {schema_version, ops: [{wb_op_id, phase}]}, phase
-  "check" (pending / eligible_check with next_at <= now and lease free) or "reconcile"
-  (spent, unsettled, clock_timestamp() > apply_deadline + RECONCILE_MARGIN_S); read only.
+  "check" (pending, or eligible_check / permitted whose lease has expired, with next_at
+  NULL or <= clock_timestamp(): a permit not spent before its lease lapsed is recovered
+  through due -> claim (void) -> a fresh decide -> a new permit) or "reconcile" (spent,
+  unsettled, clock_timestamp() > apply_deadline + RECONCILE_MARGIN_S); read only.
 - t083 `m05_writeback_claim` {wb_op_id, lease_seconds} -> {schema_version, outcome:
   "claimed" | "not_due" | "not_claimable", fence, phase: "check", appointment_ref}; the
-  check phase only; fence := fence + 1; an unspent permit from an older fence is VOIDED in
-  the same transaction.
+  check phase only (pending, eligible_check or permitted, lease expired or free); fence :=
+  fence + 1, state := eligible_check; the live unspent permit from an older fence is
+  VOIDED (voided_at) in the same transaction; a spent permit makes the op not_claimable.
 - t084 `m05_writeback_claim_reconcile` {wb_op_id, lease_seconds} -> {..., phase:
   "reconcile", permit_id}; only a spent, unsettled permit past apply_deadline + margin in
   clock_timestamp(); sets the permit's closed_at.
@@ -218,14 +224,14 @@ def si_catalog() -> Any:
     def drop(part: Any) -> Any:
         return MappingProxyType({k: v for k, v in part.items() if k not in rebound})
 
-    approved = tuple(drop(part) for part in APPROVED_MODULE_STATEMENTS)
     sa_part = MappingProxyType({k: v for k, v in sh.sa_statements_without_inbound().items()
                                 if k != DIRECTORY_KEY})
     sh_part = MappingProxyType({k: v for k, v in sh.sh_statements().items()
                                 if k not in sh2.CLOSED_KEYS()})
-    return build_statement_catalog(*approved, sa_part, sb.sb_statements(), sh_part,
-                                   sh.sh_inbound_statements(), sh2.sh2_statements(),
-                                   sh3.sh3_statements(), SI_REBOUND, SI_STATEMENTS,
+    parts = (*APPROVED_MODULE_STATEMENTS, sa_part, sb.sb_statements(), sh_part,
+             sh.sh_inbound_statements(), sh2.sh2_statements(), sh2.sh2_directory_statements(),
+             sh3.sh3_statements())
+    return build_statement_catalog(*(drop(part) for part in parts), SI_REBOUND, SI_STATEMENTS,
                                    activation_protected=(sh2.protected() | sh3.sh3_protected()
                                                          | frozenset(SI_PROTECTED)))
 
@@ -469,17 +475,34 @@ def permitted(install: sa.SAInstall, **kw: Any) -> tuple[dict[str, str], str, in
     return flow, wb, fence, str(result["permit_id"])
 
 
-def age(install: sa.SAInstall, wb_op_id: str, seconds: int) -> None:
-    """FIXTURE time travel: move the op's lease, next_at and permit times `seconds` into the
-    past (the H1 P08 pattern), so database-clock guards see them as elapsed."""
+def age(install: sa.SAInstall, wb_op_id: str, *, lease: int = 0, next_at: int = 0,
+        deadline: int = 0) -> None:
+    """FIXTURE time travel, each clock INDEPENDENTLY (the H1 P08 pattern): move the op's
+    lease_until by `lease` seconds, its next_at by `next_at`, and the live permit's
+    apply_deadline and spent_at by `deadline`, into the past."""
 
-    shift = f"interval '{int(seconds)} seconds'"
-    sa.admin(install, sa.q(install, "UPDATE {s}.m05_writeback_ops SET lease_until = lease_until"
-                                    f" - {shift}, next_at = next_at - {shift}"
-                                    " WHERE wb_op_id = %s::uuid"), (wb_op_id,))
-    sa.admin(install, sa.q(install, "UPDATE {s}.m05_writeback_permits SET apply_deadline ="
-                                    f" apply_deadline - {shift}, spent_at = spent_at - {shift}"
-                                    " WHERE wb_op_id = %s::uuid"), (wb_op_id,))
+    if lease or next_at:
+        sa.admin(install, sa.q(install, "UPDATE {s}.m05_writeback_ops SET lease_until ="
+                                        " lease_until - make_interval(secs => %s),"
+                                        " next_at = next_at - make_interval(secs => %s)"
+                                        " WHERE wb_op_id = %s::uuid"),
+                 (lease, next_at, wb_op_id))
+    if deadline:
+        sa.admin(install, sa.q(install, "UPDATE {s}.m05_writeback_permits SET apply_deadline ="
+                                        " apply_deadline - make_interval(secs => %s),"
+                                        " spent_at = spent_at - make_interval(secs => %s)"
+                                        " WHERE wb_op_id = %s::uuid AND voided_at IS NULL"),
+                 (deadline, deadline, wb_op_id))
+
+
+def set_deadline(install: sa.SAInstall, wb_op_id: str, instant: datetime) -> None:
+    """FIXTURE: put the live permit's apply_deadline at an exact instant (and spent_at
+    WRITE_TIMEOUT_S before it)."""
+
+    sa.admin(install, sa.q(install, "UPDATE {s}.m05_writeback_permits SET apply_deadline = %s,"
+                                    " spent_at = %s - make_interval(secs => %s)"
+                                    " WHERE wb_op_id = %s::uuid AND voided_at IS NULL"),
+             (instant, instant, WRITE_TIMEOUT_S, wb_op_id))
 
 
 # --- observation helpers (admin, FIXTURE reads only) -----------------------------------------
@@ -507,8 +530,26 @@ def wb_ops(install: sa.SAInstall) -> list[dict[str, Any]]:
 
 
 def permit(install: sa.SAInstall, wb_op_id: str) -> dict[str, Any] | None:
-    found = rows(install, "m05_writeback_permits", "wb_op_id = %s::uuid", (wb_op_id,))
+    """The op's LIVE (not voided) permit, if any."""
+
+    found = rows(install, "m05_writeback_permits",
+                 "wb_op_id = %s::uuid AND voided_at IS NULL", (wb_op_id,))
+    assert len(found) <= 1, found
     return found[0] if found else None
+
+
+def permits(install: sa.SAInstall, wb_op_id: str) -> list[dict[str, Any]]:
+    """Every permit row of the op, voided history included, oldest first."""
+
+    return rows(install, "m05_writeback_permits",
+                "wb_op_id = %s::uuid ORDER BY created_at, permit_id", (wb_op_id,))
+
+
+def due(install: sa.SAInstall, wb_op_id: str) -> list[str]:
+    """The phases `due` lists for this op (empty: not due)."""
+
+    result = call(install, "due", limit=1000)
+    return [o["phase"] for o in result["ops"] if o["wb_op_id"] == wb_op_id]
 
 
 def check_events(install: sa.SAInstall) -> list[dict[str, Any]]:
