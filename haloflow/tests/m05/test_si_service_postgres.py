@@ -27,6 +27,7 @@ Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
   an old-kind item, an unknown item and another tenant's item are ITEM_NOT_FOUND; no
   read capability -> refused (pin 2). P-I07b a check item whose source event is not its
   check event (same tenant, FIXTURE) -> ITEM_NOT_FOUND, nothing of that event returned.
+  P-I07c the source is ANOTHER op's check event -> ITEM_NOT_FOUND (the op binding).
 - P-I08 [R11] nothing is sent to the patient: no sender call, no outbound op.
 - P-A01..A03 [R12] activation off: discover / check claim / decide / spend refused; a
   permit spent before the switch went off completes its single call; settlement and
@@ -46,7 +47,8 @@ Rows (requirement in brackets, packet v1 numbering; Codex pins in parentheses):
   tenant's equivalent ids succeed (same-tenant controls).
 - P-Q01 [R8/R9] an ACTIVE clinic: a restarted worker on a spent, unsettled op goes check
   claim (not_claimable PERMIT_SPENT) -> reconcile claim -> close -> read -> settle, in
-  that measured order.
+  that measured order. P-Q02 any other not_claimable (a terminal op) is returned as is:
+  no reconcile statement.
 - P-P01 [R15] restart between every step resumes and never writes twice.
 - P-V01 [R16] the check event metadata is exactly {wb_op_id, appointment_ref, reason}; no
   phone, name, provider or department in events, items or logs.
@@ -454,6 +456,37 @@ def test_si_pi07b_a_check_item_with_a_foreign_source_event_is_not_read(
                 await _b(staff.reason(uuid.UUID(result["item_id"])))
             assert failed.value.reason_code == "ITEM_NOT_FOUND"
             assert "reschedule" not in repr(failed.value)
+
+    asyncio.run(body())
+
+
+def test_si_pi07c_a_check_item_bound_to_another_ops_check_event_is_not_read(
+        si_install: si.SIInstall) -> None:
+    """The op binding of the reason read (mutation V5): the source is a CHECK event of
+    the same type and contract, but another op's; the read refuses."""
+
+    install = _begin(si_install)
+
+    async def body() -> None:
+        from haloflow.m05.service import ReadFailed
+
+        async with si.runtime(install) as rt:
+            _fa, _wa, mine = await _item_decision(rt, install)
+            _fb, _wb, theirs = await _item_decision(rt, install, status="unknown")
+            _fc, _wc, control = await _item_decision(rt, install)
+            update = sa.q(install, "UPDATE {s}.m05_followup_items SET source_event_id = %s"
+                                   " WHERE item_id = %s")
+            parked = si.new_uuid()  # FIXTURE: swap the two items' sources (unique key)
+            sa.admin(install, update, (parked, mine["item_id"]))
+            sa.admin(install, update, (mine["event_id"], theirs["item_id"]))
+            sa.admin(install, update, (theirs["event_id"], mine["item_id"]))
+            staff = si.StaffChain(install, rt)
+            for item in (mine, theirs):
+                with pytest.raises(ReadFailed) as failed:
+                    await _b(staff.reason(uuid.UUID(item["item_id"])))
+                assert failed.value.reason_code == "ITEM_NOT_FOUND"
+            assert (await _b(staff.reason(uuid.UUID(control["item_id"]))))["reason"] \
+                == "declined_or_unknown"  # control: an unswapped item still reads
 
     asyncio.run(body())
 
@@ -945,6 +978,26 @@ def test_si_pq01_active_clinic_restart_reconciles_in_the_measured_order(
             keys = [k for k in spy.ordered_keys() if k.startswith("m05.writeback.")]
             assert keys == [si.KEYS["claim"], si.KEYS["claim_reconcile"], si.KEYS["settle"]]
             assert order == ["close", "read"] and ehr.writes == []
+
+    asyncio.run(body())
+
+
+def test_si_pq02_an_ordinary_refusal_never_falls_back_to_reconcile(
+        si_install: si.SIInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The claim fallback is ONLY for PERMIT_SPENT / activation (mutation V2): a terminal
+    op's not_claimable is returned as is, with no reconcile statement."""
+
+    install = _begin(si_install)
+
+    async def body() -> None:
+        async with si.runtime(install) as rt:
+            _flow, wb, _result = await _item_decision(rt, install)
+            svc, ctx = si.wb_service(rt), await si.wb_context(rt, install)
+            spy = si.spy_statements(monkeypatch)
+            claimed = await _b(svc.claim(ctx, wb))
+            assert (claimed["outcome"], claimed["code"]) == ("not_claimable", "TERMINAL")
+            keys = [k for k in spy.ordered_keys() if k.startswith("m05.writeback.")]
+            assert keys == [si.KEYS["claim"]], keys
 
     asyncio.run(body())
 

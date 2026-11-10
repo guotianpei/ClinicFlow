@@ -494,6 +494,11 @@ BEGIN""" + _TENANT + _keys("limit") + _int_field("limit") + _MALFORMED + _ATTRIB
                AND r.reminder_id IS NOT NULL
                AND NOT EXISTS (SELECT 1 FROM {schema}.m05_writeback_ops AS w
                                 WHERE w.inbound_id = r.inbound_id)
+               -- an op already represented (an earlier confirm of the same reminder) is
+               -- excluded BEFORE the limit, so a duplicate never starves later ops
+               AND NOT EXISTS (SELECT 1 FROM {schema}.m05_writeback_ops AS w
+                                 JOIN {schema}.m05_outbound_ops AS o2 ON o2.op_id = w.op_id
+                                WHERE o2.reminder_id = r.reminder_id)
              ORDER BY r.received_at, r.inbound_id LIMIT v_limit) AS r
       JOIN {schema}.m05_outbound_ops AS o ON o.reminder_id = r.reminder_id
      ORDER BY r.received_at, r.inbound_id
@@ -671,6 +676,9 @@ BEGIN""" + _TENANT + _keys("wb_op_id", "fence", "read", "read_failed")
     SELECT * INTO v_b FROM {schema}.m05_writeback_baselines AS b WHERE b.op_id = v_w.op_id;
     IF NOT FOUND THEN
         v_reason := 'no_baseline';
+    ELSIF v_b.confirmation IS NULL OR v_b.confirmation = 'unknown' THEN
+        -- known from the baseline alone: immediate, even when R1 failed (WB2 precedence)
+        v_reason := 'declined_or_unknown';
     ELSIF v_failed THEN
         v_delay := CASE v_w.r1_failures WHEN 0 THEN @@D1@@ WHEN 1 THEN @@D2@@
                                         WHEN 2 THEN @@D3@@ ELSE NULL END;
@@ -689,8 +697,6 @@ BEGIN""" + _TENANT + _keys("wb_op_id", "fence", "read", "read_failed")
            SET r1_failures = w.r1_failures OPERATOR(pg_catalog.+) 1
          WHERE w.wb_op_id = v_wb;
         v_reason := 'ehr_unreachable';
-    ELSIF v_b.confirmation IS NULL OR v_b.confirmation = 'unknown' THEN
-        v_reason := 'declined_or_unknown';
     ELSE
 """ + _IDENTITY.replace("\n    ", "\n        ") + r"""
         IF v_reason IS NULL THEN

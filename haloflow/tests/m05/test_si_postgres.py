@@ -15,7 +15,9 @@ Rows (requirement in brackets, packet v1 numbering):
   baseline > baseline unknown > identity / schedule / replacement / cancelled >
   provider or department baseline null > status (Codex pin 5: a replaced or wrong
   appointment with a positive status is never observed_positive or skipped).
-- P-M20 [SI-R5] persisted NO / STOP / ambiguous replies never create write-back.
+- P-M17b [SI-R5] a baseline-unknown op with a failed R1 is declined_or_unknown at once.
+- P-M20 [SI-R5] persisted NO / STOP / ambiguous replies never create write-back. P-M21b a
+  duplicate confirm never starves the next op at limit 1.
 - P-Y01 [SI-R10] R1 failures: stored r1_failures and next_at at 60 / 300 / 900 s, then the
   fourth raises ehr_unreachable (owner C5).
 - P-S06 [SI-R6] an unspent permit whose lease lapsed is recovered through due -> claim
@@ -24,7 +26,8 @@ Rows (requirement in brackets, packet v1 numbering):
 - P-S01..S05 [SI-R6] one spend; stale fence; lease expired then void on the next claim;
   voided permit; op not permitted.
 - P-K01 [SI-R8] a spent, unsettled permit is reconcile-only, and only after
-  apply_deadline + RECONCILE_MARGIN_S in database time; reconcile closes the permit.
+  apply_deadline + RECONCILE_MARGIN_S in database time; reconcile closes the permit. P-K02
+  the deadline passed but not the margin: not due, not claimable, not closed.
 - P-R01..R04 [SI-R9] settle: observed_positive only for a positive, fully matching read;
   replaced + positive -> status_changed; no positive -> could_not_verify; stale fence.
 - P-L06 [SI-R7] guards use clock_timestamp(), not the transaction start.
@@ -408,6 +411,32 @@ def test_si_pm17_baseline_unknown_goes_to_staff_before_any_write(
     _assert_item(install, result, wb, "declined_or_unknown")
 
 
+def test_si_pm17b_baseline_unknown_with_a_failed_read_is_immediate(
+        si_install: si.SIInstall) -> None:
+    """Codex 245cee8 finding 1: the baseline alone decides; an unavailable R1 does not
+    defer a known-unknown baseline (no retry, no ehr_unreachable)."""
+
+    install = _ready(si_install)
+    patient, phone, ref, zone = si.seed3(install)
+    si.directory3(install, "appointment_put",
+                  **si.appointment3(ref, patient, sh.start_of(install, ref),
+                                    department_tz=zone, confirmation="unknown"))
+    op_id, attempt = sh2.claimed(install, ref)
+    assert si.call(install, "capture", op_id=op_id, attempt_id=attempt)["outcome"] == "captured"
+    assert sh2.consume(install, op_id, attempt)["outcome"] == "send"
+    sh.outcome(install, op_id, attempt, "accepted", provider_ref="fake-si-unknown-r1")
+    assert sh.register(install, op_id)["outcome"] == "registered"
+    flow = {"op_id": op_id, "attempt": attempt, "ref": ref, "patient": patient, "phone": phone}
+    si.replied(install, flow)
+    assert si.discover(install) == 1
+    wb = str(si.op_for_flow(install, flow)["wb_op_id"])
+    fence = int(si.claim(install, wb)["fence"])
+    result = si.decide(install, wb, fence, None, read_failed=True)
+    _assert_item(install, result, wb, "declined_or_unknown")
+    op = si.wb_op(install, wb)
+    assert (op["r1_failures"], op["next_at"]) == (0, None)
+
+
 def test_si_pm18_a_repeated_decision_never_mints_a_second_event(si_install: si.SIInstall) -> None:
     install = _ready(si_install)
     result, flow, wb = _decided(install, status="negative")
@@ -436,6 +465,24 @@ def test_si_pm21_discovery_is_idempotent_per_reply(si_install: si.SIInstall) -> 
     assert si.discover(install) == 0
     (op,) = si.wb_ops(install)
     assert (op["op_id"], op["state"], op["fence"]) == (flow["op_id"], "pending", 0)
+
+
+def test_si_pm21b_a_duplicate_confirm_never_starves_the_next_op(
+        si_install: si.SIInstall) -> None:
+    """Codex 245cee8 finding 2: a second confirm of an already represented op is excluded
+    before the limit, so discovery at limit 1 still reaches the next op."""
+
+    install = _ready(si_install)
+    first = si.sent(install)
+    si.replied(install, first, "confirm")
+    assert si.discover(install, limit=1) == 1
+    again = sh.inbound(install, sa.new_id(), first["phone"], "confirm")  # a duplicate confirm
+    second = si.sent(install)
+    si.replied(install, second, "confirm")
+    assert si.discover(install, limit=1) == 1, again
+    assert si.discover(install, limit=1) == 0
+    assert sorted(op["op_id"] for op in si.wb_ops(install)) == sorted(
+        [first["op_id"], second["op_id"]])
 
 
 # --- P-Y: retry bookkeeping (owner C5) -------------------------------------------------------
@@ -577,6 +624,26 @@ def test_si_pk01_reconcile_only_after_the_deadline_plus_margin(si_install: si.SI
                                                                    permit)
     row = si.permit(install, wb)
     assert row is not None and row["closed_at"] is not None
+
+
+def test_si_pk02_deadline_passed_but_not_the_margin_is_not_reconcilable(
+        si_install: si.SIInstall) -> None:
+    """The margin itself (mutation S11): the apply deadline has passed, the deadline +
+    RECONCILE_MARGIN_S horizon has not -> not due, not claimable."""
+
+    install = _ready(si_install)
+    _flow, wb, fence, permit = si.permitted(install)
+    assert si.spend(install, wb, fence, permit)["outcome"] == "spent"
+    si.age(install, wb, lease=si.LEASE_S + 1, deadline=si.WRITE_TIMEOUT_S + 5)
+    row = si.permit(install, wb)
+    assert row is not None
+    deadline = datetime.fromisoformat(row["apply_deadline"])
+    now = si.db_now(install)
+    assert deadline < now < deadline + timedelta(seconds=si.RECONCILE_MARGIN_S)
+    assert si.due(install, wb) == []
+    early = si.call(install, "claim_reconcile", wb_op_id=wb, lease_seconds=si.LEASE_S)
+    assert (early["outcome"], early["code"]) == ("not_claimable", "RECONCILE_NOT_DUE"), early
+    assert si.permit(install, wb) == row  # not closed
 
 
 # --- P-R: settle ---------------------------------------------------------------------------------
