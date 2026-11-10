@@ -314,9 +314,9 @@ async def ingest(stack: Stack, **identity: Any) -> dict[str, str]:
 
 
 async def reply(stack: Stack, flow: dict[str, str], text: str,
-                secret: str = SECRET) -> tuple[int, dict[str, Any]]:
+                secret: str = SECRET, message: str | None = None) -> tuple[int, dict[str, Any]]:
     app = sh3.ingress_app(stack.rt, {stack.install.tenant_id: SECRET})
-    return await sh3.post_reply(app, secret, flow["phone"], text, sa.new_id())
+    return await sh3.post_reply(app, secret, flow["phone"], text, message or sa.new_id())
 
 
 def ehr_for(install: si.SIInstall, flow: dict[str, str], **over: Any) -> Any:

@@ -172,7 +172,8 @@ async def _sent_and_replied(stack: sj.Stack, text: str = "1", **identity: Any
     op = sh2.op_for(stack.install, flow["ref"])
     assert op is not None
     flow["op_id"] = str(op["op_id"])
-    status, out = await sj.reply(stack, flow, text)
+    flow["message"] = sa.new_id()
+    status, out = await sj.reply(stack, flow, text, message=flow["message"])
     assert (status, out.get("outcome")) == (202, "registered"), out
     return flow
 
@@ -266,7 +267,14 @@ def test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route(
 # --- J03 / J04 no write-back for NO, reschedule, cancel, unclear, STOP -----------------------
 
 
-@pytest.mark.parametrize("text", ["NO", "2", "3", "maybe later", "STOP"])
+# The accepted H3 mapping (sh_h3 harness E02/E03/E07, S-F classifier, Q-B3): NO and an
+# unclear text -> unclear_reply item; 2 -> reschedule_request; 3 -> cancel_request; STOP ->
+# opt-out, no item. Each item is bound to the patient and to the reply's event.
+H3_ITEM: Final = {"NO": "unclear_reply", "2": "reschedule_request", "3": "cancel_request",
+                  "maybe later": "unclear_reply", "STOP": None}
+
+
+@pytest.mark.parametrize("text", sorted(H3_ITEM))
 def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
                                                              text: str) -> None:
     install = _begin(sj_i)
@@ -283,8 +291,15 @@ def test_sj_j03_j04_non_confirm_replies_create_no_write_back(sj_i: si.SIInstall,
             assert si.wb_ops(install) == [] and ehr.writes == []
             assert si.check_items(install) == []
             assert len(stack.sender.calls) == 1  # no further send (STOP: opted out)
-            if text == "STOP":
+            items = sa.items_for(install, flow["patient"])
+            if H3_ITEM[text] is None:
                 assert sh3.window_of(install, flow["ref"])["state"] == "opted_out"
+                assert items == []
+            else:
+                reply = sh3.reply_row(install, flow["message"])
+                (item,) = items  # exactly one H3 staff item, bound to this reply
+                assert (item["item_kind"], item["source_event_id"], item["patient_id"]) == (
+                    H3_ITEM[text], reply["event_id"], flow["patient"])
         finally:
             assert await stack.shutdown() == {}
 
@@ -644,6 +659,11 @@ def test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes(
 
 def test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close(
         sj_i: si.SIInstall) -> None:
+    """A lifecycle oracle only (DISCLOSED, Codex 20261110T225403Z): the three loops run a
+    real first tick on an EMPTY workload, then park; this row does not prove live-task
+    end-to-end transfer between the loops. The chain itself is covered by the manually
+    ticked rows (J01, J02)."""
+
     install = _begin(sj_i)
 
     async def body() -> None:

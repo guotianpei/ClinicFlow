@@ -609,6 +609,7 @@ async def test_sj_u07_u08_stop_mid_pass_runs_no_later_op(where: str, swallow: bo
         release.set()
         await asyncio.wait_for(stopping, BOUND_S)
     finally:
+        release.set()  # guaranteed release before the drain, even on an early failure
         await _drain(s)
     assert s.state is _state().STOPPED
     ran = [c[2] for c in world.calls if c[0] == "run_one"]
@@ -626,6 +627,10 @@ async def test_sj_u09_stop_before_any_tick_makes_no_call() -> None:
 
 
 async def test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task() -> None:
+    """The stop is observed by an independently bounded `asyncio.wait`, never by awaiting
+    stop() itself: an unbounded stop (mutant J-M5) fails the bounded assertion instead of
+    hanging the row, and the hold is always released in `finally`."""
+
     module = _mod()
     world = World(se.FakeClock())
     world.ops = {T_A: [op(1)]}
@@ -633,18 +638,29 @@ async def test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task(
     world.run_fn = block
     s = world.scheduler(stop_timeout_s=0.05)
     s.start()
-    await _until(lambda: seen[:1] == ["entered"], "run_one blocked")
-    with pytest.raises(module.WritebackSchedulerStopFailed) as failed:
-        await asyncio.wait_for(s.stop(), BOUND_S)
-    assert failed.value.code == "STOP_TIMEOUT"
-    assert s.state is _state().STOP_FAILED
-    with pytest.raises(module.WritebackSchedulerRefused):
-        s.start()
-    with pytest.raises(module.WritebackSchedulerRefused):
-        await s.tick()
-    release.set()
-    await asyncio.wait_for(s.stop(), BOUND_S)  # a later stop() settles the owned task
-    assert s.state is _state().STOPPED
+    stopping: asyncio.Future[Any] | None = None
+    later: asyncio.Future[Any] | None = None
+    try:
+        await _until(lambda: seen[:1] == ["entered"], "run_one blocked")
+        stopping = asyncio.ensure_future(s.stop())
+        done, _ = await asyncio.wait({stopping}, timeout=BOUND_S)
+        assert stopping in done, "stop() did not return within its bound (unbounded stop)"
+        with pytest.raises(module.WritebackSchedulerStopFailed) as failed:
+            stopping.result()
+        assert failed.value.code == "STOP_TIMEOUT"
+        assert s.state is _state().STOP_FAILED
+        with pytest.raises(module.WritebackSchedulerRefused):
+            s.start()
+        with pytest.raises(module.WritebackSchedulerRefused):
+            await s.tick()
+        release.set()
+        later = asyncio.ensure_future(s.stop())  # a later stop() settles the owned task
+        done, _ = await asyncio.wait({later}, timeout=BOUND_S)
+        assert later in done and later.exception() is None
+        assert s.state is _state().STOPPED
+    finally:
+        release.set()
+        await _drain(s, *(f for f in (stopping, later) if f is not None))
 
 
 # --- U-J11 fixed rate and strict lateness -----------------------------------------------------
