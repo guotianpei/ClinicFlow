@@ -1,0 +1,153 @@
+{
+  "target": "src/haloflow/m05/writeback_scheduler.py",
+  "target_sha256": "89e8ca0e0a438afcafe759d1d4360b0e08cb214600627ecebcb634f2a8a3c6ae",
+  "tests": "tests/m05/test_sj_units.py",
+  "mutants": [
+    {
+      "id": "J-M1",
+      "description": "run_one reuses the pass context",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u03_pass_order_and_one_fresh_context_per_op"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u03_pass_order_and_one_fresh_context_per_op"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u03_pass_order_and_one_fresh_context_per_op": "L402:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M2",
+      "description": "a manual tick is allowed while RUNNING",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u02_lifecycle_matrix"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u02_lifecycle_matrix"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u02_lifecycle_matrix": "L368:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M3",
+      "description": "a pass-context failure stops the tenant loop",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[pass_context]",
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[pass_context]"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[pass_context]",
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[pass_context]"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[pass_context]": "L444:RuntimeError",
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[pass_context]": "L713:ValueError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M4",
+      "description": "batch_limit is ignored on the run phase",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u04_at_most_batch_limit_ops_even_if_due_overreturns": "L420:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M5",
+      "description": "stop() waits without a timeout",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u10_hang_that_ignores_cancel_is_stop_failed_and_owns_the_task": "L647:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M9",
+      "description": "a per-op context failure aborts the pass",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[op_context]"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[op_context]"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[op_context]": "L479:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M10",
+      "description": "a discover failure skips the run phase",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[discover]"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[discover]"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u05_a_failure_never_stops_later_ops_or_tenants[discover]": "L472:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M11",
+      "description": "an op failure's exception text is logged",
+      "declared_kills": [
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[run_one]"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[run_one]"
+      ],
+      "sites": {
+        "tests/m05/test_sj_units.py::test_sj_u12_no_secret_text_anywhere[run_one]": "L727:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 82,
+    "problems": []
+  },
+  "restored": true,
+  "ok": true
+}

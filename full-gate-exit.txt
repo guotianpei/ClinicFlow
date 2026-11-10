@@ -1,0 +1,5 @@
+All checks passed!
+rc=0
+5682 passed, 15 warnings in 1010.09s (0:16:50)
+
+[exited with code 0]

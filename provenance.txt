@@ -1,0 +1,13 @@
+commit: 6cb09152c25d8fa0b61c1406ed696b9d9f4ea99c
+branch: test/sj-red; commits since red gate 383afb3: 6cb0915 ci(m05): S-J mutation controls wired (J-M1..J-M11, measured kill sets);d03b64b feat(m05): S-J WritebackScheduler (synthetic, not composed);
+git status: []
+python: Python 3.13.18
+postgres: PostgreSQL 17.11 disposable local cluster localhost:54318, database haloflow_test_m01
+89e8ca0e0a438afcafe759d1d4360b0e08cb214600627ecebcb634f2a8a3c6ae  src/haloflow/m05/writeback_scheduler.py
+7afa3382ea01ebacf597ceab1cd7bcf8a8803f26d9e2e3f969984651e4189677  tests/m05/test_sj_units.py
+ee79adf2db3faa229ea9d06b9693c096848c57138ee40fb8d8b98b1fdcc22b5b  tests/m05/sj_harness.py
+52a84227f43bbe34829c42ef411ee8b96f0af1a8a7c9904d50faa4d4fc62bd82  tests/m05/test_sj_postgres.py
+2371ea300cd63b994c61d8d76c20effc4384b45f7ed096bd3017f35ab317332d  scripts/sj_mutants.py
+d53ea38140b880d6f864fd5960f5343965ad9267afee491387c181769b4f4cc2  scripts/test_sj_mutants.py
+21f66206833b99e87fc4a26d8cc9745fc43d1747175bf2e8d9b3da4a2a13cec8  scripts/sj_mutant_kills.json
+46ac6ba7625a8da3d456c375f595ee8b4503ce0818fb3a97a907e13409c6058d  ../.github/workflows/m01.yml

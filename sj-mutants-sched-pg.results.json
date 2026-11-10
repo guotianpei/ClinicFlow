@@ -1,0 +1,37 @@
+{
+  "target": "src/haloflow/m05/writeback_scheduler.py",
+  "target_sha256": "89e8ca0e0a438afcafe759d1d4360b0e08cb214600627ecebcb634f2a8a3c6ae",
+  "tests": "tests/m05/test_sj_postgres.py",
+  "mutants": [
+    {
+      "id": "J-M7",
+      "description": "each due op is dispatched twice (a re-dispatch at the real seam)",
+      "declared_kills": [
+        "tests/m05/test_sj_postgres.py::test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler",
+        "tests/m05/test_sj_postgres.py::test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route",
+        "tests/m05/test_sj_postgres.py::test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_postgres.py::test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler",
+        "tests/m05/test_sj_postgres.py::test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route",
+        "tests/m05/test_sj_postgres.py::test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes"
+      ],
+      "sites": {
+        "tests/m05/test_sj_postgres.py::test_sj_j01_confirmed_and_matching_is_written_once_through_the_scheduler": "L214:AssertionError",
+        "tests/m05/test_sj_postgres.py::test_sj_j02_status_changed_item_is_resolved_over_the_test_staff_route": "L243:AssertionError",
+        "tests/m05/test_sj_postgres.py::test_sj_j09_activation_off_blocks_new_work_but_the_spent_write_completes": "L637:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 25,
+    "problems": []
+  },
+  "restored": true,
+  "ok": true
+}

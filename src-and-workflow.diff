@@ -1,0 +1,367 @@
+diff --git a/.github/workflows/m01.yml b/.github/workflows/m01.yml
+index c868953..5445613 100644
+--- a/.github/workflows/m01.yml
++++ b/.github/workflows/m01.yml
+@@ -257,6 +257,15 @@ jobs:
+           $VENV/bin/python -I scripts/si_mutants.py
+           --pytest "$VENV/bin/pytest"
+           --evidence "$RUNNER_TEMP/verify-evidence/si-mutation"
++      # L-1S package S-J write-back scheduler mutation controls J-M1..J-M11 (J-M6a/b): three
++      # groups (the scheduler against the unit module and against the combined-lifespan
++      # PostgreSQL module; the TEST-ONLY harness orchestration against the PostgreSQL
++      # module), kill sets in scripts/sj_mutant_kills.json.
++      - run: $VENV/bin/pytest scripts/test_sj_mutants.py -q -p no:cacheprovider
++      - run: >-
++          $VENV/bin/python -I scripts/sj_mutants.py
++          --pytest "$VENV/bin/pytest"
++          --evidence "$RUNNER_TEMP/verify-evidence/sj-mutation"
+       - uses: actions/upload-artifact@v4
+         if: always()
+         with:
+diff --git a/haloflow/src/haloflow/m05/writeback_scheduler.py b/haloflow/src/haloflow/m05/writeback_scheduler.py
+new file mode 100644
+index 0000000..a59b269
+--- /dev/null
++++ b/haloflow/src/haloflow/m05/writeback_scheduler.py
+@@ -0,0 +1,341 @@
++"""L-1S package S-J: write-back scheduler (synthetic only; NOT composed).
++
++`WritebackScheduler` runs, on a fixed-rate timer, one bounded pass per configured tenant
++over the accepted S-I write-back protocol:
++
++1. pass context: one fresh tenant context for the tenant's pass (the injected
++   `contexts`); a failure leaves both phases NOT_RUN;
++2. discover: `WritebackService.discover(ctx, batch_limit)` (activation-protected, S-I);
++3. run: `WritebackService.due(ctx, batch_limit)`, then for each due row (at most
++   `batch_limit`) ONE fresh context and `WritebackWorker.run_one(ctx_i, wb_op_id)`. The run
++   phase runs whatever happened in discover. A per-op context failure is counted
++   `context_failed` and the next op continues (context granularity 1+N, Codex pin 1).
++
++Governing: next-package assessment v1/v1r1/v1r2, S-J test-case preparation v1, the Codex
++review pins record and the S-J red packet v1 (Work Session 2026-11-10); Codex RED GATE PASS
++at 383afb3 (20261110T231155Z).
++
++- Write authority: this module never claims, decides, spends, settles, reads or writes
++  the EHR itself; it calls only `discover`, `due` and `run_one`. Every write goes through
++  the accepted S-I worker (one bounded write per spent permit; reconcile, never re-write).
++- Isolation: the pass context, each phase and each op has its own `try`; one tenant never
++  stops another. Cancellation is never caught; it is re-checked before every
++  side-effecting phase and op and after every tenant.
++- Reporting is what is observable: a phase is `ok`, `NOT_RUN`, `DEGRADED_ITEMS` (run: the
++  due list returned but an op failed or had no context) or the failure class of the
++  exception it raised (ACTIVATION_REFUSED, CAPABILITY_REFUSED, REFUSED, INTERNAL). The
++  worker's own outcome codes are counted, never interpreted. COMPLETE means the pass
++  completed with both phases `ok`, not business success. No exception text, phone, name
++  or message text is kept or logged.
++- Bounded work: per tenant per tick at most 1 + N contexts, 1 discover, 1 due and
++  `batch_limit` run_one calls, even if `due` returns more rows. There is no phase timeout
++  (F-H3-2 kept): a hung await blocks the rest of that tick; no time fairness between
++  tenants is claimed. `stop()` is bounded independently: cancel once, wait at most
++  `stop_timeout_s`, else `WritebackSchedulerStopFailed` (STOP_FAILED keeps ownership of
++  the task: no restart, no manual tick; a later `stop()` settles it).
++- Lifecycle, fixed rate and strict lateness follow the S-E / H3 schedulers (the S-E
++  `SchedulerState` is reused, unedited). One summary line per tick.
++
++Nothing here reads activation itself (S-C decides at the gateway), constructs an EHR port
++or network client, or is imported by the platform, startup or composition modules.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import logging
++import math
++import time
++from collections import Counter
++from collections.abc import Awaitable, Callable, Mapping
++from dataclasses import dataclass
++from typing import Final
++
++from haloflow.m01.context import TenantContext
++from haloflow.m01.errors import ActivationRefused, CapabilityDenied, TenantDenied
++from haloflow.m01.resolver import TENANT_ID_PATTERN
++from haloflow.m05.due_scheduler import SchedulerState
++from haloflow.m05.writeback import WritebackRefused, WritebackService, WritebackWorker
++
++LOGGER: Final = logging.getLogger(__name__)
++
++DEFAULT_INTERVAL_S: Final = 60
++INTERVAL_MIN_S: Final = 30
++INTERVAL_MAX_S: Final = 300
++STOP_TIMEOUT_MAX_S: Final = 60
++TENANTS_MAX: Final = 1000
++DEFAULT_BATCH_LIMIT: Final = 100
++BATCH_LIMIT_MAX: Final = 1000
++
++COMPLETE: Final = "COMPLETE"
++DEGRADED: Final = "DEGRADED"
++OK: Final = "ok"
++NOT_RUN: Final = "NOT_RUN"
++DEGRADED_ITEMS: Final = "DEGRADED_ITEMS"
++INTERNAL: Final = "INTERNAL"
++
++RUN_KEYS: Final = ("observed_positive", "item_raised", "skipped", "deferred", "not_claimed",
++                   "stale", "spend_unknown", "spend_refused", "reconcile_failed",
++                   "context_failed", "failed")
++_OUTCOMES: Final = frozenset(RUN_KEYS[:9])
++_CAPABILITY_CODES: Final = frozenset({"PRINCIPAL_NOT_WORKLOAD", "CAPABILITIES_INVALID"})
++
++
++class WritebackSchedulerRefused(Exception):
++    def __init__(self, code: str) -> None:
++        super().__init__(code)
++        self.code = code
++
++
++class WritebackSchedulerStopFailed(Exception):
++    def __init__(self) -> None:
++        super().__init__("STOP_TIMEOUT")
++        self.code = "STOP_TIMEOUT"
++
++
++@dataclass(frozen=True, slots=True)
++class PhaseReport:
++    status: str
++    counts: Mapping[str, int]
++
++
++@dataclass(frozen=True, slots=True)
++class TenantReport:
++    tenant: str
++    code: str
++    context: str
++    discover: PhaseReport
++    run: PhaseReport
++
++
++@dataclass(frozen=True, slots=True)
++class TickResult:
++    tick: int
++    duration_ms: int
++    codes: Mapping[str, int]
++    tenants: tuple[TenantReport, ...]
++    cancelled: bool
++
++
++def _cancel_pending() -> None:
++    task = asyncio.current_task()
++    if task is not None and task.cancelling():
++        raise asyncio.CancelledError()
++
++
++def _valid_tenants(tenants: object) -> bool:
++    return (type(tenants) is tuple and 1 <= len(tenants) <= TENANTS_MAX
++            and all(type(t) is str and TENANT_ID_PATTERN.fullmatch(t) for t in tenants)
++            and len(set(tenants)) == len(tenants))
++
++
++def _valid_timeout(value: object) -> bool:
++    return (type(value) in (int, float) and math.isfinite(value)  # type: ignore[arg-type]
++            and 0 < value <= STOP_TIMEOUT_MAX_S)  # type: ignore[operator]
++
++
++def _failure_class(error: Exception) -> str:
++    if isinstance(error, ActivationRefused):
++        return "ACTIVATION_REFUSED"
++    if isinstance(error, (CapabilityDenied, TenantDenied)):
++        return "CAPABILITY_REFUSED"
++    if isinstance(error, WritebackRefused):
++        return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
++    return INTERNAL
++
++
++_DISCOVER_NOT_RUN: Final = PhaseReport(NOT_RUN, {"discovered": 0})
++_RUN_NOT_RUN: Final = PhaseReport(NOT_RUN, dict.fromkeys(RUN_KEYS, 0))
++
++
++class WritebackScheduler:
++    def __init__(self, *, contexts: Callable[[str], Awaitable[TenantContext]],
++                 service: WritebackService, worker: WritebackWorker,
++                 tenants: tuple[str, ...], interval_s: int = DEFAULT_INTERVAL_S,
++                 stop_timeout_s: float = 10, batch_limit: int = DEFAULT_BATCH_LIMIT,
++                 clock: Callable[[], float] = time.monotonic,
++                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
++        if not callable(contexts):
++            raise WritebackSchedulerRefused("CONTEXTS_INVALID")
++        if not isinstance(service, WritebackService):
++            raise WritebackSchedulerRefused("SERVICE_INVALID")
++        if not isinstance(worker, WritebackWorker):
++            raise WritebackSchedulerRefused("WORKER_INVALID")
++        if not _valid_tenants(tenants):
++            raise WritebackSchedulerRefused("TENANTS_INVALID")
++        if type(interval_s) is not int or not INTERVAL_MIN_S <= interval_s <= INTERVAL_MAX_S:
++            raise WritebackSchedulerRefused("INTERVAL_INVALID")
++        if not _valid_timeout(stop_timeout_s):
++            raise WritebackSchedulerRefused("TIMEOUT_INVALID")
++        if type(batch_limit) is not int or not 1 <= batch_limit <= BATCH_LIMIT_MAX:
++            raise WritebackSchedulerRefused("BATCH_LIMIT_INVALID")
++        self._contexts = contexts
++        self._service = service
++        self._worker = worker
++        self._tenants = tenants
++        self._interval = interval_s
++        self._timeout = float(stop_timeout_s)
++        self._limit = batch_limit
++        self._clock = clock
++        self._sleep = sleep
++        self._state = SchedulerState.NEW
++        self._task: asyncio.Task[object] | None = None
++        self._cancel_sent = False
++        self._ticks = 0
++
++    def __repr__(self) -> str:
++        return f"WritebackScheduler(state={self._state.value}, tenants={len(self._tenants)})"
++
++    @property
++    def state(self) -> SchedulerState:
++        return self._state
++
++    def start(self) -> None:
++        if self._state is SchedulerState.NEW and self._task is not None:
++            raise WritebackSchedulerRefused("TICK_IN_PROGRESS")
++        if self._state is not SchedulerState.NEW:
++            raise WritebackSchedulerRefused("NOT_STARTABLE")
++        self._task = asyncio.get_running_loop().create_task(self._loop())
++        self._state = SchedulerState.RUNNING
++
++    async def tick(self) -> TickResult:
++        if self._state is SchedulerState.RUNNING:
++            raise WritebackSchedulerRefused("LOOP_OWNS_TICKS")
++        if self._state is not SchedulerState.NEW:
++            raise WritebackSchedulerRefused("SCHEDULER_STOPPED")
++        if self._task is not None:
++            raise WritebackSchedulerRefused("TICK_IN_PROGRESS")
++        task = asyncio.get_running_loop().create_task(self._manual_tick())
++        self._task = task
++        stopped = False
++        try:
++            return await task
++        except asyncio.CancelledError:
++            current = asyncio.current_task()
++            if current is not None and current.cancelling():
++                raise
++            stopped = True
++        finally:
++            if task.done() and self._task is task and self._state is SchedulerState.NEW:
++                self._task = None
++        assert stopped
++        raise WritebackSchedulerRefused("STOPPED_DURING_TICK")
++
++    async def stop(self) -> None:
++        if self._state is SchedulerState.STOPPED:
++            return
++        task = self._task
++        if task is None:
++            self._state = SchedulerState.STOPPED
++            return
++        self._state = SchedulerState.STOPPING
++        if not self._cancel_sent and not task.done():
++            self._cancel_sent = True
++            task.cancel()
++        done, _ = await asyncio.wait({task}, timeout=self._timeout)
++        if not done:
++            self._state = SchedulerState.STOP_FAILED
++            raise WritebackSchedulerStopFailed()
++        if not task.cancelled():
++            task.exception()
++        self._state = SchedulerState.STOPPED
++
++    async def _manual_tick(self) -> TickResult:
++        result = await self._run_tick()
++        self._log(result, skipped=0)
++        return result
++
++    async def _loop(self) -> None:
++        next_at = self._clock()
++        while True:
++            await self._sleep(max(0.0, next_at - self._clock()))
++            _cancel_pending()
++            result = await self._run_tick()
++            end = self._clock()
++            next_at += self._interval
++            skipped = 0
++            while end > next_at:
++                next_at += self._interval
++                skipped += 1
++            self._log(result, skipped=skipped)
++
++    async def _run_tick(self) -> TickResult:
++        number = self._ticks
++        self._ticks += 1
++        started = self._clock()
++        reports: list[TenantReport] = []
++        try:
++            for tenant in self._tenants:
++                _cancel_pending()
++                reports.append(await self._one(tenant))
++                _cancel_pending()
++        except asyncio.CancelledError:
++            self._log(self._result(number, started, reports, True), skipped=0)
++            raise
++        return self._result(number, started, reports, False)
++
++    async def _one(self, tenant: str) -> TenantReport:
++        try:
++            context = await self._contexts(tenant)
++        except Exception as error:  # noqa: BLE001
++            return TenantReport(tenant, DEGRADED, _failure_class(error), _DISCOVER_NOT_RUN,
++                                _RUN_NOT_RUN)
++        _cancel_pending()
++        discover = await self._discover_phase(context)
++        _cancel_pending()
++        run = await self._run_phase(tenant, context)
++        code = COMPLETE if discover.status == OK and run.status == OK else DEGRADED
++        return TenantReport(tenant, code, OK, discover, run)
++
++    async def _discover_phase(self, context: TenantContext) -> PhaseReport:
++        try:
++            count = await self._service.discover(context, self._limit)
++        except Exception as error:  # noqa: BLE001
++            return PhaseReport(_failure_class(error), {"discovered": 0})
++        if type(count) is not int or count < 0:
++            return PhaseReport(INTERNAL, {"discovered": 0})
++        return PhaseReport(OK, {"discovered": count})
++
++    async def _run_phase(self, tenant: str, context: TenantContext) -> PhaseReport:
++        counts = dict.fromkeys(RUN_KEYS, 0)
++        try:
++            rows = await self._service.due(context, self._limit)
++        except Exception as error:  # noqa: BLE001
++            return PhaseReport(_failure_class(error), counts)
++        if not isinstance(rows, list) or not all(
++                isinstance(r, Mapping) and type(r.get("wb_op_id")) is str for r in rows):
++            return PhaseReport(INTERNAL, counts)
++        for row in rows[:self._limit]:
++            _cancel_pending()
++            try:
++                op_context = await self._contexts(tenant)
++            except Exception:  # noqa: BLE001
++                counts["context_failed"] += 1
++                continue
++            _cancel_pending()
++            try:
++                outcome = await self._worker.run_one(op_context, row["wb_op_id"])
++            except Exception:  # noqa: BLE001
++                counts["failed"] += 1
++                continue
++            counts[outcome if outcome in _OUTCOMES else "failed"] += 1
++        bad = counts["failed"] + counts["context_failed"]
++        return PhaseReport(DEGRADED_ITEMS if bad else OK, counts)
++
++    def _result(self, number: int, started: float, reports: list[TenantReport],
++                cancelled: bool) -> TickResult:
++        duration = max(0, round((self._clock() - started) * 1000))
++        codes = Counter(report.code for report in reports)
++        return TickResult(number, duration, dict(sorted(codes.items())), tuple(reports),
++                          cancelled)
++
++    def _log(self, result: TickResult, *, skipped: int) -> None:
++        budget = self._interval * 1000
++        codes = ",".join(f"{k}:{v}" for k, v in sorted(result.codes.items()))
++        discovered = sum(t.discover.counts.get("discovered", 0) for t in result.tenants)
++        run = " ".join(f"{k}={sum(t.run.counts.get(k, 0) for t in result.tenants)}"
++                       for k in RUN_KEYS)
++        LOGGER.info("writeback_scheduler tick=%d skipped=%d duration_ms=%d budget_ms=%d"
++                    " over_budget=%s cancelled=%s codes=%s discovered=%d %s",
++                    result.tick, skipped, result.duration_ms, budget,
++                    result.duration_ms > budget, result.cancelled, codes, discovered, run)

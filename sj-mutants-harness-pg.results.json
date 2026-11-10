@@ -1,0 +1,68 @@
+{
+  "target": "tests/m05/sj_harness.py",
+  "target_sha256": "ee79adf2db3faa229ea9d06b9693c096848c57138ee40fb8d8b98b1fdcc22b5b",
+  "tests": "tests/m05/test_sj_postgres.py",
+  "mutants": [
+    {
+      "id": "J-M6a",
+      "description": "harness: shared resources close before the producers stop",
+      "declared_kills": [
+        "tests/m05/test_sj_postgres.py::test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close",
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_postgres.py::test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close",
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+      ],
+      "sites": {
+        "tests/m05/test_sj_postgres.py::test_sj_j10a_three_loops_run_and_stop_before_shared_resources_close": "L679:AssertionError",
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes": "L703:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M6b",
+      "description": "harness: shared resources close even after a failed stop",
+      "declared_kills": [
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes"
+      ],
+      "sites": {
+        "tests/m05/test_sj_postgres.py::test_sj_j10b_stop_failed_keeps_resources_then_a_later_shutdown_closes": "L701:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    },
+    {
+      "id": "J-M8",
+      "description": "harness: the test staff router ignores the capability header",
+      "declared_kills": [
+        "tests/m05/test_sj_postgres.py::test_sj_j15_missing_capability_is_refused_without_change"
+      ],
+      "applied": true,
+      "exit": 1,
+      "failed": [
+        "tests/m05/test_sj_postgres.py::test_sj_j15_missing_capability_is_refused_without_change"
+      ],
+      "sites": {
+        "tests/m05/test_sj_postgres.py::test_sj_j15_missing_capability_is_refused_without_change": "L147:AssertionError"
+      },
+      "problems": [],
+      "killed": true
+    }
+  ],
+  "control": {
+    "exit": 0,
+    "cases": 25,
+    "problems": []
+  },
+  "restored": true,
+  "ok": true
+}
