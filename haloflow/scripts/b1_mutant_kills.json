@@ -1,0 +1,77 @@
+{
+  "B1-M1": [
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-decorator call-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\n@build_statement_catalog({})\\ndef build_synthetic_catalog():\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-default value-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(x=build_statement_catalog({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-keyword-only default-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(*, x=build_statement_catalog({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-lambda body inside the target-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog():\\n    f = lambda: build_statement_catalog({})\\n    return f()\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-module level-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\nX = build_statement_catalog({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-nested def-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog():\\n    def inner():\\n        return build_statement_catalog({})\\n    return inner()\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-other function-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef other():\\n    return build_statement_catalog({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-parameter annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(x: build_statement_catalog({}) = None):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-return annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog() -> build_statement_catalog({}):\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-wrong function for this builder-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_other():\\n    return build_statement_catalog({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-decorator call-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\n@build_tenant_migration_registry({})\\ndef build_synthetic_registry():\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-default value-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(x=build_tenant_migration_registry({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-keyword-only default-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(*, x=build_tenant_migration_registry({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-lambda body inside the target-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry():\\n    f = lambda: build_tenant_migration_registry({})\\n    return f()\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-module level-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\nX = build_tenant_migration_registry({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-nested def-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry():\\n    def inner():\\n        return build_tenant_migration_registry({})\\n    return inner()\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-other function-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef other():\\n    return build_tenant_migration_registry({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-parameter annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(x: build_tenant_migration_registry({}) = None):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-return annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry() -> build_tenant_migration_registry({}):\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-wrong function for this builder-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_other():\\n    return build_tenant_migration_registry({})\\n]"
+  ],
+  "B1-M2": [
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-aliased import-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog as b\\ndef build_synthetic_catalog():\\n    return b({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-aliased import-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry as b\\ndef build_synthetic_registry():\\n    return b({})\\n]"
+  ],
+  "B1-M3": [
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-look-alike path-src/haloflow/synthetic/composition_extra.py-from haloflow.m01.statements import build_statement_catalog\\n\\ndef build_synthetic_catalog():\\n    return build_statement_catalog({})\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-other synthetic module-src/haloflow/synthetic/app.py-from haloflow.m01.statements import build_statement_catalog\\n\\ndef build_synthetic_catalog():\\n    return build_statement_catalog({})\\n]"
+  ],
+  "B1-M4": [
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_aliased_literal_loads_are_followed[alias builtins __import__-from builtins import __import__ as imp\\ndef later():\\n    return imp('haloflow.synthetic')\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_aliased_literal_loads_are_followed[alias importer, latent function-from importlib import import_module as load\\ndef later():\\n    return load('haloflow.synthetic')\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[non-literal through alias-from importlib import import_module as load\\nname = 'x'\\nload(name)\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[rebound alias importer-from importlib import import_module as load\\nloader = load\\n]"
+  ],
+  "B1-M5": [
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[rebound __import__-loader = __import__\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[rebound alias importer-from importlib import import_module as load\\nloader = load\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[rebound exec-run = exec\\n]"
+  ],
+  "B1-M6": [
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[aliased sys path method-import sys as s\\ndef later():\\n    s.path.append('/x')\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[sys.meta_path deletion-import sys\\ndel sys.meta_path[0]\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[sys.path augmented assignment-import sys\\nsys.path += ['/x']\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_escaped_or_rebound_loaders_are_unresolved[sys.path subscript assignment-import sys\\nsys.path[0:0] = ['/x']\\n]",
+    "tests/synthetic/test_b1_units.py::test_b1_c1f_fence_walker_self_tests"
+  ],
+  "B1-M7": [
+    "tests/synthetic/test_b1_units.py::test_b1_c1b_synthetic_imports_nothing_from_tests_runtime",
+    "tests/synthetic/test_b1_units.py::test_b1_e1_synthetic_registry_equals_the_frozen_registry",
+    "tests/synthetic/test_b1_units.py::test_b1_e4_builders_are_deterministic_and_fresh"
+  ],
+  "B1-M8": [
+    "tests/synthetic/test_b1_units.py::test_b1_e3_test_profile_sql_equals_the_frozen_digests"
+  ],
+  "B1-M9": [
+    "tests/synthetic/test_b1_units.py::test_b1_e2_synthetic_catalog_equals_the_frozen_catalog"
+  ],
+  "B1-M10": [
+    "tests/synthetic/test_b1_units.py::test_b1_c1_production_closure_never_reaches_synthetic",
+    "tests/synthetic/test_b1_units.py::test_b1_c1r_production_runtime_never_loads_synthetic"
+  ],
+  "B1-M11": [
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-decorator call-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\n@build_statement_catalog({})\\ndef build_synthetic_catalog():\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-default value-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(x=build_statement_catalog({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-keyword-only default-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(*, x=build_statement_catalog({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-parameter annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog(x: build_statement_catalog({}) = None):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_composition_violations_in-return annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.statements import build_statement_catalog\\ndef build_synthetic_catalog() -> build_statement_catalog({}):\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-decorator call-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\n@build_tenant_migration_registry({})\\ndef build_synthetic_registry():\\n    return None\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-default value-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(x=build_tenant_migration_registry({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-keyword-only default-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(*, x=build_tenant_migration_registry({})):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-parameter annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry(x: build_tenant_migration_registry({}) = None):\\n    return x\\n]",
+    "tests/m01/test_repository_controls.py::test_b1_r2_second_root_refuses_every_other_reference[_migration_composition_violations_in-return annotation-src/haloflow/synthetic/composition.py-from haloflow.m01.provisioning.units import build_tenant_migration_registry\\ndef build_synthetic_registry() -> build_tenant_migration_registry({}):\\n    return None\\n]"
+  ]
+}
