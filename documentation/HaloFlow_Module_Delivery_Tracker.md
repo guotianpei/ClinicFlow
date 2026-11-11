@@ -16,7 +16,7 @@ Last updated: 2026-11-10 evening (**L-1S package S-I merged** — PR #85, simula
 - Owner request 2026-11-10: CI takes hours; parallel work was picked up (S-J) and a read-only CI timing breakdown was made (`claude_ci-timing-breakdown-v1-2026-11-10.md`). A CI concurrency change (cancel superseded first-attempt runs of the same PR only) is Codex-aligned as a design (`claude_ci-concurrency-proposal-v1r1-2026-11-10.md`) and will come as its own small workflow PR; no gate semantics change.
 - Runtime supported schema set unchanged: `frozenset({36})`. The production registry and catalogue are unchanged.
 
-**Not claimed:** a real EHR or any real write-back, a composed or running scheduler, live SMS, any activated clinic, an installable synthetic app, release readiness or L-1S closure. **Next:** S-J acceptance on CI 42928334005, then the owner's merge of #86; the concurrency workflow PR; the Option B (installable synthetic app) priority question is with Codex to put to the owner.
+**Not claimed:** a real EHR or any real write-back, a composed or running scheduler, live SMS, any activated clinic, an installable synthetic app, release readiness or L-1S closure. **Next:** S-J acceptance on CI 42928334005, then the owner's merge of #86; the concurrency workflow PR; the Option B (installable synthetic app) priority question has been put to the owner and awaits her answer.
 
 **Holds (unchanged):** OD-D2, L-1W, L-1S, L-6, demo, live SMS, real EHR. **Open PRs:** #36 (L-6, draft, do not merge), #79 (S-H investigation, draft, do not merge), #86 (S-J). The 2026-11-10 morning paragraph below is kept as written.
 
