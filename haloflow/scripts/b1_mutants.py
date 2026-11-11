@@ -1,4 +1,4 @@
-"""Option B B1 mutation controls, group family ``b1`` (B1-M1..B1-M10).
+"""Option B B1 mutation controls, group family ``b1`` (B1-M1..B1-M11).
 
 Focused on the B1 SAFETY criteria (Codex Option B v1 review, Q5): the exact second
 composition root, the transitive production fence, and the synthetic composition's
@@ -59,6 +59,10 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      '        return _second_root_violations(path, source, "build_statement_catalog",\n',
      '    if path.startswith("src/haloflow/synthetic/"):\n'
      '        return _second_root_violations(path, source, "build_statement_catalog",\n'),
+    ("B1-M11", "second root: decorators/defaults/annotations count as the target body "
+     "(B1-R4)", CONTROLS,
+     "            for child in outer:\n                visit(child, scope, False)\n",
+     "            for child in outer:\n                visit(child, name, False)\n"),
     # -- the production fence walker ----------------------------------------------------
     ("B1-M4", "fence: importer aliases are not resolved", FENCE,
      "                    importers.add(alias.asname or alias.name)\n",
@@ -95,7 +99,7 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
     ("prod", PROD, B1_TESTS),
 )
 GROUP_OF: dict[str, str] = {
-    **{m: "root" for m in ("B1-M1", "B1-M2", "B1-M3")},
+    **{m: "root" for m in ("B1-M1", "B1-M2", "B1-M3", "B1-M11")},
     **{m: "fence" for m in ("B1-M4", "B1-M5", "B1-M6")},
     **{m: "compose" for m in ("B1-M7", "B1-M8", "B1-M9")},
     "B1-M10": "prod",

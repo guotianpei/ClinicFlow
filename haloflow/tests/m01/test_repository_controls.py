@@ -141,13 +141,25 @@ def _second_root_violations(path: str, source: str, builder: str, module: str,
         elif isinstance(node, ast.Attribute) and node.attr == builder:
             violations.append(f"{path}: qualified reference to {builder}")
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            # B1-R4 (Codex 20261111T154026Z): only the BODY runs in the function's scope.
+            # Decorators, default and keyword-default values, parameter and return
+            # annotations are evaluated where the def/lambda is evaluated (the enclosing
+            # scope, i.e. module import time for a module-level def), so they keep it.
             name = (node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                     and id(node) in module_level else "<nested>")
-            inner: str | None = name
-        else:
-            inner = scope
+            body = node.body if isinstance(node.body, list) else [node.body]
+            for child in body:
+                visit(child, name, False)
+            outer: list[ast.AST] = [*getattr(node, "decorator_list", []),
+                                    node.args]
+            returns = getattr(node, "returns", None)
+            if returns is not None:
+                outer.append(returns)
+            for child in outer:
+                visit(child, scope, False)
+            return
         for child in ast.iter_child_nodes(node):
-            visit(child, inner, isinstance(node, ast.Call) and child is node.func)
+            visit(child, scope, isinstance(node, ast.Call) and child is node.func)
 
     visit(tree, None, False)
     return violations
@@ -428,6 +440,19 @@ def _refusals(builder: str, module: str, function: str) -> list[tuple[str, str, 
          f"import {module} as m\ndef other():\n    return m.{builder}({{}})\n"),
         ("wrong function for this builder", SECOND_ROOT,
          f"{imp}def build_synthetic_other():\n    return {builder}({{}})\n"),
+        # B1-R4: definition-time evaluation of the target def is module scope.
+        ("default value", SECOND_ROOT,
+         f"{imp}def {function}(x={builder}({{}})):\n    return x\n"),
+        ("keyword-only default", SECOND_ROOT,
+         f"{imp}def {function}(*, x={builder}({{}})):\n    return x\n"),
+        ("decorator call", SECOND_ROOT,
+         f"{imp}@{builder}({{}})\ndef {function}():\n    return None\n"),
+        ("parameter annotation", SECOND_ROOT,
+         f"{imp}def {function}(x: {builder}({{}}) = None):\n    return x\n"),
+        ("return annotation", SECOND_ROOT,
+         f"{imp}def {function}() -> {builder}({{}}):\n    return None\n"),
+        ("lambda body inside the target", SECOND_ROOT,
+         f"{imp}def {function}():\n    f = lambda: {builder}({{}})\n    return f()\n"),
         ("other synthetic module", "src/haloflow/synthetic/app.py", allowed),
         ("look-alike path", "src/haloflow/synthetic/composition_extra.py", allowed),
         ("application module", "src/haloflow/m05/service.py", allowed),
