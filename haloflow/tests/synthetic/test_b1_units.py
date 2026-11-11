@@ -54,6 +54,7 @@ from types import ModuleType
 from typing import Any, Final
 
 import fence
+import pytest
 
 HALOFLOW: Final = Path(__file__).resolve().parents[2]
 SRC: Final = HALOFLOW / "src"
@@ -266,3 +267,71 @@ def test_b1_c2_production_pins_unchanged() -> None:
 
     assert frozenset({PRODUCTION_TARGET}) == composition.APPROVED_SUPPORTED_SCHEMA_VERSIONS
     assert composition.build_production_tenant_migrations().target_version == PRODUCTION_TARGET
+
+
+# --- B1-F1 (Codex fdf00a8 review): aliased, rebound and latent loaders ---------------------
+
+FOLLOWED: Final = [
+    ("alias importer, latent function",
+     "from importlib import import_module as load\n"
+     "def later():\n    return load('haloflow.synthetic')\n"),
+    ("alias builtins __import__",
+     "from builtins import __import__ as imp\n"
+     "def later():\n    return imp('haloflow.synthetic')\n"),
+    ("module alias attribute call, latent",
+     "import importlib as il\n"
+     "def later():\n    return il.import_module('haloflow.synthetic')\n"),
+]
+
+REFUSED: Final = [
+    ("rebound __import__", "loader = __import__\n"),
+    ("rebound alias importer",
+     "from importlib import import_module as load\nloader = load\n"),
+    ("importer passed as a value", "import importlib\nrun = map(importlib.import_module, [])\n"),
+    ("non-literal through alias",
+     "from importlib import import_module as load\nname = 'x'\nload(name)\n"),
+    ("aliased sys path method", "import sys as s\ndef later():\n    s.path.append('/x')\n"),
+    ("from sys import path", "from sys import path\npath.insert(0, '/x')\n"),
+    ("from sys import path alias", "from sys import path as p\np.insert(0, '/x')\n"),
+    ("sys.path subscript assignment", "import sys\nsys.path[0:0] = ['/x']\n"),
+    ("sys.path augmented assignment", "import sys\nsys.path += ['/x']\n"),
+    ("sys.meta_path deletion", "import sys\ndel sys.meta_path[0]\n"),
+    ("aliased runpy", "from runpy import run_path as rp\ndef later():\n    rp('x.py')\n"),
+    ("importlib.reload", "import importlib, json\nimportlib.reload(json)\n"),
+    ("escaped spec loader",
+     "import importlib.util\nf = importlib.util.spec_from_file_location\n"),
+    ("rebound exec", "run = exec\n"),
+]
+
+ORDINARY: Final = [
+    ("plain module alias", "import json as j\nj.dumps({})\n"),
+    ("re.compile alias", "from re import compile as rx\nrx('x')\n"),
+    ("attribute named path on another object", "import os\nos.path.join('a', 'b')\n"),
+    ("method named compile", "import re\npattern = re.compile\n"),
+]
+
+
+def _single(tmp_path: Path, source: str) -> fence.Closure:
+    tree = _fixture_tree(tmp_path, {"haloflow": "#pkg\n", "haloflow.synthetic": "#pkg\n",
+                                    "haloflow.prod": "#pkg\n", "haloflow.prod.m": source})
+    return fence.closure(("haloflow.prod.m",), tree)
+
+
+@pytest.mark.parametrize("label,source", FOLLOWED)
+def test_b1_c1f_aliased_literal_loads_are_followed(tmp_path: Path, label: str,
+                                                   source: str) -> None:
+    result = _single(tmp_path, source)
+    assert "haloflow.synthetic" in result.modules, label
+    assert result.unresolved == [], label
+
+
+@pytest.mark.parametrize("label,source", REFUSED)
+def test_b1_c1f_escaped_or_rebound_loaders_are_unresolved(tmp_path: Path, label: str,
+                                                          source: str) -> None:
+    assert _single(tmp_path, source).unresolved, label
+
+
+@pytest.mark.parametrize("label,source", ORDINARY)
+def test_b1_c1f_ordinary_aliases_are_not_flagged(tmp_path: Path, label: str,
+                                                 source: str) -> None:
+    assert _single(tmp_path, source).unresolved == [], label
