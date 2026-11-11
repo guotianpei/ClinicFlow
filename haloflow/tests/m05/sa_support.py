@@ -33,8 +33,6 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-import haloflow.synthetic.composition as _synthetic
-
 M05_OWNER: Final = "haloflow_m05_owner"
 MIGRATOR: Final = "haloflow_migrator"
 RUNTIME: Final = "haloflow_runtime"
@@ -189,13 +187,32 @@ PHONE_1: Final = "+15550100001"       # P1 only
 PHONE_SHARED: Final = "+15550100002"  # P2 and P3 (P3 has no window)
 PHONE_UNKNOWN: Final = "+15550100009"
 
-# Single source since Option B B1 (B1-E3 pins its digest). The fixture identities this
-# module also uses directly must stay equal to the ones the profile SQL is rendered from.
-SA_TEST_PROFILE_SQL: Final = _synthetic.SA_TEST_PROFILE_SQL
-assert (FAMILY, T_DISPATCHED, T_REPLY, T_NO_REPLY, W_DIRECTORY, W_DISPATCH, W_INGRESS,
-        W_TIMER) == (_synthetic.FAMILY, _synthetic.T_DISPATCHED, _synthetic.T_REPLY,
-                     _synthetic.T_NO_REPLY, _synthetic.W_DIRECTORY, _synthetic.W_DISPATCH,
-                     _synthetic.W_INGRESS, _synthetic.W_TIMER), "fixture identity drift"
+# Single source since Option B B1 (B1-E3 pins its digest). Resolved LAZILY, never at
+# module import: tests/m05/conftest.py imports this module, and a src module that fails at
+# import time (for example under a mutation harness) must fail inside the row body, not
+# break conftest collection (the class-B red rule). Measured on 77da73a: the module-level
+# import made RM-ENV exit 4 in CI 43054048110.
+
+
+def sa_test_profile_sql() -> str:
+    """The SA TEST profile SQL from `haloflow.synthetic.composition`, after checking that
+    the fixture identities this module also uses directly have not drifted from it."""
+
+    import haloflow.synthetic.composition as synthetic
+
+    assert (FAMILY, T_DISPATCHED, T_REPLY, T_NO_REPLY, W_DIRECTORY, W_DISPATCH, W_INGRESS,
+            W_TIMER) == (synthetic.FAMILY, synthetic.T_DISPATCHED, synthetic.T_REPLY,
+                         synthetic.T_NO_REPLY, synthetic.W_DIRECTORY, synthetic.W_DISPATCH,
+                         synthetic.W_INGRESS, synthetic.W_TIMER), "fixture identity drift"
+    return synthetic.SA_TEST_PROFILE_SQL
+
+
+def __getattr__(name: str) -> Any:
+    """PEP 562: `sa_support.SA_TEST_PROFILE_SQL` stays a readable name, resolved lazily."""
+
+    if name == "SA_TEST_PROFILE_SQL":
+        return sa_test_profile_sql()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # --- digest vectors (independent literals, computed 2026-11-05 with
 # json.dumps(..., separators=(",", ":"), ensure_ascii=False) + hashlib.sha256) ------
@@ -324,7 +341,7 @@ class SAInstall:
                     manifest=staff_manifest(),
                 )
                 if self.profile:
-                    admin(self, SA_TEST_PROFILE_SQL.format(schema=self.schema))
+                    admin(self, sa_test_profile_sql().format(schema=self.schema))
             except Exception as error:  # noqa: BLE001 - reported in each row's body
                 self._error = error
         if self._error is not None:

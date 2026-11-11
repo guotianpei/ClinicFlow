@@ -166,8 +166,6 @@ import sh2_support as sh2
 import sh3_support as sh3
 import sh_support as sh
 
-import haloflow.synthetic.composition as _synthetic
-
 SI_UNIT_IDS: Final = (
     "t076_m05_profile_identity_columns", "t077_m05_directory_v3",
     "t078_m05_directory_v2_closure", "t079_m05_writeback_tables",
@@ -250,11 +248,25 @@ def si_catalog() -> Any:
     return build_synthetic_catalog()
 
 
-# Single source since Option B B1 (B1-E3 pins its digest); identities must not drift.
-SI_TEST_PROFILE_SQL: Final = _synthetic.SI_TEST_PROFILE_SQL
-assert (T_CHECK, ITEM_KIND, REASONS, sa.W_DISPATCH) == (
-    _synthetic.T_CHECK, _synthetic.ITEM_KIND_CHECK, _synthetic.CHECK_REASONS,
-    _synthetic.W_DISPATCH), "fixture identity drift"
+# Single source since Option B B1 (B1-E3 pins its digest), resolved LAZILY for the same
+# reason as `sa_support.sa_test_profile_sql` (no src import at module import time).
+
+
+def si_test_profile_sql() -> str:
+    import haloflow.synthetic.composition as synthetic
+
+    assert (T_CHECK, ITEM_KIND, REASONS, sa.W_DISPATCH) == (
+        synthetic.T_CHECK, synthetic.ITEM_KIND_CHECK, synthetic.CHECK_REASONS,
+        synthetic.W_DISPATCH), "fixture identity drift"
+    return synthetic.SI_TEST_PROFILE_SQL
+
+
+def __getattr__(name: str) -> Any:
+    """PEP 562: `si_support.SI_TEST_PROFILE_SQL` stays a readable name, resolved lazily."""
+
+    if name == "SI_TEST_PROFILE_SQL":
+        return si_test_profile_sql()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class SIInstall(sh3.SH3Install):
@@ -271,7 +283,7 @@ class SIInstall(sh3.SH3Install):
                                            supported=SI_SUPPORTED, manifest=staff_manifest())
                 if self.profile:
                     sa.admin(self, sa.SA_TEST_PROFILE_SQL.format(schema=self.schema))
-                    sa.admin(self, SI_TEST_PROFILE_SQL.format(schema=self.schema))
+                    sa.admin(self, si_test_profile_sql().format(schema=self.schema))
                     sh2.settings_raw(self, clinic_display_name=sh2.CLINIC)
             except Exception as error:  # noqa: BLE001 - reported in each row's body
                 self._error = error
