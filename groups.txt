@@ -1,0 +1,48 @@
+145 actions/checkout@v4
+237 actions/setup-python@v5
+266 scripts/verified-install.sh --python python3.12 --target linux-x86_64-cp312 --project . --locks locks --ev
+481 echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+494 $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow
+509 $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/compo
+524 $VENV/bin/pytest tests/m01 tests/m02 tests/m05 tests/platform -q -rA
+7301 python3 -I scripts/ci_test_report.py --junit "$RUNNER_TEMP/verify-evidence/pytest/junit.xml" --session "$
+7318 $VENV/bin/pytest scripts/test_uc1_trace.py scripts/test_l1w_trace.py -q -rA -p no:cacheprovider
+7350 scripts/gate-reachability.sh --selftest --venv "$VENV" --workflow ../.github/workflows/m01.yml --evidence
+7370 scripts/gate-reachability.sh --venv "$VENV" --workflow ../.github/workflows/m01.yml --evidence "$RUNNER_T
+7424 $VENV/bin/pytest scripts/test_m02_observation_mutants.py -q -p no:cacheprovider
+7440 python3 -I scripts/m02_observation_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify
+7484 $VENV/bin/pytest scripts/test_m05_create_mutants.py -q -p no:cacheprovider
+7500 python3 -I scripts/m05_create_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evid
+7524 $VENV/bin/pytest scripts/test_m05_resolve_mutants.py -q -p no:cacheprovider
+7540 python3 -I scripts/m05_resolve_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evi
+7617 $VENV/bin/pytest scripts/test_b5_startup_mutants.py -q -p no:cacheprovider
+7633 python3 -I scripts/b5_startup_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evid
+7679 $VENV/bin/pytest scripts/test_l1w_w1_mutants.py -q -p no:cacheprovider
+7695 python3 -I scripts/l1w_w1_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence
+7769 $VENV/bin/pytest scripts/test_l1w_w2_mutants.py -q -p no:cacheprovider
+7785 $VENV/bin/python -I scripts/l1w_w2_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify
+7871 $VENV/bin/pytest scripts/test_l1w_w3a_mutants.py -q -p no:cacheprovider
+7887 $VENV/bin/python -I scripts/l1w_w3a_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verif
+7931 $VENV/bin/pytest scripts/test_l1w_w3b_mutants.py -q -p no:cacheprovider
+7947 $VENV/bin/python -I scripts/l1w_w3b_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verif
+8015 $VENV/bin/pytest scripts/test_l1w_w4a_mutants.py -q -p no:cacheprovider
+8031 $VENV/bin/python -I scripts/l1w_w4a_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verif
+8093 $VENV/bin/pytest scripts/test_l1w_w4b_mutants.py -q -p no:cacheprovider
+8109 $VENV/bin/python -I scripts/l1w_w4b_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verif
+8171 $VENV/bin/pytest scripts/test_sa_intake_mutants.py -q -p no:cacheprovider
+8187 $VENV/bin/python -I scripts/sa_intake_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/ver
+8243 $VENV/bin/pytest scripts/test_sb_due_mutants.py -q -p no:cacheprovider
+8259 $VENV/bin/python -I scripts/sb_due_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify
+8303 $VENV/bin/pytest scripts/test_sc_activation_mutants.py -q -p no:cacheprovider
+8319 $VENV/bin/python -I scripts/sc_activation_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP
+8367 $VENV/bin/pytest scripts/test_sh_h1_mutants.py -q -p no:cacheprovider
+8383 $VENV/bin/python -I scripts/sh_h1_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-
+8427 $VENV/bin/pytest scripts/test_sh_h2_mutants.py -q -p no:cacheprovider
+8443 $VENV/bin/python -I scripts/sh_h2_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-
+8495 $VENV/bin/pytest scripts/test_sh_h3_mutants.py -q -p no:cacheprovider
+8511 $VENV/bin/python -I scripts/sh_h3_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-
+8575 $VENV/bin/pytest scripts/test_si_mutants.py -q -p no:cacheprovider
+8591 $VENV/bin/python -I scripts/si_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evi
+8693 $VENV/bin/pytest scripts/test_sj_mutants.py -q -p no:cacheprovider
+8709 $VENV/bin/python -I scripts/sj_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evi
+8753 actions/upload-artifact@v4
