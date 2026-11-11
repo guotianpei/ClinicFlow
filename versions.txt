@@ -1,0 +1,7 @@
+python: Python 3.12.3
+postgres: postgres (PostgreSQL) 17.11
+pytest: pytest 9.1.1
+venv: /home/claude/env/venv (scripts/verified-install.sh --target linux-x86_64-cp312 --locks locks, exit 0)
+env: HALOFLOW_TEST_DATABASE_URL=postgresql://postgres:***@localhost:5432/haloflow_test_m01 HALOFLOW_TEST_DISPOSABLE_CLUSTER=1
+invocation (main): cd haloflow && pytest tests/m01 tests/m02 tests/m05 tests/platform -q -rA -p no:cacheprovider
+invocation (candidate): cd haloflow && pytest tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic -q -rA -p no:cacheprovider --junitxml=...
