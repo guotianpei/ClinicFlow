@@ -3,6 +3,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -327,6 +328,93 @@ def test_an_application_module_cannot_compose_or_define_an_unpinned_catalogue() 
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_import) == []
     assert _composition_violations_in(COMPOSITION_ROOT, rogue_call) == []
     assert _definition_set_violations_in("src/haloflow/m07/statements.py", rogue_definitions) == []
+
+
+# --- Option B B1: the exact second composition root (Codex 20261111T132851Z) -------------
+# Each production builder below may additionally be referenced ONLY in
+# `src/haloflow/synthetic/composition.py`, ONLY through an unaliased module-level
+# `from <module> import <builder>`, and ONLY called inside its one module-level function
+# (not a nested def, not module level, not another function, not another synthetic module).
+# Everything else stays a violation. `allow_test_units` stays forbidden everywhere (R-E12).
+
+SECOND_ROOT = "src/haloflow/synthetic/composition.py"
+SECOND_ROOT_BUILDERS = (
+    # (builder, its defining module, the one synthetic function, the production checker)
+    ("build_statement_catalog", "haloflow.m01.statements", "build_synthetic_catalog",
+     "_composition_violations_in"),
+    ("build_tenant_migration_registry", "haloflow.m01.provisioning.units",
+     "build_synthetic_registry", "_migration_composition_violations_in"),
+)
+
+
+def _allowed_second_root(builder: str, module: str, function: str) -> str:
+    return (f"from {module} import {builder}\n\n"
+            f"def {function}():\n    return {builder}({{}})\n")
+
+
+def _checker(name: str) -> Any:
+    return globals()[name]
+
+
+@pytest.mark.parametrize("builder,module,function,checker", SECOND_ROOT_BUILDERS)
+def test_b1_r1_second_root_permits_exactly_the_one_function(
+        builder: str, module: str, function: str, checker: str) -> None:
+    source = _allowed_second_root(builder, module, function)
+    assert _checker(checker)(SECOND_ROOT, source) == []
+
+
+def _refusals(builder: str, module: str, function: str) -> list[tuple[str, str, str]]:
+    allowed = _allowed_second_root(builder, module, function)
+    imp = f"from {module} import {builder}\n"
+    return [
+        ("other function", SECOND_ROOT, f"{imp}def other():\n    return {builder}({{}})\n"),
+        ("module level", SECOND_ROOT, f"{imp}X = {builder}({{}})\n"),
+        ("nested def", SECOND_ROOT,
+         f"{imp}def {function}():\n    def inner():\n        return {builder}({{}})\n"
+         "    return inner()\n"),
+        ("aliased import", SECOND_ROOT,
+         f"from {module} import {builder} as b\ndef {function}():\n    return b({{}})\n"),
+        ("reference escapes", SECOND_ROOT, f"{imp}LEAK = {builder}\n" + allowed[len(imp):]),
+        ("import inside another function", SECOND_ROOT,
+         f"def other():\n    {imp}    return {builder}({{}})\n"),
+        ("qualified call elsewhere", SECOND_ROOT,
+         f"import {module} as m\ndef other():\n    return m.{builder}({{}})\n"),
+        ("wrong function for this builder", SECOND_ROOT,
+         f"{imp}def build_synthetic_other():\n    return {builder}({{}})\n"),
+        ("other synthetic module", "src/haloflow/synthetic/app.py", allowed),
+        ("look-alike path", "src/haloflow/synthetic/composition_extra.py", allowed),
+        ("application module", "src/haloflow/m05/service.py", allowed),
+    ]
+
+
+SECOND_ROOT_REFUSALS = [
+    (checker, *case)
+    for builder, module, function, checker in SECOND_ROOT_BUILDERS
+    for case in _refusals(builder, module, function)
+]
+
+
+@pytest.mark.parametrize("checker,label,path,source", SECOND_ROOT_REFUSALS)
+def test_b1_r2_second_root_refuses_every_other_reference(checker: str, label: str,
+                                                         path: str, source: str) -> None:
+    assert _checker(checker)(path, source), label
+
+
+@pytest.mark.parametrize("builder,module,function,checker", SECOND_ROOT_BUILDERS)
+def test_b1_r3_the_real_second_root_calls_once_inside_its_function(
+        builder: str, module: str, function: str, checker: str) -> None:
+    path = Path(SECOND_ROOT)
+    assert path.is_file(), "haloflow.synthetic.composition does not exist yet"
+    tree = ast.parse(path.read_text())
+    functions = [node for node in tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name == function]
+    assert len(functions) == 1
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+             and getattr(node.func, "id", getattr(node.func, "attr", None)) == builder]
+    assert len(calls) == 1
+    assert calls[0] in list(ast.walk(functions[0]))
+    assert _checker(checker)(SECOND_ROOT, path.read_text()) == []
+    assert _test_unit_escape_violations_in(SECOND_ROOT, path.read_text()) == []
 
 
 def test_compiled_catalog_write_capabilities_cannot_be_supplied_or_drift() -> None:
