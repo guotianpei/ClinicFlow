@@ -10,6 +10,20 @@ on:
       - main
       - feature/m01-tenant-context
 
+# Only FIRST-attempt pull_request runs of the same PR share a group and cancel an older
+# head's run; every re-run attempt, every push (main, feature) and any other event gets a
+# unique run-id + attempt group with cancel-in-progress false, so it is never cancelled and
+# never cancels the latest candidate. Gate, trace, reachability and mutation semantics are
+# unchanged. Design: claude_ci-concurrency-proposal-v1r1-2026-11-10.md (Codex ALIGN
+# 20261110T235734Z).
+concurrency:
+  group: >-
+    m01-${{ github.workflow }}-${{
+    (github.event_name == 'pull_request' && github.run_attempt == '1')
+    && format('pr-{0}', github.event.pull_request.number)
+    || format('run-{0}-{1}', github.run_id, github.run_attempt) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' }}
+
 jobs:
   verify-m01:
     runs-on: ubuntu-24.04
