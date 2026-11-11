@@ -33,6 +33,8 @@ import psycopg
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
+import haloflow.synthetic.composition as _synthetic
+
 M05_OWNER: Final = "haloflow_m05_owner"
 MIGRATOR: Final = "haloflow_migrator"
 RUNTIME: Final = "haloflow_runtime"
@@ -187,22 +189,13 @@ PHONE_1: Final = "+15550100001"       # P1 only
 PHONE_SHARED: Final = "+15550100002"  # P2 and P3 (P3 has no window)
 PHONE_UNKNOWN: Final = "+15550100009"
 
-SA_TEST_PROFILE_SQL: Final = f"""
-UPDATE {{schema}}.ref_action_families SET is_active = true WHERE action_family = '{FAMILY}';
-UPDATE {{schema}}.event_types SET is_active = true
- WHERE event_type IN ('{T_DISPATCHED}', '{T_REPLY}', '{T_NO_REPLY}');
-INSERT INTO {{schema}}.m05_intake_workloads (workload_role, workload_id) VALUES
-    ('directory', '{W_DIRECTORY}'), ('dispatch', '{W_DISPATCH}'),
-    ('ingress', '{W_INGRESS}'), ('timer', '{W_TIMER}');
-INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_version,
-    discriminator_path, discriminator_value, item_kind, producer_workload_id,
-    active_in_production) VALUES
-    ('{T_REPLY}', 1, 'triage_kind', 'reschedule_request', 'reschedule_request',
-     '{W_INGRESS}', false),
-    ('{T_REPLY}', 1, 'triage_kind', 'cancel_request', 'cancel_request', '{W_INGRESS}', false),
-    ('{T_REPLY}', 1, 'triage_kind', 'unclear_reply', 'unclear_reply', '{W_INGRESS}', false),
-    ('{T_NO_REPLY}', 1, 'triage_kind', 'no_reply', 'no_reply', '{W_TIMER}', false);
-"""
+# Single source since Option B B1 (B1-E3 pins its digest). The fixture identities this
+# module also uses directly must stay equal to the ones the profile SQL is rendered from.
+SA_TEST_PROFILE_SQL: Final = _synthetic.SA_TEST_PROFILE_SQL
+assert (FAMILY, T_DISPATCHED, T_REPLY, T_NO_REPLY, W_DIRECTORY, W_DISPATCH, W_INGRESS,
+        W_TIMER) == (_synthetic.FAMILY, _synthetic.T_DISPATCHED, _synthetic.T_REPLY,
+                     _synthetic.T_NO_REPLY, _synthetic.W_DIRECTORY, _synthetic.W_DISPATCH,
+                     _synthetic.W_INGRESS, _synthetic.W_TIMER), "fixture identity drift"
 
 # --- digest vectors (independent literals, computed 2026-11-05 with
 # json.dumps(..., separators=(",", ":"), ensure_ascii=False) + hashlib.sha256) ------

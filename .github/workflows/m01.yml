@@ -67,9 +67,9 @@ jobs:
       # commands from these markers and fails closed if one is missing,
       # duplicated or does not start with the expected tool (CP2-2a I-9, 2A-C10).
       # gate-reachability: lint
-      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic alembic
+      - run: $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/synthetic src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic alembic
       # gate-reachability: type
-      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/composition.py src/haloflow/startup.py
+      - run: $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/synthetic src/haloflow/composition.py src/haloflow/startup.py
       # The FULL set. No -m "not postgres" here: the service above exists for these.
       # gate-reachability: test
       - run: $VENV/bin/pytest tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic -q -rA
@@ -266,6 +266,16 @@ jobs:
           $VENV/bin/python -I scripts/sj_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/sj-mutation"
+      # Option B B1 mutation controls B1-M1..B1-M10 (safety-focused, Codex Q5): the exact
+      # second composition root (repository-control checker), the transitive production
+      # fence walker, the synthetic composition against the frozen pre-move oracle, and a
+      # production entry point importing the synthetic package. Kill sets in
+      # scripts/b1_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_b1_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/b1_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/b1-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

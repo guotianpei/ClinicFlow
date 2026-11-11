@@ -166,6 +166,8 @@ import sh2_support as sh2
 import sh3_support as sh3
 import sh_support as sh
 
+import haloflow.synthetic.composition as _synthetic
+
 SI_UNIT_IDS: Final = (
     "t076_m05_profile_identity_columns", "t077_m05_directory_v3",
     "t078_m05_directory_v2_closure", "t079_m05_writeback_tables",
@@ -230,69 +232,29 @@ def si_amendments() -> Any:
 
 
 def si_registry() -> Any:
-    """The H3 registry inputs plus the S-I units, profiles and closure amendments."""
+    """The S-I TEST registry (target 94). Single source since Option B B1:
+    `haloflow.synthetic.composition.build_synthetic_registry`, pinned against the frozen
+    pre-move manifest (tests/synthetic, B1-E1)."""
 
-    import sb_support as sb
+    from haloflow.synthetic.composition import build_synthetic_registry
 
-    from haloflow.composition import (
-        APPROVED_ACL_AMENDMENTS,
-        APPROVED_EXECUTION_ROLES,
-        APPROVED_INSTALLED_STATE_PROFILES,
-        APPROVED_TENANT_MIGRATIONS,
-    )
-    from haloflow.m01.provisioning.units import build_tenant_migration_registry
-
-    return build_tenant_migration_registry(
-        *APPROVED_TENANT_MIGRATIONS, sa.sa_units(), sb.sb_units(), sc.sc_units(),
-        sh.sh_units(), sh2.sh2_units(), sh3.sh3_units(), si_units(),
-        approved_execution_roles=APPROVED_EXECUTION_ROLES,
-        installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES, **sa.sa_profiles(),
-                                  **sb.sb_profiles(), **sc.sc_profiles(),
-                                  **sh.sh_profiles(), **sh2.sh2_profiles(),
-                                  **sh3.sh3_profiles(), **si_profiles()},
-        acl_amendments=(*APPROVED_ACL_AMENDMENTS, *sh.sh_amendments(),
-                        *sh2.sh2_amendments(), *si_amendments()),
-    )
+    return build_synthetic_registry()
 
 
 def si_catalog() -> Any:
-    """The H3 TEST catalogue with every key in SI_REBOUND dropped from its source part and
-    re-added from SI_REBOUND, plus SI_STATEMENTS; protected = H3 set | SI_PROTECTED."""
+    """The S-I TEST catalogue. Single source since Option B B1:
+    `haloflow.synthetic.composition.build_synthetic_catalog` (B1-E2)."""
 
-    from types import MappingProxyType
+    from haloflow.synthetic.composition import build_synthetic_catalog
 
-    import sb_support as sb
-
-    from haloflow.composition import APPROVED_MODULE_STATEMENTS
-    from haloflow.m01.statements import build_statement_catalog
-    from haloflow.m05.intake_statements import DIRECTORY_KEY
-    from haloflow.m05.writeback_statements import SI_PROTECTED, SI_REBOUND, SI_STATEMENTS
-
-    rebound = frozenset(SI_REBOUND)
-
-    def drop(part: Any) -> Any:
-        return MappingProxyType({k: v for k, v in part.items() if k not in rebound})
-
-    sa_part = MappingProxyType({k: v for k, v in sh.sa_statements_without_inbound().items()
-                                if k != DIRECTORY_KEY})
-    sh_part = MappingProxyType({k: v for k, v in sh.sh_statements().items()
-                                if k not in sh2.CLOSED_KEYS()})
-    parts = (*APPROVED_MODULE_STATEMENTS, sa_part, sb.sb_statements(), sh_part,
-             sh.sh_inbound_statements(), sh2.sh2_statements(), sh2.sh2_directory_statements(),
-             sh3.sh3_statements())
-    return build_statement_catalog(*(drop(part) for part in parts), SI_REBOUND, SI_STATEMENTS,
-                                   activation_protected=(sh2.protected() | sh3.sh3_protected()
-                                                         | frozenset(SI_PROTECTED)))
+    return build_synthetic_catalog()
 
 
-SI_TEST_PROFILE_SQL: Final = f"""
-UPDATE {{schema}}.event_types SET is_active = true WHERE event_type = '{T_CHECK}';
-INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_version,
-    discriminator_path, discriminator_value, item_kind, producer_workload_id,
-    active_in_production) VALUES
-""" + ",\n".join(
-    f"    ('{T_CHECK}', 1, 'reason', '{reason}', '{ITEM_KIND}', '{sa.W_DISPATCH}', false)"
-    for reason in REASONS) + ";\n"
+# Single source since Option B B1 (B1-E3 pins its digest); identities must not drift.
+SI_TEST_PROFILE_SQL: Final = _synthetic.SI_TEST_PROFILE_SQL
+assert (T_CHECK, ITEM_KIND, REASONS, sa.W_DISPATCH) == (
+    _synthetic.T_CHECK, _synthetic.ITEM_KIND_CHECK, _synthetic.CHECK_REASONS,
+    _synthetic.W_DISPATCH), "fixture identity drift"
 
 
 class SIInstall(sh3.SH3Install):

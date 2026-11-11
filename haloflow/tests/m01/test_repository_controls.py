@@ -109,6 +109,50 @@ def _is_protected_module(dotted: str) -> bool:
     )
 
 
+def _second_root_violations(path: str, source: str, builder: str, module: str,
+                            function: str) -> list[str]:
+    """Option B B1: the exact allowance for the synthetic composition root.
+
+    In `SECOND_ROOT` only, `builder` may be imported unaliased at module level from
+    `module`, and referenced only as the callee of a call whose innermost enclosing
+    function is the module-level `function` (not a nested def, not module level, not
+    another function). Any other import or reference, including any attribute reference,
+    is a violation.
+    """
+
+    tree = ast.parse(source)
+    violations: list[str] = []
+    module_level = set(map(id, tree.body))
+
+    def visit(node: ast.AST, scope: str | None, callee: bool) -> None:
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name == builder and not (
+                        id(node) in module_level and node.module == module
+                        and alias.asname is None and node.level == 0):
+                    violations.append(f"{path}: imports {builder} outside the allowance")
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname == builder:
+                    violations.append(f"{path}: binds {builder} by import")
+        elif isinstance(node, ast.Name) and node.id == builder:
+            if not (callee and scope == function and isinstance(node.ctx, ast.Load)):
+                violations.append(f"{path}: references {builder} outside {function}")
+        elif isinstance(node, ast.Attribute) and node.attr == builder:
+            violations.append(f"{path}: qualified reference to {builder}")
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            name = (node.name if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and id(node) in module_level else "<nested>")
+            inner: str | None = name
+        else:
+            inner = scope
+        for child in ast.iter_child_nodes(node):
+            visit(child, inner, isinstance(node, ast.Call) and child is node.func)
+
+    visit(tree, None, False)
+    return violations
+
+
 def _composition_violations_in(path: str, source: str) -> list[str]:
     """Production code outside the composition root may not compose a catalogue.
 
@@ -120,6 +164,9 @@ def _composition_violations_in(path: str, source: str) -> list[str]:
     violations: list[str] = []
     if path == COMPOSITION_ROOT:
         return violations
+    if path == SECOND_ROOT:
+        return _second_root_violations(path, source, "build_statement_catalog",
+                                       "haloflow.m01.statements", "build_synthetic_catalog")
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom):
             for alias in node.names:
@@ -472,6 +519,8 @@ def test_ci_workflow_covers_every_checked_production_path() -> None:
         # L-1W W1-W4a: the platform entry point (verify, keys, config, admission,
         # http, app), already in the ruff and mypy lines since W1.
         "src/haloflow/platform",
+        # Option B B1: the fenced synthetic composition root (and later increments).
+        "src/haloflow/synthetic",
     }
     for required in checked:
         assert required in ruff_line, f"{required} not linted by CI"
@@ -502,6 +551,10 @@ def _migration_composition_violations_in(path: str, source: str) -> list[str]:
     violations: list[str] = []
     if path == COMPOSITION_ROOT:
         return violations
+    if path == SECOND_ROOT:
+        return _second_root_violations(path, source, "build_tenant_migration_registry",
+                                       "haloflow.m01.provisioning.units",
+                                       "build_synthetic_registry")
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.ImportFrom):
             for alias in node.names:
