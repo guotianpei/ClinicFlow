@@ -1,0 +1,56 @@
+1	success	Set up job
+2	success	Initialize containers
+3	success	Run actions/checkout@v4
+4	success	Run actions/setup-python@v5
+5	success	Run scripts/verified-install.sh --python python3.12 --target linux-x86_64-cp312 --project . --locks locks --evidence "$RUNNER_TEMP/verify-evidence" --envdir "$RUNNER_TEMP/verify-env" --source-revision "$GITHUB_SHA"
+6	success	Run echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+7	success	Run $VENV/bin/ruff check src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/synthetic src/haloflow/composition.py src/haloflow/startup.py tests/conftest.py tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic alembic
+8	success	Run $VENV/bin/mypy src/haloflow/m01 src/haloflow/m02 src/haloflow/m05 src/haloflow/platform src/haloflow/synthetic src/haloflow/composition.py src/haloflow/startup.py
+9	success	Run $VENV/bin/pytest tests/m01 tests/m02 tests/m05 tests/platform tests/synthetic -q -rA
+10	success	Run python3 -I scripts/ci_test_report.py --junit "$RUNNER_TEMP/verify-evidence/pytest/junit.xml" --session "$RUNNER_TEMP/verify-evidence/pytest/session.json" --manifest ci/expected-red.json --out "$RUNNER_TEMP/verify-evidence/pytest/classification.json" --pytest-outcome "$PYTEST_OUTCOME" --source-sha "$GITHUB_SHA" --head-sha "$HEAD_SHA"
+11	success	Run $VENV/bin/pytest scripts/test_uc1_trace.py scripts/test_l1w_trace.py -q -rA -p no:cacheprovider
+12	success	Run scripts/gate-reachability.sh --selftest --venv "$VENV" --workflow ../.github/workflows/m01.yml --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability-selftest"
+13	success	Run scripts/gate-reachability.sh --venv "$VENV" --workflow ../.github/workflows/m01.yml --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
+14	success	Run $VENV/bin/pytest scripts/test_m02_observation_mutants.py -q -p no:cacheprovider
+15	success	Run python3 -I scripts/m02_observation_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/mutation"
+16	success	Run $VENV/bin/pytest scripts/test_m05_create_mutants.py -q -p no:cacheprovider
+17	success	Run python3 -I scripts/m05_create_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/m05-mutation"
+18	success	Run $VENV/bin/pytest scripts/test_m05_resolve_mutants.py -q -p no:cacheprovider
+19	success	Run python3 -I scripts/m05_resolve_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/m05-resolve-mutation"
+20	success	Run $VENV/bin/pytest scripts/test_b5_startup_mutants.py -q -p no:cacheprovider
+21	success	Run python3 -I scripts/b5_startup_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/b5-startup-mutation"
+22	success	Run $VENV/bin/pytest scripts/test_l1w_w1_mutants.py -q -p no:cacheprovider
+23	success	Run python3 -I scripts/l1w_w1_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w1-mutation"
+24	success	Run $VENV/bin/pytest scripts/test_l1w_w2_mutants.py -q -p no:cacheprovider
+25	success	Run $VENV/bin/python -I scripts/l1w_w2_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w2-mutation"
+26	success	Run $VENV/bin/pytest scripts/test_l1w_w3a_mutants.py -q -p no:cacheprovider
+27	success	Run $VENV/bin/python -I scripts/l1w_w3a_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3a-mutation"
+28	success	Run $VENV/bin/pytest scripts/test_l1w_w3b_mutants.py -q -p no:cacheprovider
+29	success	Run $VENV/bin/python -I scripts/l1w_w3b_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w3b-mutation"
+30	success	Run $VENV/bin/pytest scripts/test_l1w_w4a_mutants.py -q -p no:cacheprovider
+31	success	Run $VENV/bin/python -I scripts/l1w_w4a_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4a-mutation"
+32	success	Run $VENV/bin/pytest scripts/test_l1w_w4b_mutants.py -q -p no:cacheprovider
+33	success	Run $VENV/bin/python -I scripts/l1w_w4b_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/l1w-w4b-mutation"
+34	success	Run $VENV/bin/pytest scripts/test_sa_intake_mutants.py -q -p no:cacheprovider
+35	success	Run $VENV/bin/python -I scripts/sa_intake_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sa-intake-mutation"
+36	success	Run $VENV/bin/pytest scripts/test_sb_due_mutants.py -q -p no:cacheprovider
+37	success	Run $VENV/bin/python -I scripts/sb_due_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sb-due-mutation"
+38	success	Run $VENV/bin/pytest scripts/test_sc_activation_mutants.py -q -p no:cacheprovider
+39	success	Run $VENV/bin/python -I scripts/sc_activation_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sc-activation-mutation"
+40	success	Run $VENV/bin/pytest scripts/test_sh_h1_mutants.py -q -p no:cacheprovider
+41	success	Run $VENV/bin/python -I scripts/sh_h1_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sh-h1-mutation"
+42	success	Run $VENV/bin/pytest scripts/test_sh_h2_mutants.py -q -p no:cacheprovider
+43	success	Run $VENV/bin/python -I scripts/sh_h2_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sh-h2-mutation"
+44	success	Run $VENV/bin/pytest scripts/test_sh_h3_mutants.py -q -p no:cacheprovider
+45	success	Run $VENV/bin/python -I scripts/sh_h3_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sh-h3-mutation"
+46	success	Run $VENV/bin/pytest scripts/test_si_mutants.py -q -p no:cacheprovider
+47	success	Run $VENV/bin/python -I scripts/si_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/si-mutation"
+48	success	Run $VENV/bin/pytest scripts/test_sj_mutants.py -q -p no:cacheprovider
+49	success	Run $VENV/bin/python -I scripts/sj_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/sj-mutation"
+50	success	Run $VENV/bin/pytest scripts/test_b1_mutants.py -q -p no:cacheprovider
+51	success	Run $VENV/bin/python -I scripts/b1_mutants.py --pytest "$VENV/bin/pytest" --evidence "$RUNNER_TEMP/verify-evidence/b1-mutation"
+52	success	Run actions/upload-artifact@v4
+102	success	Post Run actions/setup-python@v5
+103	success	Post Run actions/checkout@v4
+104	success	Stop containers
+105	success	Complete job
