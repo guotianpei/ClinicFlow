@@ -35,6 +35,11 @@ def main() -> None:
     r_name, r_n = split(cfg.get("raise_at", ""))
     k_name, k_n = split(cfg.get("kill_at", ""))
 
+    def hit(point: str, data: dict[str, Any]) -> None:
+        """Durable proof the fault fired at exactly this point (written before acting on it)."""
+        with open(f"{bar}/fault.hit", "w") as fh:
+            json.dump({"point": point, **data}, fh, default=str)
+
     def fault(point: str, info: Any) -> None:
         counts[point] = counts.get(point, 0) + 1
         k = counts[point]
@@ -43,12 +48,15 @@ def main() -> None:
         if point == k_name and k == k_n:
             import psycopg
 
+            pid = int(info["backend_pid"])
             with psycopg.connect(cfg["environ"]["HALOFLOW_SYNTHETIC_ADMIN_DSN"],
                                  autocommit=True) as admin:
-                admin.execute("SELECT pg_terminate_backend(%s)", (int(info["backend_pid"]),))
+                row = admin.execute("SELECT pg_terminate_backend(%s)", (pid,)).fetchone()
+            hit(point, {"backend_pid": pid, "terminated": bool(row and row[0])})
         if point == r_name and k == r_n:
             import psycopg
 
+            hit(point, {"backend_pid": info.get("backend_pid")})
             raise psycopg.OperationalError("B2 test fault: acknowledgement lost")
         if point == p_name and k == p_n:
             data = dict(info or {})

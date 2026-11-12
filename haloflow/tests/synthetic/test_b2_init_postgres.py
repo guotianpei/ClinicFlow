@@ -33,9 +33,14 @@ Rows
 - B2-I4b  ambiguous commit outcome, per phase: (ack) the COMMIT really happened but its
           acknowledgement is lost (fault raised inside the commit error scope); (rb) the
           committing backend is killed before COMMIT (real rollback through connection loss).
+          BEFORE the retry: durable proof the fault fired at its exact point, the killed backend
+          is gone, and phase p's DB effect is PRESENT (ack) / ABSENT (rb), read independently
+          (tenant: its first guarded transaction's tenant row).
           The run fails closed without writing state p; the re-run -> ready, equal to a single
           execution, secrets unchanged. Interruption evidence for the attempt pin is read from
           the ledger at the failure point, never from the implementation.
+- B2-I4c  CONTROL (real PostgreSQL, no B2 source): the I4b pre-retry discriminator accepts the
+          correct order and rejects `commit_ack` fired before COMMIT and a pre-phase failure.
 - B2-I5   diverged variants: a foreign object at each phase boundary -> STATE_DIVERGED; the only
           change is the owned epoch bump; never repaired or adopted. Owned-but-altered login
           (separately: password only, attribute only, extra membership) and settings ->
@@ -313,6 +318,114 @@ def test_b2_i4_crash_matrix(pg: s.PgCluster, tmp_path: Path, ref_root: Path,
     assert_single_execution(pg, st_dir, reference_of(ref_root), interrupted=interrupted)
 
 
+def phase_effect(c: s.PgCluster, st: dict[str, Any], phase: str) -> bool:
+    """INDEPENDENT read of whether phase p's committed DB effect exists (the tenant phase: its
+    FIRST guarded transaction, which registers the tenant row)."""
+    n, schema = st["nonce"], st["schema_key"]
+
+    def one(db: str, q: str, args: Any = None) -> Any:
+        with c.connect(db) as d:
+            row = d.execute(q, args).fetchone()
+        return None if row is None else row[0]
+
+    def has(table: str) -> bool:
+        return one(s.TARGET_DB, "SELECT to_regclass(%s) IS NOT NULL", (table,)) is True
+
+    if phase == "stamped":
+        return one("postgres", "SELECT shobj_description(oid,'pg_database') FROM pg_database"
+                   " WHERE datname=%s", (s.TARGET_DB,)) == f"haloflow-synthetic:{n}"
+    if phase == "migrated":
+        return has("public.alembic_version") and one(
+            s.TARGET_DB, "SELECT version_num FROM public.alembic_version") == "009"
+    if phase == "logins":
+        return one("postgres", "SELECT count(*) FROM pg_roles WHERE rolname LIKE %s",
+                   (f"haloflow_syn_{n[:8]}_%",)) == len(s.LOGIN_GROUPS)
+    if phase == "tenant":
+        return has("shared.tenants") and one(
+            s.TARGET_DB, "SELECT count(*) FROM shared.tenants WHERE tenant_id=%s",
+            (st["tenant_id"],)) == 1
+    if phase == "profile":
+        return has(f"{schema}.m05_intake_workloads") and one(
+            s.TARGET_DB, f"SELECT count(*) FROM {schema}.m05_intake_workloads") == 4
+    if phase == "activated":
+        return has(f"{schema}.m05_activation_records") and one(
+            s.TARGET_DB, f"SELECT count(*) FROM {schema}.m05_activation_records") == 1
+    if phase == "settings":
+        return has(f"{schema}.m05_reminder_settings") and one(
+            s.TARGET_DB, f"SELECT settings_version FROM {schema}.m05_reminder_settings") == 2
+    if phase == "staff":
+        return has(f"{schema}.m01_staff") and one(
+            s.TARGET_DB, f"SELECT count(*) FROM {schema}.m01_staff") == 1
+    raise AssertionError(phase)
+
+
+def assert_fault_outcome(c: s.PgCluster, bar: Path, st: dict[str, Any], phase: str, kind: str,
+                         point: str) -> None:
+    """Before ANY retry: the fault fired at exactly its point (durable proof), the killed
+    backend is really gone, and the DB shows the phase's effect present (lost ack of a REAL
+    commit) or absent (real rollback)."""
+    hit_file = bar / "fault.hit"
+    assert hit_file.exists(), "the fault never fired (a pre-phase failure cannot pass)"
+    hit = json.loads(hit_file.read_text())
+    assert hit["point"] == point, hit
+    if kind == "rolled_back":
+        assert hit["terminated"] is True
+        with c.connect("postgres") as a:
+            gone = a.execute("SELECT count(*) FROM pg_stat_activity WHERE pid=%s",
+                             (hit["backend_pid"],)).fetchone()
+        assert gone == (0,), "the committing backend must really be gone"
+    expected = kind == "ack_lost"
+    assert phase_effect(c, st, phase) is expected, (
+        "ack_lost: the COMMIT must really have happened" if expected else
+        "rolled_back: nothing of the phase may be committed")
+
+
+@pytest.mark.parametrize("order", ["correct", "mutant_ack_before_commit", "mutant_prephase"])
+def test_b2_i4b_discriminator_control(tmp_path: Path, order: str) -> None:
+    """CONTROL (real PostgreSQL, no B2 source): the pre-retry checks above reject an
+    implementation whose `commit_ack` fires BEFORE COMMIT (that is a rollback in disguise) and
+    one that fails before the phase runs; they accept the correct order."""
+    with s.cluster(tmp_path) as c:
+        with c.connect() as d:
+            d.execute("CREATE TABLE public.toy_effect(x int)")
+        bar = tmp_path / "bar"
+        bar.mkdir()
+
+        def fire(point: str) -> None:
+            (bar / "fault.hit").write_text(json.dumps({"point": point}))
+            raise psycopg.OperationalError("toy fault")
+
+        conn = c.connect()
+        try:
+            if order == "mutant_prephase":
+                raise psycopg.OperationalError("failed before the phase")
+            with conn.transaction():
+                conn.execute("INSERT INTO public.toy_effect VALUES (1)")
+                if order == "mutant_ack_before_commit":
+                    fire("phase.toy.commit_ack")
+            fire("phase.toy.commit_ack")                    # correct: after a real COMMIT
+        except psycopg.OperationalError:
+            pass
+        finally:
+            conn.close()
+
+        def toy_effect() -> bool:
+            with c.connect() as d:
+                return d.execute("SELECT count(*) FROM public.toy_effect").fetchone() == (1,)
+
+        def check() -> None:
+            hit_file = bar / "fault.hit"
+            assert hit_file.exists(), "fault never fired"
+            assert json.loads(hit_file.read_text())["point"] == "phase.toy.commit_ack"
+            assert toy_effect() is True, "ack_lost requires the commit to be real"
+
+        if order == "correct":
+            check()
+        else:
+            with pytest.raises(AssertionError):
+                check()
+
+
 @pytest.mark.parametrize("kind", ["ack_lost", "rolled_back"])
 @pytest.mark.parametrize("phase", PHASE_COMMITS)
 def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path, phase: str,
@@ -327,6 +440,7 @@ def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path
     st0 = s.read_state(st_dir)
     previous = s.PHASES[s.PHASES.index(phase) - 1]
     assert st0["phase"] == previous, "no state write for a phase whose commit is not known"
+    assert_fault_outcome(pg, tmp_path / "bar1", st0, phase, kind, next(iter(fault.values())))
     secrets = (st0["logins"], st0["note_keys"])
     interrupted = s.ledger_running(pg)
     again = init_child(pg, st_dir, tmp_path / "bar2")
