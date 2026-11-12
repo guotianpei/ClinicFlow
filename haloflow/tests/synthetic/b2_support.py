@@ -99,7 +99,10 @@ TARGET_DB: Final = "haloflow_test_syn_target"
 # set true, granted by the bootstrap superuser.
 LOGIN_GROUPS: Final = {"runtime": "haloflow_runtime", "migrator": "haloflow_migrator",
                        "provisioner": "haloflow_provisioner",
-                       "audit_projector": "haloflow_audit_projector"}
+                       "audit_projector": "haloflow_audit_projector",
+                       # Fifth login (Codex ALIGN 20261112T155235Z): the real first-member
+                       # path (t034) authorizes a SUPPORT session_user by OID+name.
+                       "support": "haloflow_support"}
 LOGIN_SUFFIXES: Final = tuple(LOGIN_GROUPS)
 
 # Measured (two independent provisioning runs to target 94; see module docstring).
@@ -111,18 +114,33 @@ NONDETERMINISTIC_PROVISIONING: Final = frozenset({
     ("shared.tenants", "updated_at"),
     ("{tenant}.m05_reminder_settings", "updated_at"),
 })
-# Clock-defaulted audit columns of the tables the later phases write (to be confirmed by the
-# reference-equality rows at implementation; adding one needs a measured reason).
+# MEASURED (two independent installs to `ready`, identities normalised; raw evidence
+# `claude_b2-impl/nondet-phases-measurement.json`): the ONLY columns of the phase tables that
+# differ. Each entry has a stated cause; anything else must be equal.
 NONDETERMINISTIC_PHASES: Final = frozenset({
+    # clock values written by the existing functions
     ("{tenant}.m05_activation_records", "created_at"),
-    ("{tenant}.m05_appointment_profile", "updated_at"),
     ("{tenant}.m01_staff", "status_changed_at"),
     ("{tenant}.m01_staff_roles", "granted_at"),
     ("{tenant}.m01_staff_followup_access", "granted_at"),
     ("{tenant}.m01_staff_bootstrap_keys", "created_at"),
     ("{tenant}.m01_staff_bootstrap_log", "at"),
-    ("shared.staff_identity_anchor", "created_at"),
+    ("{tenant}.m01_staff_action_keys", "created_at"),
+    ("{tenant}.m01_staff_admin_log", "created_at"),
+    # random identifiers (gen_random_uuid inside the existing functions)
+    ("{tenant}.m05_activation_records", "record_id"),
+    ("{tenant}.m01_staff_bootstrap_log", "log_id"),
+    ("{tenant}.m01_staff_admin_log", "log_id"),
+    # sha256 over canonical commands that embed install-specific identities (tenant, staff,
+    # action keys): not comparable ACROSS installs; same-install no-change rows keep them raw
+    ("{tenant}.m01_staff_bootstrap_keys", "digest"),
+    ("{tenant}.m01_staff_action_keys", "digest"),
+    ("{tenant}.m01_staff_admin_log", "digest"),
 })
+# A clock value NESTED inside JSON snapshot columns: only that one key is removed; the rest of
+# each snapshot (status, display name, access) is compared.
+NESTED_CLOCK: Final = {("{tenant}.m01_staff_admin_log", ("before", "after", "result")):
+                       "status_changed_at"}
 # The ledger attempt counter is NOT excluded wholesale: rows compare it explicitly
 # (exactly the interrupted unit, exactly +1; every other unit equal).
 ATTEMPT: Final = ("shared.schema_migrations", "attempt")
@@ -283,8 +301,16 @@ SNAPSHOT_PER_DB: Final = {
     "fdw": "SELECT fdwname FROM pg_foreign_data_wrapper UNION ALL"
            " SELECT 'server:'||srvname FROM pg_foreign_server ORDER BY 1",
     "publications": "SELECT pubname FROM pg_publication ORDER BY 1",
-    "comments": "SELECT classoid::regclass::text, objoid::text, objsubid, description"
-                " FROM pg_description WHERE objoid >= 16384 ORDER BY 1,2,3",
+    # Keyed by object IDENTITY, never by OID (OIDs differ between equal clusters, e.g. after a
+    # rolled-back attempt consumed some).
+    "comments": "SELECT pg_describe_object(classoid, objoid, objsubid), description"
+                " FROM pg_description WHERE objoid >= 16384 ORDER BY 1, 2",
+    # The same comments keyed by RAW identity (class, OID, sub-id). The semantic key above
+    # survives a drop-and-recreate with the same name and comment; this one does not, so a
+    # same-install "no change" assertion also catches object REPLACEMENT. OIDs differ between
+    # clusters, so cross-cluster comparisons drop this class (see `comparable()`).
+    "comments_raw": "SELECT classoid::regclass::text, objoid::text, objsubid::text, description"
+                    " FROM pg_description WHERE objoid >= 16384 ORDER BY 1, 2, 3",
 }
 
 
@@ -333,7 +359,27 @@ def semantic(c: PgCluster, tenant_schema: str, *, db: str = TARGET_DB,
     if not include_attempt:
         exclude.add(ATTEMPT)
     with c.connect(db) as d:
-        return _rows(d, exclude=frozenset(exclude), tenant=tenant_schema)
+        d.execute("SET TimeZone = 'UTC'")   # one rendering for intent-recorded timestamps
+        rows = _rows(d, exclude=frozenset(exclude), tenant=tenant_schema)
+    for (table, columns), key in NESTED_CLOCK.items():
+        name = table.replace("{tenant}", tenant_schema)
+        if name in rows:
+            fixed = []
+            for text in rows[name]:
+                row = json.loads(text)
+                for col in columns:
+                    row[col] = _strip_key(row.get(col), key)
+                fixed.append(json.dumps(row, sort_keys=True))
+            rows[name] = sorted(fixed)
+    return rows
+
+
+def _strip_key(value: Any, key: str) -> Any:
+    if isinstance(value, dict):
+        return {k: _strip_key(v, key) for k, v in value.items() if k != key}
+    if isinstance(value, list):
+        return [_strip_key(v, key) for v in value]
+    return value
 
 
 def ledger_running(c: PgCluster) -> frozenset[str]:

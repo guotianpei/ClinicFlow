@@ -1,0 +1,140 @@
+{
+  "B2-M1": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_d1_forbidden_keys[hostaddr=127.0.0.1]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_r1_dsn_canary_never_in_refusals"
+  ],
+  "B2-M2": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGAPPNAME]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGDATABASE]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGHOSTADDR]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGHOST]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGOPTIONS]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGPASSFILE]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGPASSWORD]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGPORT]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGSERVICEFILE]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGSERVICE]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGSSLMODE]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGTARGETSESSIONATTRS]",
+    "tests/synthetic/test_b2_units.py::test_b2_u_d7_libpq_environment_refused[PGUSER]"
+  ],
+  "B2-M3": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_d5_socket_dir_rules"
+  ],
+  "B2-M4": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_s3_state_file_symlink_mode_corrupt"
+  ],
+  "B2-M5": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_s4_crash_between_temp_fsync_and_replace_keeps_old_state"
+  ],
+  "B2-M6": [
+    "tests/synthetic/test_b2_units.py::test_b2_u_s5_flock_exclusion_and_lock_inode_pin"
+  ],
+  "B2-M7": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_t2_original_intent_on_other_cluster",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_t2_original_intent_on_wrong_database"
+  ],
+  "B2-M8": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e3_alembic_fenced_after_takeover",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g3_late_transaction_guard_sync"
+  ],
+  "B2-M9": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e2_alembic_holder_commits",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e2_alembic_lock_loss_before_commit",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e3_alembic_fenced_after_takeover",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g3_late_transaction_guard_async",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g3_late_transaction_guard_sync",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g4_shared_guard_drain"
+  ],
+  "B2-M10": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g2_guarded_session_coverage"
+  ],
+  "B2-M11": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e2_alembic_holder_commits",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e2_alembic_lock_loss_before_commit",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_e3_alembic_fenced_after_takeover",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g3_late_transaction_guard_async",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g3_late_transaction_guard_sync",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g4_shared_guard_drain"
+  ],
+  "B2-M12": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_f3_change_between_preflight_and_reserve"
+  ],
+  "B2-M13": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_f4_missing_slot_after_stamped[migrated]",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_f4_missing_slot_after_stamped[ready]",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_f4_missing_slot_after_stamped[stamped]"
+  ],
+  "B2-M14": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g1_isolation_refused"
+  ],
+  "B2-M15": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_f2_full_fresh_attestation[event_trigger]"
+  ],
+  "B2-M16": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[activated-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[logins-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[profile-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[settings-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t1-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t2-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3a-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3b-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[stamped-ack_lost]"
+  ],
+  "B2-M17": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_login_altered_diverged[attribute_only]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_login_altered_diverged[password_only]"
+  ],
+  "B2-M18": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_expired_grant_before_t2_fails_closed"
+  ],
+  "B2-M19": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.activated.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.logins.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.migrated.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.profile.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.settings.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t1.after_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t1.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t2.after_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t2.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t3a.after_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t3a.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.staff.t3b.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4_crash_matrix[phase.tenant.before_commit]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[activated-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[activated-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[logins-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[logins-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[migrated-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[migrated-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[profile-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[profile-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[settings-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[settings-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t1-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t1-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t2-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t2-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3a-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3a-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3b-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[staff.t3b-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[stamped-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[stamped-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[tenant-ack_lost]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i4b_ambiguous_commit[tenant-rolled_back]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_login_altered_diverged[attribute_only]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_login_altered_diverged[extra_membership]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_login_altered_diverged[password_only]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5_owned_settings_altered_diverged",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_expired_grant_after_t2_completes",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_expired_grant_before_t2_fails_closed",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_support_rows_tampered_diverged[capabilities]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_support_rows_tampered_diverged[operator_actor]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i5b_support_rows_tampered_diverged[ticket]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i7_copied_state_mid_provisioning[P1_kill_holder_txn]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_i7_copied_state_mid_provisioning[P2_holder_continues]"
+  ]
+}

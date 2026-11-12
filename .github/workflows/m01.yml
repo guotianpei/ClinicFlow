@@ -305,6 +305,16 @@ jobs:
           $VENV/bin/python -I scripts/b1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b1-mutation"
+      # Option B B2 mutation controls B2-M1..B2-M19 (safety-focused, B2-I1 + red-packet
+      # mutation lists): DSN and state-directory defences, protocol F's guard / takeover /
+      # reservation ordering, the fresh attestation, and the installer's commit-ack /
+      # ownership / expiry / ordering rules. PostgreSQL groups use the per-case clusters
+      # (HALOFLOW_SYNTHETIC_PG_BIN). Kill sets in scripts/b2_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_b2_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/b2_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/b2-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

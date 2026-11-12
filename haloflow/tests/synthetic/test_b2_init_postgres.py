@@ -69,6 +69,7 @@ import os
 import stat
 import uuid
 from collections.abc import Iterator
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +81,7 @@ pytestmark = pytest.mark.postgres
 
 STATE_KEYS = {"schema_version", "phase", "cluster_sysid", "target", "target_oid", "nonce",
               "tenant_id", "schema_key", "staff_id", "activation_actor_id", "ticket_reference",
-              "logins", "note_keys"}
+              "logins", "note_keys", "support"}
 SETTINGS = {"lead_days": 2, "send_time": "10:00:00", "window_start": "09:00:00",
             "window_end": "19:00:00", "clinic_tz": "America/New_York",
             "clinic_display_name": "HaloVox Demo Clinic"}
@@ -123,14 +124,32 @@ def scram_verifier(password: str, salt_b64: str, iterations: int) -> str:
 
 
 def identities(st: dict[str, Any]) -> dict[str, str]:
+    """Cross-install normalisation: ONLY exact values recorded in (or derived from) this
+    install's intent are replaced by tokens; every other value must be equal as is. Same-install
+    no-change/retry assertions never use this (they compare raw values)."""
     n = st["nonce"]
-    return {n: "<NONCE>", n[:16]: "<NONCE16>", n[:8]: "<NONCE8>",
-            st["staff_id"]: "<STAFF>", st["activation_actor_id"]: "<ACTOR>"}
+    base = uuid.UUID(n)
+    sup = st["support"]
+    out = {n: "<NONCE>", n[:16]: "<NONCE16>", n[:8]: "<NONCE8>",
+           st["staff_id"]: "<STAFF>", st["activation_actor_id"]: "<ACTOR>",
+           sup["grant_id"]: "<GRANT>", sup["decision_ref"]: "<DECISION>",
+           sup["starts_at"]: "<GRANT_STARTS>", sup["expires_at"]: "<GRANT_EXPIRES>"}
+    for name in ("staff-first-admin", "staff-access-read", "staff-access-act",
+                 "staff-execution", "provision"):
+        out[str(uuid.uuid5(base, name))] = f"<UUID:{name}>"
+    return out
 
 
 def normalised(c: s.PgCluster, st: dict[str, Any]) -> dict[str, list[str]]:
     sem = s.semantic(c, st["schema_key"])
-    subs = sorted(identities(st).items(), key=lambda kv: -len(kv[0]))
+    with c.connect("postgres") as a:
+        oid = a.execute("SELECT oid::text FROM pg_roles WHERE rolname = %s",
+                        (st["logins"]["support"]["role"],)).fetchone()
+    ids = identities(st)
+    if oid is not None:
+        ids[f'"login_oid": "{oid[0]}"'] = '"login_oid": "<SUPPORT_OID>"'   # oid -> JSON text
+        ids[f'"login_oid": {oid[0]}'] = '"login_oid": "<SUPPORT_OID>"'
+    subs = sorted(ids.items(), key=lambda kv: -len(kv[0]))
     out: dict[str, list[str]] = {}
     for table, rows in sem.items():
         def norm(text: str) -> str:
@@ -227,6 +246,30 @@ def test_b2_i1_positive_init(pg: s.PgCluster, tmp_path: Path) -> None:
         assert d.execute(f"SELECT staff_id::text, ticket_reference FROM {schema}"
                          ".m01_staff_bootstrap_log").fetchall() == [
             (st["staff_id"], st["ticket_reference"])]
+        base = uuid.UUID(n)
+        assert d.execute(f"SELECT client_action_id::text FROM {schema}.m01_staff_bootstrap_keys"
+                         ).fetchall() == [(str(uuid.uuid5(base, "staff-first-admin")),)]
+        assert sorted(d.execute(f"SELECT client_action_id::text FROM {schema}"
+                                ".m01_staff_action_keys").fetchall()) == sorted(
+            [(str(uuid.uuid5(base, "staff-access-read")),),
+             (str(uuid.uuid5(base, "staff-access-act")),)])
+        sup = st["support"]
+        starts, expires = (datetime.fromisoformat(sup["starts_at"]),
+                           datetime.fromisoformat(sup["expires_at"]))
+        assert expires - starts == timedelta(hours=2), "bounded grant window"
+        assert d.execute(
+            "SELECT grant_id::text, actor_id, tenant_id, ticket_reference, purpose_code,"
+            " capabilities, approver_id, starts_at, expires_at, state, break_glass, created_at"
+            " FROM shared.support_access_grants").fetchall() == [(
+                sup["grant_id"], f"syn-support-{n[:8]}", st["tenant_id"],
+                st["ticket_reference"], "synthetic-install", ["l1w.roles.bootstrap"],
+                "synthetic-init", starts, expires, "active", False, starts)]
+        assert d.execute(
+            "SELECT login_name::text, actor_id, added_at, decision_ref,"
+            " login_oid = (SELECT oid FROM pg_roles WHERE rolname = login_name)"
+            " FROM shared.support_operator_logins").fetchall() == [(
+                st["logins"]["support"]["role"], f"syn-support-{n[:8]}", starts,
+                sup["decision_ref"], True)]
     with pg.connect("postgres") as a:
         for suffix in s.LOGIN_SUFFIXES:
             spec = st["logins"][suffix]
@@ -286,12 +329,23 @@ def test_b2_i3_scram_authentication(tmp_path: Path) -> None:
 # ---------------------------------------------------------------- I4 crash matrix
 
 PHASE_COMMITS = [p for p in s.PHASES if p not in ("intent", "ready")]
+# The staff phase is three guarded transactions (Codex 20261112T155235Z): T1 support
+# registration + grant (admin), T2 first-member bootstrap (support login), T3a follow-up read and
+# T3b follow-up act (runtime login; t029 admits ONE semantic request per transaction, measured:
+# COMPOSITION_UNSUPPORTED). Each is its own crash / ambiguous-commit boundary.
+COMMIT_POINTS = [p for p in PHASE_COMMITS if p != "staff"] + [
+    "staff.t1", "staff.t2", "staff.t3a", "staff.t3b"]
+
+
+def state_phase_before(point: str) -> str:
+    phase = point.split(".")[0]
+    return s.PHASES[s.PHASES.index(phase) - 1]
 WRITE_INDEX = {p: i + 1 for i, p in enumerate(s.PHASES)}   # n-th state write == phase p
 
 
 def crash_points() -> list[tuple[str, str]]:
     pts = [("intent", "reserve.after_commit")]                # D1 only, before the stamp
-    for p in PHASE_COMMITS:
+    for p in COMMIT_POINTS:
         pts.append((p, f"phase.{p}.before_commit"))
         pts.append((p, f"phase.{p}.after_commit"))
     for p in s.PHASES:
@@ -353,9 +407,23 @@ def phase_effect(c: s.PgCluster, st: dict[str, Any], phase: str) -> bool:
     if phase == "settings":
         return has(f"{schema}.m05_reminder_settings") and one(
             s.TARGET_DB, f"SELECT settings_version FROM {schema}.m05_reminder_settings") == 2
-    if phase == "staff":
+    if phase == "staff.t1":
+        return has("shared.support_access_grants") and one(
+            s.TARGET_DB, "SELECT (SELECT count(*) FROM shared.support_access_grants)"
+            " + (SELECT count(*) FROM shared.support_operator_logins)") == 2
+    if phase == "staff.t2":
         return has(f"{schema}.m01_staff") and one(
             s.TARGET_DB, f"SELECT count(*) FROM {schema}.m01_staff") == 1
+    if phase in ("staff.t3a", "staff.t3b"):
+        want = ["read"] if phase == "staff.t3a" else ["act", "read"]
+        if not has(f"{schema}.m01_staff_followup_access"):
+            return False
+        with c.connect() as d:
+            got = sorted(r[0] for r in d.execute(
+                f"SELECT access FROM {schema}.m01_staff_followup_access").fetchall())
+        if phase == "staff.t3b":
+            return got == want
+        return "read" in got
     raise AssertionError(phase)
 
 
@@ -427,7 +495,7 @@ def test_b2_i4b_discriminator_control(tmp_path: Path, order: str) -> None:
 
 
 @pytest.mark.parametrize("kind", ["ack_lost", "rolled_back"])
-@pytest.mark.parametrize("phase", PHASE_COMMITS)
+@pytest.mark.parametrize("phase", COMMIT_POINTS)
 def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path, phase: str,
                                  kind: str) -> None:
     st_dir = s.state_dir(tmp_path)
@@ -438,7 +506,7 @@ def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path
     assert r["ok"] is False, r
     assert r.get("type") != "ModuleNotFoundError", r
     st0 = s.read_state(st_dir)
-    previous = s.PHASES[s.PHASES.index(phase) - 1]
+    previous = state_phase_before(phase)
     assert st0["phase"] == previous, "no state write for a phase whose commit is not known"
     assert_fault_outcome(pg, tmp_path / "bar1", st0, phase, kind, next(iter(fault.values())))
     secrets = (st0["logins"], st0["note_keys"])
@@ -455,7 +523,7 @@ def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path
 FOREIGN = "CREATE ROLE foreign_after_crash"
 
 
-@pytest.mark.parametrize("phase", PHASE_COMMITS)
+@pytest.mark.parametrize("phase", COMMIT_POINTS)
 def test_b2_i5_foreign_object_diverged(pg: s.PgCluster, tmp_path: Path, phase: str) -> None:
     st_dir = s.state_dir(tmp_path)
     first = init_child(pg, st_dir, tmp_path / "bar1", crash=f"phase.{phase}.after_commit")
@@ -507,6 +575,77 @@ def test_b2_i5_owned_settings_altered_diverged(pg: s.PgCluster, tmp_path: Path) 
     st = s.read_state(st_dir)
     with pg.connect() as d:
         d.execute(f"UPDATE {st['schema_key']}.m05_reminder_settings SET lead_days = 3")
+    before = s.snapshot(pg)
+    assert refused(init, pg, st_dir).code == "STATE_DIVERGED"
+    assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}
+
+
+# ---------------------------------------------------------------- I5b support grant
+
+def _expire_grant(c: s.PgCluster, st_dir: Path) -> None:
+    """Move the recorded window into the past in BOTH the DB and the intent (still exactly
+    owned), standing in for the passage of time."""
+    st = s.read_state(st_dir)
+    starts = datetime.now().astimezone().replace(microsecond=0) - timedelta(hours=3)
+    expires = starts + timedelta(hours=2)
+    st["support"]["starts_at"], st["support"]["expires_at"] = (starts.isoformat(),
+                                                               expires.isoformat())
+    with c.connect() as d:
+        d.execute("UPDATE shared.support_access_grants SET starts_at = %s, expires_at = %s,"
+                  " created_at = %s", (starts, expires, starts))
+        d.execute("UPDATE shared.support_operator_logins SET added_at = %s", (starts,))
+    (st_dir / "state.json").write_text(json.dumps(st))
+
+
+def test_b2_i5b_expired_grant_before_t2_fails_closed(pg: s.PgCluster, tmp_path: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t1.after_commit")
+    first.crashed()
+    _expire_grant(pg, st_dir)
+    before = s.snapshot(pg)
+    e = refused(init, pg, st_dir)
+    assert (e.code, e.detail) == ("STATE_DIVERGED", ("support_grant_expired",))
+    assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}, \
+        "no silent renewal or replacement of the grant"
+
+
+def test_b2_i5b_expired_grant_after_t2_completes(pg: s.PgCluster, tmp_path: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t2.after_commit")
+    first.crashed()
+    _expire_grant(pg, st_dir)
+    with pg.connect() as d:
+        grant = d.execute("SELECT * FROM shared.support_access_grants").fetchall()
+    assert init(pg, st_dir).phase == "ready"            # T3 needs no support authority
+    with pg.connect() as d:
+        assert d.execute("SELECT * FROM shared.support_access_grants").fetchall() == grant
+        schema = s.read_state(st_dir)["schema_key"]
+        assert sorted(d.execute(f"SELECT access FROM {schema}.m01_staff_followup_access"
+                                ).fetchall()) == [("act",), ("read",)]
+
+
+def test_b2_i5b_expired_grant_at_ready_verifies(pg: s.PgCluster, tmp_path: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    _expire_grant(pg, st_dir)
+    before = s.snapshot(pg)
+    assert init(pg, st_dir).phase == "ready"            # read-only verification
+    assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}
+
+
+@pytest.mark.parametrize("tamper", [
+    "UPDATE shared.support_access_grants SET capabilities = ARRAY['l1w.roles.bootstrap',"
+    " 'extra']",
+    "UPDATE shared.support_access_grants SET ticket_reference = 'OTHER'",
+    "UPDATE shared.support_operator_logins SET actor_id = 'someone-else'",
+], ids=["capabilities", "ticket", "operator_actor"])
+def test_b2_i5b_support_rows_tampered_diverged(pg: s.PgCluster, tmp_path: Path,
+                                              tamper: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t1.after_commit")
+    first.crashed()
+    with pg.connect() as d:
+        d.execute(tamper)
     before = s.snapshot(pg)
     assert refused(init, pg, st_dir).code == "STATE_DIVERGED"
     assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}

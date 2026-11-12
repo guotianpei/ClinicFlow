@@ -10,6 +10,8 @@ Rows
 - B2-O1   CONTROL: oracle sensitivity. Every fresh-baseline prep changes `snapshot()` (so the
           "no change" assertions below can fail).
 - B2-O2   CONTROL: a silent verifier replacement changes the snapshot (digest only).
+- B2-O3   CONTROL: a drop-and-recreate of a commented object changes `comments_raw` (raw OID
+          identity) while the semantic `comments` class stays equal.
 - B2-F1   first run on a fresh cluster: RESERVED; slot value exact
           (nonce, sysid, target oid, epoch).
 - B2-F2   FULL fresh attestation, one row per class: CLUSTER_NOT_FRESH naming the class, refused
@@ -170,6 +172,25 @@ def test_b2_o2_verifier_replacement_visible_control(pg: s.PgCluster) -> None:
     assert "SCRAM-SHA-256$" not in json.dumps(after)
 
 
+def test_b2_o3_object_replacement_visible_control(pg: s.PgCluster) -> None:
+    """CONTROL: dropping and recreating a commented object with the same name and comment leaves
+    the semantic `comments` class equal but changes `comments_raw`, so same-install "no change"
+    assertions detect replacement (Codex pin 2026-11-12T16:47Z)."""
+    with pg.connect() as d:
+        d.execute("CREATE TABLE public.probe_obj(x int)")
+        d.execute("COMMENT ON TABLE public.probe_obj IS 'probe'")
+    before = s.snapshot(pg)
+    with pg.connect() as d:
+        d.execute("DROP TABLE public.probe_obj")
+        d.execute("CREATE TABLE public.probe_obj(x int)")
+        d.execute("COMMENT ON TABLE public.probe_obj IS 'probe'")
+    after = s.snapshot(pg)
+    key = f"{s.TARGET_DB}:comments_raw"
+    assert set(s.diff(before, after)) == {key}
+    assert before[f"{s.TARGET_DB}:comments"] == after[f"{s.TARGET_DB}:comments"]
+    assert comparable(before) == comparable(after)    # the cross-cluster view cannot see it
+
+
 def test_b2_tablespace_oracle_and_class_control(pg: s.PgCluster, tmp_path: Path) -> None:
     """CONTROL for the tablespace class (needs a directory, so not in FRESH_PREPS)."""
     loc = tmp_path / "ts"
@@ -239,7 +260,7 @@ def test_b2_f3_change_between_preflight_and_reserve(pg: s.PgCluster) -> None:
     assert "expected" in captured, "the hook point reserve.before_txn was not reached"
     after = s.snapshot(pg)
     assert s.diff(captured["expected"], after) == {}, "only the injected fixture may differ"
-    assert s.diff(before, after).keys() == {"roles"}
+    assert set(s.diff(before, after)) == {"roles", "verifier_digests"}   # the injected role
     assert s.slot(pg) is None
 
 
@@ -434,10 +455,12 @@ def test_b2_g3_late_transaction_guard_async(pg: s.PgCluster, tmp_path: Path) -> 
 
     async def run() -> str:
         task = asyncio.create_task(holder())
-        while not s.waiting_advisory(pg):
+        for _ in range(600):                          # bounded (30 s): a mutant cannot hang
+            if s.waiting_advisory(pg):
+                break
             await asyncio.sleep(0.05)
         child.go("takeover.before_commit")
-        return await task
+        return await asyncio.wait_for(task, 60)
 
     assert asyncio.run(run()) == "EPOCH_SUPERSEDED"
     assert child.result() == {"ok": True, "result": "TAKEN_OVER"}
@@ -476,13 +499,17 @@ def test_b2_g4_shared_guard_drain(pg: s.PgCluster, tmp_path: Path) -> None:
 def stock_alembic(c: s.PgCluster) -> None:
     url = f"postgresql://postgres@/{s.TARGET_DB}?host={c.sock}&port={c.port}"
     env = {"PATH": os.environ.get("PATH", ""), "HALOFLOW_MIGRATION_DATABASE_URL": url}
-    r = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], cwd=s.HALOFLOW,
+    alembic = str(Path(sys.executable).with_name("alembic"))
+    r = subprocess.run([alembic, "upgrade", "head"], cwd=s.HALOFLOW,
                        env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr[-2000:]
 
 
 def comparable(snap: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in snap.items() if k != "shared_comments"}
+    """Cross-CLUSTER view: drops the classes keyed by OID (raw identity differs between equal
+    clusters). Same-install comparisons keep them."""
+    return {k: v for k, v in snap.items()
+            if k != "shared_comments" and not k.endswith(":comments_raw")}
 
 
 def test_b2_e1_locked_alembic_equivalence(pg: s.PgCluster, tmp_path: Path) -> None:

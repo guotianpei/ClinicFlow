@@ -63,7 +63,10 @@ def main() -> None:
             data["child_pid"] = os.getpid()
             with open(f"{bar}/{point}.reached", "w") as fh:
                 json.dump(data, fh, default=str)
+            deadline = time.time() + 120               # bounded: a mutant cannot strand us
             while not os.path.exists(f"{bar}/{point}.go"):
+                if time.time() > deadline:
+                    os._exit(98)
                 time.sleep(0.05)
 
     environ = cfg["environ"]
