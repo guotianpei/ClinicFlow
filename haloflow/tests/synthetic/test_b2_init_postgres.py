@@ -595,26 +595,19 @@ def test_b2_i5_owned_settings_altered_diverged(pg: s.PgCluster, tmp_path: Path) 
 
 # ---------------------------------------------------------------- I5b support grant
 
-def _expire_grant(c: s.PgCluster, st_dir: Path) -> None:
-    """Move the recorded window into the past in BOTH the DB and the intent (still exactly
-    owned), standing in for the passage of time."""
-    st = s.read_state(st_dir)
-    starts = datetime.now().astimezone().replace(microsecond=0) - timedelta(hours=3)
-    expires = starts + timedelta(hours=2)
-    st["support"]["starts_at"], st["support"]["expires_at"] = (starts.isoformat(),
-                                                               expires.isoformat())
-    with c.connect() as d:
-        d.execute("UPDATE shared.support_access_grants SET starts_at = %s, expires_at = %s,"
-                  " created_at = %s", (starts, expires, starts))
-        d.execute("UPDATE shared.support_operator_logins SET added_at = %s", (starts,))
-    (st_dir / "state.json").write_text(json.dumps(st))
+def _later(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The passage of time, through the installer's clock pin `provision._utcnow` ONLY: no
+    owned row and no intent value is rewritten (Codex 20261112T194049Z)."""
+    later = datetime.now().astimezone() + timedelta(hours=3)
+    monkeypatch.setattr(s.mod("provision"), "_utcnow", lambda: later)
 
 
-def test_b2_i5b_expired_grant_before_t2_fails_closed(pg: s.PgCluster, tmp_path: Path) -> None:
+def test_b2_i5b_expired_grant_before_t2_fails_closed(pg: s.PgCluster, tmp_path: Path,
+                                                     monkeypatch: pytest.MonkeyPatch) -> None:
     st_dir = s.state_dir(tmp_path)
     first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t1.after_commit")
     first.crashed()
-    _expire_grant(pg, st_dir)
+    _later(monkeypatch)
     before = s.snapshot(pg)
     e = refused(init, pg, st_dir)
     assert (e.code, e.detail) == ("STATE_DIVERGED", ("support_grant_expired",))
@@ -622,11 +615,12 @@ def test_b2_i5b_expired_grant_before_t2_fails_closed(pg: s.PgCluster, tmp_path: 
         "no silent renewal or replacement of the grant"
 
 
-def test_b2_i5b_expired_grant_after_t2_completes(pg: s.PgCluster, tmp_path: Path) -> None:
+def test_b2_i5b_expired_grant_after_t2_completes(pg: s.PgCluster, tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
     st_dir = s.state_dir(tmp_path)
     first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t2.after_commit")
     first.crashed()
-    _expire_grant(pg, st_dir)
+    _later(monkeypatch)
     with pg.connect() as d:
         grant = d.execute("SELECT * FROM shared.support_access_grants").fetchall()
     assert init(pg, st_dir).phase == "ready"            # T3 needs no support authority
@@ -643,9 +637,7 @@ def test_b2_i5b_expired_grant_at_ready_verifies(pg: s.PgCluster, tmp_path: Path,
     of time is simulated through the installer's clock pin `provision._utcnow` only."""
     st_dir = s.state_dir(tmp_path)
     assert init(pg, st_dir).phase == "ready"
-    provision = s.mod("provision")
-    later = datetime.now().astimezone() + timedelta(hours=3)
-    monkeypatch.setattr(provision, "_utcnow", lambda: later)
+    _later(monkeypatch)
     before = s.snapshot(pg)
     assert init(pg, st_dir).phase == "ready"            # read-only verification
     assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}
@@ -818,11 +810,34 @@ def test_b2_i9_no_secret_in_logs(tmp_path: Path, caplog: pytest.LogCaptureFixtur
 
 def tamper(c: s.PgCluster, statements: list[str], db: str = s.TARGET_DB) -> None:
     """Out-of-band change as the superuser, bypassing triggers and FK checks (an operator or
-    attacker editing owned state directly)."""
+    attacker editing owned state directly). PROVES the change happened: every UPDATE/DELETE/
+    INSERT affects >= 1 row, and the snapshot differs afterwards (a zero-row tamper can never
+    pass as a meaningful red case)."""
+    before = s.snapshot(c)
     with c.connect(db) as d, d.transaction():
         d.execute("SET LOCAL session_replication_role = replica")
         for q in statements:
-            d.execute(q)
+            cur = d.execute(q)
+            if q.lstrip().split()[0].upper() in ("UPDATE", "DELETE", "INSERT"):
+                assert cur.rowcount >= 1, f"tamper changed no row: {q}"
+    assert s.diff(before, s.snapshot(c)) != {}, "tamper changed nothing"
+
+
+def _comments_without_slot(snap: dict[str, Any]) -> list[Any]:
+    return [r for r in snap["shared_comments"] if r[:2] != ["pg_authid", "10"]]
+
+
+def assert_only_epoch_bump(before: dict[str, Any], after: dict[str, Any], nonce: str) -> None:
+    """The ONLY permitted change: the owned reservation slot's epoch field; every other
+    shared comment byte-identical (Codex 20261112T194049Z)."""
+    changed = set(s.diff(before, after))
+    assert changed <= {"shared_comments"}, changed
+    assert _comments_without_slot(before) == _comments_without_slot(after)
+    slots = [[r[2] for r in snap["shared_comments"] if r[:2] == ["pg_authid", "10"]]
+             for snap in (before, after)]
+    assert [len(x) for x in slots] == [1, 1]
+    b, a = slots[0][0], slots[1][0]
+    assert f":{nonce}:" in b and b.rsplit(":", 1)[0] == a.rsplit(":", 1)[0], "slot identity"
 
 
 def assert_refused_no_change(c: s.PgCluster, st_dir: Path) -> None:
@@ -830,10 +845,7 @@ def assert_refused_no_change(c: s.PgCluster, st_dir: Path) -> None:
     before = s.snapshot(c)
     e = refused(init, c, st_dir)
     assert e.code == "STATE_DIVERGED"
-    changed = set(s.diff(before, s.snapshot(c)))
-    assert changed <= {"shared_comments"}, changed     # only the owned epoch bump
-    slot = s.slot(c)
-    assert slot is not None and f":{st['nonce']}:" in slot
+    assert_only_epoch_bump(before, s.snapshot(c), st["nonce"])
     assert s.read_state(st_dir) == st, "state must not advance or change"
 
 
@@ -923,6 +935,14 @@ def test_b2_r1_status_pending_effect(pg: s.PgCluster, tmp_path: Path) -> None:
     assert s.diff(before, s.snapshot(pg)) == {}
 
 
+# Changes the configuration of one (deterministically chosen) function of the tenant schema.
+TENANT_FUNCTION_CONFIG = (
+    "DO $t$ BEGIN EXECUTE pg_catalog.format('ALTER FUNCTION %s SET work_mem = %L',"
+    " (SELECT p.oid::regprocedure FROM pg_catalog.pg_proc p"
+    " WHERE p.pronamespace = '{schema}'::regnamespace ORDER BY p.proname, p.oid LIMIT 1),"
+    " '8MB'); END $t$")
+
+
 # Tampers of the PENDING phase's committed effect (crash after its commit, before the state
 # write): same count, changed value / audit / key / ledger.
 PENDING_TAMPER: dict[str, tuple[str, list[str]]] = {
@@ -959,6 +979,28 @@ PENDING_TAMPER: dict[str, tuple[str, list[str]]] = {
         " SET staff_id = '00000000-0000-4000-8000-000000000002'"]),
     "staff_t3b_admin_log_deleted": ("staff.t3b", [
         "DELETE FROM {schema}.m01_staff_admin_log WHERE after::text LIKE '%\"act\"%'"]),
+    "staff_t3a_admin_log_duplicate": ("staff.t3a", [
+        "INSERT INTO {schema}.m01_staff_admin_log SELECT (pg_catalog.jsonb_populate_record("
+        "NULL::{schema}.m01_staff_admin_log, pg_catalog.to_jsonb(x)"
+        " || pg_catalog.jsonb_build_object('log_id', pg_catalog.gen_random_uuid(),"
+        " 'client_action_id', pg_catalog.gen_random_uuid()))).*"
+        " FROM {schema}.m01_staff_admin_log x"]),
+    "staff_t2_out_of_order_act": ("staff.t2", [
+        "INSERT INTO {schema}.m01_staff_followup_access (staff_id, access, granted_at)"
+        " VALUES ('{staff}', 'act', pg_catalog.now())"]),
+    # Catalog / seed drift with the ledger and version UNCHANGED (Codex 20261112T193442Z #1)
+    "migrated_function_config": ("migrated", [
+        "ALTER FUNCTION shared.l1w_admin_unbind(character varying, uuid, uuid)"
+        " SET work_mem = '8MB'"]),
+    "migrated_function_acl": ("migrated", [
+        "GRANT EXECUTE ON FUNCTION shared.l1w_admin_unbind(character varying, uuid, uuid)"
+        " TO PUBLIC"]),
+    "tenant_seed_value": ("tenant", [
+        "UPDATE {schema}.m05_outcome_codes SET display_label = 'Other'"
+        " WHERE outcome_code = 'cancelled_in_ehr'"]),
+    "tenant_table_acl": ("tenant", [
+        "GRANT SELECT ON {schema}.m05_outcome_codes TO PUBLIC"]),
+    "tenant_function_config": ("tenant", [TENANT_FUNCTION_CONFIG]),
 }
 
 
@@ -1025,3 +1067,41 @@ def test_b2_c4_cli_usage_errors(pg: s.PgCluster, tmp_path: Path, args: list[str]
     r = cli(args, s.environ_for(pg, s.state_dir(tmp_path)), tmp_path)
     assert r.returncode == 2 and r.stdout == "" and "Traceback" not in r.stderr
     assert s.diff(before, s.snapshot(pg)) == {}
+
+
+# Mid-tenant interruption (the tenant phase is many guarded transactions): the process dies
+# INSIDE guarded transaction #60, after earlier units committed. Codex 20261112T193442Z:
+# exact recovery of the intact partial result, refusal of a tampered one before any change.
+MID_TENANT = "guarded_txn#60"
+
+
+def test_b2_r2_partial_tenant_intact_resumes(pg: s.PgCluster, tmp_path: Path,
+                                             ref_root: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash=MID_TENANT)
+    first.crashed()
+    assert s.read_state(st_dir)["phase"] == "logins"
+    interrupted = s.ledger_running(pg)
+    assert init(pg, st_dir).phase == "ready"
+    assert_single_execution(pg, st_dir, reference_of(ref_root), interrupted=interrupted)
+
+
+@pytest.mark.parametrize("kind", ["function_config", "seed_value", "ledger_checksum"])
+def test_b2_r2_partial_tenant_tamper_refused(pg: s.PgCluster, tmp_path: Path, kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash=MID_TENANT)
+    first.crashed()
+    st = s.read_state(st_dir)
+    with pg.connect() as d:
+        applied = d.execute("SELECT migration_id FROM shared.schema_migrations"
+                            " WHERE state = 'applied' ORDER BY migration_id").fetchall()
+    assert applied, "the crash point must follow committed units"
+    statements = {
+        "function_config": [TENANT_FUNCTION_CONFIG],
+        "seed_value": ["UPDATE {schema}.ref_event_levels SET ordinal = ordinal + 1"
+                       " WHERE code = 'business_outcome'"],
+        "ledger_checksum": ["UPDATE shared.schema_migrations SET checksum = repeat('0', 64)"
+                            f" WHERE migration_id = '{applied[0][0]}'"],
+    }[kind]
+    tamper(pg, _fill(statements, st))
+    assert_refused_no_change(pg, st_dir)
