@@ -10,6 +10,7 @@ Rows
 - B2-O1   CONTROL: oracle sensitivity. Every fresh-baseline prep changes `snapshot()` (so the
           "no change" assertions below can fail).
 - B2-O2   CONTROL: a silent verifier replacement changes the snapshot (digest only).
+- B2-A1n  CONTROL: admin_connect refuses a server reporting a non-loopback address.
 - B2-O3   CONTROL: a drop-and-recreate of a commented object changes `comments_raw` (raw OID
           identity) while the semantic `comments` class stays equal.
 - B2-F1   first run on a fresh cluster: RESERVED; slot value exact
@@ -189,6 +190,22 @@ def test_b2_o3_object_replacement_visible_control(pg: s.PgCluster) -> None:
     assert set(s.diff(before, after)) == {key}
     assert before[f"{s.TARGET_DB}:comments"] == after[f"{s.TARGET_DB}:comments"]
     assert comparable(before) == comparable(after)    # the cross-cluster view cannot see it
+
+
+def test_b2_a1_admin_connect_refuses_non_loopback_server(tmp_path: Path) -> None:
+    """CONTROL (Codex 20261112T192821Z): the actual-endpoint check refuses a server that sees a
+    non-loopback local address (as behind a container port publish); the same server over its
+    socket is accepted. The endpoint is built directly, past the DSN parser."""
+    ip = s.non_loopback_ipv4()
+    dsn, attest = s.mod("dsn"), s.mod("attest")
+    with s.cluster(tmp_path, listen=ip) as c:
+        tcp = dsn.AdminEndpoint(host=ip, port=c.port, target=s.TARGET_DB, user="postgres")
+        with pytest.raises(s.mod("errors").SyntheticRefused) as ei:
+            attest.admin_connect(tcp, s.TARGET_DB)
+        assert ei.value.code == "TARGET_MISMATCH"
+        sock = dsn.AdminEndpoint(host=str(c.sock), port=c.port, target=s.TARGET_DB,
+                                 user="postgres")
+        attest.admin_connect(sock, s.TARGET_DB).close()
 
 
 def test_b2_tablespace_oracle_and_class_control(pg: s.PgCluster, tmp_path: Path) -> None:

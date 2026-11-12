@@ -56,6 +56,16 @@ Rows
 - B2-I8   refusals with no change: the CI suite cluster (read-only attestation); state missing
           against an initialised cluster; state copied to another cluster; corrupt state.
 - B2-I9   secrets never in logs at DEBUG.
+- B2-R1   (S1, Codex REVISE 2026-11-12T19:06Z) completed phases are reconciled against the
+          state's `seal` before any write: a tamper of completed owned state at `ready` or at an
+          intermediate recorded phase -> STATE_DIVERGED, missing objects never recreated, the
+          only change is the owned epoch bump; `status` reports sealed/attested false and is
+          strictly read-only.
+- B2-R2   (S2) the pending phase's committed effect (crash after its commit, before the state
+          write) is validated exactly: a same-count value / audit / key / ledger tamper ->
+          STATE_DIVERGED with no change.
+- B2-C    (S3) `python -m haloflow.synthetic init|status`: attestation required, exit 0 / 2,
+          refusals print only the code, output carries no secret, no traceback.
 """
 
 from __future__ import annotations
@@ -81,7 +91,9 @@ pytestmark = pytest.mark.postgres
 
 STATE_KEYS = {"schema_version", "phase", "cluster_sysid", "target", "target_oid", "nonce",
               "tenant_id", "schema_key", "staff_id", "activation_actor_id", "ticket_reference",
-              "logins", "note_keys", "support"}
+              "logins", "note_keys", "support", "seal"}
+STATUS_KEYS = {"phase", "tenant_id", "schema_key", "tenant_count", "staff_count", "open_items",
+               "attested", "sealed", "pending_effect"}
 SETTINGS = {"lead_days": 2, "send_time": "10:00:00", "window_start": "09:00:00",
             "window_end": "19:00:00", "clinic_tz": "America/New_York",
             "clinic_display_name": "HaloVox Demo Clinic"}
@@ -216,6 +228,7 @@ def test_b2_i1_positive_init(pg: s.PgCluster, tmp_path: Path) -> None:
     assert init(pg, st_dir).phase == "ready"
     st = s.read_state(st_dir)
     assert set(st) == STATE_KEYS and st["schema_version"] == 1 and st["phase"] == "ready"
+    assert st["seal"]["phase"] == "ready" and isinstance(st["seal"]["view"], dict)
     assert stat.S_IMODE((st_dir / "state.json").stat().st_mode) == 0o600
     n = st["nonce"]
     assert len(n) == 32 and int(n, 16) >= 0
@@ -305,10 +318,10 @@ def test_b2_i2_status_exact_and_secret_free(pg: s.PgCluster, tmp_path: Path) -> 
     init(pg, st_dir)
     st = s.read_state(st_dir)
     out = s.mod("provision").status(s.environ_for(pg, st_dir))
-    assert set(out) == {"phase", "tenant_id", "schema_key", "tenant_count", "staff_count",
-                        "open_items", "attested"}
+    assert set(out) == STATUS_KEYS
     assert (out["phase"], out["tenant_count"], out["staff_count"], out["open_items"],
-            out["attested"]) == ("ready", 1, 1, 0, True)
+            out["attested"], out["sealed"], out["pending_effect"]) == (
+        "ready", 1, 1, 0, True, True, None)
     text = json.dumps(out)
     secrets = [v["password"] for v in st["logins"].values()] + [
         st["note_keys"]["hmac"], st["note_keys"]["enc"]]
@@ -624,10 +637,15 @@ def test_b2_i5b_expired_grant_after_t2_completes(pg: s.PgCluster, tmp_path: Path
                                 ).fetchall()) == [("act",), ("read",)]
 
 
-def test_b2_i5b_expired_grant_at_ready_verifies(pg: s.PgCluster, tmp_path: Path) -> None:
+def test_b2_i5b_expired_grant_at_ready_verifies(pg: s.PgCluster, tmp_path: Path,
+                                               monkeypatch: pytest.MonkeyPatch) -> None:
+    """At `ready` the owned rows are sealed (rewriting them is a tamper, B2-R1), so the passage
+    of time is simulated through the installer's clock pin `provision._utcnow` only."""
     st_dir = s.state_dir(tmp_path)
     assert init(pg, st_dir).phase == "ready"
-    _expire_grant(pg, st_dir)
+    provision = s.mod("provision")
+    later = datetime.now().astimezone() + timedelta(hours=3)
+    monkeypatch.setattr(provision, "_utcnow", lambda: later)
     before = s.snapshot(pg)
     assert init(pg, st_dir).phase == "ready"            # read-only verification
     assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}
@@ -729,12 +747,29 @@ def test_b2_i8_suite_cluster_refused_read_only(tmp_path: Path) -> None:
         with psycopg.connect(url, autocommit=True) as c:
             return [c.execute(q).fetchall() for q in s.SNAPSHOT_SHARED.values()]
 
+    # The expected code is chosen from the server address read INDEPENDENTLY here (Codex ALIGN
+    # 20261112T192821Z): behind a container port publish the server sees a non-loopback address
+    # and A1 refuses TARGET_MISMATCH; on true loopback/socket the fresh baseline refuses.
+    with psycopg.connect(url, autocommit=True) as c:
+        addr = c.execute("SELECT host(inet_server_addr())").fetchone()[0]
+    expected = "CLUSTER_NOT_FRESH" if addr in (None, "127.0.0.1", "::1") else "TARGET_MISMATCH"
     before = catalog()
     env = {"HALOFLOW_SYNTHETIC_ADMIN_DSN": url, "HALOFLOW_SYNTHETIC_STATE":
            str(s.state_dir(tmp_path)), "HALOFLOW_SYNTHETIC_DISPOSABLE": "1"}
     e = refused(s.mod("provision").init, env, attest_flag=True)
-    assert e.code == "CLUSTER_NOT_FRESH"            # the suite DB name passes the prefix rule
+    assert e.code == expected
     assert catalog() == before
+
+
+def test_b2_i8_nonfresh_cluster_refused_on_loopback(pg: s.PgCluster, tmp_path: Path) -> None:
+    """True-loopback (socket) coverage of the fresh-baseline refusal, independent of how CI
+    hosts its suite service."""
+    with pg.connect("postgres") as a:
+        a.execute("CREATE ROLE suite_like_role")
+    before = s.snapshot(pg)
+    e = refused(init, pg, s.state_dir(tmp_path))
+    assert e.code == "CLUSTER_NOT_FRESH"
+    assert s.diff(before, s.snapshot(pg)) == {}
 
 
 def test_b2_i8_state_missing_against_initialised_cluster(pg: s.PgCluster, tmp_path: Path) -> None:
@@ -777,3 +812,216 @@ def test_b2_i9_no_secret_in_logs(tmp_path: Path, caplog: pytest.LogCaptureFixtur
         for x in [v["password"] for v in st["logins"].values()] + [
                 st["note_keys"]["hmac"], st["note_keys"]["enc"], "bootstrap-test-only"]:
             assert x not in text
+
+
+# ---------------------------------------------------------------- R1 / R2 reconciliation (S1, S2)
+
+def tamper(c: s.PgCluster, statements: list[str], db: str = s.TARGET_DB) -> None:
+    """Out-of-band change as the superuser, bypassing triggers and FK checks (an operator or
+    attacker editing owned state directly)."""
+    with c.connect(db) as d, d.transaction():
+        d.execute("SET LOCAL session_replication_role = replica")
+        for q in statements:
+            d.execute(q)
+
+
+def assert_refused_no_change(c: s.PgCluster, st_dir: Path) -> None:
+    st = s.read_state(st_dir)
+    before = s.snapshot(c)
+    e = refused(init, c, st_dir)
+    assert e.code == "STATE_DIVERGED"
+    changed = set(s.diff(before, s.snapshot(c)))
+    assert changed <= {"shared_comments"}, changed     # only the owned epoch bump
+    slot = s.slot(c)
+    assert slot is not None and f":{st['nonce']}:" in slot
+    assert s.read_state(st_dir) == st, "state must not advance or change"
+
+
+# Tampers of COMPLETED owned state. {schema}, {login}, {staff} are filled from the state.
+COMPLETED_TAMPER: dict[str, tuple[str, list[str]]] = {
+    "tenant_row_deleted": (s.TARGET_DB, ["DELETE FROM shared.tenants"]),
+    "tenant_schema_dropped": (s.TARGET_DB, ["DROP SCHEMA {schema} CASCADE"]),
+    "login_password": ("postgres", ["ALTER ROLE {login} PASSWORD 'changed-by-someone'"]),
+    "login_attribute": ("postgres", ["ALTER ROLE {login} CONNECTION LIMIT 3"]),
+    "settings_value_same_version": (s.TARGET_DB, [
+        "UPDATE {schema}.m05_reminder_settings SET clinic_display_name = 'Other Clinic'"]),
+    "staff_display_name": (s.TARGET_DB, [
+        "UPDATE {schema}.m01_staff SET display_name = 'Someone Else'"]),
+    "bootstrap_log_deleted": (s.TARGET_DB, ["DELETE FROM {schema}.m01_staff_bootstrap_log"]),
+    "profile_value_same_count": (s.TARGET_DB, [
+        "UPDATE {schema}.m05_intake_map SET item_kind = 'unclear_reply'"
+        " WHERE discriminator_value = 'cancel_request'"]),
+    "ledger_state": (s.TARGET_DB, [
+        "UPDATE shared.schema_migrations SET state = 'failed'"
+        " WHERE migration_id = 't057_m05_reminder_settings'"]),
+}
+
+
+def _fill(statements: list[str], st: dict[str, Any]) -> list[str]:
+    return [q.format(schema=st["schema_key"], login=st["logins"]["audit_projector"]["role"],
+                     staff=st["staff_id"]) for q in statements]
+
+
+@pytest.mark.parametrize("kind", sorted(COMPLETED_TAMPER))
+def test_b2_r1_completed_tamper_at_ready_refused(pg: s.PgCluster, tmp_path: Path,
+                                                 kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    db, statements = COMPLETED_TAMPER[kind]
+    tamper(pg, _fill(statements, s.read_state(st_dir)), db)
+    assert_refused_no_change(pg, st_dir)
+
+
+# Recorded phase `settings` (crash before T1 commits); every tamper hits an EARLIER phase.
+INTERMEDIATE = ["tenant_row_deleted", "login_password", "login_attribute",
+                "profile_value_same_count", "ledger_state", "settings_value_same_version",
+                "activation_reason"]
+
+
+@pytest.mark.parametrize("kind", INTERMEDIATE)
+def test_b2_r1_completed_tamper_at_intermediate_phase_refused(pg: s.PgCluster, tmp_path: Path,
+                                                              kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.staff.t1.before_commit")
+    first.crashed()
+    st = s.read_state(st_dir)
+    assert st["phase"] == "settings"
+    if kind == "activation_reason":
+        db, statements = s.TARGET_DB, [
+            "UPDATE {schema}.m05_activation_records SET reason = 'other reason'"]
+    else:
+        db, statements = COMPLETED_TAMPER[kind]
+    tamper(pg, _fill(statements, st), db)
+    assert_refused_no_change(pg, st_dir)
+
+
+def test_b2_r1_status_sealed_and_read_only(pg: s.PgCluster, tmp_path: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    env = s.environ_for(pg, st_dir)
+    status = s.mod("provision").status
+    before = s.snapshot(pg)
+    ok = status(env)
+    assert (ok["sealed"], ok["attested"], ok["pending_effect"]) == (True, True, None)
+    assert s.diff(before, s.snapshot(pg)) == {}, "status must be strictly read-only"
+    tamper(pg, _fill(COMPLETED_TAMPER["settings_value_same_version"][1], s.read_state(st_dir)))
+    before = s.snapshot(pg)
+    bad = status(env)
+    assert (bad["sealed"], bad["attested"]) == (False, False)
+    assert s.diff(before, s.snapshot(pg)) == {}, "status must be strictly read-only"
+
+
+def test_b2_r1_status_pending_effect(pg: s.PgCluster, tmp_path: Path) -> None:
+    """Committed-but-unrecorded phase: status names it (read-only), never attests it."""
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.settings.after_commit")
+    first.crashed()
+    before = s.snapshot(pg)
+    out = s.mod("provision").status(s.environ_for(pg, st_dir))
+    assert (out["phase"], out["sealed"], out["pending_effect"], out["attested"]) == (
+        "activated", False, "settings", False)
+    assert s.diff(before, s.snapshot(pg)) == {}
+
+
+# Tampers of the PENDING phase's committed effect (crash after its commit, before the state
+# write): same count, changed value / audit / key / ledger.
+PENDING_TAMPER: dict[str, tuple[str, list[str]]] = {
+    "profile_intake_value": ("profile", [
+        "UPDATE {schema}.m05_intake_map SET item_kind = 'unclear_reply'"
+        " WHERE discriminator_value = 'cancel_request'"]),
+    "profile_event_type_extra_flag": ("profile", [
+        "UPDATE {schema}.event_types SET is_active = true WHERE is_active = false"]),
+    "tenant_ledger_checksum": ("tenant", [
+        "UPDATE shared.schema_migrations SET checksum = repeat('0', 64)"
+        " WHERE migration_id = 't057_m05_reminder_settings'"]),
+    "tenant_ledger_state": ("tenant", [
+        "UPDATE shared.schema_migrations SET state = 'failed'"
+        " WHERE migration_id = 't057_m05_reminder_settings'"]),
+    "activated_actor": ("activated", [
+        "UPDATE {schema}.m05_activation_records"
+        " SET actor_id = '00000000-0000-4000-8000-000000000001'"]),
+    "settings_tz": ("settings", [
+        "UPDATE {schema}.m05_reminder_settings SET clinic_tz = 'UTC'"]),
+    "staff_t1_grant_purpose": ("staff.t1", [
+        "UPDATE shared.support_access_grants SET purpose_code = 'other'"]),
+    "staff_t2_bootstrap_log_actor": ("staff.t2", [
+        "UPDATE {schema}.m01_staff_bootstrap_log SET support_actor_id = 'someone-else'"]),
+    "staff_t2_bootstrap_key_outcome": ("staff.t2", [
+        "UPDATE {schema}.m01_staff_bootstrap_keys SET outcome = 'ADMIN_EXISTS'"]),
+    "staff_t2_bootstrap_key_digest": ("staff.t2", [
+        "UPDATE {schema}.m01_staff_bootstrap_keys SET digest = sha256('x'::bytea)"]),
+    "staff_t3a_admin_log_operation": ("staff.t3a", [
+        "UPDATE {schema}.m01_staff_admin_log SET operation = 'revoke'"]),
+    "staff_t3a_action_key_digest": ("staff.t3a", [
+        "UPDATE {schema}.m01_staff_action_keys SET digest = sha256('x'::bytea)"]),
+    "staff_t3a_access_staff_id": ("staff.t3a", [
+        "UPDATE {schema}.m01_staff_followup_access"
+        " SET staff_id = '00000000-0000-4000-8000-000000000002'"]),
+    "staff_t3b_admin_log_deleted": ("staff.t3b", [
+        "DELETE FROM {schema}.m01_staff_admin_log WHERE after::text LIKE '%\"act\"%'"]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(PENDING_TAMPER))
+def test_b2_r2_pending_effect_tamper_refused(pg: s.PgCluster, tmp_path: Path, case: str) -> None:
+    point, statements = PENDING_TAMPER[case]
+    st_dir = s.state_dir(tmp_path)
+    first = init_child(pg, st_dir, tmp_path / "bar1", crash=f"phase.{point}.after_commit")
+    first.crashed()
+    st = s.read_state(st_dir)
+    assert st["phase"] == state_phase_before(point)
+    tamper(pg, _fill(statements, st))
+    assert_refused_no_change(pg, st_dir)
+
+
+# ---------------------------------------------------------------- C: command entry point (S3)
+
+def cli(args: list[str], env: dict[str, str], cwd: Path) -> Any:
+    import subprocess
+    import sys
+
+    full = {"PATH": os.environ.get("PATH", ""), **env}
+    return subprocess.run([sys.executable, "-m", "haloflow.synthetic", *args], cwd=cwd,
+                          env=full, capture_output=True, text=True, timeout=600)
+
+
+def test_b2_c1_cli_requires_attestation_flag(pg: s.PgCluster, tmp_path: Path) -> None:
+    before = s.snapshot(pg)
+    r = cli(["init"], s.environ_for(pg, s.state_dir(tmp_path)), tmp_path)
+    assert (r.returncode, r.stdout, r.stderr) == (2, "", "refused: ATTESTATION_MISSING\n")
+    assert s.diff(before, s.snapshot(pg)) == {}
+
+
+def test_b2_c2_cli_init_and_status_secret_free(tmp_path: Path) -> None:
+    with s.cluster(tmp_path, scram=True) as c:
+        st_dir = s.state_dir(tmp_path)
+        env = s.environ_for(c, st_dir)
+        r = cli(["init", "--i-attest-disposable-cluster"], env, tmp_path)
+        assert (r.returncode, json.loads(r.stdout), r.stderr) == (0, {"phase": "ready"}, "")
+        r2 = cli(["status"], env, tmp_path)
+        assert r2.returncode == 0 and r2.stderr == ""
+        out = json.loads(r2.stdout)
+        assert set(out) == STATUS_KEYS and (out["phase"], out["attested"]) == ("ready", True)
+        st = s.read_state(st_dir)
+        secrets = [v["password"] for v in st["logins"].values()] + [
+            st["note_keys"]["hmac"], st["note_keys"]["enc"], "bootstrap-test-only",
+            "SCRAM-SHA-256$"]
+        assert not any(x in r.stdout + r2.stdout + r.stderr + r2.stderr for x in secrets)
+
+
+def test_b2_c3_cli_refusal_prints_code_only(pg: s.PgCluster, tmp_path: Path) -> None:
+    st_dir = s.state_dir(tmp_path)
+    init(pg, st_dir)
+    (st_dir / "state.json").write_text("{")
+    for args in (["init", "--i-attest-disposable-cluster"], ["status"]):
+        r = cli(args, s.environ_for(pg, st_dir), tmp_path)
+        assert (r.returncode, r.stdout, r.stderr) == (2, "", "refused: STATE_CORRUPT\n")
+
+
+@pytest.mark.parametrize("args", [[], ["reset"], ["init", "--unknown"]],
+                         ids=["none", "unknown_command", "unknown_flag"])
+def test_b2_c4_cli_usage_errors(pg: s.PgCluster, tmp_path: Path, args: list[str]) -> None:
+    before = s.snapshot(pg)
+    r = cli(args, s.environ_for(pg, s.state_dir(tmp_path)), tmp_path)
+    assert r.returncode == 2 and r.stdout == "" and "Traceback" not in r.stderr
+    assert s.diff(before, s.snapshot(pg)) == {}

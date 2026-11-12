@@ -180,6 +180,7 @@ class PgCluster:
     root: Path
     port: int = field(default_factory=lambda: 50000 + secrets.randbelow(10000))
     scram: bool = False
+    listen: str = ""           # an extra TCP listen address (trust from exactly that /32)
 
     @property
     def data(self) -> Path:
@@ -196,9 +197,13 @@ class PgCluster:
             else ["-A", "trust"]
         subprocess.run([str(bin_ / "initdb"), "-D", str(self.data), "-U", "postgres",
                         "--no-instructions", *auth], check=True, capture_output=True)
+        if self.listen:
+            with (self.data / "pg_hba.conf").open("a") as hba:
+                hba.write(f"host all all {self.listen}/32 trust\n")
         subprocess.run([str(bin_ / "pg_ctl"), "-D", str(self.data), "-w", "-l",
                         str(self.root / "log"), "-o",
-                        f"-c listen_addresses='' -c unix_socket_directories={self.sock}"
+                        f"-c listen_addresses='{self.listen}'"
+                        f" -c unix_socket_directories={self.sock}"
                         f" -p {self.port}", "start"], check=True, capture_output=True)
         if target:
             with self.connect("postgres") as c:
@@ -234,6 +239,17 @@ def cluster(tmp_path: Path, **kw: Any) -> Iterator[PgCluster]:
         yield c
     finally:
         c.stop()
+
+
+def non_loopback_ipv4() -> str:
+    """This host's primary non-loopback IPv4 (no packet is sent: UDP connect only)."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as u:
+        u.connect(("192.0.2.1", 9))
+        ip = str(u.getsockname()[0])
+    assert not ip.startswith("127."), ip
+    return ip
 
 
 def environ_for(c: PgCluster, state: Path, **extra: str) -> dict[str, str]:
