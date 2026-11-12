@@ -401,7 +401,9 @@ def test_b2_i7_copied_state_mid_provisioning(pg: s.PgCluster, tmp_path: Path,
     a.go("guarded_txn")
     assert b.result() == {"ok": True, "phase": "ready"}
     ra = a.result()
-    assert ra["ok"] is False and ra["code"] in ("EPOCH_SUPERSEDED", "INSTALL_LOCK_LOST", None)
+    assert ra["ok"] is False
+    if not kill:
+        assert ra["code"] == "EPOCH_SUPERSEDED", "the holder's next guarded txn is fenced"
     assert_single_execution(pg, b_dir, reference_of(ref_root))
 
 
@@ -419,7 +421,7 @@ def test_b2_i8_suite_cluster_refused_read_only(tmp_path: Path) -> None:
     env = {"HALOFLOW_SYNTHETIC_ADMIN_DSN": url, "HALOFLOW_SYNTHETIC_STATE":
            str(s.state_dir(tmp_path)), "HALOFLOW_SYNTHETIC_DISPOSABLE": "1"}
     e = refused(s.mod("provision").init, env, attest_flag=True)
-    assert e.code in ("CLUSTER_NOT_FRESH", "DSN_DBNAME_PREFIX")
+    assert e.code == "CLUSTER_NOT_FRESH"            # the suite DB name passes the prefix rule
     assert catalog() == before
 
 
