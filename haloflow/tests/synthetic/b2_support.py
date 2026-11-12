@@ -79,15 +79,28 @@ Hook points (FAULT(point, info)); the rows pause or crash at them:
   migrate.before_commit         all Alembic DDL done, before COMMIT   info: backend_pid
   guarded_txn                   after the guard of EVERY guarded transaction
                                 info: n (per-process count), backend_pid, install_lock_pid
+  reserve.after_commit          D1 (the reservation) committed, before anything else
   phase.<p>.before_commit       last DB statement of phase p done, before its COMMIT
-  phase.<p>.after_commit        phase p committed, before the state write of p
+                                info: backend_pid (the connection that will COMMIT)
+  phase.<p>.commit_ack          COMMIT returned; fired INSIDE the commit error-handling scope,
+                                so an exception raised here is handled exactly like an exception
+                                from COMMIT itself (lost acknowledgement of a real commit)
+  phase.<p>.after_commit        phase p committed and acknowledged, before the state write of p
   state.after_temp_fsync        temp file written+fsynced, before os.replace   info: phase
+For the multi-transaction phase `tenant` (the M01 provisioner), before_commit/commit_ack refer to
+its FIRST guarded transaction; mid-phase interruption is covered by `guarded_txn` (I7 P1/P2).
 """
 
 PHASES: Final = ("intent", "stamped", "migrated", "logins", "tenant", "profile", "activated",
                  "settings", "staff", "ready")
 TARGET_DB: Final = "haloflow_test_syn_target"
-LOGIN_SUFFIXES: Final = ("runtime", "migrator", "provisioner", "m05")
+# The four logins and their ONLY group (the suite's own login shims use exactly these groups:
+# tests/conftest.py TEST_LOGIN_ROLES). Membership options pinned: admin false, inherit true,
+# set true, granted by the bootstrap superuser.
+LOGIN_GROUPS: Final = {"runtime": "haloflow_runtime", "migrator": "haloflow_migrator",
+                       "provisioner": "haloflow_provisioner",
+                       "audit_projector": "haloflow_audit_projector"}
+LOGIN_SUFFIXES: Final = tuple(LOGIN_GROUPS)
 
 # Measured (two independent provisioning runs to target 94; see module docstring).
 NONDETERMINISTIC_PROVISIONING: Final = frozenset({
@@ -230,6 +243,10 @@ SNAPSHOT_SHARED: Final = {
                    " a.set_option FROM pg_auth_members a JOIN pg_authid r ON r.oid=a.roleid"
                    " JOIN pg_authid m ON m.oid=a.member JOIN pg_authid g ON g.oid=a.grantor"
                    " ORDER BY 1,2",
+    # A digest of every stored verifier, so a SILENT verifier replacement (one non-NULL value for
+    # another) changes the snapshot. The verifier itself never enters it.
+    "verifier_digests": "SELECT rolname, encode(sha256(convert_to(coalesce(rolpassword,''),"
+                        " 'UTF8')), 'hex') FROM pg_authid ORDER BY 1",
     "role_settings": "SELECT setdatabase, setrole::regrole::text, setconfig::text"
                      " FROM pg_db_role_setting ORDER BY 1,2",
     "databases": "SELECT datname, pg_get_userbyid(datdba), coalesce(datacl::text,''),"
@@ -319,6 +336,17 @@ def semantic(c: PgCluster, tenant_schema: str, *, db: str = TARGET_DB,
         return _rows(d, exclude=frozenset(exclude), tenant=tenant_schema)
 
 
+def ledger_running(c: PgCluster) -> frozenset[str]:
+    """INDEPENDENT interruption evidence: ledger units left `running` (read from the DB at the
+    barrier/crash point, never from the implementation's own report)."""
+
+    with c.connect() as d:
+        if d.execute("SELECT to_regclass('shared.schema_migrations')").fetchone() == (None,):
+            return frozenset()
+        return frozenset(r[0] for r in d.execute(
+            "SELECT migration_id FROM shared.schema_migrations WHERE state = 'running'"))
+
+
 def ledger_attempts(c: PgCluster) -> dict[str, int]:
     with c.connect() as d:
         return {r[0]: int(r[1]) for r in d.execute(
@@ -373,19 +401,40 @@ class Child:
         return dict(json.loads(lines[-1][len("B2CHILD "):]))
 
 
+CHILDREN: list[subprocess.Popen[str]] = []
+
+
+def reap() -> None:
+    """Kill any child a failed row left behind (bounded cleanup; a mutant cannot strand the
+    suite on a barrier)."""
+
+    while CHILDREN:
+        p = CHILDREN.pop()
+        if p.poll() is None:
+            p.kill()
+            p.wait(10)
+
+
 def spawn(bar: Path, action: str, *, environ: dict[str, str], pause: str = "",
-          crash: str = "", extra: dict[str, Any] | None = None) -> Child:
+          crash: str = "", raise_at: str = "", kill_at: str = "",
+          extra: dict[str, Any] | None = None) -> Child:
     """Run `b2_child.py` in a fresh `python -I` with an explicit environment.
 
     `pause` = a hook point name (optionally `point#n`) to block at; `crash` = a hook point at
-    which the child calls `os._exit(97)` (simulated process death)."""
+    which the child calls `os._exit(97)` (simulated process death); `raise_at` = raise
+    psycopg.OperationalError at that point (with `phase.<p>.commit_ack`: a LOST ACKNOWLEDGEMENT
+    of a commit that really happened); `kill_at` = terminate the backend named by the hook
+    info's `backend_pid` from a separate connection, then continue (a real rollback through
+    connection loss)."""
 
     bar.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps({"action": action, "pause": pause, "crash": crash, "bar": str(bar),
-                          "environ": environ, "extra": extra or {}})
+    payload = json.dumps({"action": action, "pause": pause, "crash": crash, "raise_at": raise_at,
+                          "kill_at": kill_at, "bar": str(bar), "environ": environ,
+                          "extra": extra or {}})
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(SRC)}
     proc = subprocess.Popen([sys.executable, "-I", str(CHILD), payload], env=env,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    CHILDREN.append(proc)
     return Child(proc, bar)
 
 

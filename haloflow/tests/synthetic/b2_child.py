@@ -32,12 +32,24 @@ def main() -> None:
 
     p_name, p_n = split(cfg["pause"])
     c_name, c_n = split(cfg["crash"])
+    r_name, r_n = split(cfg.get("raise_at", ""))
+    k_name, k_n = split(cfg.get("kill_at", ""))
 
     def fault(point: str, info: Any) -> None:
         counts[point] = counts.get(point, 0) + 1
         k = counts[point]
         if point == c_name and k == c_n:
             os._exit(97)
+        if point == k_name and k == k_n:
+            import psycopg
+
+            with psycopg.connect(cfg["environ"]["HALOFLOW_SYNTHETIC_ADMIN_DSN"],
+                                 autocommit=True) as admin:
+                admin.execute("SELECT pg_terminate_backend(%s)", (int(info["backend_pid"]),))
+        if point == r_name and k == r_n:
+            import psycopg
+
+            raise psycopg.OperationalError("B2 test fault: acknowledgement lost")
         if point == p_name and k == p_n:
             data = dict(info or {})
             data["child_pid"] = os.getpid()

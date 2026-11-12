@@ -9,6 +9,7 @@ Rows
           `pg_control_system()` and its own database oid.
 - B2-O1   CONTROL: oracle sensitivity. Every fresh-baseline prep changes `snapshot()` (so the
           "no change" assertions below can fail).
+- B2-O2   CONTROL: a silent verifier replacement changes the snapshot (digest only).
 - B2-F1   first run on a fresh cluster: RESERVED; slot value exact
           (nonce, sysid, target oid, epoch).
 - B2-F2   FULL fresh attestation, one row per class: CLUSTER_NOT_FRESH naming the class, refused
@@ -45,6 +46,7 @@ Rows
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import sys
@@ -60,6 +62,12 @@ pytestmark = pytest.mark.postgres
 
 NONCE = "a1" * 16
 NONCE2 = "b2" * 16
+
+
+@pytest.fixture(autouse=True)
+def _reap_children() -> Iterator[None]:
+    yield
+    s.reap()
 
 
 @pytest.fixture
@@ -147,6 +155,19 @@ def test_b2_o1_oracle_sensitivity_control(pg: s.PgCluster, cls: str) -> None:
     before = s.snapshot(pg)
     prep(pg, cls)
     assert s.snapshot(pg) != before
+
+
+def test_b2_o2_verifier_replacement_visible_control(pg: s.PgCluster) -> None:
+    """CONTROL: replacing one non-NULL verifier with another changes the snapshot (digest), so
+    "no change" assertions catch a silent password repair; the verifier itself is not in it."""
+    with pg.connect("postgres") as a:
+        a.execute("CREATE ROLE probe_login LOGIN PASSWORD 'first-value'")
+    before = s.snapshot(pg)
+    with pg.connect("postgres") as a:
+        a.execute("ALTER ROLE probe_login PASSWORD 'second-value'")
+    after = s.snapshot(pg)
+    assert set(s.diff(before, after)) == {"verifier_digests"}
+    assert "SCRAM-SHA-256$" not in json.dumps(after)
 
 
 def test_b2_tablespace_oracle_and_class_control(pg: s.PgCluster, tmp_path: Path) -> None:

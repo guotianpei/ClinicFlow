@@ -6,8 +6,8 @@ amended by v1r1 §2 (Codex ALIGN 2026-11-12).
 Pinned identities (all derived from the 32-hex nonce created once at `intent`):
   tenant_id = "clinic-syn-<nonce[:8]>"      schema_key = "tenant_<nonce[:16]>"
   staff_id = uuid5(UUID(nonce), "staff")     activation actor = uuid5(UUID(nonce), "activation")
-  ticket_reference = "SYN-<nonce[:8]>"      logins = haloflow_syn_<nonce[:8]>_{runtime,migrator,
-                                             provisioner,m05}
+  ticket_reference = "SYN-<nonce[:8]>"      logins = haloflow_syn_<nonce[:8]>_<suffix>, each a
+                                             member of exactly its group (b2_support.LOGIN_GROUPS)
 Pinned seeded values: settings lead 2 days, send 10:00, window 09:00-19:00, clinic_tz
 "America/New_York", display name "HaloVox Demo Clinic", settings_version initial+1; one staff
 member (active, clinic_admin, follow-up read+act) through the first-member bootstrap; one
@@ -23,20 +23,31 @@ Rows
 - B2-I3   SCRAM authentication in a scram-sha-256 cluster: intent password logs in, a wrong one
           fails.
 - B2-I4   crash matrix: for every phase, crash (a) before its commit, (b) after its commit before
-          the state write, (c) inside the state writer after the temp fsync; re-run -> ready;
+          the state write, (c) inside the state writer after the temp fsync, plus (d) after the
+          reservation alone (D1, before the target stamp); re-run -> ready;
           result equal to a single execution (semantic rows minus ONLY the explicit
           nondeterministic columns, identities normalised), secrets byte-identical to `intent`,
-          no duplicate roles/tenant/grant/staff/event. Includes matrix row 5
-          (stamped, after commit).
+          no duplicate roles/tenant/grant/staff/event; ledger attempts differ ONLY on units the
+          DB showed `running` at the crash, by exactly +1 (zero differences otherwise).
+          Includes matrix row 5 (stamped, after commit).
+- B2-I4b  ambiguous commit outcome, per phase: (ack) the COMMIT really happened but its
+          acknowledgement is lost (fault raised inside the commit error scope); (rb) the
+          committing backend is killed before COMMIT (real rollback through connection loss).
+          The run fails closed without writing state p; the re-run -> ready, equal to a single
+          execution, secrets unchanged. Interruption evidence for the attempt pin is read from
+          the ledger at the failure point, never from the implementation.
 - B2-I5   diverged variants: a foreign object at each phase boundary -> STATE_DIVERGED; the only
-          change is the owned epoch bump; never repaired or adopted. Owned-but-altered login and
-          settings -> STATE_DIVERGED.
+          change is the owned epoch bump; never repaired or adopted. Owned-but-altered login
+          (separately: password only, attribute only, extra membership) and settings ->
+          STATE_DIVERGED; every stored verifier unchanged (compared in memory, never printed).
 - B2-I6   concurrency: two state directories, concurrent first init -> exactly one ready, the
           other INSTALL_LOCKED with zero change; a running RuntimeLease -> init INSTALL_LOCKED.
 - B2-I7   copied state directory (same nonce) with the holder paused INSIDE a provisioning
           guarded transaction: (P1) holder transaction killed; (P2) holder continues and is then
-          fenced. The copy resumes to ready; equal to a single execution; ledger attempt differs
-          on at most the interrupted unit, by exactly +1.
+          fenced. The copy resumes to ready; equal to a single execution. The interrupted units
+          are read from the ledger while the copy's takeover holds K_X before COMMIT (the
+          holder can commit nothing more from that point); attempts differ on exactly those
+          units, by exactly +1.
 - B2-I8   refusals with no change: the CI suite cluster (read-only attestation); state missing
           against an initialised cluster; state copied to another cluster; corrupt state.
 - B2-I9   secrets never in logs at DEBUG.
@@ -68,6 +79,12 @@ STATE_KEYS = {"schema_version", "phase", "cluster_sysid", "target", "target_oid"
 SETTINGS = {"lead_days": 2, "send_time": "10:00:00", "window_start": "09:00:00",
             "window_end": "19:00:00", "clinic_tz": "America/New_York",
             "clinic_display_name": "HaloVox Demo Clinic"}
+
+
+@pytest.fixture(autouse=True)
+def _reap_children() -> Iterator[None]:
+    yield
+    s.reap()
 
 
 @pytest.fixture
@@ -148,7 +165,9 @@ def reference_of(root: Path) -> dict[str, Any]:
 
 
 def assert_single_execution(c: s.PgCluster, st_dir: Path, reference: dict[str, Any], *,
-                            interrupted: str | None = None) -> None:
+                            interrupted: frozenset[str]) -> None:
+    """`interrupted` is REQUIRED and comes from independent DB evidence (s.ledger_running at the
+    failure point). Exactly those units carry one extra attempt; every other unit is equal."""
     st = s.read_state(st_dir)
     assert st["phase"] == "ready"
     assert s.diff(reference["semantic"], normalised(c, st)) == {}
@@ -157,11 +176,8 @@ def assert_single_execution(c: s.PgCluster, st_dir: Path, reference: dict[str, A
     assert set(got) == set(reference["attempts"])
     diffs = {k: (reference["attempts"][k], v) for k, v in got.items()
              if v != reference["attempts"][k]}
-    if interrupted is None:
-        assert len(diffs) <= 1 and all(g == r + 1 for r, g in diffs.values()), diffs
-    else:
-        assert set(diffs) <= {interrupted}
-        assert all(g == r + 1 for r, g in diffs.values()), diffs
+    assert diffs == {u: (reference["attempts"][u], reference["attempts"][u] + 1)
+                     for u in interrupted}, (sorted(interrupted), diffs)
 
 
 # ---------------------------------------------------------------- I0 / I1 / I2 / I3
@@ -217,10 +233,11 @@ def test_b2_i1_positive_init(pg: s.PgCluster, tmp_path: Path) -> None:
             assert attrs[:8] == (False, True, False, False, True, False, False, -1)
             assert attrs[8] == scram_verifier(spec["password"], spec["salt"], spec["iterations"])
             members = a.execute(
-                "SELECT g.rolname, m.admin_option FROM pg_auth_members m"
+                "SELECT g.rolname, m.admin_option, m.inherit_option, m.set_option,"
+                " pg_get_userbyid(m.grantor) FROM pg_auth_members m"
                 " JOIN pg_roles g ON g.oid=m.roleid JOIN pg_roles r ON r.oid=m.member"
                 " WHERE r.rolname=%s", (spec["role"],)).fetchall()
-            assert len(members) == 1 and members[0][1] is False
+            assert members == [(s.LOGIN_GROUPS[suffix], False, True, True, "postgres")]
             cfg = a.execute("SELECT setconfig FROM pg_db_role_setting s JOIN pg_roles r"
                             " ON r.oid=s.setrole WHERE r.rolname=%s", (spec["role"],)).fetchall()
             assert cfg == [(["search_path=\"\""],)] or cfg == [(["search_path=''"],)]
@@ -268,7 +285,7 @@ WRITE_INDEX = {p: i + 1 for i, p in enumerate(s.PHASES)}   # n-th state write ==
 
 
 def crash_points() -> list[tuple[str, str]]:
-    pts = []
+    pts = [("intent", "reserve.after_commit")]                # D1 only, before the stamp
     for p in PHASE_COMMITS:
         pts.append((p, f"phase.{p}.before_commit"))
         pts.append((p, f"phase.{p}.after_commit"))
@@ -287,12 +304,36 @@ def test_b2_i4_crash_matrix(pg: s.PgCluster, tmp_path: Path, ref_root: Path,
     if (st_dir / "state.json").exists():
         st0 = s.read_state(st_dir)
         intent_secrets = (st0["logins"], st0["note_keys"])
+    interrupted = s.ledger_running(pg)                     # independent evidence, at the crash
     again = init_child(pg, st_dir, tmp_path / "bar2")
     assert again.result() == {"ok": True, "phase": "ready"}
     st = s.read_state(st_dir)
     if intent_secrets is not None:
         assert (st["logins"], st["note_keys"]) == intent_secrets, "secrets must never rotate"
-    assert_single_execution(pg, st_dir, reference_of(ref_root))
+    assert_single_execution(pg, st_dir, reference_of(ref_root), interrupted=interrupted)
+
+
+@pytest.mark.parametrize("kind", ["ack_lost", "rolled_back"])
+@pytest.mark.parametrize("phase", PHASE_COMMITS)
+def test_b2_i4b_ambiguous_commit(pg: s.PgCluster, tmp_path: Path, ref_root: Path, phase: str,
+                                 kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    fault = {"raise_at": f"phase.{phase}.commit_ack"} if kind == "ack_lost" else {
+        "kill_at": f"phase.{phase}.before_commit"}
+    first = init_child(pg, st_dir, tmp_path / "bar1", **fault)
+    r = first.result()
+    assert r["ok"] is False, r
+    assert r.get("type") != "ModuleNotFoundError", r
+    st0 = s.read_state(st_dir)
+    previous = s.PHASES[s.PHASES.index(phase) - 1]
+    assert st0["phase"] == previous, "no state write for a phase whose commit is not known"
+    secrets = (st0["logins"], st0["note_keys"])
+    interrupted = s.ledger_running(pg)
+    again = init_child(pg, st_dir, tmp_path / "bar2")
+    assert again.result() == {"ok": True, "phase": "ready"}
+    st = s.read_state(st_dir)
+    assert (st["logins"], st["note_keys"]) == secrets
+    assert_single_execution(pg, st_dir, reference_of(ref_root), interrupted=interrupted)
 
 
 # ---------------------------------------------------------------- I5 diverged
@@ -317,17 +358,32 @@ def test_b2_i5_foreign_object_diverged(pg: s.PgCluster, tmp_path: Path, phase: s
                          ).fetchone()[0] == 1, "never repaired or dropped"
 
 
-def test_b2_i5_owned_login_altered_diverged(pg: s.PgCluster, tmp_path: Path) -> None:
+def _verifiers(c: s.PgCluster) -> dict[str, Any]:
+    with c.connect("postgres") as a:
+        return dict(a.execute("SELECT rolname, rolpassword FROM pg_authid").fetchall())
+
+
+TAMPER = {
+    "password_only": "ALTER ROLE {role} PASSWORD 'changed-by-someone'",
+    "attribute_only": "ALTER ROLE {role} CONNECTION LIMIT 3",
+    "extra_membership": "GRANT haloflow_runtime TO {role}",
+}
+
+
+@pytest.mark.parametrize("kind", sorted(TAMPER))
+def test_b2_i5_owned_login_altered_diverged(pg: s.PgCluster, tmp_path: Path, kind: str) -> None:
     st_dir = s.state_dir(tmp_path)
     first = init_child(pg, st_dir, tmp_path / "bar1", crash="phase.logins.after_commit")
     first.crashed()
     st = s.read_state(st_dir)
+    role = st["logins"]["audit_projector"]["role"]
     with pg.connect("postgres") as a:
-        a.execute(f"ALTER ROLE {st['logins']['runtime']['role']} CONNECTION LIMIT 3")
-        a.execute(f"ALTER ROLE {st['logins']['m05']['role']} PASSWORD 'changed-by-someone'")
-    before = s.snapshot(pg)
+        a.execute(TAMPER[kind].format(role=role))
+    before, verifiers = s.snapshot(pg), _verifiers(pg)
     assert refused(init, pg, st_dir).code == "STATE_DIVERGED"
     assert set(s.diff(before, s.snapshot(pg))) <= {"shared_comments"}
+    unchanged = _verifiers(pg) == verifiers               # in memory; never printed
+    assert unchanged, "a stored verifier was changed (silent repair)"
 
 
 def test_b2_i5_owned_settings_altered_diverged(pg: s.PgCluster, tmp_path: Path) -> None:
@@ -393,18 +449,21 @@ def test_b2_i7_copied_state_mid_provisioning(pg: s.PgCluster, tmp_path: Path,
     b_dir = s.copy_state(a_dir, tmp_path / "b")
     assert s.read_state(b_dir)["phase"] in ("migrated", "logins")
     assert s.terminate_backend(pg, int(info["install_lock_pid"])), "lose the holder's K_S"
-    b = init_child(pg, b_dir, tmp_path / "barb")
+    b = init_child(pg, b_dir, tmp_path / "barb", pause="takeover.before_commit")
     s.wait_for(lambda: s.waiting_advisory(pg))
     assert b.proc.poll() is None, "the copy's takeover must wait for the holder's open txn"
     if kill:
         assert s.terminate_backend(pg, int(info["backend_pid"]))
     a.go("guarded_txn")
+    b.reached("takeover.before_commit")
+    interrupted = s.ledger_running(pg)        # holder can commit nothing more from here on
+    b.go("takeover.before_commit")
     assert b.result() == {"ok": True, "phase": "ready"}
     ra = a.result()
     assert ra["ok"] is False
     if not kill:
         assert ra["code"] == "EPOCH_SUPERSEDED", "the holder's next guarded txn is fenced"
-    assert_single_execution(pg, b_dir, reference_of(ref_root))
+    assert_single_execution(pg, b_dir, reference_of(ref_root), interrupted=interrupted)
 
 
 # ---------------------------------------------------------------- I8 refusals
