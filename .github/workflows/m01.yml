@@ -76,6 +76,21 @@ jobs:
           --envdir "$RUNNER_TEMP/verify-env"
           --source-revision "$GITHUB_SHA"
       - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      # Option B B2: PostgreSQL 17 BINARIES (initdb/pg_ctl/postgres) for the per-case
+      # disposable clusters of tests/synthetic/test_b2_*_postgres.py. No cluster is created
+      # here (create_main_cluster = false) and the suite's service container is never
+      # used by those rows except one read-only negative attestation. Without this
+      # variable the B2 PostgreSQL rows FAIL (class-B rule); they never skip.
+      - name: PostgreSQL 17 binaries for B2 per-case clusters
+        working-directory: .
+        run: |
+          sudo install -d /etc/postgresql-common
+          echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-17
+          /usr/lib/postgresql/17/bin/postgres --version
+          echo "HALOFLOW_SYNTHETIC_PG_BIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
       # The three gate steps. Each `run:` stays on one line and is preceded by
       # exactly one marker comment: scripts/gate-reachability.sh resolves the
       # commands from these markers and fails closed if one is missing,
@@ -290,6 +305,16 @@ jobs:
           $VENV/bin/python -I scripts/b1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b1-mutation"
+      # Option B B2 mutation controls B2-M1..B2-M19 (safety-focused, B2-I1 + red-packet
+      # mutation lists): DSN and state-directory defences, protocol F's guard / takeover /
+      # reservation ordering, the fresh attestation, and the installer's commit-ack /
+      # ownership / expiry / ordering rules. PostgreSQL groups use the per-case clusters
+      # (HALOFLOW_SYNTHETIC_PG_BIN). Kill sets in scripts/b2_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_b2_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/b2_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/b2-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
