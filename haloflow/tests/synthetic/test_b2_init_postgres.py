@@ -748,6 +748,15 @@ def test_b2_i8_suite_cluster_refused_read_only(tmp_path: Path) -> None:
     with psycopg.connect(url, autocommit=True) as c:
         addr = c.execute("SELECT host(inet_server_addr())").fetchone()[0]
     expected = "CLUSTER_NOT_FRESH" if addr in (None, "127.0.0.1", "::1") else "TARGET_MISMATCH"
+    if expected == "CLUSTER_NOT_FRESH":
+        # PREMISE, asserted read-only BEFORE init (Codex cce26d12): on true loopback the refusal
+        # rests on the shared suite cluster being non-fresh. A fresh one would let this negative
+        # control install into it, so the row fails here instead. The loopback refusal itself
+        # is covered independently on a disposable cluster (nonfresh_cluster_refused_on_loopback).
+        ep = s.mod("dsn").parse_admin_dsn(url, {})
+        premise = s.mod("attest").fresh_failures(ep, ep.target)
+        assert premise, ("PREMISE NOT MET: the suite cluster is fresh on loopback; this row needs "
+                         "a used suite service (as in CI) and must not install into it")
     before = catalog()
     env = {"HALOFLOW_SYNTHETIC_ADMIN_DSN": url, "HALOFLOW_SYNTHETIC_STATE":
            str(s.state_dir(tmp_path)), "HALOFLOW_SYNTHETIC_DISPOSABLE": "1"}
