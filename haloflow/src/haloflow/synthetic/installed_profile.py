@@ -7,6 +7,7 @@ point. Pinned to PostgreSQL 17, the synthetic registry (target 94) and Alembic h
 control B2-P1 re-measures and must equal this module.
 """
 
+# ruff: noqa: E501
 from typing import Final
 
 PROFILE_ID: Final = "a2e8f9cd622f3d01c1f499919a5b21067ecc59c4e5bb9cbfd0efa8f7e7858eaa"
@@ -424,6 +425,19 @@ LABELS: Final[tuple[str, ...]] = (
     "phase.staff.t3b.after_commit",
     "ready",
 )
+# transition i (point i-1 -> i): owned identities dropped or re-created
+REPLACED: Final[dict[int, tuple[str, ...]]] = {
+    59: (
+        "pg_constraint:<SCHEMA>.m01_staff_admin_log_operation_check@<SCHEMA>.m01_staff_admin_log",
+    ),
+    73: (
+        "pg_constraint:<SCHEMA>.m01_staff_bootstrap_keys_outcome_check@<SCHEMA>.m01_staff_bootstrap_keys",
+    ),
+    183: (
+        "pg_constraint:<SCHEMA>.m05_followup_items_item_kind_check@<SCHEMA>.m05_followup_items",
+        "pg_constraint:<SCHEMA>.m05_intake_map_item_kind_check@<SCHEMA>.m05_intake_map",
+    ),
+}
 COMPLETION: Final[dict[str, int]] = {
     "intent": 0,
     "stamped": 1,

@@ -227,6 +227,8 @@
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_status_sealed_and_read_only",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_ledger_attempt_not_tied_to_interruption_refused[running_attempt_jump]",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_ledger_attempt_not_tied_to_interruption_refused[unrelated_applied_attempt]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[applied_unit_completed_at]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[unrelated_function_recreated]",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_tenant_intact_resumes",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_tenant_tamper_refused[function_config]",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_tenant_tamper_refused[ledger_checksum]",
@@ -252,16 +254,19 @@
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_pending_effect_tamper_refused[tenant_ledger_state]",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_pending_effect_tamper_refused[tenant_seed_value]",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_pending_effect_tamper_refused[tenant_table_acl]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_progress_from_partial_seal",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_repeated_same_unit_interruption_resumes",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r3_capture_excluded_by_a_guarded_writer",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r3_takeover_waits_for_seal_persistence"
   ],
   "B2-M20": [
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_sealed_value_tamper_refused[clock]",
-    "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_sealed_value_tamper_refused[log_id]"
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_sealed_value_tamper_refused[log_id]",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[applied_unit_completed_at]"
   ],
   "B2-M21": [
-    "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_identical_function_recreated_refused"
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r1_identical_function_recreated_refused",
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[unrelated_function_recreated]"
   ],
   "B2-M22": [
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_ledger_attempt_not_tied_to_interruption_refused[running_attempt_jump]",
@@ -278,5 +283,11 @@
   "B2-M25": [
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r3_capture_excluded_by_a_guarded_writer",
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r3_takeover_waits_for_seal_persistence"
+  ],
+  "B2-M26": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[applied_unit_completed_at]"
+  ],
+  "B2-M27": [
+    "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[unrelated_function_recreated]"
   ]
 }

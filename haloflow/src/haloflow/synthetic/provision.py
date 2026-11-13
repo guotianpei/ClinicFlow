@@ -67,7 +67,7 @@ from haloflow.synthetic.guard import (
     reservation_value,
 )
 from haloflow.synthetic.hooks import fire
-from haloflow.synthetic.installed_profile import COMPLETION, POINTS, PROFILE_ID
+from haloflow.synthetic.installed_profile import COMPLETION, POINTS, PROFILE_ID, REPLACED
 from haloflow.synthetic.state import PHASES, LockedState, StateDir
 
 STATE_SCHEMA: Final = 1
@@ -325,12 +325,13 @@ def _run_settings(ctx: _Ctx) -> None:
 SEGMENT_PHASES: Final = ("intent", "stamped", "migrated", "logins", "tenant", "profile",
                          "activated", "settings", "staff", "ready")
 STAFF_STEPS: Final = ("staff.t1", "staff.t2", "staff.t3a", "staff.t3b")
-# Rows whose sealed nondeterministic values the named phase may legitimately change.
+# Phases whose transitions may legitimately change a SEALED row (row-exact rules in
+# `_sealed_row_may_change`); every other sealed row keeps its nondeterministic values exactly.
 APPROVED_UPDATES: Final = {
-    "tenant": frozenset({"shared.tenants", "shared.schema_migrations",
-                         "shared.tenant_state_history"}),
+    "tenant": frozenset({"shared.tenants", "shared.schema_migrations"}),
     "settings": frozenset({"<SCHEMA>.m05_reminder_settings"}),
 }
+LEDGER_TABLE: Final = "shared.schema_migrations"
 _CLOCKS: Final = frozenset({"started_at", "completed_at", "occurred_at", "created_at",
                             "updated_at", "status_changed_at", "granted_at", "at"})
 _IDS: Final = frozenset({"record_id", "log_id"})
@@ -384,36 +385,66 @@ def _check_seal(state: Mapping[str, Any], cap: view.Capture, j: int) -> None:
     low = int(seal["point"])
     crossed = _phases_crossed(low, j)
     approved = set().union(*(APPROVED_UPDATES[p] for p in crossed)) if crossed else set()
-    # Sealed nondeterministic values: byte-equal, except rows of an approved update set.
+    # Sealed nondeterministic values: byte-equal, except the exact row transitions of a crossed
+    # phase (`_sealed_row_may_change`).
     for table, rows in seal["nondet"].items():
         current = cap.nondet.get(table, {})
         for key, values in rows.items():
-            if table in approved:
+            if current.get(key) == values:
                 continue
-            if current.get(key) != values:
-                raise _diverged("sealed_values")
-    # Raw identities: every sealed (class, oid, identity) still present, exact if there was no
-    # progress. Inside the tenant phase a later unit may legitimately replace an object of an
-    # earlier unit (new OID, same identity): only tenant-schema objects and their comments.
+            if table in approved and _sealed_row_may_change(table, key, values, seal, cap, state):
+                continue
+            raise _diverged("sealed_values")
+    # Raw identities: every sealed (class, oid, identity) still present with its OID, exact if
+    # there was no progress. An identity may leave only by a MEASURED transition crossed since
+    # the seal (installed_profile.REPLACED: a later unit replacing an earlier unit's object).
     sealed_ids = {tuple(x) for x in seal["identities"]}
     now_ids = {tuple(x) for x in cap.identities}
     if j == low and sealed_ids != now_ids:
         raise _diverged("identities")
     missing = sealed_ids - now_ids
-    if missing and not ("tenant" in crossed and all(
-            _tenant_scoped(x, sealed_ids, str(state["schema_key"])) for x in missing)):
-        raise _diverged("identities")
+    if missing:
+        allowed = {n for i in range(low + 1, j + 1) for n in REPLACED.get(i, ())}
+        names = view.identity_names([list(x) for x in sealed_ids], state)
+        if any(names[f"{x[0]}|{x[1]}"] not in allowed for x in missing):
+            raise _diverged("identities")
     _check_ledger(seal["ledger"], cap.ledger)
 
 
-def _tenant_scoped(identity: tuple[str, ...], sealed: set[tuple[str, ...]], schema: str) -> bool:
-    cls, oid, name = identity
-    if cls == "pg_description":
-        objoid = oid.split(":")[1]
-        owners = [x for x in sealed if x[1] == objoid and x[0] != "pg_description"]
-        return bool(owners) and all(_tenant_scoped(x, sealed, schema) for x in owners)
-    return name.startswith(f"{schema}.") or f" {schema}." in name or f"@{schema}." in name \
-        or name == schema
+def _sealed_row_may_change(table: str, key: str, values: Mapping[str, Any],
+                           seal: Mapping[str, Any], cap: view.Capture,
+                           state: Mapping[str, Any]) -> bool:
+    """The ONLY sealed-row changes a crossed phase may make (row and column exact):
+    - ledger: a unit sealed `running` may be retried (attempt +1: new started_at) or completed
+      (same attempt: started_at unchanged, completed_at set); an `applied` unit never changes;
+    - tenants: the tenant sealed `provisioning` may become `active` (created_at unchanged);
+    - settings: the version-1 row may become version 2 (updated_at only).
+    Newly written values are range-checked by `_check_new_rows`."""
+    try:
+        det = json.loads(key.removesuffix("#dup"))
+    except ValueError:
+        return False
+    if table == "shared.schema_migrations":
+        if det.get("state") != "running":
+            return False
+        unit = det.get("migration_id")
+        prior = next((r for r in seal["ledger"] if r[0] == unit), None)
+        rows = [r for r in cap.rows.get(LEDGER_TABLE, []) if r.get("migration_id") == unit]
+        if prior is None or len(rows) != 1:
+            return False
+        row = rows[0]
+        if int(row["attempt"]) == int(prior[2]):
+            return bool(row.get("started_at") == values.get("started_at"))
+        return int(row["attempt"]) == int(prior[2]) + 1
+    if table == "shared.tenants":
+        rows = [r for r in cap.rows.get("shared.tenants", [])
+                if r.get("tenant_id") == state["tenant_id"]]
+        return det.get("lifecycle_state") == "provisioning" and len(rows) == 1 \
+            and rows[0].get("created_at") == values.get("created_at") \
+            and rows[0].get("lifecycle_state") == "active"
+    if table == "<SCHEMA>.m05_reminder_settings":
+        return bool(det.get("settings_version") == 1)
+    return False
 
 
 def _check_ledger(sealed: list[list[Any]], current: list[list[Any]]) -> None:

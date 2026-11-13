@@ -1,4 +1,4 @@
-"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M25).
+"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M27).
 
 Safety-focused (B2-I1 and B2 red-packet mutation lists, Codex 2026-11-12): protocol F's
 guard, takeover and reservation ordering; the DSN and state-directory defences; the fresh
@@ -156,10 +156,8 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "        st.write(state)\n"
      '        if phase != "ready":\n'),
     ("B2-M20", "provision: sealed nondeterministic values are not compared (S1)", PROVISION,
-     "            if current.get(key) != values:\n"
-     '                raise _diverged("sealed_values")\n',
-     "            if current.get(key) != values:\n"
-     "                pass\n"),
+     '            raise _diverged("sealed_values")\n',
+     "            continue\n"),
     ("B2-M21", "provision: sealed raw identities are not compared (same-name recreation)",
      PROVISION,
      '    sealed_ids = {tuple(x) for x in seal["identities"]}\n',
@@ -175,6 +173,15 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      '        begin_run(endpoint, state["phase"], state["nonce"], new_epoch())\n'
      '        current = read_reservation(endpoint) or ""\n'
      "        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n"),
+    ("B2-M26", "provision: a crossed phase may change ANY sealed row of its tables (not "
+     "row-exact)", PROVISION,
+     "            if table in approved and _sealed_row_may_change(table, key, values, seal, cap,"
+     " state):\n",
+     "            if table in approved:\n"),
+    ("B2-M27", "provision: any sealed identity may leave while progressing (not the measured "
+     "replacements)", PROVISION,
+     '        if any(names[f"{x[0]}|{x[1]}"] not in allowed for x in missing):\n',
+     "        if False:\n"),
     # -- view -----------------------------------------------------------------------------
     ("B2-M25", "view: the capture does not take the shared K_X (no exclusion)", VIEW,
      '        conn.execute("SELECT pg_catalog.pg_advisory_lock_shared(%s)", (K_X,))\n',
@@ -194,7 +201,7 @@ GROUP_OF: dict[str, str] = {
     **{m: "state" for m in ("B2-M4", "B2-M5", "B2-M6")},
     **{f"B2-M{i}": "guard" for i in range(7, 15)},
     "B2-M15": "attest",
-    **{f"B2-M{i}": "provision" for i in range(16, 25)},
+    **{f"B2-M{i}": "provision" for i in (*range(16, 25), 26, 27)},
     "B2-M25": "view",
 }
 

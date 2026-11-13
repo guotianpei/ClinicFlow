@@ -1198,17 +1198,23 @@ def test_b2_r3_capture_excluded_by_a_guarded_writer(pg: s.PgCluster, tmp_path: P
     assert box["out"]["sealed"] is True
 
 
-def _recreate_identical_function(c: s.PgCluster, schema: str) -> tuple[str, int, int]:
+def _recreate_identical_function(c: s.PgCluster, schema: str,
+                                 exclude: frozenset[str] = frozenset(),
+                                 among: frozenset[int] | None = None) -> tuple[str, int, int]:
     """Drop and recreate one owned function with an identical definition, owner and ACL;
-    returns (signature, old oid, new oid)."""
+    returns (signature, old oid, new oid). `exclude`: signatures (schema written <SCHEMA>)
+    that must not be chosen; `among`: if given, only these OIDs may be chosen."""
     with c.connect() as d, d.transaction():
-        row = d.execute(
+        candidates = d.execute(
             "SELECT p.oid, p.oid::regprocedure::text, pg_get_functiondef(p.oid),"
             " pg_get_userbyid(p.proowner), p.proacl::text FROM pg_proc p"
             " WHERE p.pronamespace = %s::regnamespace AND p.prokind = 'f'"
             " AND NOT EXISTS (SELECT 1 FROM pg_depend x WHERE x.refobjid = p.oid"
             " AND x.refclassid = 'pg_proc'::regclass)"
-            " ORDER BY p.proname, p.oid LIMIT 1", (schema,)).fetchone()
+            " ORDER BY p.proname, p.oid", (schema,)).fetchall()
+        row = next(r for r in candidates
+                   if r[1].replace(schema, "<SCHEMA>", 1) not in exclude
+                   and (among is None or int(r[0]) in among))
         old_oid, sig, definition, owner, acl = row
         grants = d.execute("SELECT g.grantee, g.privilege_type FROM aclexplode(%s::aclitem[]) g",
                            (acl,)).fetchall() if acl else []
@@ -1312,4 +1318,54 @@ def test_b2_r2_ledger_attempt_not_tied_to_interruption_refused(pg: s.PgCluster, 
     with pg.connect() as d:
         assert d.execute("SELECT * FROM shared.schema_migrations ORDER BY 1, 2").fetchall() \
             != before_rows
+    assert_refused_no_change(pg, st_dir)
+
+
+# Progress FROM a partial seal (Codex 20261113T011245Z): run 1 dies mid-tenant; run 2 persists
+# the validated observation (a seal INSIDE the tenant segment), commits more units and dies
+# again (txn #30); run 3 resumes from beyond the seal.
+def _partial_seal(c: s.PgCluster, tmp_path: Path) -> tuple[Path, frozenset[str]]:
+    st_dir = s.state_dir(tmp_path)
+    init_child(c, st_dir, tmp_path / "bar1", crash="guarded_txn#60").crashed()
+    first = s.ledger_running(c)
+    init_child(c, st_dir, tmp_path / "bar2", crash="guarded_txn#30").crashed()
+    st = s.read_state(st_dir)
+    profile = s.mod("installed_profile")
+    assert st["phase"] == "logins"
+    assert profile.COMPLETION["logins"] < st["seal"]["point"] < profile.COMPLETION["tenant"], \
+        "premise: the observation was sealed inside the tenant segment"
+    sealed_applied = sum(1 for r in st["seal"]["ledger"] if r[1] == "applied")
+    with c.connect() as d:
+        now_applied = d.execute("SELECT count(*) FROM shared.schema_migrations"
+                                " WHERE state = 'applied'").fetchone()[0]
+    assert now_applied > sealed_applied, "premise: committed progress AFTER the partial seal"
+    return st_dir, first | s.ledger_running(c)
+
+
+def test_b2_r2_progress_from_partial_seal(pg: s.PgCluster, tmp_path: Path,
+                                          ref_root: Path) -> None:
+    st_dir, interrupted = _partial_seal(pg, tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    assert_single_execution(pg, st_dir, reference_of(ref_root), interrupted=interrupted)
+
+
+@pytest.mark.parametrize("kind", ["applied_unit_completed_at", "unrelated_function_recreated"])
+def test_b2_r2_partial_seal_unrelated_change_refused(pg: s.PgCluster, tmp_path: Path,
+                                                     kind: str) -> None:
+    """Inside the tenant segment only the EXACT measured transitions are allowed: an in-range
+    clock edit of an already-applied unit, or the recreation of an object no crossed unit
+    replaces, is refused before any change."""
+    st_dir, _ = _partial_seal(pg, tmp_path)
+    st = s.read_state(st_dir)
+    if kind == "applied_unit_completed_at":
+        tamper(pg, ["UPDATE shared.schema_migrations SET completed_at = completed_at"
+                    " - interval '1 second' WHERE migration_id = 't001_m01_baseline'"])
+    else:
+        replaced = frozenset(n.removeprefix("pg_proc:")
+                             for names in s.mod("installed_profile").REPLACED.values()
+                             for n in names if n.startswith("pg_proc:"))
+        sealed = frozenset(int(oid) for cls, oid, _n in st["seal"]["identities"]
+                           if cls == "pg_proc")             # an object the seal covers
+        _sig, old, new = _recreate_identical_function(pg, st["schema_key"], replaced, sealed)
+        assert old != new
     assert_refused_no_change(pg, st_dir)

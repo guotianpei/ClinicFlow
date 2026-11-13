@@ -169,7 +169,7 @@ _CATALOG: Final = {
 }
 # Raw identities (same-install only): class, oid, identity.
 _IDENTITIES: Final = (
-    "SELECT 'pg_authid', oid::text, rolname FROM pg_catalog.pg_authid"
+    "SELECT 'pg_authid'::text, oid::text, rolname::text FROM pg_catalog.pg_authid"
     " WHERE rolname = ANY(%(roles)s)"
     " UNION ALL SELECT 'pg_namespace', n.oid::text, n.nspname FROM pg_catalog.pg_namespace n"
     " WHERE " + _NS +
@@ -262,6 +262,21 @@ def _nested(value: Any, key: str) -> Any:
         for v in value:
             found.extend(_nested(v, key))
     return found
+
+
+def identity_names(identities: list[list[str]], state: Mapping[str, Any]) -> dict[str, str]:
+    """Normalised name of each raw identity, keyed "class|oid": the object's identity with the
+    intent identities substituted; a comment is named by its owning object and sub-id."""
+    subs = _substitutions(state, {})
+    by_oid = {i[1]: _norm(i[2], subs) for i in identities if i[0] != "pg_description"}
+    names: dict[str, str] = {}
+    for cls, oid, name in identities:
+        if cls == "pg_description":
+            _class, objoid, subid = oid.split(":")
+            names[f"{cls}|{oid}"] = f"comment:{by_oid.get(objoid, '?')}:{subid}"
+        else:
+            names[f"{cls}|{oid}"] = f"{cls}:{_norm(name, subs)}"
+    return names
 
 
 @contextmanager
