@@ -398,3 +398,26 @@ def test_b2_u_l1_locked_alembic_control() -> None:
     pinned = re.search(r"^alembic==([^\s]+)", lock, re.M)
     assert pinned is not None
     assert importlib.metadata.version("alembic") == pinned.group(1)
+
+
+def test_b2_u_d9_staff_digest_expressions_pinned() -> None:
+    """Drift control: the installer recomputes (read-only) the digests the existing staff
+    functions store; the canonical expressions it mirrors must still be the units' own."""
+    src = s.HALOFLOW / "src" / "haloflow" / "m01" / "staff"
+    admin = (src / "l1w_units.py").read_text()
+    assert "'[\"m01.staff_admin/v2\",' || pg_catalog.to_json(v_setting)::text" in admin
+    order = ["'client_action_id'", "'{attribution,principal_id}'", "'operation'", "'staff_id'",
+             "'display_name'", "'access'", "'role'", "'issuer'", "'subject'", "'setting'",
+             "'value'"]
+    start = admin.index('"m01.staff_admin/v2"')
+    positions = [admin.index(k, start) for k in order]
+    assert positions == sorted(positions)
+    boot = (src / "l1w_w3b_units.py").read_text()
+    expr = boot[boot.index('\'["m01.staff_bootstrap_first_admin/v1",\''):]
+    expr = expr[:expr.index("'UTF8'")]
+    assert [p.strip() for p in expr.split("||")] == [
+        "'[\"m01.staff_bootstrap_first_admin/v1\",'", "pg_catalog.to_json(v_tenant)::text",
+        "','", "pg_catalog.to_json(v_key::text)::text", "','",
+        "pg_catalog.to_json(v_actor)::text", "',\"create_first_admin\"'", "','",
+        "pg_catalog.to_json(v_staff::text)::text", "','",
+        "pg_catalog.to_json(v_name)::text", "']',"]

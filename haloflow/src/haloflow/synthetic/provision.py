@@ -21,6 +21,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import secrets
 import uuid
 from collections.abc import Callable, Iterator, Mapping
@@ -44,9 +45,9 @@ from haloflow.m01.provisioning import (
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.staff.l1w_units import BOOTSTRAP_CAPABILITY, SUPPORT_ROLE
 from haloflow.m02.roles import M05_OWNER_ROLE
+from haloflow.synthetic import view
 from haloflow.synthetic.attest import _DB_CHECKS, PUBLIC_ACL, admin_connect, check_a0
 from haloflow.synthetic.composition import (
-    CHECK_REASONS,
     SA_TEST_PROFILE_SQL,
     SI_TEST_PROFILE_SQL,
     build_synthetic_registry,
@@ -66,6 +67,7 @@ from haloflow.synthetic.guard import (
     reservation_value,
 )
 from haloflow.synthetic.hooks import fire
+from haloflow.synthetic.installed_profile import COMPLETION, POINTS, PROFILE_ID
 from haloflow.synthetic.state import PHASES, LockedState, StateDir
 
 STATE_SCHEMA: Final = 1
@@ -89,7 +91,7 @@ ACTIVATION_REASON: Final = "synthetic install"
 STATE_KEYS: Final = frozenset({
     "schema_version", "phase", "cluster_sysid", "target", "target_oid", "nonce", "tenant_id",
     "schema_key", "staff_id", "activation_actor_id", "ticket_reference", "logins",
-    "note_keys", "support"})
+    "note_keys", "support", "seal"})
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,7 @@ def _new_intent(target: str, sysid: str, oid: int) -> dict[str, Any]:
                     "expires_at": (starts + GRANT_WINDOW).isoformat(),
                     "decision_ref": hashlib.sha256(f"synthetic-install:{nonce}".encode())
                     .hexdigest()},
+        "seal": None,
     }
 
 
@@ -222,40 +225,12 @@ def _namespace_check(ctx: _Ctx) -> None:
 
 # ---------------------------------------------------------------------------- phases
 
-Status = str   # "none" | "partial" | "exact"
-
-
-def _inspect_stamped(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, "postgres") as a:
-        comment = _one(a, "SELECT pg_catalog.shobj_description(oid, 'pg_database')"
-                          " FROM pg_catalog.pg_database WHERE datname = %s", (ctx.endpoint.target,))
-    if comment is None:
-        return "none"
-    if comment == f"haloflow-synthetic:{ctx.nonce}":
-        return "exact"
-    raise _diverged("stamped")
-
-
 def _run_stamped(ctx: _Ctx) -> None:
     with _connect(ctx.endpoint.conninfo(ctx.endpoint.target)) as c, \
             _phase_txn(ctx, "stamped", c):
         c.execute(sql.SQL("COMMENT ON DATABASE {} IS {}").format(
             sql.Identifier(ctx.endpoint.target),
             sql.Literal(f"haloflow-synthetic:{ctx.nonce}")))
-
-
-def _inspect_migrated(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        version = _one(t, "SELECT version_num FROM public.alembic_version") \
-            if _exists(t, "public.alembic_version") else None
-        roles = {r[0] for r in t.execute(
-            "SELECT rolname FROM pg_catalog.pg_roles WHERE NOT rolcanlogin AND oid >= 16384")}
-    present = roles & GROUP_ROLES
-    if version is None and not present:
-        return "none"
-    if version == ALEMBIC_HEAD and present == GROUP_ROLES:
-        return "exact"
-    raise _diverged("migrated")
 
 
 def _run_migrated(ctx: _Ctx) -> None:
@@ -265,43 +240,6 @@ def _run_migrated(ctx: _Ctx) -> None:
                                     phase="migrated")
     if after != ALEMBIC_HEAD or before not in (None, ALEMBIC_HEAD):
         raise _diverged("migrated")
-
-
-_LOGIN_ATTRS: Final = (False, True, False, False, True, False, False, -1, None)
-
-
-def _inspect_logins(ctx: _Ctx) -> Status:
-    specs = ctx.state["logins"]
-    with admin_connect(ctx.endpoint, "postgres") as a:
-        boot = _one(a, "SELECT rolname FROM pg_catalog.pg_authid WHERE oid = 10")
-        found = 0
-        exact = True
-        for suffix, spec in specs.items():
-            row = a.execute(
-                "SELECT rolsuper, rolinherit, rolcreaterole, rolcreatedb, rolcanlogin,"
-                " rolreplication, rolbypassrls, rolconnlimit, rolvaliduntil, rolpassword, oid"
-                " FROM pg_catalog.pg_authid WHERE rolname = %s", (spec["role"],)).fetchone()
-            if row is None:
-                continue
-            found += 1
-            members = a.execute(
-                "SELECT g.rolname, m.admin_option, m.inherit_option, m.set_option,"
-                " pg_catalog.pg_get_userbyid(m.grantor) FROM pg_catalog.pg_auth_members m"
-                " JOIN pg_catalog.pg_roles g ON g.oid = m.roleid WHERE m.member = %s",
-                (row[10],)).fetchall()
-            config = a.execute("SELECT setdatabase, setconfig FROM pg_catalog.pg_db_role_setting"
-                               " WHERE setrole = %s", (row[10],)).fetchall()
-            verifier = scram_verifier(spec["password"], spec["salt"], spec["iterations"])
-            same = hmac.compare_digest(str(row[9] or ""), verifier)
-            if (tuple(row[:9]) != _LOGIN_ATTRS or not same
-                    or members != [(LOGIN_GROUPS[suffix], False, True, True, boot)]
-                    or config != [(0, ['search_path=""'])]):
-                exact = False
-    if found == 0:
-        return "none"
-    if found == len(specs) and exact:
-        return "exact"
-    raise _diverged("logins")
 
 
 def _run_logins(ctx: _Ctx) -> None:
@@ -315,20 +253,6 @@ def _run_logins(ctx: _Ctx) -> None:
                 sql.Identifier(LOGIN_GROUPS[suffix])))
             c.execute(sql.SQL("ALTER ROLE {} SET search_path = ''").format(
                 sql.Identifier(spec["role"])))
-
-
-def _inspect_tenant(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        if not _exists(t, "shared.tenants"):
-            raise _diverged("tenant")
-        rows = t.execute("SELECT tenant_id, schema_key, lifecycle_state, schema_version"
-                         " FROM shared.tenants").fetchall()
-    if not rows:
-        return "none"
-    if len(rows) != 1 or rows[0][:2] != (ctx.state["tenant_id"], ctx.schema):
-        raise _diverged("tenant")
-    target = build_synthetic_registry().target_version
-    return "exact" if rows[0][2:] == ("active", target) else "partial"
 
 
 def _run_tenant(ctx: _Ctx) -> None:
@@ -352,36 +276,10 @@ def _run_tenant(ctx: _Ctx) -> None:
     asyncio.run(run())
 
 
-def _inspect_profile(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        workloads = _one(t, sql.SQL("SELECT count(*) FROM {}.m05_intake_workloads").format(
-            sql.Identifier(ctx.schema)))
-        intake = _one(t, sql.SQL("SELECT count(*) FROM {}.m05_intake_map").format(
-            sql.Identifier(ctx.schema)))
-    if (workloads, intake) == (0, 0):
-        return "none"
-    if (workloads, intake) == (4, 4 + len(CHECK_REASONS)):
-        return "exact"
-    raise _diverged("profile")
-
-
 def _run_profile(ctx: _Ctx) -> None:
     with _connect(ctx.endpoint.conninfo(ctx.endpoint.target)) as c, _phase_txn(ctx, "profile", c):
         c.execute(SA_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(SI_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
-
-
-def _inspect_activated(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        rows = t.execute(sql.SQL(
-            "SELECT change, actor_id::text, ticket_reference, reason"
-            " FROM {}.m05_activation_records").format(sql.Identifier(ctx.schema))).fetchall()
-    if not rows:
-        return "none"
-    if rows == [("grant", ctx.state["activation_actor_id"], ctx.state["ticket_reference"],
-                 ACTIVATION_REASON)]:
-        return "exact"
-    raise _diverged("activated")
 
 
 def _run_activated(ctx: _Ctx) -> None:
@@ -394,25 +292,6 @@ def _run_activated(ctx: _Ctx) -> None:
         c.execute("SELECT set_config('app.tenant_id', %s, true)", (ctx.state["tenant_id"],))
         c.execute(sql.SQL("SELECT {}.m05_activation_change(%s)").format(
             sql.Identifier(ctx.schema)), (Jsonb(command),))
-
-
-def _settings_row(t: psycopg.Connection[Any], schema: str) -> tuple[Any, ...] | None:
-    return t.execute(sql.SQL(
-        "SELECT lead_days, send_time::text, window_start::text, window_end::text, clinic_tz,"
-        " clinic_display_name, settings_version FROM {}.m05_reminder_settings").format(
-        sql.Identifier(schema))).fetchone()
-
-
-def _inspect_settings(ctx: _Ctx) -> Status:
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        row = _settings_row(t, ctx.schema)
-    if row is None:
-        raise _diverged("settings")
-    if row[6] == 1:
-        return "none"
-    if row[6] == 2 and dict(zip(SETTINGS, row[:6], strict=True)) == SETTINGS:
-        return "exact"
-    raise _diverged("settings")
 
 
 def _run_settings(ctx: _Ctx) -> None:
@@ -428,142 +307,322 @@ def _run_settings(ctx: _Ctx) -> None:
             raise _diverged("settings")
 
 
+# ---------------------------------------------------------------------------- reconciliation
+#
+# S1/S2 (Codex REVISE 20261112T190618Z; investigation v2 + v2r1). Before ANY write and after
+# every phase, the owned state is captured coherently (view.capture under capture_lock) and
+# reconciled:
+#   profile  the normalised digest must be a point of the pinned approved installed-state
+#            profile inside the segment the recorded state allows (installed_profile.POINTS);
+#   seal     same-install exact values: the sealed nondeterministic values (unchanged except in
+#            the approved update sets of the phases crossed), the sealed raw identities (same
+#            OIDs), the sealed ledger (bounded attempt rule);
+#   new rows nondeterministic values of rows not yet sealed: clocks within the install window,
+#            ids are UUIDs, staff digests recomputed read-only.
+# Anything else -> STATE_DIVERGED (never repaired, never adopted). The seal is persisted while
+# the capture lock is held, so a takeover cannot interleave between capture and persistence.
+
+SEGMENT_PHASES: Final = ("intent", "stamped", "migrated", "logins", "tenant", "profile",
+                         "activated", "settings", "staff", "ready")
+STAFF_STEPS: Final = ("staff.t1", "staff.t2", "staff.t3a", "staff.t3b")
+# Rows whose sealed nondeterministic values the named phase may legitimately change.
+APPROVED_UPDATES: Final = {
+    "tenant": frozenset({"shared.tenants", "shared.schema_migrations",
+                         "shared.tenant_state_history"}),
+    "settings": frozenset({"<SCHEMA>.m05_reminder_settings"}),
+}
+_CLOCKS: Final = frozenset({"started_at", "completed_at", "occurred_at", "created_at",
+                            "updated_at", "status_changed_at", "granted_at", "at"})
+_IDS: Final = frozenset({"record_id", "log_id"})
+_CLOCK_SLACK: Final = timedelta(minutes=1)
+
+
+def _utcnow() -> datetime:
+    """The installer's clock (a test pin; DB clocks are never consulted for the grant window)."""
+    return datetime.now(UTC)
+
+
+def _grant_expired(state: Mapping[str, Any]) -> bool:
+    """t034 authorizes against the recorded grant BEFORE any replay: once its window has
+    passed, T2 fails closed (no silent renewal). After T2 no support authority is needed."""
+    return _utcnow() >= datetime.fromisoformat(state["support"]["expires_at"])
+
+
+def intent_verifier_digests(state: Mapping[str, Any]) -> dict[str, str]:
+    return {suffix: hashlib.sha256(scram_verifier(
+        spec["password"], spec["salt"], spec["iterations"]).encode()).hexdigest()
+        for suffix, spec in state["logins"].items()}
+
+
+def _completion(name: str) -> int:
+    """The point index at which `name` is complete (staff completes at `ready`'s point)."""
+    return int(COMPLETION["ready" if name == "staff" else name])
+
+
+def _segment(state: Mapping[str, Any]) -> tuple[int, int]:
+    """The point indices a capture may legitimately match for this recorded state."""
+    phase = str(state["phase"])
+    seal = state.get("seal")
+    low = _completion(phase) if seal is None else int(seal["point"])
+    if phase == "ready":
+        return low, _completion("ready")
+    return low, _completion(SEGMENT_PHASES[SEGMENT_PHASES.index(phase) + 1])
+
+
+def _phases_crossed(low: int, high: int) -> set[str]:
+    """Phases with an approved update set whose segment (prev completion, completion]
+    intersects (low, high]: their sealed rows may legitimately change."""
+    prev = {"tenant": "logins", "settings": "activated"}
+    return {p for p in APPROVED_UPDATES
+            if low < _completion(p) and high > _completion(prev[p])}
+
+
+def _check_seal(state: Mapping[str, Any], cap: view.Capture, j: int) -> None:
+    seal = state.get("seal")
+    if seal is None:
+        return                       # `intent` only: the profile alone binds a fresh baseline
+    low = int(seal["point"])
+    crossed = _phases_crossed(low, j)
+    approved = set().union(*(APPROVED_UPDATES[p] for p in crossed)) if crossed else set()
+    # Sealed nondeterministic values: byte-equal, except rows of an approved update set.
+    for table, rows in seal["nondet"].items():
+        current = cap.nondet.get(table, {})
+        for key, values in rows.items():
+            if table in approved:
+                continue
+            if current.get(key) != values:
+                raise _diverged("sealed_values")
+    # Raw identities: every sealed (class, oid, identity) still present, exact if there was no
+    # progress. Inside the tenant phase a later unit may legitimately replace an object of an
+    # earlier unit (new OID, same identity): only tenant-schema objects and their comments.
+    sealed_ids = {tuple(x) for x in seal["identities"]}
+    now_ids = {tuple(x) for x in cap.identities}
+    if j == low and sealed_ids != now_ids:
+        raise _diverged("identities")
+    missing = sealed_ids - now_ids
+    if missing and not ("tenant" in crossed and all(
+            _tenant_scoped(x, sealed_ids, str(state["schema_key"])) for x in missing)):
+        raise _diverged("identities")
+    _check_ledger(seal["ledger"], cap.ledger)
+
+
+def _tenant_scoped(identity: tuple[str, ...], sealed: set[tuple[str, ...]], schema: str) -> bool:
+    cls, oid, name = identity
+    if cls == "pg_description":
+        objoid = oid.split(":")[1]
+        owners = [x for x in sealed if x[1] == objoid and x[0] != "pg_description"]
+        return bool(owners) and all(_tenant_scoped(x, sealed, schema) for x in owners)
+    return name.startswith(f"{schema}.") or f" {schema}." in name or f"@{schema}." in name \
+        or name == schema
+
+
+def _check_ledger(sealed: list[list[Any]], current: list[list[Any]]) -> None:
+    before = {r[0]: r for r in sealed}
+    for unit, state, attempt, error in current:
+        if error is not None or state not in ("running", "applied"):
+            raise _diverged("ledger")
+        prior = before.pop(unit, None)
+        if prior is None:
+            if attempt != 1:
+                raise _diverged("ledger")
+        elif prior[1] == "applied":
+            if [unit, state, attempt, error] != list(prior):
+                raise _diverged("ledger")
+        elif attempt not in (prior[2], prior[2] + 1):
+            raise _diverged("ledger")
+    if before:
+        raise _diverged("ledger")
+
+
+def _check_new_rows(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[Any]) -> None:
+    """Nondeterministic values of rows not covered by the seal."""
+    seal = ctx.state.get("seal") or {"nondet": {}}
+    floor = datetime.fromisoformat(ctx.state["support"]["starts_at"]) - _CLOCK_SLACK
+    end = _utcnow() + _CLOCK_SLACK
+    seen_ids: set[str] = set()
+    for table, rows in cap.nondet.items():
+        sealed = seal["nondet"].get(table, {})
+        for key, values in rows.items():
+            if key.endswith("#dup"):
+                raise _diverged("duplicate")
+            if sealed.get(key) == values:
+                continue
+            for column, value in values.items():
+                if column in _CLOCKS or column == "__nested__":
+                    stamps = [value] if column != "__nested__" else [
+                        v for group in value for v in group]
+                    for stamp in stamps:
+                        if stamp is None:
+                            continue
+                        moment = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+                        if not floor <= moment <= end:
+                            raise _diverged("clock")
+                elif column in _IDS:
+                    if str(uuid.UUID(str(value))) != value or value in seen_ids:
+                        raise _diverged("identifier")
+                    seen_ids.add(value)
+    _check_staff_digests(ctx, cap, conn)
+
+
+_ADMIN_DIGEST: Final = (
+    "SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to("
+    "'[\"m01.staff_admin/v2\",' || pg_catalog.to_json(%(tenant)s::text)::text"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'client_action_id')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb #>> '{attribution,principal_id}')::text,"
+    " 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'operation')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'staff_id')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'display_name')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'access')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'role')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'issuer')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'subject')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'setting')::text, 'null')"
+    " || ',' || COALESCE(pg_catalog.to_json(%(c)s::jsonb ->> 'value')::text, 'null')"
+    " || ']', 'UTF8')), 'hex')")
+# t034 (l1w_w3b_units.py, `m01_staff_bootstrap_first_admin`): the same canonical expression.
+_BOOTSTRAP_DIGEST: Final = (
+    "SELECT pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to("
+    "'[\"m01.staff_bootstrap_first_admin/v1\",' || pg_catalog.to_json(%(tenant)s::text)::text"
+    " || ',' || pg_catalog.to_json(%(key)s::text)::text"
+    " || ',' || pg_catalog.to_json(%(actor)s::text)::text"
+    " || ',\"create_first_admin\"'"
+    " || ',' || pg_catalog.to_json(%(staff)s::text)::text"
+    " || ',' || pg_catalog.to_json(%(name)s::text)::text || ']', 'UTF8')), 'hex')")
+
+
+def _staff_access_command(ctx: _Ctx, access: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1, "client_action_id": ctx.uuid(f"staff-access-{access}"),
+        "staff_id": ctx.state["staff_id"], "operation": "grant", "access": access,
+        "permissions": {"staff_admin": True},
+        "attribution": {"principal_kind": "actor", "principal_id": ctx.state["staff_id"],
+                        "auth_method": "synthetic_init",
+                        "execution_id": ctx.uuid("staff-execution"),
+                        "request_id": None, "purpose_code": "operations"}}
+
+
+def _check_staff_digests(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[Any]) -> None:
+    """Recompute (read-only) the canonical digests the existing staff functions store."""
+    schema, tenant = ctx.schema, ctx.state["tenant_id"]
+    expected: dict[str, str] = {}
+    key = ctx.uuid("staff-first-admin")
+    expected[key] = str(_one(conn, _BOOTSTRAP_DIGEST, {
+        "tenant": tenant, "key": key, "actor": ctx.state["support"]["actor_id"],
+        "staff": ctx.state["staff_id"], "name": STAFF_NAME}))
+    for access in ("read", "act"):
+        command = _staff_access_command(ctx, access)
+        expected[command["client_action_id"]] = str(_one(conn, _ADMIN_DIGEST, {
+            "tenant": tenant, "c": json.dumps(command)}))
+    for table in ("m01_staff_bootstrap_keys", "m01_staff_action_keys", "m01_staff_admin_log"):
+        for row in cap.rows.get(f"{schema}.{table}", []):
+            want = expected.get(str(row.get("client_action_id")))
+            got = str(row.get("digest", ""))
+            if want is None or got != "\\x" + want:
+                raise _diverged("staff_digest")
+
+
+def _reconcile(ctx: _Ctx, conn: psycopg.Connection[Any]) -> tuple[int, view.Capture]:
+    """Capture (caller holds capture_lock), check epoch, profile segment and seal."""
+    cap = view.capture(conn, ctx.state, GROUP_ROLES, intent_verifier_digests(ctx.state))
+    if cap.reservation != ctx.expected:
+        raise SyntheticRefused("EPOCH_SUPERSEDED")
+    low, high = _segment(ctx.state)
+    matches = [i for i in range(low, high + 1) if POINTS[i] == cap.profile_digest]
+    if not matches:
+        raise _diverged("profile")
+    j = max(matches)
+    _check_seal(ctx.state, cap, j)
+    _check_new_rows(ctx, cap, conn)
+    return j, cap
+
+
+def _new_seal(j: int, cap: view.Capture) -> dict[str, Any]:
+    return {"profile": PROFILE_ID, "point": j, "nondet": cap.nondet,
+            "identities": cap.identities, "ledger": cap.ledger}
+
+
+def _persist(ctx: _Ctx, phase: str, j: int, cap: view.Capture) -> None:
+    ctx.state["phase"] = phase
+    ctx.state["seal"] = _new_seal(j, cap)
+    ctx.st.write(ctx.state)
+
+
+def _check_seal_shape(state: Mapping[str, Any]) -> None:
+    seal = state.get("seal")
+    if seal is None:
+        if state["phase"] != "intent":
+            raise SyntheticRefused("STATE_CORRUPT")
+        return
+    if not isinstance(seal, dict) or set(seal) != {"profile", "point", "nondet", "identities",
+                                                    "ledger"}:
+        raise SyntheticRefused("STATE_CORRUPT")
+    if seal["profile"] != PROFILE_ID or not isinstance(seal["point"], int) \
+            or not 0 <= seal["point"] < len(POINTS):
+        raise SyntheticRefused("STATE_CORRUPT")
+    phase = str(state["phase"])
+    low = _completion(phase)
+    high = _completion("ready") if phase == "ready" else _completion(
+        SEGMENT_PHASES[SEGMENT_PHASES.index(phase) + 1])
+    if not low <= seal["point"] <= high:
+        raise SyntheticRefused("STATE_CORRUPT")
+
+
 # ---------------------------------------------------------------------------- staff (T1-T3)
 
-def _support_rows(ctx: _Ctx, t: psycopg.Connection[Any]) -> tuple[Status, Status]:
-    """(registration+grant T1 status, whether the grant is still in its window)."""
-
+def _run_staff_t1(ctx: _Ctx) -> None:
     sup = ctx.state["support"]
-    login = ctx.state["logins"]["support"]["role"]
-    logins = t.execute(
-        "SELECT login_oid::bigint, login_name::text, actor_id, added_at, decision_ref"
-        " FROM shared.support_operator_logins").fetchall()
-    grants = t.execute(
-        "SELECT grant_id::text, actor_id, tenant_id, ticket_reference, purpose_code,"
-        " capabilities, approver_id, starts_at, expires_at, state, break_glass, created_at"
-        " FROM shared.support_access_grants").fetchall()
-    if not logins and not grants:
-        return "none", "in_window"
-    oid = _one(t, "SELECT oid::bigint FROM pg_catalog.pg_roles WHERE rolname = %s", (login,))
-    starts = datetime.fromisoformat(sup["starts_at"])
-    expires = datetime.fromisoformat(sup["expires_at"])
-    if logins != [(oid, login, sup["actor_id"], starts, sup["decision_ref"])] or grants != [(
-            sup["grant_id"], sup["actor_id"], ctx.state["tenant_id"],
-            ctx.state["ticket_reference"], "synthetic-install", [BOOTSTRAP_CAPABILITY],
-            "synthetic-init", starts, expires, "active", False, starts)]:
-        raise _diverged("staff")
-    now = _one(t, "SELECT clock_timestamp()")
-    return "exact", ("in_window" if starts <= now < expires else "expired")
+    with _connect(ctx.endpoint.conninfo(ctx.endpoint.target)) as c, \
+            _phase_txn(ctx, "staff.t1", c):
+        c.execute(
+            "INSERT INTO shared.support_operator_logins (login_oid, login_name, actor_id,"
+            " added_at, decision_ref) SELECT oid, rolname, %s, %s, %s FROM pg_catalog.pg_roles"
+            " WHERE rolname = %s",
+            (sup["actor_id"], sup["starts_at"], sup["decision_ref"],
+             ctx.state["logins"]["support"]["role"]))
+        c.execute(
+            "INSERT INTO shared.support_access_grants (grant_id, actor_id, tenant_id,"
+            " ticket_reference, purpose_code, capabilities, approver_id, starts_at,"
+            " expires_at, state, break_glass, created_at) VALUES (%s, %s, %s, %s,"
+            " 'synthetic-install', %s, 'synthetic-init', %s, %s, 'active', false, %s)",
+            (sup["grant_id"], sup["actor_id"], ctx.state["tenant_id"],
+             ctx.state["ticket_reference"], [BOOTSTRAP_CAPABILITY], sup["starts_at"],
+             sup["expires_at"], sup["starts_at"]))
 
 
-def _staff_status(ctx: _Ctx) -> tuple[Status, Status, Status, Status]:
-    s = sql.Identifier(ctx.schema)
-    with admin_connect(ctx.endpoint, ctx.endpoint.target) as t:
-        t1, window = _support_rows(ctx, t)
-        staff = t.execute(sql.SQL("SELECT staff_id::text, status, display_name FROM {}.m01_staff"
-                                  ).format(s)).fetchall()
-        roles = t.execute(sql.SQL("SELECT staff_id::text, role FROM {}.m01_staff_roles"
-                                  ).format(s)).fetchall()
-        keys = t.execute(sql.SQL("SELECT client_action_id::text FROM {}"
-                                 ".m01_staff_bootstrap_keys").format(s)).fetchall()
-        logs = t.execute(sql.SQL("SELECT staff_id::text, ticket_reference FROM {}"
-                                 ".m01_staff_bootstrap_log").format(s)).fetchall()
-        access = sorted(r[0] for r in t.execute(sql.SQL(
-            "SELECT access FROM {}.m01_staff_followup_access").format(s)))
-    sid = ctx.state["staff_id"]
-    if not staff and not roles and not keys and not logs:
-        t2 = "none"
-    elif (staff == [(sid, "active", STAFF_NAME)] and roles == [(sid, "clinic_admin")]
-          and keys == [(ctx.uuid("staff-first-admin"),)]
-          and logs == [(sid, ctx.state["ticket_reference"])]):
-        t2 = "exact"
-    else:
-        raise _diverged("staff")
-    # T3a grants read, T3b grants act (t029 admits ONE semantic request per transaction).
-    t3 = {(): "none", ("read",): "partial", ("act", "read"): "exact"}.get(tuple(access))
-    if t3 is None or (t2 == "none" and t3 != "none") or (t1 == "none" and t2 != "none"):
-        raise _diverged("staff")
-    return t1, t2, t3, window
+def _run_staff_t2(ctx: _Ctx) -> None:
+    command = {"schema_version": 1, "client_action_id": ctx.uuid("staff-first-admin"),
+               "staff_id": ctx.state["staff_id"], "display_name": STAFF_NAME}
+    with _connect(ctx.login_conninfo("support")) as c, _phase_txn(ctx, "staff.t2", c):
+        c.execute("SELECT set_config('app.tenant_id', %s, true)", (ctx.state["tenant_id"],))
+        outcome = _one(c, sql.SQL("SELECT {}.m01_staff_bootstrap_first_admin(%s)").format(
+            sql.Identifier(ctx.schema)), (Jsonb(command),))
+        if not isinstance(outcome, dict) or outcome.get("outcome") != "BOOTSTRAPPED":
+            raise _diverged("staff")
 
 
-def _inspect_staff(ctx: _Ctx) -> Status:
-    t1, t2, t3, _ = _staff_status(ctx)
-    if (t1, t2, t3) == ("none", "none", "none"):
-        return "none"
-    return "exact" if (t1, t2, t3) == ("exact", "exact", "exact") else "partial"
+def _run_staff_t3(ctx: _Ctx, access: str) -> None:
+    point = "staff.t3a" if access == "read" else "staff.t3b"
+    with _connect(ctx.login_conninfo("runtime")) as c, _phase_txn(ctx, point, c):
+        c.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(RUNTIME_ROLE)))
+        c.execute("SELECT set_config('app.tenant_id', %s, true)", (ctx.state["tenant_id"],))
+        result = _one(c, sql.SQL("SELECT {}.m01_staff_admin_v2(%s)").format(
+            sql.Identifier(ctx.schema)), (Jsonb(_staff_access_command(ctx, access)),))
+        if not isinstance(result, dict) or "staff" not in result:
+            raise _diverged("staff")
 
 
-def _run_staff(ctx: _Ctx) -> None:
-    t1, t2, t3, window = _staff_status(ctx)
-    sup = ctx.state["support"]
-    # t034 authorizes against the grant BEFORE any replay: an expired window fails closed.
-    # No silent renewal or replacement of the recorded grant. Once T2 is committed, completing
-    # T3 or verifying owned state needs no support authority.
-    expired = window == "expired" or datetime.now(UTC) >= datetime.fromisoformat(
-        sup["expires_at"])
-    if t2 == "none" and expired:
-        raise SyntheticRefused("STATE_DIVERGED", ("support_grant_expired",))
-    if t1 == "none":
-        with _connect(ctx.endpoint.conninfo(ctx.endpoint.target)) as c, \
-                _phase_txn(ctx, "staff.t1", c):
-            c.execute(
-                "INSERT INTO shared.support_operator_logins (login_oid, login_name, actor_id,"
-                " added_at, decision_ref) SELECT oid, rolname, %s, %s, %s FROM pg_catalog.pg_roles"
-                " WHERE rolname = %s",
-                (sup["actor_id"], sup["starts_at"], sup["decision_ref"],
-                 ctx.state["logins"]["support"]["role"]))
-            c.execute(
-                "INSERT INTO shared.support_access_grants (grant_id, actor_id, tenant_id,"
-                " ticket_reference, purpose_code, capabilities, approver_id, starts_at,"
-                " expires_at, state, break_glass, created_at) VALUES (%s, %s, %s, %s,"
-                " 'synthetic-install', %s, 'synthetic-init', %s, %s, 'active', false, %s)",
-                (sup["grant_id"], sup["actor_id"], ctx.state["tenant_id"],
-                 ctx.state["ticket_reference"], [BOOTSTRAP_CAPABILITY], sup["starts_at"],
-                 sup["expires_at"], sup["starts_at"]))
-        fire("phase.staff.t1.after_commit", {})
-    if t2 == "none":
-        command = {"schema_version": 1, "client_action_id": ctx.uuid("staff-first-admin"),
-                   "staff_id": ctx.state["staff_id"], "display_name": STAFF_NAME}
-        with _connect(ctx.login_conninfo("support")) as c, _phase_txn(ctx, "staff.t2", c):
-            c.execute("SELECT set_config('app.tenant_id', %s, true)", (ctx.state["tenant_id"],))
-            outcome = _one(c, sql.SQL("SELECT {}.m01_staff_bootstrap_first_admin(%s)").format(
-                sql.Identifier(ctx.schema)), (Jsonb(command),))
-            if not isinstance(outcome, dict) or outcome.get("outcome") != "BOOTSTRAPPED":
-                raise _diverged("staff")
-        fire("phase.staff.t2.after_commit", {})
-    for access, point, needed in (("read", "staff.t3a", t3 == "none"),
-                                  ("act", "staff.t3b", t3 != "exact")):
-        if not needed:
-            continue
-        with _connect(ctx.login_conninfo("runtime")) as c, _phase_txn(ctx, point, c):
-            c.execute(sql.SQL("SET LOCAL ROLE {}").format(sql.Identifier(RUNTIME_ROLE)))
-            c.execute("SELECT set_config('app.tenant_id', %s, true)", (ctx.state["tenant_id"],))
-            command = {
-                "schema_version": 1, "client_action_id": ctx.uuid(f"staff-access-{access}"),
-                "staff_id": ctx.state["staff_id"], "operation": "grant", "access": access,
-                "permissions": {"staff_admin": True},
-                "attribution": {"principal_kind": "actor",
-                                "principal_id": ctx.state["staff_id"],
-                                "auth_method": "synthetic_init",
-                                "execution_id": ctx.uuid("staff-execution"),
-                                "request_id": None, "purpose_code": "operations"}}
-            result = _one(c, sql.SQL("SELECT {}.m01_staff_admin_v2(%s)").format(
-                sql.Identifier(ctx.schema)), (Jsonb(command),))
-            if not isinstance(result, dict) or "staff" not in result:
-                raise _diverged("staff")
-        fire(f"phase.{point}.after_commit", {})
-
-
-_PHASES: Final[dict[str, tuple[Callable[[_Ctx], Status], Callable[[_Ctx], None]]]] = {
-    "stamped": (_inspect_stamped, _run_stamped),
-    "migrated": (_inspect_migrated, _run_migrated),
-    "logins": (_inspect_logins, _run_logins),
-    "tenant": (_inspect_tenant, _run_tenant),
-    "profile": (_inspect_profile, _run_profile),
-    "activated": (_inspect_activated, _run_activated),
-    "settings": (_inspect_settings, _run_settings),
-    "staff": (_inspect_staff, _run_staff),
+_STEP_RUN: Final[dict[str, Callable[[_Ctx], None]]] = {
+    "stamped": _run_stamped, "migrated": _run_migrated, "logins": _run_logins,
+    "tenant": _run_tenant, "profile": _run_profile, "activated": _run_activated,
+    "settings": _run_settings, "staff.t1": _run_staff_t1, "staff.t2": _run_staff_t2,
+    "staff.t3a": lambda ctx: _run_staff_t3(ctx, "read"),
+    "staff.t3b": lambda ctx: _run_staff_t3(ctx, "act"),
 }
+
+
+def _steps(phase: str) -> tuple[str, ...]:
+    return STAFF_STEPS if phase == "staff" else (phase,)
 
 
 # ---------------------------------------------------------------------------- entry points
@@ -587,6 +646,13 @@ def init(environ: Mapping[str, str], *, attest_flag: bool) -> InitResult:
             lock.release()
 
 
+def _check_state(state: Mapping[str, Any]) -> None:
+    if set(state) != STATE_KEYS or state.get("schema_version") != STATE_SCHEMA \
+            or state.get("phase") not in PHASES:
+        raise SyntheticRefused("STATE_CORRUPT")
+    _check_seal_shape(state)
+
+
 def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitResult:
     state = st.read()
     if state is None:
@@ -601,9 +667,7 @@ def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitRes
         state = _new_intent(endpoint.target, sysid, oid)
         st.write(state)
     else:
-        if set(state) != STATE_KEYS or state.get("schema_version") != STATE_SCHEMA \
-                or state.get("phase") not in PHASES:
-            raise SyntheticRefused("STATE_CORRUPT")
+        _check_state(state)
         sysid, oid = cluster_identity(endpoint)
         if state["cluster_sysid"] != sysid:
             raise SyntheticRefused("CLUSTER_MISMATCH")
@@ -614,22 +678,39 @@ def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitRes
     ctx = _Ctx(endpoint, st, lock,
                state, reservation_value(state["nonce"], sysid, oid, epoch))
     _namespace_check(ctx)
+    # Reconcile the recorded state before any write. A validated change since the seal (an
+    # interrupted run's committed work) is persisted as an observation under the lock.
+    with view.capture_lock(endpoint) as conn:
+        j, cap = _reconcile(ctx, conn)
+        if j < int(COMPLETION["staff.t2"]) and state["phase"] in ("settings", "staff") \
+                and _grant_expired(state):
+            raise SyntheticRefused("STATE_DIVERGED", ("support_grant_expired",))
+        if state.get("seal") is not None and _new_seal(j, cap) != state["seal"]:
+            lock.check()                        # an interrupted run's validated work
+            _persist(ctx, str(state["phase"]), j, cap)
     start = PHASES.index(state["phase"]) + 1
     for phase in PHASES[start:]:
         lock.check()
         if phase != "ready":
-            inspect, run = _PHASES[phase]
-            if inspect(ctx) != "exact":
-                run(ctx)
-                if phase != "staff":              # staff fires per transaction (t1..t3)
-                    fire(f"phase.{phase}.after_commit", {})
-        state["phase"] = phase
-        st.write(state)
+            for step in _steps(phase):
+                if j >= int(COMPLETION[step]):
+                    continue                              # committed already (acknowledged)
+                if step == "staff.t2" and _grant_expired(state):
+                    raise SyntheticRefused("STATE_DIVERGED", ("support_grant_expired",))
+                _STEP_RUN[step](ctx)
+                fire(f"phase.{step}.after_commit", {})
+                j = int(COMPLETION[step])
+        with view.capture_lock(endpoint) as conn:
+            j, cap = _reconcile(ctx, conn)
+            if j != _completion(phase):
+                raise _diverged("profile")
+            lock.check()
+            _persist(ctx, phase, j, cap)
     return InitResult(state["phase"])
 
 
 def status(environ: Mapping[str, str]) -> dict[str, Any]:
-    """Read-only: phase, counts and whether the namespace still attests. No secrets."""
+    """Read-only (advisory session lock and READ ONLY snapshots only). No secrets."""
 
     check_a0(environ, attest_flag=True)
     endpoint = parse_admin_dsn(environ["HALOFLOW_SYNTHETIC_ADMIN_DSN"], environ)
@@ -637,15 +718,33 @@ def status(environ: Mapping[str, str]) -> dict[str, Any]:
         state = st.read()
         if state is None:
             raise SyntheticRefused("STATE_MISSING")
+        _check_state(state)
         sysid, oid = cluster_identity(endpoint)
+        if state["cluster_sysid"] != sysid:
+            raise SyntheticRefused("CLUSTER_MISMATCH")
+        if state["target"] != endpoint.target or state["target_oid"] != oid:
+            raise SyntheticRefused("TARGET_MISMATCH")
         expected_prefix = reservation_value(state["nonce"], sysid, oid, "")
         current = read_reservation(endpoint) or ""
         ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)
+        sealed, pending = False, None
         try:
             _namespace_check(ctx)
-            attested = current.startswith(expected_prefix)
+            namespace_ok = True
         except SyntheticRefused:
-            attested = False
+            namespace_ok = False
+        with view.capture_lock(endpoint) as conn:
+            try:
+                j, _cap = _reconcile(ctx, conn)
+                seal_point = _completion(str(state["phase"])) if state.get("seal") is None \
+                    else int(state["seal"]["point"])
+                sealed = j == seal_point == _completion(str(state["phase"]))
+                if j > _completion(str(state["phase"])):
+                    nxt = SEGMENT_PHASES[SEGMENT_PHASES.index(str(state["phase"])) + 1]
+                    pending = nxt
+            except SyntheticRefused:
+                sealed = False
+        attested = bool(current.startswith(expected_prefix) and sealed and namespace_ok)
         s = sql.Identifier(state["schema_key"])
         with admin_connect(endpoint, endpoint.target) as t:
             tenants = _one(t, "SELECT count(*) FROM shared.tenants") \
@@ -656,4 +755,5 @@ def status(environ: Mapping[str, str]) -> dict[str, Any]:
                 if _exists(t, f"{state['schema_key']}.m05_followup_items") else 0
     return {"phase": state["phase"], "tenant_id": state["tenant_id"],
             "schema_key": state["schema_key"], "tenant_count": int(tenants),
-            "staff_count": int(staff), "open_items": int(items), "attested": attested}
+            "staff_count": int(staff), "open_items": int(items), "attested": attested,
+            "sealed": sealed, "pending_effect": pending}

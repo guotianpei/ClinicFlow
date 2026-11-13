@@ -1,4 +1,4 @@
-"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M19).
+"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M25).
 
 Safety-focused (B2-I1 and B2 red-packet mutation lists, Codex 2026-11-12): protocol F's
 guard, takeover and reservation ordering; the DSN and state-directory defences; the fresh
@@ -38,6 +38,7 @@ HERE = Path(__file__).resolve().parent
 SYN = Path("src/haloflow/synthetic")
 DSN, STATE, GUARD, ATTEST, PROVISION = (SYN / "dsn.py", SYN / "state.py", SYN / "guard.py",
                                         SYN / "attest.py", SYN / "provision.py")
+VIEW = SYN / "view.py"
 UNITS = "tests/synthetic/test_b2_units.py"
 GUARD_TESTS = "tests/synthetic/test_b2_guard_postgres.py"
 INIT_TESTS = "tests/synthetic/test_b2_init_postgres.py"
@@ -138,12 +139,15 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      '    fire(f"phase.{point}.commit_ack", {"backend_pid": conn.info.backend_pid})\n',
      '        fire(f"phase.{point}.before_commit", {"backend_pid": conn.info.backend_pid})\n'
      '        fire(f"phase.{point}.commit_ack", {"backend_pid": conn.info.backend_pid})\n'),
-    ("B2-M17", "provision: an owned login is acknowledged on its name alone", PROVISION,
-     "            if (tuple(row[:9]) != _LOGIN_ATTRS or not same\n",
-     "            if (False\n"),
+    ("B2-M17", "provision: a capture outside the approved profile segment is accepted (S2)",
+     PROVISION,
+     "    if not matches:\n"
+     '        raise _diverged("profile")\n',
+     "    if not matches:\n"
+     "        matches = [low]\n"),
     ("B2-M18", "provision: an expired support grant is used anyway before T2", PROVISION,
-     '    if t2 == "none" and expired:\n',
-     "    if False:\n"),
+     '    return _utcnow() >= datetime.fromisoformat(state["support"]["expires_at"])\n',
+     "    return False\n"),
     ("B2-M19", "provision: the phase is recorded BEFORE its database commit", PROVISION,
      "        lock.check()\n"
      '        if phase != "ready":\n',
@@ -151,6 +155,30 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      '        state["phase"] = phase\n'
      "        st.write(state)\n"
      '        if phase != "ready":\n'),
+    ("B2-M20", "provision: sealed nondeterministic values are not compared (S1)", PROVISION,
+     "            if current.get(key) != values:\n"
+     '                raise _diverged("sealed_values")\n',
+     "            if current.get(key) != values:\n"
+     "                pass\n"),
+    ("B2-M21", "provision: sealed raw identities are not compared (same-name recreation)",
+     PROVISION,
+     '    sealed_ids = {tuple(x) for x in seal["identities"]}\n',
+     "    sealed_ids = {tuple(x) for x in cap.identities}\n"),
+    ("B2-M22", "provision: the ledger attempt rule is skipped", PROVISION,
+     '    _check_ledger(seal["ledger"], cap.ledger)\n',
+     ""),
+    ("B2-M23", "provision: staff digests are not recomputed", PROVISION,
+     "    _check_staff_digests(ctx, cap, conn)\n",
+     ""),
+    ("B2-M24", "provision: status takes over the reservation (a write)", PROVISION,
+     "        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n",
+     '        begin_run(endpoint, state["phase"], state["nonce"], new_epoch())\n'
+     '        current = read_reservation(endpoint) or ""\n'
+     "        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n"),
+    # -- view -----------------------------------------------------------------------------
+    ("B2-M25", "view: the capture does not take the shared K_X (no exclusion)", VIEW,
+     '        conn.execute("SELECT pg_catalog.pg_advisory_lock_shared(%s)", (K_X,))\n',
+     ""),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (
@@ -159,13 +187,15 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
     ("guard", GUARD, GUARD_TESTS),
     ("attest", ATTEST, GUARD_TESTS),
     ("provision", PROVISION, INIT_TESTS),
+    ("view", VIEW, INIT_TESTS),
 )
 GROUP_OF: dict[str, str] = {
     **{m: "dsn" for m in ("B2-M1", "B2-M2", "B2-M3")},
     **{m: "state" for m in ("B2-M4", "B2-M5", "B2-M6")},
     **{f"B2-M{i}": "guard" for i in range(7, 15)},
     "B2-M15": "attest",
-    **{m: "provision" for m in ("B2-M16", "B2-M17", "B2-M18", "B2-M19")},
+    **{f"B2-M{i}": "provision" for i in range(16, 25)},
+    "B2-M25": "view",
 }
 
 

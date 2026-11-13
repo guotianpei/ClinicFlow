@@ -228,7 +228,10 @@ def test_b2_i1_positive_init(pg: s.PgCluster, tmp_path: Path) -> None:
     assert init(pg, st_dir).phase == "ready"
     st = s.read_state(st_dir)
     assert set(st) == STATE_KEYS and st["schema_version"] == 1 and st["phase"] == "ready"
-    assert st["seal"]["phase"] == "ready" and isinstance(st["seal"]["view"], dict)
+    assert set(st["seal"]) == {"profile", "point", "nondet", "identities", "ledger"}
+    profile = s.mod("installed_profile")
+    assert (st["seal"]["profile"], st["seal"]["point"]) == (profile.PROFILE_ID,
+                                                            profile.COMPLETION["ready"])
     assert stat.S_IMODE((st_dir / "state.json").stat().st_mode) == 0o600
     n = st["nonce"]
     assert len(n) == 32 and int(n, 16) >= 0
@@ -1104,4 +1107,209 @@ def test_b2_r2_partial_tenant_tamper_refused(pg: s.PgCluster, tmp_path: Path, ki
                             f" WHERE migration_id = '{applied[0][0]}'"],
     }[kind]
     tamper(pg, _fill(statements, st))
+    assert_refused_no_change(pg, st_dir)
+
+
+# ---------------------------------------------------------------- pinned controls (v2 / v2r1)
+
+def test_b2_p1_profile_pin_equals_measurement() -> None:
+    """B2-P1: the generated approved installed-state profile equals a fresh measurement (two
+    independent installs, identical traces). A unit, migration or view change without a
+    re-pin fails here."""
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, str(s.HALOFLOW / "scripts" / "b2_measure_profile.py"),
+                        "--check"], capture_output=True, text=True, timeout=1500,
+                       env={"PATH": os.environ.get("PATH", ""),
+                            "HALOFLOW_SYNTHETIC_PG_BIN": str(s.pg_bin())})
+    assert (r.returncode, r.stdout.strip().splitlines()[-1:]) == (0, ["profile pin MATCHES"]), \
+        r.stdout[-2000:] + r.stderr[-2000:]
+
+
+SEALED_VALUE_TAMPER = {
+    # Excluded from the cross-install profile digest; only the same-install seal sees them.
+    "clock": "UPDATE {schema}.m05_activation_records"
+             " SET created_at = created_at - interval '1 second'",
+    "log_id": "UPDATE {schema}.m01_staff_bootstrap_log SET log_id = pg_catalog.gen_random_uuid()",
+    "ledger_attempt": "UPDATE shared.schema_migrations SET attempt = attempt + 1"
+                      " WHERE migration_id = 't057_m05_reminder_settings'",
+}
+
+
+@pytest.mark.parametrize("kind", sorted(SEALED_VALUE_TAMPER))
+def test_b2_r1_sealed_value_tamper_refused(pg: s.PgCluster, tmp_path: Path, kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    tamper(pg, _fill([SEALED_VALUE_TAMPER[kind]], s.read_state(st_dir)))
+    assert_refused_no_change(pg, st_dir)
+
+
+@pytest.mark.parametrize("kind", ["missing", "point_outside_segment", "profile_id", "shape"])
+def test_b2_r1_malformed_or_missing_seal_corrupt(pg: s.PgCluster, tmp_path: Path,
+                                                 kind: str) -> None:
+    """Never silently adopted, never re-minted from the current database state."""
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    st = s.read_state(st_dir)
+    if kind == "missing":
+        st["seal"] = None
+    elif kind == "point_outside_segment":
+        st["seal"]["point"] = 0
+    elif kind == "profile_id":
+        st["seal"]["profile"] = "0" * 64
+    else:
+        del st["seal"]["identities"]
+    (st_dir / "state.json").write_text(json.dumps(st))
+    before = s.snapshot(pg)
+    assert refused(init, pg, st_dir).code == "STATE_CORRUPT"
+    assert refused(s.mod("provision").status, s.environ_for(pg, st_dir)).code == "STATE_CORRUPT"
+    assert s.diff(before, s.snapshot(pg)) == {}
+
+
+def test_b2_r1_status_binds_recorded_cluster(pg: s.PgCluster, tmp_path: Path) -> None:
+    a_dir = s.state_dir(tmp_path, "a")
+    init(pg, a_dir)
+    with s.cluster(tmp_path / "second") as c2:
+        b_dir = s.copy_state(a_dir, tmp_path / "b")
+        before = s.snapshot(c2)
+        assert refused(s.mod("provision").status, s.environ_for(c2, b_dir)).code == \
+            "CLUSTER_MISMATCH"
+        assert s.diff(before, s.snapshot(c2)) == {}
+
+
+def test_b2_r3_capture_excluded_by_a_guarded_writer(pg: s.PgCluster, tmp_path: Path) -> None:
+    """The capture's shared K_X waits for a writer holding exclusive K_X (as every guarded
+    installer transaction does), so it never reads across an in-flight commit."""
+    import threading
+
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    k_x = s.mod("guard").K_X
+    box: dict[str, Any] = {}
+    with pg.connect() as w, w.transaction():
+        w.execute("SELECT pg_advisory_xact_lock(%s)", (k_x,))
+        t = threading.Thread(target=lambda: box.update(
+            out=s.mod("provision").status(s.environ_for(pg, st_dir))))
+        t.start()
+        s.wait_for(lambda: s.waiting_advisory(pg))           # the capture is waiting
+        assert t.is_alive() and "out" not in box
+    t.join(120)
+    assert box["out"]["sealed"] is True
+
+
+def _recreate_identical_function(c: s.PgCluster, schema: str) -> tuple[str, int, int]:
+    """Drop and recreate one owned function with an identical definition, owner and ACL;
+    returns (signature, old oid, new oid)."""
+    with c.connect() as d, d.transaction():
+        row = d.execute(
+            "SELECT p.oid, p.oid::regprocedure::text, pg_get_functiondef(p.oid),"
+            " pg_get_userbyid(p.proowner), p.proacl::text FROM pg_proc p"
+            " WHERE p.pronamespace = %s::regnamespace AND p.prokind = 'f'"
+            " AND NOT EXISTS (SELECT 1 FROM pg_depend x WHERE x.refobjid = p.oid"
+            " AND x.refclassid = 'pg_proc'::regclass)"
+            " ORDER BY p.proname, p.oid LIMIT 1", (schema,)).fetchone()
+        old_oid, sig, definition, owner, acl = row
+        grants = d.execute("SELECT g.grantee, g.privilege_type FROM aclexplode(%s::aclitem[]) g",
+                           (acl,)).fetchall() if acl else []
+        d.execute(f"DROP FUNCTION {sig}")
+        d.execute(definition)
+        d.execute(f"ALTER FUNCTION {sig} OWNER TO {owner}")
+        d.execute(f"REVOKE ALL ON FUNCTION {sig} FROM PUBLIC")
+        for grantee, _priv in grants:
+            name = "PUBLIC" if grantee == 0 else d.execute(
+                "SELECT quote_ident(rolname) FROM pg_roles WHERE oid = %s", (grantee,)
+            ).fetchone()[0]
+            if grantee != 0 and name == owner:
+                continue
+            d.execute(f"GRANT EXECUTE ON FUNCTION {sig} TO {name}")
+        new = d.execute("SELECT %s::regprocedure::oid, (SELECT proacl::text FROM pg_proc"
+                        " WHERE oid = %s::regprocedure)", (sig, sig)).fetchone()
+        assert new[1] == acl, (new[1], acl)               # premise: ACL text identical
+    return sig, int(old_oid), int(new[0])
+
+
+def test_b2_r1_identical_function_recreated_refused(pg: s.PgCluster, tmp_path: Path) -> None:
+    """Same-name, same-definition recreation is visible only through the sealed raw identity
+    (new OID); the catalog/function classes of the oracle snapshot stay equal."""
+    st_dir = s.state_dir(tmp_path)
+    assert init(pg, st_dir).phase == "ready"
+    schema = s.read_state(st_dir)["schema_key"]
+    before = s.snapshot(pg, rows=False)
+    _sig, old, new = _recreate_identical_function(pg, schema)
+    assert old != new, "premise: a new OID"
+    after = s.snapshot(pg, rows=False)
+    assert after[f"{s.TARGET_DB}:functions"] == before[f"{s.TARGET_DB}:functions"], "premise"
+    assert_refused_no_change(pg, st_dir)
+
+
+def test_b2_r3_takeover_waits_for_seal_persistence(pg: s.PgCluster, tmp_path: Path,
+                                                   ref_root: Path) -> None:
+    """v2r1 (3): the capture lock (shared K_X) is held through the atomic state write. A
+    copied-state takeover started while the original is inside that write waits for it; the
+    original is then fenced at its next guarded write; the copy completes exactly."""
+    a_dir = s.state_dir(tmp_path, "a")
+    point = f"state.after_temp_fsync#{WRITE_INDEX['logins']}"
+    a = init_child(pg, a_dir, tmp_path / "bara", pause=point)
+    a.reached(point.split("#")[0])
+    b_dir = s.copy_state(a_dir, tmp_path / "b")             # still the `migrated` state
+    assert s.read_state(b_dir)["phase"] == "migrated"
+    with pg.connect("postgres") as a_conn:                   # lose the holder's K_S (as I7)
+        holders = [r[0] for r in a_conn.execute(
+            "SELECT l.pid FROM pg_locks l JOIN pg_database d ON d.oid = l.database"
+            " WHERE l.locktype = 'advisory' AND l.granted AND d.datname = 'postgres'")]
+    assert len(holders) == 1 and s.terminate_backend(pg, holders[0])
+    b = init_child(pg, b_dir, tmp_path / "barb")
+    s.wait_for(lambda: s.waiting_advisory(pg))               # the takeover waits on K_X
+    assert b.proc.poll() is None, "no takeover inside the original's capture+persist"
+    a.go(point.split("#")[0])
+    out_a = a.result()
+    # The original finishes its atomic write, releases the capture lock, and fails closed at
+    # its next step (its K_S is gone); it never reports success.
+    assert (out_a["ok"], out_a.get("code")) == (False, "INSTALL_LOCK_LOST"), out_a
+    assert s.read_state(a_dir)["phase"] == "logins"
+    assert b.result() == {"ok": True, "phase": "ready"}
+    assert_single_execution(pg, b_dir, reference_of(ref_root), interrupted=frozenset())
+
+
+def test_b2_r2_repeated_same_unit_interruption_resumes(pg: s.PgCluster, tmp_path: Path,
+                                                       ref_root: Path) -> None:
+    """The SAME unit (t029) interrupted twice: attempt 1 (run 1, txn #61) and attempt 2 (run
+    2, txn #5, measured); run 3 completes it with attempt 3. Only that unit differs, by +2."""
+    st_dir = s.state_dir(tmp_path)
+    init_child(pg, st_dir, tmp_path / "bar1", crash="guarded_txn#61").crashed()
+    unit = "t029_m01_staff_admin_v2"
+    with pg.connect() as d:
+        assert d.execute("SELECT state, attempt FROM shared.schema_migrations"
+                         " WHERE migration_id = %s", (unit,)).fetchone() == ("running", 1)
+    init_child(pg, st_dir, tmp_path / "bar2", crash="guarded_txn#5").crashed()
+    with pg.connect() as d:
+        assert d.execute("SELECT state, attempt FROM shared.schema_migrations"
+                         " WHERE migration_id = %s", (unit,)).fetchone() == ("running", 2)
+    assert init(pg, st_dir).phase == "ready"
+    reference = reference_of(ref_root)
+    st = s.read_state(st_dir)
+    assert s.diff(reference["semantic"], normalised(pg, st)) == {}
+    got = s.ledger_attempts(pg)
+    assert {k: v for k, v in got.items() if v != reference["attempts"][k]} == {
+        unit: reference["attempts"][unit] + 2}
+
+
+@pytest.mark.parametrize("kind", ["unrelated_applied_attempt", "running_attempt_jump"])
+def test_b2_r2_ledger_attempt_not_tied_to_interruption_refused(pg: s.PgCluster, tmp_path: Path,
+                                                               kind: str) -> None:
+    st_dir = s.state_dir(tmp_path)
+    init_child(pg, st_dir, tmp_path / "bar1", crash="guarded_txn#61").crashed()
+    statement = {
+        "unrelated_applied_attempt": "UPDATE shared.schema_migrations SET attempt = 2"
+                                     " WHERE migration_id = 't001_m01_baseline'",
+        "running_attempt_jump": "UPDATE shared.schema_migrations SET attempt = 3"
+                                " WHERE migration_id = 't029_m01_staff_admin_v2'",
+    }[kind]
+    with pg.connect() as d:
+        before_rows = d.execute("SELECT * FROM shared.schema_migrations ORDER BY 1, 2").fetchall()
+    tamper(pg, [statement])
+    with pg.connect() as d:
+        assert d.execute("SELECT * FROM shared.schema_migrations ORDER BY 1, 2").fetchall() \
+            != before_rows
     assert_refused_no_change(pg, st_dir)
