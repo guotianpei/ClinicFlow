@@ -1,4 +1,4 @@
-"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M27).
+"""Option B B2 mutation controls, group family ``b2`` (B2-M1..B2-M29).
 
 Safety-focused (B2-I1 and B2 red-packet mutation lists, Codex 2026-11-12): protocol F's
 guard, takeover and reservation ordering; the DSN and state-directory defences; the fresh
@@ -182,6 +182,15 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "replacements)", PROVISION,
      '        if any(names[f"{x[0]}|{x[1]}"] not in allowed for x in missing):\n',
      "        if False:\n"),
+    # -- guard: K_S release (CI 43363166722 i6) -------------------------------------------
+    ("B2-M28", "guard: K_S released by close() only (the asynchronous backend-exit release)",
+     GUARD,
+     "        with contextlib.suppress(psycopg.Error):\n"
+     "            conn.execute(unlock_sql, (K_S,))\n",
+     "        pass\n"),
+    ("B2-M29", "guard: the installer releases its EXCLUSIVE K_S with the shared unlock", GUARD,
+     '        _release_session_lock(self, "SELECT pg_catalog.pg_advisory_unlock(%s)")\n',
+     '        _release_session_lock(self, "SELECT pg_catalog.pg_advisory_unlock_shared(%s)")\n'),
     # -- view -----------------------------------------------------------------------------
     ("B2-M25", "view: the capture does not take the shared K_X (no exclusion)", VIEW,
      '        conn.execute("SELECT pg_catalog.pg_advisory_lock_shared(%s)", (K_X,))\n',
@@ -199,7 +208,7 @@ GROUPS: tuple[tuple[str, Path, str], ...] = (
 GROUP_OF: dict[str, str] = {
     **{m: "dsn" for m in ("B2-M1", "B2-M2", "B2-M3")},
     **{m: "state" for m in ("B2-M4", "B2-M5", "B2-M6")},
-    **{f"B2-M{i}": "guard" for i in range(7, 15)},
+    **{f"B2-M{i}": "guard" for i in (*range(7, 15), 28, 29)},
     "B2-M15": "attest",
     **{f"B2-M{i}": "provision" for i in (*range(16, 25), 26, 27)},
     "B2-M25": "view",

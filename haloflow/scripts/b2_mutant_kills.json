@@ -289,5 +289,16 @@
   ],
   "B2-M27": [
     "tests/synthetic/test_b2_init_postgres.py::test_b2_r2_partial_seal_unrelated_change_refused[unrelated_function_recreated]"
+  ],
+  "B2-M28": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_k_s_free_the_moment_release_returns",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_release_on_lost_connection_still_closes[InstallLock]",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_release_on_lost_connection_still_closes[RuntimeLease]",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_release_unlocks_k_s_before_close[InstallLock-SELECT pg_catalog.pg_advisory_unlock(%s)]",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_release_unlocks_k_s_before_close[RuntimeLease-SELECT pg_catalog.pg_advisory_unlock_shared(%s)]"
+  ],
+  "B2-M29": [
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_k_s_free_the_moment_release_returns",
+    "tests/synthetic/test_b2_guard_postgres.py::test_b2_g5_release_unlocks_k_s_before_close[InstallLock-SELECT pg_catalog.pg_advisory_unlock(%s)]"
   ]
 }

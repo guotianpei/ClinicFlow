@@ -24,6 +24,7 @@ K_S A session lock in `postgres`: exclusive for an installer run, shared for the
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -267,11 +268,10 @@ class InstallLock:
             raise SyntheticRefused("INSTALL_LOCK_LOST") from None
 
     def release(self) -> None:
-        if self._conn is not None:
-            try:
-                self._conn.close()
-            finally:
-                self._conn = None
+        """Unlock K_S explicitly, THEN close. A session advisory lock ends only when its backend
+        exits, which is asynchronous to close(): a close-only release let an immediate
+        try-lock elsewhere still see K_S (CI 43363166722, i6). The unlock is synchronous."""
+        _release_session_lock(self, "SELECT pg_catalog.pg_advisory_unlock(%s)")
 
 
 class RuntimeLease:
@@ -291,8 +291,18 @@ class RuntimeLease:
         self._conn = conn
 
     def release(self) -> None:
-        if self._conn is not None:
-            try:
-                self._conn.close()
-            finally:
-                self._conn = None
+        """Unlock the shared K_S explicitly, THEN close (see InstallLock.release)."""
+        _release_session_lock(self, "SELECT pg_catalog.pg_advisory_unlock_shared(%s)")
+
+
+def _release_session_lock(holder: InstallLock | RuntimeLease, unlock_sql: str) -> None:
+    conn = holder._conn
+    if conn is None:
+        return
+    try:
+        # A lost connection already ends the lock with its backend.
+        with contextlib.suppress(psycopg.Error):
+            conn.execute(unlock_sql, (K_S,))
+    finally:
+        holder._conn = None
+        conn.close()

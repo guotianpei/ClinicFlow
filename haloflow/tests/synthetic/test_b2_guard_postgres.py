@@ -610,3 +610,62 @@ def test_b2_e3_alembic_fenced_after_takeover(pg: s.PgCluster, tmp_path: Path) ->
     assert a.result()["code"] == "EPOCH_SUPERSEDED"
     with pg.connect() as d:
         assert d.execute("SELECT to_regclass('public.alembic_version')").fetchone()[0] is None
+
+
+# ---------------------------------------------------------------- K_S release (CI 43363166722 i6)
+# A session advisory lock ends only when its backend exits, which is asynchronous to the client's
+# close(). A close-only release let a runtime lease taken immediately after `init` returned still
+# see the installer's K_S (INSTALL_LOCKED). Both holders now unlock explicitly, then close.
+
+class _RecordingConn:
+    def __init__(self, fail: bool = False) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+        self.fail = fail
+
+    def execute(self, query: str, params: tuple[Any, ...] = ()) -> None:
+        self.calls.append(("execute", query, params))
+        if self.fail:
+            raise psycopg.OperationalError("connection lost")
+
+    def close(self) -> None:
+        self.calls.append(("close",))
+
+
+@pytest.mark.parametrize(("holder", "unlock"), [
+    ("InstallLock", "SELECT pg_catalog.pg_advisory_unlock(%s)"),
+    ("RuntimeLease", "SELECT pg_catalog.pg_advisory_unlock_shared(%s)")])
+def test_b2_g5_release_unlocks_k_s_before_close(holder: str, unlock: str) -> None:
+    guard = s.mod("guard")
+    h = getattr(guard, holder)(None)
+    conn = _RecordingConn()
+    h._conn = conn
+    h.release()
+    assert conn.calls == [("execute", unlock, (guard.K_S,)), ("close",)]
+    assert h._conn is None
+    h.release()                                              # idempotent: nothing further
+    assert conn.calls == [("execute", unlock, (guard.K_S,)), ("close",)]
+
+
+@pytest.mark.parametrize("holder", ["InstallLock", "RuntimeLease"])
+def test_b2_g5_release_on_lost_connection_still_closes(holder: str) -> None:
+    guard = s.mod("guard")
+    h = getattr(guard, holder)(None)
+    conn = _RecordingConn(fail=True)
+    h._conn = conn
+    h.release()                                              # no exception escapes
+    assert [c[0] for c in conn.calls] == ["execute", "close"] and h._conn is None
+
+
+def test_b2_g5_k_s_free_the_moment_release_returns(pg: s.PgCluster) -> None:
+    """Real PostgreSQL: an observer session ALREADY connected takes the shared K_S lease the
+    instant InstallLock.release() returns, every time (close-only measured 10/2000 refusals)."""
+    guard = s.mod("guard")
+    with pg.connect("postgres") as observer:
+        for _ in range(300):
+            lock = guard.InstallLock(endpoint(pg))
+            lock.acquire()
+            lock.release()
+            got = observer.execute("SELECT pg_catalog.pg_try_advisory_lock_shared(%s)",
+                                   (guard.K_S,)).fetchone()[0]
+            assert got is True
+            observer.execute("SELECT pg_catalog.pg_advisory_unlock_shared(%s)", (guard.K_S,))
