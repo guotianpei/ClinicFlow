@@ -279,6 +279,10 @@ def test_legacy_database_bypass_allowlist_cannot_grow() -> None:
         "src/haloflow/modules/reminders/router.py",
         "src/haloflow/modules/reminders/service.py",
         "src/haloflow/scheduler.py",
+        # Option B B2 (B2-I1, RC-2 aligned 2026-11-12): the synthetic installer runs Alembic's
+        # EnvironmentContext on its guarded SQLAlchemy connection. Exactly this module; the
+        # synthetic-specific control below forbids every other synthetic DB import.
+        "src/haloflow/synthetic/migrate.py",
     }
     actual: set[str] = set()
     for path in Path("src/haloflow").rglob("*.py"):
@@ -302,6 +306,64 @@ def test_legacy_database_bypass_allowlist_cannot_grow() -> None:
                 actual.add(str(path))
 
     assert actual == expected
+
+
+SYNTHETIC_ROOT = "src/haloflow/synthetic/"
+SYNTHETIC_SQLALCHEMY_MODULE = "src/haloflow/synthetic/migrate.py"
+
+
+def _imported_modules(source: str) -> list[str]:
+    modules: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            modules.append(node.module)
+        elif isinstance(node, ast.Import):
+            modules.extend(alias.name for alias in node.names)
+    return modules
+
+
+def _synthetic_db_import_violations_in(path: str, source: str) -> list[str]:
+    """B2 RC-2. In `src/haloflow/synthetic`, `sqlalchemy` is imported ONLY by the exact module
+    `synthetic/migrate.py`; `asyncpg` and `haloflow.database` are imported by no synthetic module
+    (migrate.py included)."""
+
+    if not path.startswith(SYNTHETIC_ROOT):
+        return []
+    violations: list[str] = []
+    for module in _imported_modules(source):
+        forbidden = module in ("asyncpg", "haloflow.database") or module.startswith("asyncpg.")
+        sqlalchemy = module == "sqlalchemy" or module.startswith("sqlalchemy.")
+        if forbidden or (sqlalchemy and path != SYNTHETIC_SQLALCHEMY_MODULE):
+            violations.append(f"{path}: imports {module}")
+    return violations
+
+
+def test_b2_synthetic_database_imports_are_exact() -> None:
+    violations: list[str] = []
+    for path in Path("src/haloflow/synthetic").rglob("*.py"):
+        violations.extend(_synthetic_db_import_violations_in(str(path), path.read_text()))
+    assert violations == []
+
+
+def test_b2_synthetic_database_imports_negative_control() -> None:
+    migrate = SYNTHETIC_SQLALCHEMY_MODULE
+    other = "src/haloflow/synthetic/provision.py"
+    look_alike = "src/haloflow/synthetic/migrate_extra.py"
+    assert _synthetic_db_import_violations_in(migrate, "from sqlalchemy import text\n") == []
+    assert _synthetic_db_import_violations_in(migrate, "import sqlalchemy.pool\n") == []
+    # same module: asyncpg / haloflow.database are never allowed
+    assert _synthetic_db_import_violations_in(migrate, "import asyncpg\n")
+    assert _synthetic_db_import_violations_in(migrate, "from asyncpg.pool import Pool\n")
+    assert _synthetic_db_import_violations_in(migrate, "from haloflow.database import x\n")
+    assert _synthetic_db_import_violations_in(migrate, "import haloflow.database\n")
+    # other and look-alike modules: no sqlalchemy either
+    for path in (other, look_alike, "src/haloflow/synthetic/sub/migrate.py"):
+        assert _synthetic_db_import_violations_in(path, "from sqlalchemy import text\n")
+        assert _synthetic_db_import_violations_in(path, "import sqlalchemy\n")
+        assert _synthetic_db_import_violations_in(path, "import asyncpg\n")
+    # outside the synthetic package this control does not apply (CG-4 governs there)
+    outside = "src/haloflow/scheduler.py"
+    assert _synthetic_db_import_violations_in(outside, "import sqlalchemy\n") == []
 
 
 def test_runtime_role_has_no_global_audit_write_in_permissions_manifest() -> None:
@@ -1105,15 +1167,66 @@ def _called_name(node: ast.Call) -> str:
     return ""
 
 
+# Option B B2 (RC-1 aligned 2026-11-12): the synthetic installer constructs `TenantProvisioner`
+# ONLY in the executable body of the unique module-level `_run_tenant` of exactly
+# `synthetic/provision.py`. Not in its defaults or decorators, not in a nested function, lambda
+# or class, not when `_run_tenant` is defined more than once, and never the other components.
+SYNTHETIC_PROVISION_MODULE = "src/haloflow/synthetic/provision.py"
+SYNTHETIC_PROVISION_FUNCTION = "_run_tenant"
+SYNTHETIC_PROVISION_ALLOWED = "TenantProvisioner"
+_NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _own_body_calls(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Call]:
+    """Calls in the function's executable body, not descending into nested scopes."""
+
+    calls: list[ast.Call] = []
+    stack: list[ast.AST] = list(func.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, _NESTED_SCOPES):
+            continue
+        if isinstance(node, ast.Call):
+            calls.append(node)
+        stack.extend(ast.iter_child_nodes(node))
+    return calls
+
+
+def _synthetic_provisioner_allowance(tree: ast.Module) -> set[int]:
+    defs = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == SYNTHETIC_PROVISION_FUNCTION
+    ]
+    named_anywhere = [
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        and node.name == SYNTHETIC_PROVISION_FUNCTION
+    ]
+    if len(defs) != 1 or len(named_anywhere) != 1:
+        return set()
+    return {
+        id(call) for call in _own_body_calls(defs[0])
+        if _called_name(call) == SYNTHETIC_PROVISION_ALLOWED
+    }
+
+
 def _runtime_construction_violations_in(path: str, source: str) -> list[str]:
-    """L1-A1. Only `m01/runtime.py` constructs the three runtime components."""
+    """L1-A1. Only `m01/runtime.py` constructs the three runtime components (plus the one
+    bounded B2 allowance above)."""
 
     if path == RUNTIME_MODULE:
         return []
+    tree = ast.parse(source)
+    allowed = (
+        _synthetic_provisioner_allowance(tree) if path == SYNTHETIC_PROVISION_MODULE else set()
+    )
     return [
         f"{path}: constructs {_called_name(node)}"
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Call) and _called_name(node) in RUNTIME_CONSTRUCTED
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and _called_name(node) in RUNTIME_CONSTRUCTED
+        and id(node) not in allowed
     ]
 
 
@@ -1223,6 +1336,49 @@ def test_l1_a1_only_the_runtime_module_constructs_runtime_components() -> None:
     for path, source in _production_sources():
         violations.extend(_runtime_construction_violations_in(path, source))
     assert violations == []
+
+
+def test_b2_rc1_synthetic_provisioner_allowance_negative_control() -> None:
+    """RC-1. The B2 allowance admits exactly one shape and nothing near it."""
+
+    mod = SYNTHETIC_PROVISION_MODULE
+    tp = "TenantProvisioner(c, r, x)"
+    ok = f"def _run_tenant(ctx):\n    p = {tp}\n    return p\n"
+    assert _runtime_construction_violations_in(mod, ok) == []
+    assert _runtime_construction_violations_in(
+        mod, "async def _run_tenant(ctx):\n    if ctx:\n        p = TenantProvisioner(c, r, x)\n"
+    ) == []
+    bad = {
+        # (b) the other components, even in the allowed body
+        "resolver": "def _run_tenant(ctx):\n    TenantResolver(s, supported_schema_versions=x)\n",
+        "gateway": "def _run_tenant(ctx):\n    TenantTransactionGateway(p, c)\n",
+        # (c) another function / module level
+        "other_function": "def _run_staff(ctx):\n    TenantProvisioner(c, r, x)\n",
+        "module_level": "p = TenantProvisioner(c, r, x)\n",
+        # defaults and decorators are not the executable body
+        "default": "def _run_tenant(ctx, p=TenantProvisioner(c, r, x)):\n    pass\n",
+        "kw_default": "def _run_tenant(ctx, *, p=TenantProvisioner(c, r, x)):\n    pass\n",
+        "decorator": "@TenantProvisioner(c, r, x)\ndef _run_tenant(ctx):\n    pass\n",
+        # nested scopes inside _run_tenant
+        "nested_def": f"def _run_tenant(ctx):\n    def inner():\n        {tp}\n",
+        "nested_async": f"def _run_tenant(ctx):\n    async def inner():\n        {tp}\n",
+        "nested_class": f"def _run_tenant(ctx):\n    class K:\n        p = {tp}\n",
+        "lambda": "def _run_tenant(ctx):\n    f = lambda: TenantProvisioner(c, r, x)\n",
+        # duplicate or shadowing definitions of the name
+        "duplicate": ok + ok,
+        "nested_same_name": "def _run_tenant(ctx):\n    TenantProvisioner(c, r, x)\n"
+                            "    def _run_tenant():\n        pass\n",
+        "class_same_name": ok + "class _run_tenant:\n    pass\n",
+        "method_same_name": f"class K:\n    def _run_tenant(self):\n        {tp}\n",
+    }
+    for case, src in bad.items():
+        assert _runtime_construction_violations_in(mod, src), case
+    # (a) another synthetic module, (d) look-alike paths: no allowance at all
+    for path in ("src/haloflow/synthetic/migrate.py",
+                 "src/haloflow/synthetic/provision_extra.py",
+                 "src/haloflow/synthetic/sub/provision.py",
+                 "src/haloflow/modules/rogue/provision.py"):
+        assert _runtime_construction_violations_in(path, ok), path
 
 
 def test_l1_a1_negative_control() -> None:
