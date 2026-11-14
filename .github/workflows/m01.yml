@@ -25,6 +25,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' }}
 
 jobs:
+  # Split 2026-11-14 (claude_ci-job-split-v1-2026-11-14.md): the single job reached the
+  # GitHub-hosted 6h job limit (run 43507449720, cancelled in b2_mutants). The same steps,
+  # unchanged and in their original order, now run in three parallel jobs with the
+  # identical setup; verify-m01-all is green only when all three succeeded. The three
+  # gate-reachability markers stay in verify-m01 only, and verify-m01 stays first.
   verify-m01:
     runs-on: ubuntu-24.04
     services:
@@ -149,6 +154,78 @@ jobs:
           --venv "$VENV"
           --workflow ../.github/workflows/m01.yml
           --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/verify-evidence
+
+  verify-m01-mutation:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: haloflow_test_m01
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d haloflow_test_m01"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    defaults:
+      run:
+        working-directory: haloflow
+
+    env:
+      HALOFLOW_TEST_DATABASE_URL: >-
+        postgresql://postgres:postgres@localhost:5432/haloflow_test_m01
+      # L-1W W2: the postgres:17 service above is a fresh container per run, so the
+      # L-1W harness may create its token-named synthetic LOGIN roles here
+      # (Codex final disposition pin 4; tests/platform/l1w_db_support.py).
+      HALOFLOW_TEST_DISPOSABLE_CLUSTER: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: haloflow/locks/linux-x86_64-cp312*.txt
+      # One verified install stage, shared with local verification. It creates a
+      # fresh virtualenv, installs from the hash-pinned locks it snapshots into the
+      # evidence, and checks every premise: approved target, lock parse, coverage in
+      # both directions, installed artifact hashes against the lock, pip check,
+      # declared requirements and the dev extra against the lock, editable-install
+      # source path. It runs no gates; the gates below are CI's.
+      - run: >-
+          scripts/verified-install.sh
+          --python python3.12
+          --target linux-x86_64-cp312
+          --project .
+          --locks locks
+          --evidence "$RUNNER_TEMP/verify-evidence"
+          --envdir "$RUNNER_TEMP/verify-env"
+          --source-revision "$GITHUB_SHA"
+      - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      # Option B B2: PostgreSQL 17 BINARIES (initdb/pg_ctl/postgres) for the per-case
+      # disposable clusters of tests/synthetic/test_b2_*_postgres.py. No cluster is created
+      # here (create_main_cluster = false) and the suite's service container is never
+      # used by those rows except one read-only negative attestation. Without this
+      # variable the B2 PostgreSQL rows FAIL (class-B rule); they never skip.
+      - name: PostgreSQL 17 binaries for B2 per-case clusters
+        working-directory: .
+        run: |
+          sudo install -d /etc/postgresql-common
+          echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-17
+          /usr/lib/postgresql/17/bin/postgres --version
+          echo "HALOFLOW_SYNTHETIC_PG_BIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
       # UC1 part A mutation controls for haloflow.m02.observation (Codex
       # 20261031T152545Z): the service test module must pass on the unmodified
       # source and fail on each single-change mutant; the source is restored and its
@@ -305,6 +382,78 @@ jobs:
           $VENV/bin/python -I scripts/b1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b1-mutation"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence-mutation-${{ github.run_id }}
+          path: ${{ runner.temp }}/verify-evidence
+
+  verify-m01-b2-mutation:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: haloflow_test_m01
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d haloflow_test_m01"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    defaults:
+      run:
+        working-directory: haloflow
+
+    env:
+      HALOFLOW_TEST_DATABASE_URL: >-
+        postgresql://postgres:postgres@localhost:5432/haloflow_test_m01
+      # L-1W W2: the postgres:17 service above is a fresh container per run, so the
+      # L-1W harness may create its token-named synthetic LOGIN roles here
+      # (Codex final disposition pin 4; tests/platform/l1w_db_support.py).
+      HALOFLOW_TEST_DISPOSABLE_CLUSTER: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: haloflow/locks/linux-x86_64-cp312*.txt
+      # One verified install stage, shared with local verification. It creates a
+      # fresh virtualenv, installs from the hash-pinned locks it snapshots into the
+      # evidence, and checks every premise: approved target, lock parse, coverage in
+      # both directions, installed artifact hashes against the lock, pip check,
+      # declared requirements and the dev extra against the lock, editable-install
+      # source path. It runs no gates; the gates below are CI's.
+      - run: >-
+          scripts/verified-install.sh
+          --python python3.12
+          --target linux-x86_64-cp312
+          --project .
+          --locks locks
+          --evidence "$RUNNER_TEMP/verify-evidence"
+          --envdir "$RUNNER_TEMP/verify-env"
+          --source-revision "$GITHUB_SHA"
+      - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      # Option B B2: PostgreSQL 17 BINARIES (initdb/pg_ctl/postgres) for the per-case
+      # disposable clusters of tests/synthetic/test_b2_*_postgres.py. No cluster is created
+      # here (create_main_cluster = false) and the suite's service container is never
+      # used by those rows except one read-only negative attestation. Without this
+      # variable the B2 PostgreSQL rows FAIL (class-B rule); they never skip.
+      - name: PostgreSQL 17 binaries for B2 per-case clusters
+        working-directory: .
+        run: |
+          sudo install -d /etc/postgresql-common
+          echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-17
+          /usr/lib/postgresql/17/bin/postgres --version
+          echo "HALOFLOW_SYNTHETIC_PG_BIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
       # Option B B2 mutation controls B2-M1..B2-M19 (safety-focused, B2-I1 + red-packet
       # mutation lists): DSN and state-directory defences, protocol F's guard / takeover /
       # reservation ordering, the fresh attestation, and the installer's commit-ack /
@@ -318,5 +467,19 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: verify-evidence-${{ github.run_id }}
+          name: verify-evidence-b2-mutation-${{ github.run_id }}
           path: ${{ runner.temp }}/verify-evidence
+
+  verify-m01-all:
+    if: ${{ always() }}
+    needs: [verify-m01, verify-m01-mutation, verify-m01-b2-mutation]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All three verification jobs succeeded
+        env:
+          R_GATES: ${{ needs.verify-m01.result }}
+          R_MUT: ${{ needs.verify-m01-mutation.result }}
+          R_B2: ${{ needs.verify-m01-b2-mutation.result }}
+        run: |
+          echo "verify-m01=$R_GATES verify-m01-mutation=$R_MUT verify-m01-b2-mutation=$R_B2"
+          test "$R_GATES" = success && test "$R_MUT" = success && test "$R_B2" = success
