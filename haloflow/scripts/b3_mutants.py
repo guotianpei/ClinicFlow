@@ -1,9 +1,9 @@
-"""Option B B3a mutation controls, group ``b3`` (B3-M1..B3-M39). SYNTHETIC ONLY.
+"""Option B B3a mutation controls, group ``b3`` (B3-M1..B3-M40). SYNTHETIC ONLY.
 
 Mutant list: v1r1 §5 (1-26) and v1r2 (27-34) as aligned for the B3a red packet, plus B3-M35
 (the pinned SEALED_READY_DIGEST comparison skipped; Codex red gate bb62696, green condition 3)
-and B3-M36 (the F-R1 resolution activation not provisioned), and B3-M37..M39 (lease ownership under
-startup cancellation; Codex reviews 85d836a, 0e11467). Each mutant is ONE exact textual
+and B3-M36 (the F-R1 resolution activation not provisioned), and B3-M37..M40 (lease ownership under
+startup cancellation; Codex reviews 85d836a, 0e11467, 2c673fe). Each mutant is ONE exact textual
 edit (the old text must occur exactly once in the clean target, else the run fails as stale).
 
 Judgement (B3 rule; the part-A whole-module rule does not fit the 6-hour job with PostgreSQL
@@ -315,14 +315,18 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
             f"{P}test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease"
             "[repeated_cancel]")),
     Mutant("B3-M38", "lifecycle: the acquiring thread does not release an abandoned success",
-           LIFECYCLE, '            release = self._lease_state == "abandoned"\n',
-           "            release = False\n",
+           LIFECYCLE,
+           '            release = self._lease_state == "abandoned" and not future.cancelled() \\\n',
+           "            release = False and not future.cancelled() \\\n",
            (f"{P}test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease"
             "[after_start_failed]",)),
     Mutant("B3-M39", "lifecycle: the abort drain is owned by the caller (wait not shielded)",
            LIFECYCLE, "        return await asyncio.shield(self._drain.task)\n",
            "        return await self._drain.task\n",
            (f"{P}test_b3a_s9_second_cancel_while_abort_drains_still_releases_the_lease",)),
+    Mutant("B3-M40", "lifecycle: no single releaser election (abandon and callback both release)",
+           LIFECYCLE, "        if self._lease_release_claimed:\n            return False\n", "",
+           (f"{P}test_b3a_s8b_done_before_callback_interleaving_releases_exactly_once",)),
 )
 
 

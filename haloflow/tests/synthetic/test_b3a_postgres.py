@@ -642,6 +642,57 @@ def test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease(inst: b3.Instal
         s.mod("hooks").FAULT = None
 
 
+def test_b3a_s8b_done_before_callback_interleaving_releases_exactly_once(
+        inst: b3.Install, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (added: Codex review 2c673fe). The acquisition's future is already DONE (success)
+    but its completion callback has not run yet (barrier at `b3.lease.done_callback`; the
+    start task's own wake-up callback is registered after it, so `start` cannot claim). The
+    start is cancelled: the abandon step sees a completed success. Then the callback runs and
+    also sees "abandoned". Exactly ONE release is invoked; the lease backend goes away and the
+    exclusive K_S is free, with the host alive."""
+    import threading
+
+    runtime_mod = b3.mod("runtime")
+    calls: list[int] = []
+    real_release = runtime_mod.SyntheticLease.release
+
+    def counting_release(self: Any) -> None:
+        calls.append(threading.get_ident())
+        real_release(self)
+
+    monkeypatch.setattr(runtime_mod.SyntheticLease, "release", counting_release)
+    reached, gate = threading.Event(), threading.Event()
+
+    def fault(point: str, _info: Any) -> None:
+        if point == "b3.lease.done_callback":
+            reached.set()
+            gate.wait(60)
+
+    s.mod("hooks").FAULT = fault
+
+    async def body() -> str:
+        lc = make_lc(inst)
+        task = asyncio.create_task(lc.start())
+        assert await asyncio.to_thread(reached.wait, 60)
+        assert lc._lease_future.done()          # done before its callbacks have run
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        gate.set()
+        await asyncio.to_thread(
+            b3.wait_until, lambda: b3.backends(inst, f"{APP}/lease") == [] and b3.ks_free(inst),
+            30)
+        await asyncio.sleep(1.0)                  # any second release would have run by now
+        return str(lc.state)
+
+    try:
+        assert run(body()) == "FAILED"
+        assert len(calls) == 1, calls
+    finally:
+        gate.set()
+        s.mod("hooks").FAULT = None
+
+
 def test_b3a_s9_second_cancel_while_abort_drains_still_releases_the_lease(
         inst: b3.Install) -> None:
     """A (added: Codex review 0e11467). The lease is CLAIMED; startup is then cancelled

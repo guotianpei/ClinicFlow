@@ -376,6 +376,7 @@ class SyntheticLifecycle:
         self._lease_future: concurrent.futures.Future[Any] | None = None
         self._lease_lock = threading.Lock()
         self._lease_state = "pending"
+        self._lease_release_claimed = False
         self._lease_lost = False
         self._guard_code: str | None = None
         self._stop_pending: str | None = None
@@ -498,6 +499,9 @@ class SyntheticLifecycle:
     #              (or, if it already completed, the abandon step itself) releases a success.
     # Transitions happen under one lock, so release happens exactly once whatever the order of
     # completion and abandonment; no transition awaits, so no cancellation can interrupt one.
+# A concurrent future is marked done BEFORE its callbacks run (Codex review 2c673fe), so both
+# the abandon step and the completion callback may observe "abandoned and succeeded": the sole
+# release is therefore ELECTED under the same lock (`_lease_release_claimed`), once.
 
     def _claim_lease(self) -> None:
         with self._lease_lock:
@@ -511,17 +515,26 @@ class SyntheticLifecycle:
                 return
             self._lease_state = "abandoned"
             release = future is not None and future.done() and not future.cancelled() \
-                and future.exception() is None
+                and future.exception() is None and self._elect_releaser()
         if release:
             threading.Thread(target=self._release_abandoned, daemon=True,
                              name="haloflow-synthetic-lease-release").start()
 
     def _lease_done(self, future: concurrent.futures.Future[Any]) -> None:
         """Runs in the acquiring thread when the acquisition completes."""
+        fire("b3.lease.done_callback", {})
         with self._lease_lock:
-            release = self._lease_state == "abandoned"
-        if release and not future.cancelled() and future.exception() is None:
+            release = self._lease_state == "abandoned" and not future.cancelled() \
+                and future.exception() is None and self._elect_releaser()
+        if release:
             self._release_abandoned()
+
+    def _elect_releaser(self) -> bool:
+        """Called with `_lease_lock` held: True for exactly one caller."""
+        if self._lease_release_claimed:
+            return False
+        self._lease_release_claimed = True
+        return True
 
     def _release_abandoned(self) -> None:
         lease = self.runtime.lease if self.runtime is not None else None
