@@ -613,7 +613,7 @@ def _check_reduced(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[Any]) 
         raise _diverged("identities")
     if cap.ledger != base["ledger"]:
         raise _diverged("ledger")
-    _check_staff_digests(ctx, cap, conn)
+    _check_staff_digests(ctx, cap, conn)       # reduced seal: staff digests still bind
 
 
 def attest_ready(endpoint: AdminEndpoint, state: Mapping[str, Any], expected: str) -> int:
