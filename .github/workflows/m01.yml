@@ -464,6 +464,15 @@ jobs:
           $VENV/bin/python -I scripts/b2_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/b2-mutation"
+      # Option B B3a mutation controls B3-M1..B3-M36 (runtime seal, guard, lifecycle and
+      # drain; v1r1 section 5, v1r2, plus M35 pinned-digest and M36 F-R1): one exact edit each,
+      # judged on its DECLARED killing rows (scripts/b3_mutants.py docstring); a clean control
+      # over the union of those rows must pass first. --check fails on a stale edit.
+      - run: $VENV/bin/python -I scripts/b3_mutants.py --check
+      - run: >-
+          $VENV/bin/python -I scripts/b3_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/b3-mutation"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

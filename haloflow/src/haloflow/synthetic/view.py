@@ -41,6 +41,11 @@ from psycopg import sql
 from haloflow.synthetic.attest import admin_connect
 from haloflow.synthetic.dsn import AdminEndpoint
 from haloflow.synthetic.guard import K_X, RES_SQL
+from haloflow.synthetic.seal_scope import RUNTIME_MUTABLE_TABLES, generic_table
+
+
+def generic_owner(table: str, schema: str) -> str:
+    return generic_table(table, schema)
 
 # Measured nondeterministic columns (two independent installs + interrupted/retried paths;
 # evidence claude_b2-impl/determinism-measurement-r1.json, retry-measurement.json). `{tenant}`
@@ -154,9 +159,27 @@ _CATALOG: Final = {
              " WHERE e.enumtypid = t.oid), '')"
              " FROM pg_catalog.pg_type t JOIN pg_catalog.pg_namespace n"
              " ON n.oid = t.typnamespace WHERE t.typrelid = 0 AND " + _NS,
-    "sequences": "SELECT schemaname, sequencename, coalesce(last_value::text, ''),"
-                 " increment_by, cycle FROM pg_catalog.pg_sequences"
-                 " WHERE schemaname NOT IN ('pg_catalog', 'information_schema')",
+    # B3a: each sequence with its owning column (OWNED BY / identity: deptype a / i), so a
+    # sequence-ownership change is a catalog difference. The value of a sequence owned by a
+    # RUNTIME-MUTABLE table is moved out of the profile into the same-install seal (below).
+    "sequences": "SELECT s.schemaname, s.sequencename, coalesce(s.last_value::text, ''),"
+                 " s.increment_by, s.cycle,"
+                 " coalesce(tn.nspname || '.' || t.relname, ''), coalesce(a.attname::text, ''),"
+                 " coalesce(d.deptype::text, '')"
+                 " FROM pg_catalog.pg_sequences s"
+                 " JOIN pg_catalog.pg_namespace sn ON sn.nspname = s.schemaname"
+                 " JOIN pg_catalog.pg_class sc ON sc.relnamespace = sn.oid"
+                 " AND sc.relname = s.sequencename"
+                 " LEFT JOIN pg_catalog.pg_depend d"
+                 " ON d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass"
+                 " AND d.objid = sc.oid"
+                 " AND d.refclassid = 'pg_catalog.pg_class'::pg_catalog.regclass"
+                 " AND d.deptype IN ('a', 'i')"
+                 " LEFT JOIN pg_catalog.pg_class t ON t.oid = d.refobjid"
+                 " LEFT JOIN pg_catalog.pg_namespace tn ON tn.oid = t.relnamespace"
+                 " LEFT JOIN pg_catalog.pg_attribute a ON a.attrelid = d.refobjid"
+                 " AND a.attnum = d.refobjsubid"
+                 " WHERE s.schemaname NOT IN ('pg_catalog', 'information_schema')",
     "default_acls": "SELECT pg_catalog.pg_get_userbyid(d.defaclrole),"
                     " coalesce(n.nspname, ''), d.defaclobjtype, d.defaclacl::text"
                     " FROM pg_catalog.pg_default_acl d LEFT JOIN pg_catalog.pg_namespace n"
@@ -296,10 +319,23 @@ def capture_lock(endpoint: AdminEndpoint) -> Iterator[psycopg.Connection[Any]]:
         conn.close()
 
 
-def capture(conn: psycopg.Connection[Any], state: Mapping[str, Any],
-            group_roles: frozenset[str], verifiers: Mapping[str, str]) -> Capture:
-    """One REPEATABLE READ READ ONLY snapshot (the caller holds `capture_lock`)."""
+RUNTIME_SEQUENCE_VALUE: Final = "<RUNTIME>"
+SEQUENCE_KEY: Final = "__sequence__:"
 
+
+def capture(conn: psycopg.Connection[Any], state: Mapping[str, Any],
+            group_roles: frozenset[str] | None = None,
+            verifiers: Mapping[str, str] | None = None) -> Capture:
+    """One REPEATABLE READ READ ONLY snapshot (the caller holds `capture_lock`). With no
+    `group_roles` / `verifiers`, the installer's own (the install's owned roles and intent
+    verifiers) are used."""
+
+    if group_roles is None or verifiers is None:
+        from haloflow.synthetic import provision
+
+        group_roles = provision.GROUP_ROLES if group_roles is None else group_roles
+        verifiers = provision.intent_verifier_digests(state) if verifiers is None \
+            else verifiers
     roles = owned_roles(state, group_roles)
     schema = str(state["schema_key"])
     subs = _substitutions(state, verifiers)
@@ -363,6 +399,18 @@ def capture(conn: psycopg.Connection[Any], state: Mapping[str, Any],
                         nondet[norm_table][det] = removed
             view[f"rows:{_norm(table, subs, boot)}"] = sorted(det_rows)
             raw_rows[table] = raws
+        # B3a (v1r1 D1.3): the value of a sequence owned by a runtime-mutable table changes
+        # with legitimate runtime rows. Its definition and ownership stay in the profile;
+        # the value moves to the same-install seal (`nondet`, under the owning table, so the
+        # reduced seal drops it with that table's rows and the full seal still binds it).
+        for entry in view["sequences"]:
+            owner = entry[5]
+            if owner and generic_owner(owner, schema) in RUNTIME_MUTABLE_TABLES:
+                value = entry[2]
+                entry[2] = RUNTIME_SEQUENCE_VALUE
+                nondet.setdefault(_norm(owner, subs, boot), {})[
+                    SEQUENCE_KEY + _norm(f"{entry[0]}.{entry[1]}", subs, boot)] = {
+                    "last_value": value or None}
         ledger = sorted([r[0], r[1], int(r[2]), r[3]] for r in conn.execute(
             "SELECT migration_id, state, attempt, sanitized_error_code"
             " FROM shared.schema_migrations").fetchall()) if any(

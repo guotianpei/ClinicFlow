@@ -343,8 +343,13 @@ def journal_sender(journal: Journal) -> Any:
     return JournalSender()
 
 
-def journal_ehr(journal: Journal, clock: Callable[[], Any]) -> Any:
-    from haloflow.m05.simulated_ehr import SimulatedEhr
+def journal_ehr(journal: Journal, clock: Callable[[], Any],
+                seed: list[dict[str, Any]] | None = None) -> Any:
+    """`seed`: EhrRead field dicts (start_at as ISO text) put into the simulated EHR at
+    construction (the R rows' write-back boundary; the same record in every generation)."""
+    from datetime import datetime
+
+    from haloflow.m05.simulated_ehr import EhrRead, SimulatedEhr
 
     class JournalEhr(SimulatedEhr):  # type: ignore[misc]
         async def write_confirmation(self, appointment_id: str, **kw: Any) -> Any:
@@ -353,7 +358,44 @@ def journal_ehr(journal: Journal, clock: Callable[[], Any]) -> Any:
                            permit_id=str(kw.get("permit_id")))
             return result
 
-    return JournalEhr(clock=clock)
+    ehr = JournalEhr(clock=clock)
+    for fields in seed or ():
+        ehr.put(EhrRead(**{**fields, "start_at": datetime.fromisoformat(fields["start_at"])}))
+    return ehr
+
+
+def seed_recovery(inst: Install, case: str) -> list[dict[str, Any]]:
+    """Test-side seed (the accepted S-J harness, unguarded) of one J08 boundary on an install
+    that has had its first start. r1a/r1b: one appointment due now (generation 1's reminder
+    tick sends it). r2..r5: one reminder sent and replied "1" (generation 1's write-back tick
+    discovers and processes it); returns the simulated EHR record of that appointment."""
+    import asyncio
+
+    import sh_support as sh
+    import si_support as si
+    import sj_harness as sj
+    import test_sj_postgres as tsj
+
+    si_inst = as_si_install(inst)
+    out: list[dict[str, Any]] = []
+
+    async def body() -> None:
+        ehr, _ = await tsj._flow_ehr(si_inst)
+        stack = await sj.build(si_inst, ehr)
+        try:
+            if case in ("r1a", "r1b"):
+                await sj.ingest(stack)
+            else:
+                flow = await tsj._sent_and_replied(stack)
+                out.append({"status": "neutral", "appointment_id": flow["ref"],
+                            "start_at": sh.start_of(si_inst, flow["ref"]).isoformat(),
+                            "provider_ref": si.PROVIDER, "department_ref": si.DEPARTMENT,
+                            "replaced_by": None})
+        finally:
+            assert await stack.shutdown() == {}
+
+    asyncio.run(body())
+    return out
 
 
 # ---------------------------------------------------------------------------- observers

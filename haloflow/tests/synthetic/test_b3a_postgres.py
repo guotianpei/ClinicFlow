@@ -250,6 +250,27 @@ def test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check(inst: b3.Insta
     assert refused_detail(lambda: s.mod("provision").init(inst.env, attest_flag=True)) == want
 
 
+def test_b3a_sc10_wrong_pinned_digest_enforced_after_first_start(
+        inst: b3.Install, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (added at implementation: Codex red gate bb62696, green condition 3). After a VALID
+    first start (reduced mode), the reduced seal compares the live sealed digest with the
+    PINNED `installed_profile.SEALED_READY_DIGEST`: with the pin altered (one hex digit), app
+    start and `init` refuse STATE_DIVERGED ("profile",) on an untampered install; with the
+    pin restored both pass again (the refusal comes from the pin, not from the install)."""
+    run(start_stop(make_lc(inst)))
+    assert "runtime" in inst.state
+    prof = s.mod("installed_profile")
+    true = prof.SEALED_READY_DIGEST
+    wrong = ("0" if true[0] != "0" else "1") + true[1:]
+    monkeypatch.setattr(prof, "SEALED_READY_DIGEST", wrong)
+    want = ("STATE_DIVERGED", ("profile",))
+    assert refused_detail(lambda: run(make_lc(inst).start())) == want
+    assert refused_detail(lambda: s.mod("provision").init(inst.env, attest_flag=True)) == want
+    monkeypatch.setattr(prof, "SEALED_READY_DIGEST", true)
+    assert run(start_stop(make_lc(inst))).disposition == "drained"
+    assert s.mod("provision").init(inst.env, attest_flag=True).phase == "ready"
+
+
 def test_b3a_sc3_installer_accepts_runtime_rows_after_first_start(inst: b3.Install) -> None:
     """A: after first start and legitimate runtime activity, `status` attests and an `init`
     re-run returns `ready`; the marker is unchanged."""
@@ -332,17 +353,27 @@ def test_b3a_sc5_runtime_table_definition_change_refused(inst: b3.Install) -> No
 
 
 def test_b3a_sc6_sequence_values_ignored_ownership_checked(inst: b3.Install) -> None:
-    """A: advanced sequence values are not divergence; dropping OWNED BY is."""
+    """A: advanced sequence values are not divergence; dropping the sequence's ownership is.
+    Corrected at implementation (measured; Claude B3a green packet): the tenant schema's only
+    owned sequence is the IDENTITY sequence of the runtime-mutable `patient_events`
+    (deptype 'i'), which the runtime advances; `ALTER SEQUENCE ... OWNED BY NONE` is refused
+    by PostgreSQL for identity sequences (FeatureNotSupported), so the ownership leg drops the
+    identity (`ALTER COLUMN ... DROP IDENTITY`) for 'i' and keeps OWNED BY NONE for 'a'."""
     run(start_stop(make_lc(inst)))
-    seqs = inst.admin("SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n"
-                      " ON n.oid = c.relnamespace JOIN pg_depend d ON d.objid = c.oid"
-                      " AND d.deptype = 'a' WHERE c.relkind = 'S' AND n.nspname = %s",
-                      (inst.schema,))
+    seqs = inst.admin("SELECT n.nspname, c.relname, t.relname, a.attname, d.deptype"
+                      " FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace"
+                      " JOIN pg_depend d ON d.objid = c.oid AND d.deptype IN ('a', 'i')"
+                      " JOIN pg_class t ON t.oid = d.refobjid JOIN pg_attribute a"
+                      " ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid"
+                      " WHERE c.relkind = 'S' AND n.nspname = %s", (inst.schema,))
     assert seqs, "no owned sequence in the tenant schema to exercise"
-    sch, seq = seqs[0]
+    sch, seq, table, column, deptype = seqs[0]
     inst.admin(f'SELECT nextval(\'"{sch}"."{seq}"\')')
     run(start_stop(make_lc(inst)))
-    inst.admin(f'ALTER SEQUENCE "{sch}"."{seq}" OWNED BY NONE')
+    if deptype == "a":
+        inst.admin(f'ALTER SEQUENCE "{sch}"."{seq}" OWNED BY NONE')
+    else:
+        inst.admin(f'ALTER TABLE "{sch}"."{table}" ALTER COLUMN "{column}" DROP IDENTITY')
     assert refused_code(lambda: run(make_lc(inst).start())) == "STATE_DIVERGED"
 
 
@@ -353,7 +384,9 @@ def test_b3a_sc7_isolation_alert_persists_stops_and_refuses_next_start(
     async def body() -> Any:
         lc = make_lc(inst)
         await lc.start()
-        inst.admin("INSERT INTO shared.isolation_alerts DEFAULT VALUES")  # fault fixture
+        inst.admin("INSERT INTO shared.isolation_alerts (alert_id, source_code, alert_type,"
+                   " severity) VALUES (pg_catalog.gen_random_uuid(), 'b3a_sc7',"
+                   " 'synthetic_fault', 1)")  # fault fixture (NOT NULL columns: corrected)
         lc.request_stop("ISOLATION_ALERT")
         return await lc.wait_stopped()
 
@@ -544,7 +577,9 @@ def test_b3a_s4_s5_admits_at_94_and_starts_in_order(inst: b3.Install) -> None:
                                   "schedulers", "watcher"])
 def test_b3a_s6_startup_failure_reverse_close(inst: b3.Install, step: str) -> None:
     """A: a fault at each b3.start.<step> closes only what was opened, in reverse order; state
-    FAILED; class-name-only error; lease released (K_S free); no runtime backend left."""
+    FAILED; class-name-only error; lease released (K_S free); no runtime backend left.
+    Strengthened at implementation (v1r2 D1.3c, mutant 28): a failure AFTER the marker write
+    keeps the marker (one-way authorization); a failure before it leaves no marker."""
     lc = make_lc(inst)
     h = Hooks(inst, lc)
 
@@ -558,6 +593,7 @@ def test_b3a_s6_startup_failure_reverse_close(inst: b3.Install, step: str) -> No
     assert lc.state == "FAILED"
     b3.wait_until(lambda: b3.backends(inst, APP) == [], 10)
     assert b3.ks_free(inst)
+    assert ("runtime" in inst.state) == (step not in ("lease", "a1"))
 
 
 def test_b3a_s7_second_start_refused_without_effect(inst: b3.Install) -> None:
@@ -593,16 +629,34 @@ def test_b3a_g1_every_runtime_transaction_is_guarded(inst: b3.Install) -> None:
         lc.request_stop("TEST")
         await lc.wait_stopped()
 
+    # Corrected at implementation: runtime rows before the FIRST start are refused by the full
+    # seal (SC4d), so the install is first started once (reduced mode), then given work.
+    run(start_stop(make_lc(inst)))
     b3.sj_flow(inst)  # pending rows for the lifecycle's ticks
     run(body())
-    per = b3.trace(inst, APP)
+    # Corrected at implementation: the prefix trace also matches the lease connection
+    # (`<app>/lease`, an ADMIN session holding K_S, not a runtime pool connection); it is
+    # excluded here, and it must not run any guarded transaction.
+    lease = b3.trace(inst, f"{APP}/lease")
+    per = {pid: stmts for pid, stmts in b3.trace(inst, APP).items() if pid not in lease}
     assert per, "no runtime backend traced"
+    assert lease and not any(b3.transactions(st)[0] for st in lease.values()), lease
+    # Corrected at implementation: the server log shows the SERVER form of a statement
+    # (whitespace-joined, `$n` placeholders); the allowlist holds the client text. Compare
+    # both normalised.
+    import re
+
+    def server_form(q: str) -> str:
+        n = iter(range(1, 100))
+        return re.sub(r"\s+", " ", re.sub(r"%s", lambda _m: f"${next(n)}", q)).strip()
+
+    allowed = {server_form(x) for x in guard.ALLOWLIST}
     for pid, stmts in per.items():
         txs, outside = b3.transactions(stmts)
-        bad_outside = [x for x in outside if x not in guard.ALLOWLIST]
+        bad_outside = [x for x in outside if server_form(x) not in allowed]
         assert bad_outside == [], (pid, bad_outside[:3])
         for tx in txs:
-            if all(x in guard.ALLOWLIST for x in tx):
+            if all(server_form(x) in allowed for x in tx):
                 continue
             assert all(rx.search(st) for rx, st in zip(b3.F2_PREFIX, tx[:5], strict=False)) \
                 and len(tx) >= 5, (pid, tx[:6])
@@ -738,6 +792,7 @@ def test_b3a_g7_real_lease_loss_takeover_race(inst: b3.Install, tmp_path: Path) 
     transaction commits. (6) The takeover commits (`init` returns `ready`). (7) The second
     tick's runtime transaction is refused EPOCH_SUPERSEDED, and no watcher check ran."""
     lc_mod()
+    run(start_stop(make_lc(inst)))  # first start (corrected at implementation: see G1)
     b3.sj_flow(inst)  # pending reminder work so the first tick writes
     bar = tmp_path / "bar"
     g = b3.spawn(inst, bar, "lifecycle", app=APP,
@@ -1042,20 +1097,27 @@ def test_b3a_r_restart_recovery_across_generations(inst: b3.Install, tmp_path: P
     """A (v1r1 D4.2): generation 1 runs in a child and is killed (os._exit) at the J08 point
     or stopped; the row proves it is gone (no process, no backend, K_S free); generation 2 (a
     new child) completes; no-duplicate oracles count the fsync'd journal across BOTH
-    generations (J08a1/a2/b/c/d/e analogues)."""
+    generations (J08a1/a2/b/c/d/e analogues).
+    Corrected at implementation: (1) the install is first started once (runtime rows before
+    the first start are refused by the full seal, SC4d); (2) each case SEEDS its own J08
+    boundary test-side (`b3.seed_recovery`: a due appointment for the send cases, a sent
+    reminder with reply "1" plus the simulated EHR appointment for the write-back cases),
+    because the shared S-J flow leaves no pending send or write-back for generation 1."""
     lc_mod()
     crash = {"r1a": "b3.r.after_accept", "r1b": "b3.r.after_consume",
              "r2": "b3.r.after_reply", "r3": "b3.r.after_spend",
              "r4": "b3.r.after_write_issued", "r5": "b3.r.after_settle_commit"}[case]
     bar = tmp_path / "bar"
-    b3.sj_flow(inst)
+    run(start_stop(make_lc(inst)))
+    seed = b3.seed_recovery(inst, case)
     g1 = b3.spawn(inst, bar, "lifecycle", app=f"{APP}-g1", crash=crash,
-                  extra={"ticks": ["due", "reminder", "writeback"]})
+                  extra={"ticks": ["due", "reminder", "writeback"], "ehr_seed": seed})
     rc, out = g1.wait(180)
     assert rc == 97, out[-1500:]
     b3.assert_gone(inst, g1)
     g2 = b3.spawn(inst, bar, "lifecycle", app=f"{APP}-g2",
-                  extra={"ticks": ["due", "reminder", "writeback", "writeback"]})
+                  extra={"ticks": ["due", "reminder", "writeback", "writeback"],
+                         "ehr_seed": seed})
     g2.seen("b3.start.watcher", 120)
     (bar / "stop").touch()
     rc2, out2 = g2.wait(180)

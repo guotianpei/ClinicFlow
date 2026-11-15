@@ -28,7 +28,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final
+from typing import Any, Final, cast
 
 import psycopg
 from psycopg import sql
@@ -45,9 +45,10 @@ from haloflow.m01.provisioning import (
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.staff.l1w_units import BOOTSTRAP_CAPABILITY, SUPPORT_ROLE
 from haloflow.m02.roles import M05_OWNER_ROLE
-from haloflow.synthetic import view
+from haloflow.synthetic import installed_profile, view
 from haloflow.synthetic.attest import _DB_CHECKS, PUBLIC_ACL, admin_connect, check_a0
 from haloflow.synthetic.composition import (
+    RESOLUTION_PROFILE_SQL,
     SA_TEST_PROFILE_SQL,
     SI_TEST_PROFILE_SQL,
     build_synthetic_registry,
@@ -67,7 +68,20 @@ from haloflow.synthetic.guard import (
     reservation_value,
 )
 from haloflow.synthetic.hooks import fire
-from haloflow.synthetic.installed_profile import COMPLETION, POINTS, PROFILE_ID, REPLACED
+from haloflow.synthetic.installed_profile import (
+    COMPLETION,
+    POINTS,
+    PROFILE_ID,
+    REPLACED,
+)
+from haloflow.synthetic.seal_scope import (
+    INSTALL_SEALED_TABLES,
+    RUNTIME_MUTABLE_TABLES,
+    generic_table,
+    is_runtime_mutable,
+    reduced_baseline,
+    sealed_digest,
+)
 from haloflow.synthetic.state import PHASES, LockedState, StateDir
 
 STATE_SCHEMA: Final = 1
@@ -92,6 +106,8 @@ STATE_KEYS: Final = frozenset({
     "schema_version", "phase", "cluster_sysid", "target", "target_oid", "nonce", "tenant_id",
     "schema_key", "staff_id", "activation_actor_id", "ticket_reference", "logins",
     "note_keys", "support", "seal"})
+# B3a (v1r1 D1.3, v1r2 D1.3a): the one-way first-runtime-start marker, `ready` only.
+RUNTIME_KEY: Final = "runtime"
 
 
 @dataclass(frozen=True)
@@ -280,6 +296,7 @@ def _run_profile(ctx: _Ctx) -> None:
     with _connect(ctx.endpoint.conninfo(ctx.endpoint.target)) as c, _phase_txn(ctx, "profile", c):
         c.execute(SA_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(SI_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
+        c.execute(RESOLUTION_PROFILE_SQL.format(schema=ctx.schema).encode())   # F-R1
 
 
 def _run_activated(ctx: _Ctx) -> None:
@@ -553,11 +570,19 @@ def _check_staff_digests(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[
                 raise _diverged("staff_digest")
 
 
+def runtime_started(state: Mapping[str, Any]) -> bool:
+    """True once the runtime's first start has been authorized (reduced-seal mode)."""
+    return state.get("phase") == "ready" and RUNTIME_KEY in state
+
+
 def _reconcile(ctx: _Ctx, conn: psycopg.Connection[Any]) -> tuple[int, view.Capture]:
     """Capture (caller holds capture_lock), check epoch, profile segment and seal."""
     cap = view.capture(conn, ctx.state, GROUP_ROLES, intent_verifier_digests(ctx.state))
     if cap.reservation != ctx.expected:
         raise SyntheticRefused("EPOCH_SUPERSEDED")
+    if runtime_started(ctx.state):
+        _check_reduced(ctx, cap, conn)
+        return _completion("ready"), cap
     low, high = _segment(ctx.state)
     matches = [i for i in range(low, high + 1) if POINTS[i] == cap.profile_digest]
     if not matches:
@@ -566,6 +591,45 @@ def _reconcile(ctx: _Ctx, conn: psycopg.Connection[Any]) -> tuple[int, view.Capt
     _check_seal(ctx.state, cap, j)
     _check_new_rows(ctx, cap, conn)
     return j, cap
+
+
+def _check_reduced(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[Any]) -> None:
+    """The reduced seal at `ready` after the first runtime start (v1r1 D1.2-D1.4). Order
+    matters (v1r2 Item 3, mutant 27): the inventory equality runs BEFORE the sealed digest,
+    so an extra table is refused with detail `inventory`, independently of the digest."""
+
+    live = {generic_table(table, ctx.schema) for table in cap.rows
+            if table.partition(".")[0] in ("shared", ctx.schema)}
+    if live != INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES:
+        raise _diverged("inventory")
+    if sealed_digest(cap) != installed_profile.SEALED_READY_DIGEST:   # the pin, read now
+        raise _diverged("profile")
+    base = reduced_baseline(ctx.state)
+    current = {table: rows for table, rows in cap.nondet.items()
+               if not is_runtime_mutable(table)}
+    if current != base["nondet"]:
+        raise _diverged("sealed_values")
+    if cap.identities != base["identities"]:
+        raise _diverged("identities")
+    if cap.ledger != base["ledger"]:
+        raise _diverged("ledger")
+    _check_staff_digests(ctx, cap, conn)
+
+
+def attest_ready(endpoint: AdminEndpoint, state: Mapping[str, Any], expected: str) -> int:
+    """Runtime A1 (B3a, R-B3a-3 step 3): the installer's own read-only `ready` reconciliation
+    against the recorded state and the EXACT attested reservation `expected` (no takeover, no
+    epoch bump): the full B2 seal before the first runtime start, the reduced seal after it.
+    Returns the ready point index."""
+
+    ctx = _Ctx(endpoint, cast("LockedState", None), cast("InstallLock", None),
+               dict(state), expected)
+    _namespace_check(ctx)
+    with view.capture_lock(endpoint) as conn:
+        j, _cap = _reconcile(ctx, conn)
+    if j != _completion("ready"):
+        raise _diverged("profile")
+    return j
 
 
 def _new_seal(j: int, cap: view.Capture) -> dict[str, Any]:
@@ -579,24 +643,32 @@ def _persist(ctx: _Ctx, phase: str, j: int, cap: view.Capture) -> None:
     ctx.st.write(ctx.state)
 
 
+def _corrupt(detail: str) -> SyntheticRefused:
+    return SyntheticRefused("STATE_CORRUPT", (detail,))
+
+
 def _check_seal_shape(state: Mapping[str, Any]) -> None:
     seal = state.get("seal")
     if seal is None:
         if state["phase"] != "intent":
-            raise SyntheticRefused("STATE_CORRUPT")
+            raise _corrupt("seal_missing")
         return
     if not isinstance(seal, dict) or set(seal) != {"profile", "point", "nondet", "identities",
                                                     "ledger"}:
-        raise SyntheticRefused("STATE_CORRUPT")
-    if seal["profile"] != PROFILE_ID or not isinstance(seal["point"], int) \
-            or not 0 <= seal["point"] < len(POINTS):
-        raise SyntheticRefused("STATE_CORRUPT")
+        raise _corrupt("seal_shape")
+    if seal["profile"] != PROFILE_ID:
+        # A state sealed under another installed-state profile identity (for example the
+        # accepted-B2 e05bc51 profile before the F-R1 amendment) is refused, never adopted;
+        # the remedy is a fresh disposable install.
+        raise _corrupt("seal_profile")
+    if not isinstance(seal["point"], int) or not 0 <= seal["point"] < len(POINTS):
+        raise _corrupt("seal_point")
     phase = str(state["phase"])
     low = _completion(phase)
     high = _completion("ready") if phase == "ready" else _completion(
         SEGMENT_PHASES[SEGMENT_PHASES.index(phase) + 1])
     if not low <= seal["point"] <= high:
-        raise SyntheticRefused("STATE_CORRUPT")
+        raise _corrupt("seal_point")
 
 
 # ---------------------------------------------------------------------------- staff (T1-T3)
@@ -678,10 +750,36 @@ def init(environ: Mapping[str, str], *, attest_flag: bool) -> InitResult:
 
 
 def _check_state(state: Mapping[str, Any]) -> None:
-    if set(state) != STATE_KEYS or state.get("schema_version") != STATE_SCHEMA \
-            or state.get("phase") not in PHASES:
-        raise SyntheticRefused("STATE_CORRUPT")
+    keys = set(state)
+    if keys != STATE_KEYS and keys != STATE_KEYS | {RUNTIME_KEY}:
+        raise _corrupt("state_keys")
+    if state.get("schema_version") != STATE_SCHEMA:
+        raise _corrupt("schema_version")
+    if state.get("phase") not in PHASES:
+        raise _corrupt("phase")
     _check_seal_shape(state)
+    if RUNTIME_KEY in state:
+        _check_runtime_marker(state)
+
+
+def check_state(state: Mapping[str, Any]) -> None:
+    """The installer's state-shape rules (STATE_CORRUPT), for the runtime's A0 (B3a)."""
+    _check_state(state)
+
+
+_EPOCH_CHARS: Final = frozenset("0123456789abcdef")
+
+
+def valid_epoch(value: object) -> bool:
+    return isinstance(value, str) and len(value) == 32 and set(value) <= _EPOCH_CHARS
+
+
+def _check_runtime_marker(state: Mapping[str, Any]) -> None:
+    """`runtime` is accepted only at `ready`, exactly {"first_epoch": <epoch>} (v1r1 D1.3)."""
+    marker = state[RUNTIME_KEY]
+    if state.get("phase") != "ready" or not isinstance(marker, dict) \
+            or set(marker) != {"first_epoch"} or not valid_epoch(marker["first_epoch"]):
+        raise _corrupt("runtime_marker")
 
 
 def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitResult:
@@ -716,7 +814,8 @@ def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitRes
         if j < int(COMPLETION["staff.t2"]) and state["phase"] in ("settings", "staff") \
                 and _grant_expired(state):
             raise SyntheticRefused("STATE_DIVERGED", ("support_grant_expired",))
-        if state.get("seal") is not None and _new_seal(j, cap) != state["seal"]:
+        if state.get("seal") is not None and not runtime_started(state) \
+                and _new_seal(j, cap) != state["seal"]:
             lock.check()                        # an interrupted run's validated work
             _persist(ctx, str(state["phase"]), j, cap)
     start = PHASES.index(state["phase"]) + 1

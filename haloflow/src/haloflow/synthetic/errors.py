@@ -1,4 +1,5 @@
-"""Closed refusal codes of the synthetic installer (Option B B2). SYNTHETIC ONLY.
+"""Closed refusal codes of the synthetic installer (Option B B2) and runtime (B3a).
+SYNTHETIC ONLY.
 
 Every refusal carries a code from `CODES` and, for some codes, a tuple of class names
 (`detail`). Neither ever contains a DSN, a password, a verifier, a key or an object name
@@ -18,6 +19,11 @@ CODES: Final = frozenset({
     "CLUSTER_MISMATCH", "TARGET_MISMATCH", "NOT_RESERVED", "RESERVED_BY_OTHER",
     "EPOCH_SUPERSEDED", "ISOLATION_NOT_READ_COMMITTED", "STATE_DIVERGED", "INSTALL_LOCKED",
     "INSTALL_LOCK_LOST",
+    # Option B B3a (runtime seal, guard, lifecycle):
+    "UNGUARDED_STATEMENT", "RUNTIME_NO_DDL", "RUNTIME_STOPPED", "RUNTIME_LEASE_LOST",
+    "RUNTIME_STOP_FAILED", "LEASE_CLEANUP_UNKNOWN", "CLOSE_TIMEOUT", "DRAIN_DEADLINE",
+    "POOL_NOT_QUIESCENT", "WATCHER_STOP_FAILED", "LEASE_CHECK_INVALID", "BUDGET_INVALID",
+    "BUDGET_TOTAL_EXCEEDED", "RUNTIME_NOT_STARTABLE", "BIND_NOT_LOOPBACK",
 })
 
 

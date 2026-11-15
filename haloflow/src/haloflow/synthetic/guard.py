@@ -32,7 +32,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Final
 
 import psycopg
-from psycopg import AsyncConnection, sql
+from psycopg import AsyncConnection, AsyncCursor, sql
 from psycopg.pq import TransactionStatus
 
 from haloflow.synthetic.attest import admin_connect, fresh_failures
@@ -142,6 +142,143 @@ class GuardedAsyncConnection(AsyncConnection[Any]):
                 fire(f"phase.{phase}.before_commit", {"backend_pid": self.info.backend_pid})
         if phase is not None:
             fire(f"phase.{phase}.commit_ack", {"backend_pid": self.info.backend_pid})
+
+
+# ---------------------------------------------------------------------------- B3a runtime
+
+READ_ONLY_SQL: Final = "SET default_transaction_read_only = on"
+DISCARD_SQL: Final = "DISCARD ALL"
+# v1r1 D2.2 P-a: the ONLY statements a runtime connection may execute outside a guarded
+# outermost transaction, compared by exact text, all read-only by construction: the M01 pool
+# baseline, the pool reset, the connection's own read-only default and the M01 control-store
+# registry read.
+ALLOWLIST: Final = frozenset({
+    "SELECT current_schemas(true), pg_my_temp_schema()",
+    DISCARD_SQL,
+    READ_ONLY_SQL,
+    """
+                    SELECT tenant_id, schema_key, lifecycle_state, schema_version
+                    FROM shared.tenants
+                    WHERE tenant_id = %s
+                    """,
+})
+
+
+class GuardedRuntimeCursor(AsyncCursor[Any]):
+    """The cursor fence (P-a, P-c). Every `connection.execute` and every direct `cursor()`
+    use passes here. Outside a guarded outermost transaction only `ALLOWLIST` texts reach
+    the server; `executemany`, `copy` and `stream` are refused. After `DISCARD ALL` the
+    read-only default is re-applied at once (it does not survive the reset: measured)."""
+
+    def _conn_fence(self) -> GuardedRuntimeConnection:
+        conn = self.connection
+        assert isinstance(conn, GuardedRuntimeConnection)
+        return conn
+
+    async def execute(self, query: Any, params: Any = None, **kwargs: Any) -> Any:
+        conn = self._conn_fence()
+        if conn._fenced(query):
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        result = await super().execute(query, params, **kwargs)
+        if not conn.in_guard and isinstance(query, str) and query == DISCARD_SQL:
+            await super().execute(READ_ONLY_SQL)                    # P-c
+        return result
+
+    async def executemany(self, query: Any, params_seq: Any, **kwargs: Any) -> None:
+        if not self._conn_fence().in_guard:
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        await super().executemany(query, params_seq, **kwargs)
+
+    @asynccontextmanager
+    async def copy(self, statement: Any, params: Any = None, **kwargs: Any
+                   ) -> AsyncIterator[Any]:
+        if not self._conn_fence().in_guard:
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        async with super().copy(statement, params, **kwargs) as copy:
+            yield copy
+
+    async def stream(self, query: Any, params: Any = None, **kwargs: Any
+                     ) -> AsyncIterator[Any]:
+        if not self._conn_fence().in_guard:
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        async for row in super().stream(query, params, **kwargs):
+            yield row
+
+
+class GuardedRuntimeConnection(GuardedAsyncConnection):
+    """The synthetic runtime's connection class (v1r1 D2.2), passed to the M01 pool through
+    `TenantPool(connection_class=...)`.
+
+    P-a  no statement outside a guarded outermost transaction except `ALLOWLIST` (exact
+         text), enforced client-side by `GuardedRuntimeCursor` before anything is sent;
+         `pipeline()` and named (server-side) cursors are refused outside the guard;
+    P-b  the guard (F2, SHARED form) runs first in every outermost transaction;
+    P-c  read-only by default, re-applied after every `DISCARD ALL` (defense in depth).
+    A guard refusal is reported once per refusal to `on_refused(code)` (the runtime's stop
+    request), then re-raised unchanged."""
+
+    on_refused: Callable[[str], None] | None = None
+    in_guard: bool = False
+
+    @classmethod
+    async def connect(cls, conninfo: str = "", **kwargs: Any
+                      ) -> GuardedRuntimeConnection:
+        kwargs["cursor_factory"] = GuardedRuntimeCursor
+        conn = await super().connect(conninfo, **kwargs)
+        assert isinstance(conn, GuardedRuntimeConnection)
+        await conn.execute(READ_ONLY_SQL)
+        return conn
+
+    def _fenced(self, query: Any) -> bool:
+        """The fence's single decision point: True = refuse before the server."""
+        return not self.in_guard and not (isinstance(query, str) and query in ALLOWLIST)
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        if (args or kwargs.get("name")) and not self.in_guard:
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        return super().cursor(*args, **kwargs)
+
+    @asynccontextmanager
+    async def pipeline(self) -> AsyncIterator[Any]:
+        if not self.in_guard:
+            raise SyntheticRefused("UNGUARDED_STATEMENT")
+        async with super().pipeline() as p:
+            yield p
+
+    @asynccontextmanager
+    async def transaction(
+        self, savepoint_name: str | None = None, force_rollback: bool = False
+    ) -> AsyncIterator[Any]:
+        if self.info.transaction_status != TransactionStatus.IDLE:
+            async with super().transaction(savepoint_name, force_rollback) as inner:
+                yield inner
+            return
+        self.in_guard = True
+        try:
+            # P-b: the SHARED F2 form (runtime transactions run concurrently with each other;
+            # only an installer takeover needs the exclusive K_X).
+            async with AsyncConnection.transaction(self, savepoint_name, force_rollback) as tx:
+                await guard_async(self, self.expected, shared=True)
+                _TXN_COUNT[0] += 1
+                fire("guarded_txn", {"n": _TXN_COUNT[0], "backend_pid": self.info.backend_pid,
+                                     "install_lock_pid": INSTALL_LOCK_PID.get()})
+                yield tx
+        except SyntheticRefused as refused:
+            callback = self.on_refused
+            if callback is not None:
+                callback(refused.code)
+            raise
+        finally:
+            self.in_guard = False
+
+
+def runtime_connection_class(expected: str, on_refused: Callable[[str], None] | None
+                             ) -> type[GuardedRuntimeConnection]:
+    """A per-runtime subclass bound to the attested reservation and the stop callback."""
+
+    return type("GuardedRuntimeConnection", (GuardedRuntimeConnection,),
+                {"expected": expected, "on_refused": staticmethod(on_refused)
+                 if on_refused is not None else None})
 
 
 def guarded_factory(conninfo: str, expected: str) -> ConnectionFactory:

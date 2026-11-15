@@ -123,6 +123,21 @@ INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_versio
     f"    ('{T_CHECK}', 1, 'reason', '{reason}', '{ITEM_KIND_CHECK}', '{W_DISPATCH}', false)"
     for reason in CHECK_REASONS) + ";\n"
 
+# F-R1 (Option B B3a; Codex `codex_b3a-fr1-review.md`, relay 20261115T023713Z): the staff
+# resolution activation. t013 installs the m05_followup family, the
+# m05_followup_resolution_asserted event type and the m02 resolver m05_followup_item_v1
+# INACTIVE; without this the synthetic install refuses every staff resolve
+# (CONTRACT_UNSUPPORTED). The same statements as the accepted test fixture
+# `tests/m05/m05_support.B4_RESOLUTION_PROFILE_SQL` (FR-E1 pins the equality). Executed in
+# the installer's `profile` phase transaction.
+RESOLUTION_PROFILE_SQL: Final = """
+UPDATE {schema}.ref_action_families SET is_active = true WHERE action_family = 'm05_followup';
+UPDATE {schema}.event_types SET is_active = true
+ WHERE event_type = 'm05_followup_resolution_asserted';
+UPDATE {schema}.m02_link_resolvers SET is_active = true
+ WHERE resolver_id = 'm05_followup_item_v1';
+"""
+
 # The H2 keys that S-H2 closed and S-I re-bound (formerly tests/m05/sh2_support.CLOSED_KEYS).
 _CLOSED_KEYS: Final = frozenset({PREPARE_KEY, CLAIM_KEY, READ_KEY})
 

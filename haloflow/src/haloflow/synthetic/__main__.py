@@ -1,4 +1,4 @@
-"""`python -m haloflow.synthetic init | status` (Option B B2). SYNTHETIC ONLY.
+"""`python -m haloflow.synthetic init | status | serve` (Option B B2, B3a). SYNTHETIC ONLY.
 
 A thin dispatcher over `provision.init` / `provision.status`:
 - `init` requires the operator flag `--i-attest-disposable-cluster` (plus the environment's
@@ -8,12 +8,17 @@ A thin dispatcher over `provision.init` / `provision.status`:
   vocabulary, never values from the environment);
 - anything unexpected prints a fixed line and exits 1, never a traceback (an exception
   message could carry connection details).
-No reset, no application startup. Not referenced by any packaging entry point (B2-U-F1).
+No reset. Not referenced by any packaging entry point (B2-U-F1).
+
+`serve [--host 127.0.0.1] [--port N]` (B3a, Codex Q3) runs the synthetic app with uvicorn.
+The host is validated BEFORE anything binds: only a loopback IP literal is accepted; any
+other value prints `refused: BIND_NOT_LOOPBACK` (never the value) and exits 2.
 """
 
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import sys
@@ -24,6 +29,8 @@ from haloflow.synthetic.errors import refused_from
 USAGE_EXIT = 2
 REFUSED_EXIT = 2
 FAILED_EXIT = 1
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8765
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -34,11 +41,37 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--i-attest-disposable-cluster", dest="attest", action="store_true",
                       help="attest that the target cluster is dedicated and disposable")
     commands.add_parser("status", help="read-only status of the synthetic install")
+    serve = commands.add_parser("serve", help="run the synthetic app (loopback only)")
+    serve.add_argument("--host", default=DEFAULT_HOST)
+    serve.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
+
+
+def _loopback(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _serve(host: str, port: int) -> int:
+    if not _loopback(host) or not 0 <= port <= 65535:
+        sys.stderr.write("refused: BIND_NOT_LOOPBACK\n")
+        return REFUSED_EXIT
+    import uvicorn
+
+    from haloflow.synthetic.app import create_synthetic_app
+
+    app = create_synthetic_app(dict(os.environ))
+    uvicorn.Server(uvicorn.Config(app, host=host, port=port, lifespan="on",
+                                  log_level="warning", access_log=False)).run()
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)          # usage errors: argparse exits 2, no traceback
+    if args.command == "serve":
+        return _serve(args.host, args.port)
     from haloflow.synthetic import provision
 
     environ = dict(os.environ)

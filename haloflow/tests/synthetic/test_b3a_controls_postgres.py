@@ -195,8 +195,12 @@ def test_b3a_g5pre_write_after_pool_reset_is_refused(inst: b3.Install) -> None:
         conn = await _runtime_connection(inst, "b3a-g5pre")
         try:
             await conn.execute("DISCARD ALL")  # type: ignore[attr-defined]
-            ro = (await (await conn.execute(  # type: ignore[attr-defined]
-                "SHOW default_transaction_read_only")).fetchone())[0]
+            # Read inside a guarded transaction (corrected at implementation: on the B3
+            # connection P-a refuses every non-allowlisted statement outside a guard, SHOW
+            # included); SHOW reports the SESSION default even in a READ WRITE transaction.
+            async with conn.transaction():  # type: ignore[attr-defined]
+                ro = (await (await conn.execute(  # type: ignore[attr-defined]
+                    "SHOW default_transaction_read_only")).fetchone())[0]
             try:
                 await conn.execute("SELECT pg_catalog.set_config('app.tenant_id', %s, false)",  # type: ignore[attr-defined]
                                    (tenant,))

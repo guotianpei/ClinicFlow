@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 import psycopg
+from psycopg.conninfo import make_conninfo
 
 from haloflow.synthetic.dsn import AdminEndpoint, parse_admin_dsn
 from haloflow.synthetic.errors import SyntheticRefused
@@ -84,10 +85,18 @@ def check_a0(environ: Mapping[str, str], *, attest_flag: bool) -> None:
     parse_admin_dsn(dsn, environ)
 
 
-def admin_connect(endpoint: AdminEndpoint, db: str) -> psycopg.Connection[Any]:
-    """A read-only-by-default admin session, verified to be the pinned endpoint/database."""
+def admin_connect(endpoint: AdminEndpoint, db: str, *, application_name: str | None = None,
+                  connect_timeout: int | None = None) -> psycopg.Connection[Any]:
+    """A read-only-by-default admin session, verified to be the pinned endpoint/database.
+    B3a: an optional `application_name` (the runtime lease is observable by name) and
+    `connect_timeout` (bounded cleanup connections)."""
 
-    conn = psycopg.connect(endpoint.conninfo(db), autocommit=True)
+    extra: dict[str, Any] = {}
+    if application_name is not None:
+        extra["application_name"] = application_name
+    if connect_timeout is not None:
+        extra["connect_timeout"] = connect_timeout
+    conn = psycopg.connect(make_conninfo(endpoint.conninfo(db), **extra), autocommit=True)
     try:
         conn.execute("SET default_transaction_read_only = on")
         conn.execute("SET statement_timeout = '120s'")

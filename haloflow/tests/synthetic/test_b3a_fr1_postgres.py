@@ -222,37 +222,39 @@ def test_b3a_fr_l1a_tampered_seal_identity_refused(pg: s.PgCluster, tmp_path: Pa
 def test_b3a_fr_l1b_genuine_e05bc51_install_refused_and_preserved(pg: s.PgCluster,
                                                                  tmp_path: Path) -> None:
     """B (Codex red gate 0719bcd item 1): a GENUINE accepted-B2 ready install (state and
-    database written by the frozen e05bc51 installer) is refused by the current code's `init`
-    and `status` (and by app start once the lifecycle exists), and neither the state file nor
-    the database changes. Fresh provisioning is the remedy, never an in-place upgrade.
+    database written by the frozen e05bc51 installer) is refused by the current code's `init`,
+    `status` and app start, each with STATE_CORRUPT detail ("seal_profile",) (the state is
+    sealed under the e05bc51 profile identity), and neither the state file nor the database
+    changes. Fresh provisioning is the remedy, never an in-place upgrade.
     e05bc51 FAILS: the current code is e05bc51, so the legacy install is accepted."""
     inst = b3.legacy_install(pg, tmp_path)
     raw = (inst.st_dir / "state.json").read_bytes()
     before = s.snapshot(inst.c)
     errors = s.mod("errors")
     outcomes: dict[str, str] = {}
+    details: dict[str, tuple[str, ...]] = {}
     try:
         outcomes["init"] = s.mod("provision").init(inst.env, attest_flag=True).phase
     except errors.SyntheticRefused as e:
-        outcomes["init"] = e.code
+        outcomes["init"], details["init"] = e.code, tuple(e.detail)
     try:
         st = s.mod("provision").status(inst.env)
         outcomes["status"] = "attested" if st["attested"] else "not_attested"
     except errors.SyntheticRefused as e:
-        outcomes["status"] = e.code
+        outcomes["status"], details["status"] = e.code, tuple(e.detail)
+    # Green conditions 1-2 (Codex red gate bb62696): the lifecycle leg ALWAYS runs (no import
+    # fallback), and every legacy refusal carries the explicit detail, not only the code.
+    lifecycle = s.mod("lifecycle")
     try:
-        lifecycle = s.mod("lifecycle")
-    except ModuleNotFoundError:
-        lifecycle = None
-    if lifecycle is not None:  # pragma: no cover - exercised after implementation
-        try:
-            asyncio.run(lifecycle.SyntheticLifecycle(inst.env).start())
-            outcomes["start"] = "started"
-        except errors.SyntheticRefused as e:
-            outcomes["start"] = e.code
+        asyncio.run(lifecycle.SyntheticLifecycle(inst.env).start())
+        outcomes["start"] = "started"
+    except errors.SyntheticRefused as e:
+        outcomes["start"], details["start"] = e.code, tuple(e.detail)
     accepted = {k: v for k, v in outcomes.items() if v in ("ready", "attested", "started")}
     assert not accepted, f"legacy B2 install accepted: {outcomes}"
-    assert outcomes["init"] in ("STATE_CORRUPT", "STATE_DIVERGED"), outcomes
+    want = ("STATE_CORRUPT", ("seal_profile",))
+    assert {k: (outcomes[k], details.get(k)) for k in ("init", "status", "start")} == \
+        dict.fromkeys(("init", "status", "start"), want), (outcomes, details)
     assert (inst.st_dir / "state.json").read_bytes() == raw, "legacy state file changed"
     assert s.diff(before, s.snapshot(inst.c)) == {}, "legacy database changed"
 

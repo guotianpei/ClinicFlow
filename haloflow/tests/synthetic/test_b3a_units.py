@@ -327,6 +327,40 @@ def test_b3a_d9u_cancellation_resistant_step_never_awaited(which: str) -> None:
     assert "lease" not in rec.order()
 
 
+class _FailOnce(_Res):
+    """A producer whose first stop raises (StopFailed), the second succeeds."""
+
+    async def close(self) -> None:
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("stop failed once")
+        self.rec.note(self.name)
+
+
+def test_b3a_d2u_second_attempt_recovers_then_closes_in_order() -> None:
+    """A (added at implementation; v1r1 D2 / v1r2 D3.4c step 2, mutant 18): a producer whose
+    attempt-1 stop fails gets exactly one attempt 2; when it succeeds, the sequence continues
+    in order and ends `drained` (nothing is closed between the attempts: the port and the pool
+    are recorded only after the retried producer)."""
+    lc_mod = lifecycle()
+    rec = b3.Recorder()
+    names = ["watcher", "writeback", "reminder", "due", "port", "pool", "quiesce", "lease"]
+    steps = [_FailOnce(n, rec) if n == "reminder" else _Res(n, rec) for n in names]
+    coord = lc_mod.DrainCoordinator.for_test(rec=rec, steps=steps,
+                                             fatal_exit=lambda *a: pytest.fail("terminal"),
+                                             config=lc_mod.LifecycleConfig())
+
+    async def body() -> Any:
+        coord.request_stop("TEST")
+        return await coord.wait()
+
+    result = asyncio.run(body())
+    assert result.disposition == "drained"
+    assert steps[2].calls == 2
+    assert rec.order() == ["watcher", "writeback", "due", "reminder", "port", "pool",
+                           "quiesce", "lease"]
+
+
 def test_b3a_d3u_watchdog_and_coordinator_one_terminal_disposition() -> None:
     """A (Codex v1r2: single terminal disposition; mutant 31): when the coordinator reaches
     terminal at the same moment the watchdog fires, fatal_exit is invoked exactly once."""

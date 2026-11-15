@@ -105,7 +105,8 @@ async def _lifecycle(cfg: dict[str, Any], bar: Path) -> dict[str, Any]:
     lc = lifecycle.SyntheticLifecycle(
         cfg["environ"], application_name=cfg["app"], config=config,
         sender_factory=lambda: b3.journal_sender(journal),
-        ehr_factory=lambda: b3.journal_ehr(journal, lambda: datetime.now(UTC)))
+        ehr_factory=lambda: b3.journal_ehr(journal, lambda: datetime.now(UTC),
+                                           seed=extra.get("ehr_seed")))
     await lc.start()
     (bar / "started").touch()
     cfg["_armed"]["on"] = True
