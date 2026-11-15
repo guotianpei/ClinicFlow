@@ -49,12 +49,14 @@ from haloflow.synthetic.guard import (
     reservation_value,
     runtime_connection_class,
 )
+from haloflow.synthetic.hooks import fire
 from haloflow.synthetic.state import StateDir
 
 LEASE_SUFFIX: Final = "/lease"
 POOL_MIN: Final = 1
 POOL_MAX: Final = 6
 LEASE_CHECK_TIMEOUT: Final = "5s"
+LEASE_CONNECT_TIMEOUT_S: Final = 5
 
 
 class SyntheticLease:
@@ -68,7 +70,8 @@ class SyntheticLease:
         self.pid: int | None = None
 
     def acquire(self) -> None:
-        conn = admin_connect(self._endpoint, "postgres", application_name=self.application_name)
+        conn = admin_connect(self._endpoint, "postgres", application_name=self.application_name,
+                             connect_timeout=LEASE_CONNECT_TIMEOUT_S)
         try:
             conn.execute(f"SET statement_timeout = '{LEASE_CHECK_TIMEOUT}'")
             row = conn.execute("SELECT pg_catalog.pg_try_advisory_lock_shared(%s)",
@@ -81,6 +84,7 @@ class SyntheticLease:
             raise SyntheticRefused("INSTALL_LOCKED")
         self._conn = conn
         self.pid = conn.info.backend_pid
+        fire("b3.lease.acquired", {})    # K_S held, not yet published to the runtime
 
     def check(self) -> None:
         conn = self._conn

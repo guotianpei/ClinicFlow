@@ -1,8 +1,9 @@
-"""Option B B3a mutation controls, group ``b3`` (B3-M1..B3-M36). SYNTHETIC ONLY.
+"""Option B B3a mutation controls, group ``b3`` (B3-M1..B3-M38). SYNTHETIC ONLY.
 
 Mutant list: v1r1 §5 (1-26) and v1r2 (27-34) as aligned for the B3a red packet, plus B3-M35
 (the pinned SEALED_READY_DIGEST comparison skipped; Codex red gate bb62696, green condition 3)
-and B3-M36 (the F-R1 resolution activation not provisioned). Each mutant is ONE exact textual
+and B3-M36 (the F-R1 resolution activation not provisioned), and B3-M37/M38 (startup
+cancellation during lease acquisition; Codex review 85d836a). Each mutant is ONE exact textual
 edit (the old text must occur exactly once in the clean target, else the run fails as stale).
 
 Judgement (B3 rule; the part-A whole-module rule does not fit the 6-hour job with PostgreSQL
@@ -66,7 +67,8 @@ def g2(case: str) -> str:
 
 _START_BLOCK = (
     "        await asyncio.to_thread(runtime.read_reservation)\n"
-    "        await asyncio.to_thread(runtime.acquire_lease)\n"
+    "        self._lease_future = _in_thread(runtime.acquire_lease)\n"
+    "        await asyncio.shield(asyncio.wrap_future(self._lease_future))\n"
     '        fire("b3.start.lease", {})\n'
     "        await asyncio.to_thread(runtime.attest)\n"
     '        fire("b3.start.a1", {})\n'
@@ -107,7 +109,8 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
     Mutant("B3-M1", "lifecycle: the guarded pool opens before the lease (and before A1)",
            LIFECYCLE, _START_BLOCK,
            "        await asyncio.to_thread(runtime.read_reservation)\n" + _POOL
-           + "        await asyncio.to_thread(runtime.acquire_lease)\n"
+           + "        self._lease_future = _in_thread(runtime.acquire_lease)\n"
+           "        await asyncio.shield(asyncio.wrap_future(self._lease_future))\n"
            '        fire("b3.start.lease", {})\n'
            "        await asyncio.to_thread(runtime.attest)\n"
            '        fire("b3.start.a1", {})\n' + _MARKER,
@@ -300,6 +303,16 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            "        c.execute(RESOLUTION_PROFILE_SQL.format(schema=ctx.schema).encode())"
            "   # F-R1\n", "",
            (f"{F}test_b3a_fr_e2_fresh_install_has_resolution_active",)),
+    Mutant("B3-M37", "lifecycle: abort ignores an in-flight lease acquisition (pre-fix 85d836a)",
+           LIFECYCLE,
+           "        if self.runtime is None:\n            return\n        pending = self._lease_future\n",
+           "        if self.runtime is None or self.runtime.lease is None:\n            return\n"
+           "        pending = self._lease_future\n",
+           (f"{P}test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease[within_bound]",)),
+    Mutant("B3-M38", "lifecycle: a late lease acquisition is never released", LIFECYCLE,
+           "                pending.add_done_callback(self._release_late)\n", "",
+           (f"{P}test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease"
+            "[after_start_failed]",)),
 )
 
 

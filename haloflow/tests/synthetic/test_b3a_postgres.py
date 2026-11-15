@@ -596,6 +596,48 @@ def test_b3a_s6_startup_failure_reverse_close(inst: b3.Install, step: str) -> No
     assert ("runtime" in inst.state) == (step not in ("lease", "a1"))
 
 
+@pytest.mark.parametrize("release", ["within_bound", "after_start_failed"])
+def test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease(inst: b3.Install,
+                                                                  release: str) -> None:
+    """A (added: Codex review 85d836a, blocking). Startup is cancelled while the lease thread
+    HOLDS K_S but has not yet published the lease (barrier at `b3.lease.acquired`). The
+    acquisition is released (a) within the abort bound, or (b) only after `start` has
+    already failed. Either way, with the host process still alive, the lease backend goes
+    away and the EXCLUSIVE K_S becomes available; `start` re-raises the cancellation."""
+    import threading
+
+    reached, gate = threading.Event(), threading.Event()
+
+    def fault(point: str, _info: Any) -> None:
+        if point == "b3.lease.acquired":
+            reached.set()
+            gate.wait(60)
+
+    s.mod("hooks").FAULT = fault
+
+    async def body() -> str:
+        lc = make_lc(inst)
+        task = asyncio.create_task(lc.start())
+        assert await asyncio.to_thread(reached.wait, 60)
+        assert b3.backends(inst, f"{APP}/lease") and not b3.ks_free(inst)
+        if release == "within_bound":
+            threading.Timer(0.5, gate.set).start()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        gate.set()
+        await asyncio.to_thread(
+            b3.wait_until, lambda: b3.backends(inst, f"{APP}/lease") == [] and b3.ks_free(inst),
+            30)
+        return str(lc.state)
+
+    try:
+        assert run(body()) == "FAILED"
+    finally:
+        gate.set()
+        s.mod("hooks").FAULT = None
+
+
 def test_b3a_s7_second_start_refused_without_effect(inst: b3.Install) -> None:
     """A: start twice on one lifecycle -> the second start has no effect."""
     async def body() -> None:

@@ -26,7 +26,8 @@ at its budget, never awaited), each preceded by `b3.stop.<step>`:
 The lease is released normally ONLY after quiescence is confirmed. Any unconfirmed step,
 the deadline passing or attempt-2 StopFailed goes to the terminal path: one fixed line
 `fatal: <CODE> <step>` and `fatal_exit(3)`; process exit then ends the pool and lease
-backends together (pool-before-lease in every outcome). A watchdog thread
+backends; the terminal path never releases the lease early, and backend cleanup is
+eventual (process exit does not guarantee any server-side teardown order). A watchdog thread
 (`T_total + 1 s`) covers an event loop blocked by a synchronous call. `TerminalGate`
 guarantees a single terminal disposition.
 """
@@ -34,6 +35,7 @@ guarantees a single terminal disposition.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import os
 import sys
@@ -371,6 +373,7 @@ class SyntheticLifecycle:
         self._endpoint: AdminEndpoint | None = None
         self._started: list[str] = []
         self._watcher_task: asyncio.Task[None] | None = None
+        self._lease_future: concurrent.futures.Future[Any] | None = None
         self._lease_lost = False
         self._guard_code: str | None = None
         self._stop_pending: str | None = None
@@ -409,7 +412,7 @@ class SyntheticLifecycle:
         except BaseException as error:
             await self._abort()
             self.state = "FAILED"
-            if isinstance(error, SyntheticRefused):
+            if isinstance(error, (SyntheticRefused, asyncio.CancelledError)):
                 raise
             refused = refused_from(error)
             if refused is not None:
@@ -443,8 +446,12 @@ class SyntheticLifecycle:
         runtime = SyntheticRuntime(endpoint, state, application_name=self.application_name,
                                    state_dir=state_dir, on_refused=self._on_guard_refused)
         self.runtime = runtime
+        # The lease acquisition runs in its own thread and is OWNED until its outcome is known
+        # (Codex review 85d836a): cancelling `start` never abandons an in-flight acquisition;
+        # `_abort` waits for it (bounded) or hands a late success to `_release_late`.
         await asyncio.to_thread(runtime.read_reservation)
-        await asyncio.to_thread(runtime.acquire_lease)
+        self._lease_future = _in_thread(runtime.acquire_lease)
+        await asyncio.shield(asyncio.wrap_future(self._lease_future))
         fire("b3.start.lease", {})
         await asyncio.to_thread(runtime.attest)
         fire("b3.start.a1", {})
@@ -475,11 +482,32 @@ class SyntheticLifecycle:
         fire("b3.start.watcher", {})
 
     async def _abort(self) -> None:
-        """Startup failure: close what was opened, in reverse, through the coordinator."""
-        if self.runtime is None or self.runtime.lease is None:
+        """Startup failure: close what was opened, in reverse, through the coordinator. An
+        acquisition still in flight is awaited for at most `t_lease`; if it is still running
+        then, nothing else can be open (the lease precedes every other resource) and a late
+        success is released by `_release_late` in the acquiring thread."""
+        if self.runtime is None:
+            return
+        pending = self._lease_future
+        if pending is not None and not pending.done():
+            await asyncio.wait({asyncio.wrap_future(pending)}, timeout=self.config.t_lease)
+            if not pending.done():
+                pending.add_done_callback(self._release_late)
+                return
+        if self.runtime.lease is None:
             return
         self._coordinator.request_stop("STARTUP_FAILED")
         await self._coordinator.wait()
+
+    def _release_late(self, future: concurrent.futures.Future[Any]) -> None:
+        """A lease acquired after its start was abandoned: released at once (no drain owns it,
+        and nothing else was opened)."""
+        if future.cancelled() or future.exception() is not None:
+            return
+        lease = self.runtime.lease if self.runtime is not None else None
+        if lease is not None:
+            with contextlib.suppress(Exception):
+                lease.release()
 
     # -- stop ----------------------------------------------------------------------------
 
@@ -618,6 +646,23 @@ class SyntheticLifecycle:
         finally:
             lease.close_client()
         return outcome
+
+
+def _in_thread(fn: Callable[[], Any]) -> concurrent.futures.Future[Any]:
+    """Run `fn` in a dedicated daemon thread; the concurrent future completes (and runs its
+    done callbacks) in that thread whatever happens to the event loop."""
+    future: concurrent.futures.Future[Any] = concurrent.futures.Future()
+
+    def run() -> None:
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(fn())
+        except BaseException as error:  # noqa: BLE001 - delivered to the owner
+            future.set_exception(error)
+
+    threading.Thread(target=run, name="haloflow-synthetic-lease", daemon=True).start()
+    return future
 
 
 def _backend_present(conn: Any, pid: int | None) -> bool:
