@@ -173,7 +173,11 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            '            if not (k.startswith("rows:") and is_runtime_mutable(k[len("rows:"):]))}\n',
            '            if k != "columns" and not (k.startswith("rows:")'
            ' and is_runtime_mutable(k[len("rows:"):]))}\n',
-           (f"{P}test_b3a_sc5_runtime_table_definition_change_refused",)),
+           # Killed by the independent canonical projection (U5b) and by a reduced start that
+           # must succeed (SC3). SC5 alone cannot kill it: with definitions dropped, EVERY
+           # reduced start diverges from the pin, so SC5's expected refusal still happens.
+           (f"{F}test_b3a_u5b_sealed_ready_digest_reproducible_and_discriminating",
+            f"{P}test_b3a_sc3_installer_accepts_runtime_rows_after_first_start")),
     Mutant("B3-M16", "lifecycle: request_stop is not idempotent (a second drain starts)",
            LIFECYCLE, "        if self._drain is not None:\n            return None\n"
            "        deadline = time.monotonic() + self.config.t_total\n",
@@ -204,7 +208,9 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
     Mutant("B3-M21", "lifecycle: an unconfirmed PORT close continues the sequence", LIFECYCLE,
            _REST_CHECK, _REST_CHECK.replace('if outcome != "ok":',
                                             'if outcome != "ok" and step.name != "port":'),
-           (f"{U}test_b3a_d9u_cancellation_resistant_step_never_awaited[port]",)),
+           # A hang kill: the abandoned cancellation-resistant step is disposed only on the
+           # terminal path, so with the sequence continuing the row's event loop cannot close.
+           (f"{U}test_b3a_d9u_cancellation_resistant_step_never_awaited[port]",), hang=True),
     Mutant("B3-M22", "lifecycle: the port is closed before the producers stop", LIFECYCLE,
            '        watcher = [s for s in steps if s.name == "watcher"]\n'
            '        rest = [s for s in steps if s.name != "watcher"]\n',

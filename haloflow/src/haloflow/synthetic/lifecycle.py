@@ -269,7 +269,13 @@ class DrainCoordinator:
     async def _run(self, drain: _Drain) -> LifecycleResult:
         try:
             result = await self._sequence(drain)
-        except BaseException:  # noqa: BLE001 - an unexpected fault is a terminal disposition
+        except asyncio.CancelledError:
+            # The coordinator itself was cancelled (event-loop teardown): the process is ending
+            # and process exit ends every backend. No fatal_exit, and the watchdog is disarmed.
+            if drain.watchdog is not None:
+                drain.watchdog.cancel()
+            raise
+        except Exception:  # noqa: BLE001 - an unexpected fault is a terminal disposition
             result = self._terminal(drain, "RUNTIME_STOP_FAILED", "coordinator")
         if drain.watchdog is not None:
             drain.watchdog.cancel()
