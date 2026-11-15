@@ -86,10 +86,14 @@ lifecycle extras the rows read: .watcher_checks (int), .note_keys (the state's k
     application_name is "<application_name>/lease"
 """
 
-# v1r1 D1.1 + F-N1/F-S1 (relay eac9c020): the composed write paths measured on a REAL B2
-# install (claude_b3a-measure/b2-runtime-measure.jsonl) plus the S-J measurement (sc1.jsonl).
-# `m05_followup_notes` is NOT here: noted resolves fail CONTRACT_UNSUPPORTED at target 94.
+# v1r1 D1.1 + F-S1 + F-R1 (Codex 20261115T023713Z): the composed write paths measured on a
+# REAL B2 install (claude_b3a-measure/b2-runtime-measure.jsonl, sc1.jsonl) and, with the
+# resolution activation EMULATED admin-side, durable reachability of every W1 outcome incl.
+# the note-required Other (fr1-reach.jsonl): notes and resolution links persist and replay.
+# `m05_outbound_schedule` is transient (inserted at registration, deleted at claim): measured
+# separately with a not-yet-due appointment.
 EXPECTED_RUNTIME_MUTABLE: Final = frozenset({
+    "{tenant}.m05_followup_notes",
     "{tenant}.event_handoff_outbox", "{tenant}.m05_appointment_profile",
     "{tenant}.m05_appointments", "{tenant}.m05_contact_state", "{tenant}.m05_followup_actions",
     "{tenant}.m05_followup_history", "{tenant}.m05_followup_items",
@@ -105,7 +109,7 @@ MUST_BE_SEALED: Final = frozenset({
     "{tenant}.m01_staff", "{tenant}.m01_staff_roles", "{tenant}.m01_staff_followup_access",
     "{tenant}.m01_staff_action_keys", "{tenant}.m01_staff_admin_log",
     "{tenant}.m05_activation_records", "{tenant}.m05_reminder_settings",
-    "{tenant}.m05_followup_notes", "shared.isolation_alerts",
+    "shared.isolation_alerts",
 })
 
 
@@ -458,11 +462,13 @@ def _staff_ctx(rt: Any, tenant: str, staff_id: str) -> Any:
         correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
 
 
-def sj_flow(inst: Install) -> dict[str, Any]:
+def sj_flow(inst: Install, *, resolve: bool = True) -> dict[str, Any]:
     """CONTROL-SIDE runtime activity on a real B2 install through the accepted S-J harness
     (test-side composition, unguarded): J01 confirm write-back; J02 status-changed item,
     claim + resolve `reached_no_change` (B2's own staff member); J03 replies 2/3/NO/STOP; and
-    one appointment registered but not yet due (its schedule row persists: F-S1)."""
+    one appointment registered but not yet due (its schedule row persists: F-S1).
+    `resolve=False` stops after the claim: resolution needs the F-R1 amendment (on accepted B2
+    it fails CONTRACT_UNSUPPORTED), so controls and B2 premises use resolve=False."""
     import asyncio
     import uuid
 
@@ -499,9 +505,10 @@ def sj_flow(inst: Install) -> dict[str, Any]:
             rec["claim"] = (await staff.act(await ctx(), StaffAction(
                 item_id=iid, client_action_id=uuid.uuid4(), expected_version=1,
                 type="claim"))).outcome
-            rec["resolve"] = (await staff.act(await ctx(), ResolveAction(
-                item_id=iid, client_action_id=uuid.uuid4(), expected_version=2,
-                type="resolve", outcome_code="reached_no_change"))).outcome
+            if resolve:
+                rec["resolve"] = (await staff.act(await ctx(), ResolveAction(
+                    item_id=iid, client_action_id=uuid.uuid4(), expected_version=2,
+                    type="resolve", outcome_code="reached_no_change"))).outcome
             for text in ("2", "3", "NO", "STOP"):
                 f = await tsj._sent_and_replied(stack, text)
                 tsj._put(si_inst, ehr, f)

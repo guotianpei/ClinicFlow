@@ -196,6 +196,17 @@ async def b3_drive(inst: b3.Install, lc: Any) -> dict[str, Any]:
         f = await tsj._sent_and_replied(stack, text)  # type: ignore[arg-type]
         tsj._put(stack.install, ehr, f)
         await stack.tick_all()
+    (unclear,) = [r for r in sa.admin(stack.install, sa.q(
+        stack.install, "SELECT item_id::text, item_kind FROM {s}.m05_followup_items"
+        " WHERE item_kind = 'unclear_reply'"))]
+    uid = uuid.UUID(unclear[0])
+    await staff.act(await b3._staff_ctx(stack.rt, stack.install.tenant_id, st["staff_id"]),
+                    StaffAction(item_id=uid, client_action_id=uuid.uuid4(),
+                                expected_version=1, type="claim"))
+    rec["other_note"] = (await staff.act(
+        await b3._staff_ctx(stack.rt, stack.install.tenant_id, st["staff_id"]),
+        ResolveAction(item_id=uid, client_action_id=uuid.uuid4(), expected_version=2,
+                      type="resolve", outcome_code="other", note="synthetic note"))).outcome
     now = sh2.db_now(stack.install)
     zone = sh2.zone_with_local_hour(now, 11, 15)
     patient, phone, ref = sa.new_id(), sa.fresh_phone(), sa.new_id()
@@ -207,7 +218,8 @@ async def b3_drive(inst: b3.Install, lc: Any) -> dict[str, Any]:
                                                           department_tz=zone))
     rec["not_yet_due"] = later["outcome"]
     assert (rec["j01"]["observed_positive"], rec["j02"]["item_raised"], rec["claim"],
-            rec["resolve"], rec["not_yet_due"]) == (1, 1, "applied", "applied", "applied"), rec
+            rec["resolve"], rec["other_note"], rec["not_yet_due"]) == (
+        1, 1, "applied", "applied", "applied", "applied"), rec
     return rec
 
 

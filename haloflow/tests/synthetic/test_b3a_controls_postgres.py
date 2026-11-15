@@ -107,27 +107,27 @@ def test_b3a_c4_journal_survives_os_exit(tmp_path: Path) -> None:
 
 def test_b3a_c5_sj_harness_drives_runtime_on_a_b2_install(inst: b3.Install) -> None:
     """C: the accepted S-J harness (test-side composition) runs real runtime activity on a
-    real B2 install: one confirm write-back, an item claimed and resolved, J03 replies."""
-    rec = b3.sj_flow(inst)
+    real B2 install: one confirm write-back, an item raised and claimed, J03 replies, one
+    not-yet-due appointment (resolution is F-R1's: FR rows)."""
+    rec = b3.sj_flow(inst, resolve=False)
     assert rec["j01"]["observed_positive"] == 1, rec
     assert rec["j02"]["item_raised"] == 1, rec
-    assert (rec["claim"], rec["resolve"]) == ("applied", "applied"), rec
+    assert rec["claim"] == "applied", rec
     assert rec["not_yet_due"] == "applied", rec
     assert rec["ehr_writes"] == 1 and rec["shutdown"] == {}, rec
 
 
 def test_b3a_c7_runtime_tables_premise_on_b2(inst: b3.Install) -> None:
-    """C (SC1 premise, F-N1/F-S1): the composed paths change ONLY expected runtime-mutable
-    tables on a real B2 install, none of the ruled install-sealed tables, nothing in `shared`,
-    and the not-yet-due appointment leaves its schedule row."""
+    """C (SC1 premise, F-S1): the composed paths available on accepted B2 (no resolution, F-R1)
+    change ONLY expected runtime-mutable tables, none of the ruled install-sealed tables,
+    nothing in `shared`, and the not-yet-due appointment leaves its schedule row."""
     before = b3.table_digests(inst)
-    b3.sj_flow(inst)
+    b3.sj_flow(inst, resolve=False)
     diff = b3.changed(before, b3.table_digests(inst))
     assert diff <= b3.EXPECTED_RUNTIME_MUTABLE, sorted(diff - b3.EXPECTED_RUNTIME_MUTABLE)
     assert not diff & b3.MUST_BE_SEALED
     assert not any(t.startswith("shared.") for t in diff)
     assert "{tenant}.m05_outbound_schedule" in diff
-    assert "{tenant}.patient_event_links" in diff
 
 
 @pytest.mark.parametrize("where", ["{schema}", "shared", "public"])
@@ -252,7 +252,7 @@ def test_b3a_sc3pre_installer_accepts_legitimate_runtime_rows(inst: b3.Install) 
     except ModuleNotFoundError:
         lifecycle = None
     if lifecycle is None:
-        b3.sj_flow(inst)
+        b3.sj_flow(inst, resolve=False)  # the unmodified-B2 premise (Codex F-R1: retained)
     else:  # pragma: no cover - B3 path, exercised after implementation
         async def run() -> None:
             lc = lifecycle.SyntheticLifecycle(inst.env)
