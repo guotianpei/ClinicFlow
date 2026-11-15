@@ -76,6 +76,11 @@ haloflow.synthetic.errors  + UNGUARDED_STATEMENT RUNTIME_NO_DDL RUNTIME_STOPPED 
                              RUNTIME_STOP_FAILED LEASE_CLEANUP_UNKNOWN CLOSE_TIMEOUT
                              DRAIN_DEADLINE POOL_NOT_QUIESCENT WATCHER_STOP_FAILED
 state.json  + optional "runtime": {"first_epoch": <epoch>}   (phase "ready" only)
+reduced-mode refusals: inventory equality is checked BEFORE the sealed digest and refuses
+    STATE_DIVERGED with detail ("inventory",); the digest refuses with ("profile",)
+seal_scope.sealed_digest(capture) == sha256(json.dumps(capture.normalised minus the
+    `rows:` keys of RUNTIME_MUTABLE_TABLES, sort_keys=True)); SEALED_READY_DIGEST is that
+    value at the ready point (generated beside POINTS)
 hooks (test-only FAULT, unchanged mechanism), new points:
     b3.start.<a0|lease|a1|marker.before|marker.after|pool|runtime|wiring|schedulers|watcher>
     b3.stop.<watcher|producers|port|pool|quiesce|lease>
@@ -530,3 +535,35 @@ def sj_flow(inst: Install, *, resolve: bool = True) -> dict[str, Any]:
 
     asyncio.run(body())
     return rec
+
+
+# ---------------------------------------------------------------------------- legacy B2
+
+LEGACY_ZIP: Final = HERE / "fixtures" / "b2_e05bc51_synthetic.zip"
+LEGACY_ZIP_SHA256: Final = "88d509b20a0aaab4c60295b2570632a1345fe8807b7228926b175a5641bfa1ca"
+LEGACY_CHILD: Final = HERE / "b3a_legacy_child.py"
+
+
+def legacy_run(env: dict[str, str], tmp: Path, action: str) -> dict[str, Any]:
+    """Run the GENUINE e05bc51 installer (frozen fixture, blob-verified) in a fresh process."""
+    import hashlib
+
+    assert hashlib.sha256(LEGACY_ZIP.read_bytes()).hexdigest() == LEGACY_ZIP_SHA256
+    payload = json.dumps({"zip": str(LEGACY_ZIP), "extract_to": str(tmp / f"e05-{action}"),
+                          "alembic": str(s.HALOFLOW / "alembic"), "environ": env,
+                          "action": action})
+    p = subprocess.run([sys.executable, "-I", str(LEGACY_CHILD), payload], capture_output=True,
+                       text=True, timeout=900,
+                       env={"PATH": os.environ.get("PATH", "")})
+    lines = [ln for ln in p.stdout.splitlines() if ln.startswith("B3LEGACY ")]
+    assert lines, p.stdout[-2000:] + p.stderr[-2000:]
+    return dict(json.loads(lines[-1][len("B3LEGACY "):]))
+
+
+def legacy_install(c: s.PgCluster, tmp_path: Path) -> Install:
+    """A GENUINE accepted-B2 (e05bc51) ready install: state file and database written by the
+    frozen e05bc51 installer, in a fresh per-case cluster."""
+    st_dir = s.state_dir(tmp_path)
+    out = legacy_run(s.environ_for(c, st_dir), tmp_path, "init")
+    assert out == {"ok": True, "phase": "ready"}, out
+    return Install(c, st_dir, tmp_path)

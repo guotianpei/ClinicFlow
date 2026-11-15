@@ -57,6 +57,13 @@ def pg(tmp_path: Path) -> Iterator[s.PgCluster]:
     s.reap()
 
 
+@pytest.fixture
+def pg2(tmp_path: Path) -> Iterator[s.PgCluster]:
+    """A second, independent per-case cluster (reproducibility across installs)."""
+    with s.cluster(tmp_path / "second") as c:
+        yield c
+
+
 def _norm(sql: str) -> str:
     return re.sub(r"\s+", " ", sql).strip()
 
@@ -183,11 +190,19 @@ def test_b3a_fr_p1_profile_identity_regenerated() -> None:
     assert prof.PROFILE_ID != E05_PROFILE_ID, "profile identity not regenerated for F-R1"
 
 
-def test_b3a_fr_l1_legacy_b2_install_refused_not_adopted(pg: s.PgCluster,
-                                                        tmp_path: Path) -> None:
-    """B: a ready state sealed under the e05bc51 profile identity is refused (STATE_CORRUPT)
-    by `status`-guarded `init` and never adopted; the database is unchanged. e05bc51 FAILS:
-    that identity is the current one, so the legacy install is accepted."""
+def test_b3a_fr_c8_frozen_e05bc51_installer_is_genuine_and_works(pg: s.PgCluster,
+                                                                  tmp_path: Path) -> None:
+    """C (fixture control): the frozen e05bc51 installer (zip sha256 pinned, every file's git
+    blob id verified in the child) produces a ready install that the SAME frozen code attests."""
+    inst = b3.legacy_install(pg, tmp_path)
+    assert b3.legacy_run(inst.env, tmp_path, "status") == {
+        "ok": True, "status": {"phase": "ready", "sealed": True, "attested": True}}
+
+
+def test_b3a_fr_l1a_tampered_seal_identity_refused(pg: s.PgCluster, tmp_path: Path) -> None:
+    """B (marker case, kept): on an install made by the CURRENT code, a state whose seal names
+    the e05bc51 profile identity is refused STATE_CORRUPT, database unchanged. e05bc51 FAILS:
+    that identity is the current one, so the edited state is accepted."""
     inst = b3.install(pg, tmp_path)
     path = inst.st_dir / "state.json"
     st = json.loads(path.read_text())
@@ -200,5 +215,105 @@ def test_b3a_fr_l1_legacy_b2_install_refused_not_adopted(pg: s.PgCluster,
         outcome = "accepted"
     except errors.SyntheticRefused as e:
         outcome = e.code
-    assert outcome == "STATE_CORRUPT", f"legacy B2 install not refused: {outcome}"
+    assert outcome == "STATE_CORRUPT", f"tampered seal identity not refused: {outcome}"
     assert s.diff(before, s.snapshot(inst.c)) == {}
+
+
+def test_b3a_fr_l1b_genuine_e05bc51_install_refused_and_preserved(pg: s.PgCluster,
+                                                                 tmp_path: Path) -> None:
+    """B (Codex red gate 0719bcd item 1): a GENUINE accepted-B2 ready install (state and
+    database written by the frozen e05bc51 installer) is refused by the current code's `init`
+    and `status` (and by app start once the lifecycle exists), and neither the state file nor
+    the database changes. Fresh provisioning is the remedy, never an in-place upgrade.
+    e05bc51 FAILS: the current code is e05bc51, so the legacy install is accepted."""
+    inst = b3.legacy_install(pg, tmp_path)
+    raw = (inst.st_dir / "state.json").read_bytes()
+    before = s.snapshot(inst.c)
+    errors = s.mod("errors")
+    outcomes: dict[str, str] = {}
+    try:
+        outcomes["init"] = s.mod("provision").init(inst.env, attest_flag=True).phase
+    except errors.SyntheticRefused as e:
+        outcomes["init"] = e.code
+    try:
+        st = s.mod("provision").status(inst.env)
+        outcomes["status"] = "attested" if st["attested"] else "not_attested"
+    except errors.SyntheticRefused as e:
+        outcomes["status"] = e.code
+    try:
+        lifecycle = s.mod("lifecycle")
+    except ModuleNotFoundError:
+        lifecycle = None
+    if lifecycle is not None:  # pragma: no cover - exercised after implementation
+        try:
+            asyncio.run(lifecycle.SyntheticLifecycle(inst.env).start())
+            outcomes["start"] = "started"
+        except errors.SyntheticRefused as e:
+            outcomes["start"] = e.code
+    accepted = {k: v for k, v in outcomes.items() if v in ("ready", "attested", "started")}
+    assert not accepted, f"legacy B2 install accepted: {outcomes}"
+    assert outcomes["init"] in ("STATE_CORRUPT", "STATE_DIVERGED"), outcomes
+    assert (inst.st_dir / "state.json").read_bytes() == raw, "legacy state file changed"
+    assert s.diff(before, s.snapshot(inst.c)) == {}, "legacy database changed"
+
+
+def _generic(key: str, schema_token: str) -> str:
+    """`rows:<normalised table>` -> `shared.<t>` / `{tenant}.<t>` (test-side, independent)."""
+    table = key[len("rows:"):]
+    nsp, _, rel = table.rpartition(".")
+    return f"shared.{rel}" if nsp == "shared" else f"{{tenant}}.{rel}" \
+        if nsp == schema_token else f"{nsp}.{rel}"
+
+
+def _canonical_sealed_digest(cap: Any, mutable: frozenset[str]) -> tuple[str, int]:
+    """Independent canonical projection (test-side): the capture's normalised view with the
+    ROW CONTENT of runtime-mutable tables removed, every other key kept, sha256 of the
+    sort_keys JSON (the same encoding as B2's profile digest)."""
+    import hashlib
+
+    tokens = {k[len("rows:"):].rpartition(".")[0] for k in cap.normalised
+              if k.startswith("rows:")} - {"shared", "public"}
+    (schema_token,) = tokens
+    kept = {k: v for k, v in cap.normalised.items()
+            if not (k.startswith("rows:") and _generic(k, schema_token) in mutable)}
+    dropped = len(cap.normalised) - len(kept)
+    return hashlib.sha256(json.dumps(kept, sort_keys=True).encode()).hexdigest(), dropped
+
+
+def _ready_capture(inst: b3.Install) -> Any:
+    view = s.mod("view")
+    attest = s.mod("attest")
+    ep = s.mod("dsn").parse_admin_dsn(inst.env["HALOFLOW_SYNTHETIC_ADMIN_DSN"], {})
+    with attest.admin_connect(ep, ep.target) as conn:
+        return view.capture(conn, inst.state)
+
+
+def test_b3a_u5b_sealed_ready_digest_reproducible_and_discriminating(
+        pg: s.PgCluster, pg2: s.PgCluster, tmp_path: Path) -> None:
+    """A (Codex red gate 0719bcd item 2; replaces the format-only U5b). On two fresh installs
+    the pinned SEALED_READY_DIGEST equals (a) seal_scope.sealed_digest(capture) and (b) an
+    INDEPENDENT test-side canonical projection of the trusted ready view. Discriminators: a
+    tampered sealed row changes the recomputed digest (wrong digest refused); legitimate
+    runtime rows do not change it."""
+    sc = b3.mod("seal_scope")
+    prof = s.mod("installed_profile")
+    mutable = frozenset(sc.RUNTIME_MUTABLE_TABLES)
+    digests = []
+    for i, c in ((1, pg), (2, pg2)):
+        (tmp_path / f"i{i}").mkdir()
+        inst = b3.install(c, tmp_path / f"i{i}")
+        cap = _ready_capture(inst)
+        canonical, dropped = _canonical_sealed_digest(cap, mutable)
+        assert dropped == len(mutable), (dropped, len(mutable))
+        assert sc.sealed_digest(cap) == canonical == prof.SEALED_READY_DIGEST
+        digests.append(canonical)
+    assert digests[0] == digests[1]
+    b3.sj_flow(inst, resolve=False)                                  # runtime rows only
+    assert _canonical_sealed_digest(_ready_capture(inst), mutable)[0] == prof.SEALED_READY_DIGEST
+    inst.admin(TAMPER_SETTINGS.format(s=inst.schema))               # one sealed row
+    wrong = _canonical_sealed_digest(_ready_capture(inst), mutable)[0]
+    assert wrong != prof.SEALED_READY_DIGEST
+    assert sc.sealed_digest(_ready_capture(inst)) == wrong
+
+
+TAMPER_SETTINGS: Final = 'UPDATE "{s}".m05_reminder_settings SET clinic_display_name = \'Other\''

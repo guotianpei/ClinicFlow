@@ -147,13 +147,6 @@ def test_b3a_u5_reduced_baseline_is_a_pure_projection(monkeypatch: pytest.Monkey
     assert sc.reduced_baseline(st2) != base
 
 
-def test_b3a_u5b_sealed_ready_digest_is_generated() -> None:
-    """A: SEALED_READY_DIGEST exists beside POINTS (generated; B2-P1 extended re-measures)."""
-    prof = b3.mod("installed_profile")
-    digest = prof.SEALED_READY_DIGEST
-    assert isinstance(digest, str) and len(digest) == 64 and digest not in prof.POINTS
-
-
 # --- F1 / F3 / F6 -------------------------------------------------------------------------
 
 def test_b3a_f1_new_modules_live_inside_the_fenced_package() -> None:

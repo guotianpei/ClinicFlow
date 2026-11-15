@@ -223,15 +223,31 @@ async def b3_drive(inst: b3.Install, lc: Any) -> dict[str, Any]:
     return rec
 
 
-def test_b3a_sc2b_post_extra_table_refused_in_reduced_mode(inst: b3.Install) -> None:
-    """A (v1r2 Item 3; mutant 27): AFTER first start (reduced mode), an extra table is still
-    refused, at app start and at `init`, by the inventory-equality rule."""
+def refused_detail(fn: Callable[[], Any]) -> tuple[str, tuple[str, ...]]:
+    errors = s.mod("errors")
+    try:
+        fn()
+    except errors.SyntheticRefused as e:
+        return e.code, tuple(e.detail)
+    raise AssertionError("not refused")
+
+
+@pytest.mark.parametrize("where", ["{schema}", "shared"])
+def test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check(inst: b3.Install,
+                                                                  where: str) -> None:
+    """A (v1r2 Item 3; Codex red gate 0719bcd item 3; mutant 27): AFTER first start (reduced
+    mode) an extra table is refused at app start and at `init` with STATE_DIVERGED detail
+    exactly ("inventory",). The inventory equality runs BEFORE the sealed-digest comparison,
+    so dropping it (mutant 27) changes the observable detail to the digest's ("profile",)
+    even though the table is still refused: the row isolates the inventory check from the
+    overlapping digest protection."""
     run(start_stop(make_lc(inst)))
     assert "runtime" in inst.state
-    inst.admin(f'CREATE TABLE "{inst.schema}".zz_extra (x int)')
-    assert refused_code(lambda: run(make_lc(inst).start())) == "STATE_DIVERGED"
-    assert refused_code(lambda: s.mod("provision").init(inst.env, attest_flag=True)) \
-        == "STATE_DIVERGED"
+    inst.admin(f"CREATE TABLE {where.format(schema=chr(34) + inst.schema + chr(34))}.zz_extra"
+               " (x int)")
+    want = ("STATE_DIVERGED", ("inventory",))
+    assert refused_detail(lambda: run(make_lc(inst).start())) == want
+    assert refused_detail(lambda: s.mod("provision").init(inst.env, attest_flag=True)) == want
 
 
 def test_b3a_sc3_installer_accepts_runtime_rows_after_first_start(inst: b3.Install) -> None:
@@ -247,10 +263,12 @@ def test_b3a_sc3_installer_accepts_runtime_rows_after_first_start(inst: b3.Insta
     assert inst.state["runtime"] == marker
 
 
-def test_b3a_sc3b_existing_b2_install_first_start_writes_marker_before_pool(
+def test_b3a_sc3b_first_start_of_the_new_profile_writes_marker_before_pool(
         inst: b3.Install) -> None:
-    """A (mutants 12/29): a B2 ready install has no marker; first start checks the full seal,
-    writes the marker BEFORE the pool opens (no runtime backend exists at marker.after)."""
+    """A (mutants 12/29; renamed per Codex red gate 0719bcd item 1): a ready install made by
+    the CURRENT (amended) installer has no marker; its first start checks the full seal and
+    writes the marker BEFORE the pool opens (no runtime backend exists at marker.after). A
+    genuine e05bc51 install is NOT startable at all (FR-L1b)."""
     assert "runtime" not in inst.state
     lc = make_lc(inst)
     h = Hooks(inst, lc)
