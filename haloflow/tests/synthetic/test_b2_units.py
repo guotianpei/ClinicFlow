@@ -48,6 +48,15 @@ def refused(fn: Any, *a: Any, **kw: Any) -> Any:
 
 # ---------------------------------------------------------------- C1 / P1 / K1
 
+# Option B B3a extends the closed set (runtime seal, guard, lifecycle, serve); the B2 set above
+# is unchanged and the union stays exact (no other code may appear).
+B3A_CODES = frozenset({
+    "UNGUARDED_STATEMENT", "RUNTIME_NO_DDL", "RUNTIME_STOPPED", "RUNTIME_LEASE_LOST",
+    "RUNTIME_STOP_FAILED", "LEASE_CLEANUP_UNKNOWN", "CLOSE_TIMEOUT", "DRAIN_DEADLINE",
+    "POOL_NOT_QUIESCENT", "WATCHER_STOP_FAILED", "LEASE_CHECK_INVALID", "BUDGET_INVALID",
+    "BUDGET_TOTAL_EXCEEDED", "RUNTIME_NOT_STARTABLE", "BIND_NOT_LOOPBACK"})
+
+
 def test_b2_u_c1_closed_code_set() -> None:
     errors = s.mod("errors")
     assert frozenset({
@@ -58,7 +67,7 @@ def test_b2_u_c1_closed_code_set() -> None:
         "STATE_LOCK_REPLACED", "SERVER_VERSION_UNSUPPORTED", "CLUSTER_NOT_FRESH",
         "CLUSTER_MISMATCH", "TARGET_MISMATCH", "NOT_RESERVED", "RESERVED_BY_OTHER",
         "EPOCH_SUPERSEDED", "ISOLATION_NOT_READ_COMMITTED", "STATE_DIVERGED", "INSTALL_LOCKED",
-        "INSTALL_LOCK_LOST"}) == errors.CODES
+        "INSTALL_LOCK_LOST"}) | B3A_CODES == errors.CODES
     e = errors.SyntheticRefused("CLUSTER_NOT_FRESH", ("role",))
     assert (e.code, e.detail) == ("CLUSTER_NOT_FRESH", ("role",))
     with pytest.raises(ValueError):

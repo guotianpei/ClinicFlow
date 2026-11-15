@@ -28,7 +28,7 @@ sys.path[:0] = [str(HALOFLOW / "tests" / "synthetic"), str(HALOFLOW / "src")]
 
 import b2_support as s  # noqa: E402
 
-from haloflow.synthetic import guard, hooks, provision, view  # noqa: E402
+from haloflow.synthetic import guard, hooks, provision, seal_scope, view  # noqa: E402
 from haloflow.synthetic.attest import admin_connect  # noqa: E402
 
 TARGET = HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile.py"
@@ -68,6 +68,9 @@ def _measurement_mode() -> None:
     provision._reconcile = reconcile  # type: ignore[assignment]
 
 
+SEALED: dict[str, str] = {}   # B3a: the sealed digest at the ready point, per trace
+
+
 def trace(tmp: Path) -> list[tuple[str, str, dict[str, frozenset[str]]]]:
     points: list[tuple[str, str, dict[str, frozenset[str]]]] = []
     with s.cluster(tmp) as c:
@@ -86,6 +89,8 @@ def trace(tmp: Path) -> list[tuple[str, str, dict[str, frozenset[str]]]]:
                 by_name.setdefault(names[f"{c}|{o}"], set()).add(o)
             points.append((label, cap.profile_digest,
                            {k: frozenset(v) for k, v in by_name.items()}))
+            if label == "ready":
+                SEALED[str(tmp)] = seal_scope.sealed_digest(cap)
 
         def hook(point: str, info: dict[str, Any]) -> None:
             if point == "guarded_txn":
@@ -116,7 +121,7 @@ def replaced(points: list[tuple[str, str, dict[str, frozenset[str]]]]) -> dict[i
     return out
 
 
-def render(points: list[tuple[str, str, dict[str, frozenset[str]]]]) -> str:
+def render(points: list[tuple[str, str, dict[str, frozenset[str]]]], sealed: str) -> str:
     labels = [p for p, _, _ in points]
     completion = {k: labels.index(v) for k, v in COMPLETION_POINTS.items()}
     import hashlib
@@ -131,6 +136,9 @@ def render(points: list[tuple[str, str, dict[str, frozenset[str]]]]) -> str:
         "committed state of one install, in order, and the index of each phase's completion",
         "point. Pinned to PostgreSQL 17, the synthetic registry (target 94) and Alembic head 009;",
         "control B2-P1 re-measures and must equal this module.",
+        "",
+        "SEALED_READY_DIGEST (Option B B3a, v1r1 D1.2a): `seal_scope.sealed_digest` of the ready",
+        "point, i.e. the ready view without the row contents of the runtime-mutable tables.",
         '"""',
         "",
         "# ruff: noqa: E501",
@@ -151,7 +159,7 @@ def render(points: list[tuple[str, str, dict[str, frozenset[str]]]]) -> str:
     lines += ["}"]
     lines += ["COMPLETION: Final[dict[str, int]] = {"]
     lines += [f'    "{k}": {v},' for k, v in completion.items()]
-    lines += ["}", ""]
+    lines += ["}", f'SEALED_READY_DIGEST: Final = "{sealed}"', ""]
     return "\n".join(lines)
 
 
@@ -159,8 +167,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
-    first = trace(Path(tempfile.mkdtemp(prefix="b2prof-a-")))
-    second = trace(Path(tempfile.mkdtemp(prefix="b2prof-b-")))
+    tmp_a = Path(tempfile.mkdtemp(prefix="b2prof-a-"))
+    tmp_b = Path(tempfile.mkdtemp(prefix="b2prof-b-"))
+    first = trace(tmp_a)
+    second = trace(tmp_b)
+    if SEALED[str(tmp_a)] != SEALED[str(tmp_b)]:
+        print("NOT DETERMINISTIC: sealed ready digest differs")
+        return 1
     if [(a, b) for a, b, _ in first] != [(a, b) for a, b, _ in second] \
             or replaced(first) != replaced(second):
         diff = [i for i, (a, b) in enumerate(zip(first, second, strict=False)) if a[:2] != b[:2]]
@@ -170,7 +183,7 @@ def main() -> int:
             if ra.get(i) != rb.get(i):
                 print("  replaced differs at", i, ra.get(i), rb.get(i))
         return 1
-    text = render(first)
+    text = render(first, SEALED[str(tmp_a)])
     if args.check:
         current = TARGET.read_text() if TARGET.exists() else ""
         print("profile pin", "MATCHES" if current == text else "DIFFERS")

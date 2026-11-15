@@ -22,9 +22,14 @@ class TenantPool:
         max_size: int = 5,
         timeout: float = 30.0,
         name: str = "haloflow-m01-runtime",
+        connection_class: type[AsyncConnection[Any]] = AsyncConnection,
     ) -> None:
+        # `connection_class` (Option B B3a, Codex Q2): the synthetic runtime passes its
+        # guarded connection class; production never passes it (F5 static row), so the
+        # default AsyncConnection keeps today's behaviour.
         self._pool = AsyncConnectionPool(
             conninfo,
+            connection_class=connection_class,
             min_size=min_size,
             max_size=max_size,
             timeout=timeout,

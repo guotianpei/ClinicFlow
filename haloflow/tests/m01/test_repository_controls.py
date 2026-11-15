@@ -217,6 +217,17 @@ def _definition_set_violations_in(path: str, source: str) -> list[str]:
     return violations
 
 
+# Option B B3a (Codex Q2: an optional PUBLIC `TenantPool(connection_class=...)` keyword, the
+# production default unchanged): the fenced synthetic runtime constructs its guarded pool
+# itself. Exactly this module and exactly these names; production modules stay unchanged
+# (they open the tenant pool through `haloflow.m01.connections`), and the B1 fences keep every
+# production module from importing `haloflow.synthetic`.
+SYNTHETIC_POOL_ALLOWANCE = frozenset({
+    ("src/haloflow/synthetic/runtime.py", "haloflow.m01.pool"),
+    ("src/haloflow/synthetic/runtime.py", "haloflow.m01.pool.TenantPool"),
+})
+
+
 def test_m01_private_construction_paths_are_not_reachable_from_application_modules() -> None:
     """TC-D10. Scoped to the production boundary; tests keep their private imports."""
 
@@ -225,9 +236,25 @@ def test_m01_private_construction_paths_are_not_reachable_from_application_modul
         if path.is_relative_to(M01_ROOT):
             continue
         for name in _protected_imports_in(path.read_text()):
+            if (str(path), name) in SYNTHETIC_POOL_ALLOWANCE:
+                continue
             violations.append(f"{path}: {name}")
 
     assert violations == []
+
+
+def test_b3a_synthetic_pool_allowance_is_exact() -> None:
+    """B3a negative control: the allowance admits only the exact module and names; another
+    synthetic module, a look-alike path or another protected name is still a violation."""
+
+    allowed = "src/haloflow/synthetic/runtime.py"
+    for path, source in (
+        ("src/haloflow/synthetic/lifecycle.py", "from haloflow.m01.pool import TenantPool\n"),
+        ("src/haloflow/synthetic/runtime_extra.py", "from haloflow.m01.pool import TenantPool\n"),
+        (allowed, "from haloflow.m01.statements import _build_statement_catalog\n"),
+    ):
+        names = _protected_imports_in(source)
+        assert names and any((path, n) not in SYNTHETIC_POOL_ALLOWANCE for n in names), path
 
 
 def test_protected_import_check_catches_every_import_form() -> None:
@@ -1230,8 +1257,34 @@ def _runtime_construction_violations_in(path: str, source: str) -> list[str]:
     ]
 
 
+# Option B B3a (R-B3a-3 step 5): the fenced synthetic runtime composes ITS tenant runtime (the
+# synthetic registry/catalogue, target 94) ONLY in the executable body of the unique method
+# `compose` of the unique class `SyntheticRuntime` of exactly `synthetic/runtime.py`.
+SYNTHETIC_RUNTIME_MODULE = "src/haloflow/synthetic/runtime.py"
+SYNTHETIC_RUNTIME_CLASS = "SyntheticRuntime"
+SYNTHETIC_RUNTIME_METHOD = "compose"
+
+
+def _synthetic_compose_allowance(tree: ast.Module) -> set[int]:
+    classes = [n for n in tree.body
+               if isinstance(n, ast.ClassDef) and n.name == SYNTHETIC_RUNTIME_CLASS]
+    named = [n for n in ast.walk(tree)
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+             and n.name in (SYNTHETIC_RUNTIME_CLASS, SYNTHETIC_RUNTIME_METHOD)]
+    if len(classes) != 1 or len(named) != 2:
+        return set()
+    methods = [n for n in classes[0].body
+               if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and n.name == SYNTHETIC_RUNTIME_METHOD]
+    if len(methods) != 1:
+        return set()
+    return {id(call) for call in _own_body_calls(methods[0])
+            if _called_name(call) == "compose_tenant_runtime"}
+
+
 def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]:
-    """L1-A2. Only the composition root CALLS `compose_tenant_runtime`.
+    """L1-A2. Only the composition root CALLS `compose_tenant_runtime` (plus the one bounded
+    B3a allowance above).
 
     An import, a type reference or the definition itself is not a call, so no
     other module (including `m01/runtime.py`) is exempt.
@@ -1239,11 +1292,39 @@ def _runtime_composition_call_violations_in(path: str, source: str) -> list[str]
 
     if path == COMPOSITION_ROOT:
         return []
+    tree = ast.parse(source)
+    allowed = _synthetic_compose_allowance(tree) if path == SYNTHETIC_RUNTIME_MODULE else set()
     return [
         f"{path}: calls compose_tenant_runtime"
-        for node in ast.walk(ast.parse(source))
+        for node in ast.walk(tree)
         if isinstance(node, ast.Call) and _called_name(node) == "compose_tenant_runtime"
+        and id(node) not in allowed
     ]
+
+
+def test_b3a_synthetic_compose_allowance_negative_control() -> None:
+    """B3a. The allowance admits exactly one shape and nothing near it."""
+
+    mod = SYNTHETIC_RUNTIME_MODULE
+    ok = ("class SyntheticRuntime:\n    def compose(self):\n"
+          "        return compose_tenant_runtime(d)\n")
+    assert _runtime_composition_call_violations_in(mod, ok) == []
+    bad = {
+        "module level": ok + "rt = compose_tenant_runtime(d)\n",
+        "other method": ("class SyntheticRuntime:\n    def compose(self):\n        pass\n"
+                         "    def other(self):\n        return compose_tenant_runtime(d)\n"),
+        "nested function": ("class SyntheticRuntime:\n    def compose(self):\n"
+                            "        def f():\n            return compose_tenant_runtime(d)\n"),
+        "duplicate method": ok + ("    def compose(self):\n"
+                                  "        return compose_tenant_runtime(d)\n"),
+        "other class": ("class Other:\n    def compose(self):\n"
+                        "        return compose_tenant_runtime(d)\n"),
+    }
+    for case, src in bad.items():
+        assert _runtime_composition_call_violations_in(mod, src), case
+    for path in ("src/haloflow/synthetic/lifecycle.py", "src/haloflow/synthetic/runtime_x.py",
+                 "src/haloflow/modules/rogue/runtime.py"):
+        assert _runtime_composition_call_violations_in(path, ok), path
 
 
 def _is_literal_frozenset_of_twenty_five(value: ast.expr | None) -> bool:

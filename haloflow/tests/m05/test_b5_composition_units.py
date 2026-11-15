@@ -317,11 +317,37 @@ def _src_trees() -> dict[Path, ast.AST]:
     return {path: ast.parse(path.read_text()) for path in SRC.rglob("*.py")}
 
 
+# Option B B3a: the fenced synthetic runtime (never imported by production: the B1 fences)
+# wires its own schedulers over its synthetic tenant runtime, so it constructs
+# `EventFoundation` in exactly one module. No other name, no other synthetic module.
+B3A_SYNTHETIC_SITES: dict[str, frozenset[Path]] = {
+    "EventFoundation": frozenset({SRC / "synthetic/wiring.py"}),
+}
+# ... and its note keys are the install's per-setup keys (state file), one provider class.
+B3A_SYNTHETIC_PROVIDERS: frozenset[tuple[Path, str]] = frozenset({
+    (SRC / "synthetic/wiring.py", "StateNoteKeys"),
+})
+
+
 def test_b5_k01_services_are_constructed_only_in_startup() -> None:
     trees = _src_trees()
     for name in ("M05Service", "StaffService", "EventFoundation"):
         sites = {path for path, tree in trees.items() if _calls(tree, name)}
-        assert sites == {Path(b5.STARTUP_PATH)}, (name, sites)
+        allowed = B3A_SYNTHETIC_SITES.get(name, frozenset())
+        assert sites - allowed == {Path(b5.STARTUP_PATH)}, (name, sites)
+        assert sites & allowed == allowed, (name, sites)   # the allowance is exact, not slack
+
+
+def test_b3a_b5_k01_k03_synthetic_allowances_are_exact() -> None:
+    """B3a negative control: the allowances name one synthetic module and one class; no
+    production path, no other service and no other synthetic module is admitted."""
+
+    assert set(B3A_SYNTHETIC_SITES) == {"EventFoundation"}
+    for sites in B3A_SYNTHETIC_SITES.values():
+        assert all(p.is_relative_to(SRC / "synthetic") for p in sites)
+        assert len(sites) == 1
+    assert {p for p, _ in B3A_SYNTHETIC_PROVIDERS} == {SRC / "synthetic/wiring.py"}
+    assert {n for _, n in B3A_SYNTHETIC_PROVIDERS} == {"StateNoteKeys"}
 
 
 def test_b5_k02_startup_fixes_the_producer_literal() -> None:
@@ -343,6 +369,7 @@ def test_b5_k03_startup_wires_only_the_fail_closed_key_provider() -> None:
         for path, tree in _src_trees().items()
         for node in ast.walk(tree)
         if isinstance(node, ast.ClassDef)
+        and (path, node.name) not in B3A_SYNTHETIC_PROVIDERS
         # Exactly the known structural interface, m05/notes.py `class
         # NoteKeyProvider(Protocol)`, is excluded (Codex 6c4c51f7). Any other
         # definition, a Protocol included, still counts as a provider.
