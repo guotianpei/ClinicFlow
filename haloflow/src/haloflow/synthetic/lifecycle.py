@@ -374,6 +374,8 @@ class SyntheticLifecycle:
         self._started: list[str] = []
         self._watcher_task: asyncio.Task[None] | None = None
         self._lease_future: concurrent.futures.Future[Any] | None = None
+        self._lease_lock = threading.Lock()
+        self._lease_state = "pending"
         self._lease_lost = False
         self._guard_code: str | None = None
         self._stop_pending: str | None = None
@@ -410,8 +412,11 @@ class SyntheticLifecycle:
         try:
             await self._start()
         except BaseException as error:
-            await self._abort()
-            self.state = "FAILED"
+            self._abandon_lease()            # synchronous: no await can interrupt it
+            try:
+                await self._abort()
+            finally:
+                self.state = "FAILED"         # also when the abort's wait is cancelled
             if isinstance(error, (SyntheticRefused, asyncio.CancelledError)):
                 raise
             refused = refused_from(error)
@@ -451,7 +456,9 @@ class SyntheticLifecycle:
         # `_abort` waits for it (bounded) or hands a late success to `_release_late`.
         await asyncio.to_thread(runtime.read_reservation)
         self._lease_future = _in_thread(runtime.acquire_lease)
+        self._lease_future.add_done_callback(self._lease_done)
         await asyncio.shield(asyncio.wrap_future(self._lease_future))
+        self._claim_lease()              # synchronous, right after the await: no gap
         fire("b3.start.lease", {})
         await asyncio.to_thread(runtime.attest)
         fire("b3.start.a1", {})
@@ -481,33 +488,56 @@ class SyntheticLifecycle:
         self._watcher_task = asyncio.get_running_loop().create_task(self._watch())
         fire("b3.start.watcher", {})
 
-    async def _abort(self) -> None:
-        """Startup failure: close what was opened, in reverse, through the coordinator. An
-        acquisition still in flight is awaited for at most `t_lease`; if it is still running
-        then, nothing else can be open (the lease precedes every other resource) and a late
-        success is released by `_release_late` in the acquiring thread."""
-        if self.runtime is None:
-            return
-        pending = self._lease_future
-        if pending is not None and not pending.done():
-            await asyncio.wait({asyncio.wrap_future(pending)}, timeout=self.config.t_lease)
-            if not pending.done():
-                pending.add_done_callback(self._release_late)
-                return
-        if self.runtime.lease is None:
-            return
-        self._coordinator.request_stop("STARTUP_FAILED")
-        await self._coordinator.wait()
+    # -- lease ownership (Codex reviews 85d836a, 0e11467) ------------------------------------
+    #
+    # ONE owner for the lease at every moment, never the (cancellable) startup caller:
+    #   pending    the acquisition thread runs; nobody may release yet;
+    #   claimed    `start` passed the lease step; from here the DRAIN (the coordinator's own
+    #              task, independent of any caller) owns it and releases it after quiescence;
+    #   abandoned  `start` failed before claiming; the ACQUIRING THREAD's completion callback
+    #              (or, if it already completed, the abandon step itself) releases a success.
+    # Transitions happen under one lock, so release happens exactly once whatever the order of
+    # completion and abandonment; no transition awaits, so no cancellation can interrupt one.
 
-    def _release_late(self, future: concurrent.futures.Future[Any]) -> None:
-        """A lease acquired after its start was abandoned: released at once (no drain owns it,
-        and nothing else was opened)."""
-        if future.cancelled() or future.exception() is not None:
-            return
+    def _claim_lease(self) -> None:
+        with self._lease_lock:
+            if self._lease_state == "pending":
+                self._lease_state = "claimed"
+
+    def _abandon_lease(self) -> None:
+        future = self._lease_future
+        with self._lease_lock:
+            if self._lease_state != "pending":
+                return
+            self._lease_state = "abandoned"
+            release = future is not None and future.done() and not future.cancelled() \
+                and future.exception() is None
+        if release:
+            threading.Thread(target=self._release_abandoned, daemon=True,
+                             name="haloflow-synthetic-lease-release").start()
+
+    def _lease_done(self, future: concurrent.futures.Future[Any]) -> None:
+        """Runs in the acquiring thread when the acquisition completes."""
+        with self._lease_lock:
+            release = self._lease_state == "abandoned"
+        if release and not future.cancelled() and future.exception() is None:
+            self._release_abandoned()
+
+    def _release_abandoned(self) -> None:
         lease = self.runtime.lease if self.runtime is not None else None
         if lease is not None:
             with contextlib.suppress(Exception):
                 lease.release()
+
+    async def _abort(self) -> None:
+        """Startup failure: when the lease was claimed, everything opened is closed in reverse
+        by the coordinator's own task (the caller only waits for it, shielded: a further
+        cancellation stops the waiting, never the drain). An unclaimed lease is already owned
+        by `_abandon_lease` / `_lease_done`, and nothing else can be open."""
+        if self.runtime is None or self._lease_state != "claimed":
+            return
+        self._coordinator.request_stop("STARTUP_FAILED")
+        await self._coordinator.wait()
 
     # -- stop ----------------------------------------------------------------------------
 
@@ -531,7 +561,7 @@ class SyntheticLifecycle:
         return self._coordinator.result
 
     def _done(self, result: LifecycleResult) -> None:
-        if self.state != "STARTING":
+        if self.state not in ("STARTING", "FAILED"):
             self.state = "STOP_FAILED" if result.disposition == "terminal" else "STOPPED"
         self._stopped.set()
 

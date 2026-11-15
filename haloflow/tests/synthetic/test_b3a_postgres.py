@@ -596,7 +596,8 @@ def test_b3a_s6_startup_failure_reverse_close(inst: b3.Install, step: str) -> No
     assert ("runtime" in inst.state) == (step not in ("lease", "a1"))
 
 
-@pytest.mark.parametrize("release", ["within_bound", "after_start_failed"])
+@pytest.mark.parametrize("release", ["within_bound", "after_start_failed",
+                                     "repeated_cancel"])
 def test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease(inst: b3.Install,
                                                                   release: str) -> None:
     """A (added: Codex review 85d836a, blocking). Startup is cancelled while the lease thread
@@ -623,6 +624,9 @@ def test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease(inst: b3.Instal
         if release == "within_bound":
             threading.Timer(0.5, gate.set).start()
         task.cancel()
+        if release == "repeated_cancel":      # Codex review 0e11467: a second cancellation
+            await asyncio.sleep(0.05)           # while the failed start is still unwinding
+            task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
         gate.set()
@@ -635,6 +639,51 @@ def test_b3a_s8_cancel_during_lease_acquisition_strands_no_lease(inst: b3.Instal
         assert run(body()) == "FAILED"
     finally:
         gate.set()
+        s.mod("hooks").FAULT = None
+
+
+def test_b3a_s9_second_cancel_while_abort_drains_still_releases_the_lease(
+        inst: b3.Install) -> None:
+    """A (added: Codex review 0e11467). The lease is CLAIMED; startup is then cancelled
+    (deterministically, at its next await after `b3.start.lease`), so the abort drain runs;
+    the drain is held at its watcher step and the startup task is cancelled AGAIN while the
+    abort waits. The drain is owned by the coordinator's own task, not by the cancelled
+    caller: once released it completes, and with the host alive the lease backend goes away
+    and the exclusive K_S becomes free; the lifecycle ends FAILED."""
+
+    async def body() -> str:
+        lc = make_lc(inst)
+        hold = asyncio.Event()
+
+        async def held_watcher_stop() -> None:
+            await hold.wait()
+
+        lc._watcher_stop = held_watcher_stop  # type: ignore[method-assign]
+        loop = asyncio.get_running_loop()
+        task: asyncio.Task[None] | None = None
+
+        def fault(point: str, _info: Any) -> None:
+            if point == "b3.start.lease":
+                assert task is not None
+                loop.call_soon_threadsafe(task.cancel)          # first cancellation
+
+        s.mod("hooks").FAULT = fault
+        task = asyncio.create_task(lc.start())
+        await asyncio.to_thread(b3.wait_until, lambda: lc._coordinator.requested, 60)
+        assert not b3.ks_free(inst)
+        task.cancel()                                           # second cancellation
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        hold.set()
+        await asyncio.to_thread(
+            b3.wait_until, lambda: b3.backends(inst, f"{APP}/lease") == [] and b3.ks_free(inst),
+            30)
+        await asyncio.wait_for(lc.wait_stopped(), 30)
+        return str(lc.state)
+
+    try:
+        assert run(body()) == "FAILED"
+    finally:
         s.mod("hooks").FAULT = None
 
 
