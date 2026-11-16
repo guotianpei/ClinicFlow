@@ -591,7 +591,8 @@ def test_b4_p_frm1_byte_cap_before_decoding(
             r = await _asgi_chunks(app, action,
                                    b4.form_headers(extra=[("content-length", "10")]),
                                    [b"note=aaaa", b"aaaaaaaa"])
-            assert r.status in (400, 413), r.status
+            assert r.status == 413, r.status  # Codex fc0617d review: v1r1 F1.2 is 413
+            b4.html_ok(r)
             assert spy.calls == []
 
     run(body())

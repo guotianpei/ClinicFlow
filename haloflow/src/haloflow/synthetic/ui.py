@@ -225,7 +225,8 @@ def parse_form(body: bytes, *, allowed: frozenset[str]) -> dict[str, str]:
 
 async def _bounded_body(request: Request) -> bytes:
     """v1r1 F1.2: the stream is read with or without a Content-Length and refused 413 past the
-    cap before anything is decoded; a body that disagrees with its declared length is 400."""
+    cap, or past a declared length, before anything is decoded; a body shorter than its
+    declared length is 400."""
     declared = request.headers.getlist("content-length")
     length: int | None = None
     if declared:
@@ -238,11 +239,11 @@ async def _bounded_body(request: Request) -> bytes:
     size = 0
     async for chunk in request.stream():
         size += len(chunk)
-        if size > UI_FORM_MAX_BYTES:
+        if size > UI_FORM_MAX_BYTES or (length is not None and size > length):
             raise FormRefused(413)
         chunks.append(chunk)
     if length is not None and size != length:
-        raise FormRefused(400)
+        raise FormRefused(400)  # shorter than declared
     return b"".join(chunks)
 
 
