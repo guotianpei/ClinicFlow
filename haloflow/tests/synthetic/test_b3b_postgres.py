@@ -1112,32 +1112,102 @@ def test_b3b_s10_simulator_audit_lines(inst: b3.Install,
         assert secret not in caplog.text
 
 
+def _gen2_tick(inst: b3.Install, *, app_name: str, b3b: bool,
+               noop: bool = False) -> tuple[int, Any, list[tuple[str, str]], int]:
+    """Start a generation (through the B3b app when `b3b`, else the B3a lifecycle alone), spy
+    every simulated-EHR read the port makes, run ONE write-back tick, stop. Returns (EHR
+    appointments at start, tick result, reads, EHR writes). `noop`: the tick is replaced by a
+    no-op (the negative control: the oracle must reject it)."""
+    async def body() -> tuple[int, Any, list[tuple[str, str]], int]:
+        lc = b3.mod("lifecycle").SyntheticLifecycle(inst.env, application_name=app_name)
+        await lc.start()
+        try:
+            if b3b:
+                b3.mod("app").create_synthetic_app(lifecycle=lc, bind=bb.BIND)
+            empty = len(lc.port.ehr.snapshot().appointments)
+            reads: list[tuple[str, str]] = []
+            real = lc.port.ehr.read
+
+            async def spy(appointment_id: str) -> Any:
+                try:
+                    found = await real(appointment_id)
+                except Exception as e:
+                    reads.append((appointment_id, type(e).__name__))
+                    raise
+                reads.append((appointment_id, "ok"))
+                return found
+
+            lc.port.ehr.read = spy
+            if noop:
+                async def nothing() -> Any:
+                    return None
+
+                lc.schedulers["writeback"].tick = nothing
+            result = await asyncio.wait_for(lc.schedulers["writeback"].tick(), 120)
+            return empty, result, reads, len(lc.port.ehr.writes)
+        finally:
+            lc.request_stop("TEST")
+            await lc.wait_stopped()
+
+    return run(body())
+
+
+def _s11_oracle(inst: b3.Install, seed: dict[str, Any], empty: int, result: Any,
+                reads: list[tuple[str, str]], writes: int) -> None:
+    """Codex red gate 55c17fc: an OBSERVED read of the seeded appointment yielding
+    EhrUnavailable, and the op-specific first step of the accepted retry policy (R1 failure 1:
+    deferred, state pending, r1_failures 1, next_at = now + RETRY_DELAYS_S[0]); never
+    observed_positive; no write. A no-op tick fails here."""
+    from haloflow.m05.writeback import RETRY_DELAYS_S
+
+    assert empty == 0, "generation 2 inherited simulated EHR state"
+    assert reads == [(seed["appointment_id"], "EhrUnavailable")], reads
+    assert result is not None, "no tick ran"
+    (report,) = result.tenants
+    assert report.discover.counts.get("discovered") == 1, report
+    assert report.run.counts.get("deferred") == 1, report
+    assert report.run.counts.get("observed_positive") == 0, report
+    ops = inst.admin(f"SELECT state, r1_failures, reason,"
+                     f" extract(epoch from next_at - updated_at)::int"
+                     f" FROM {inst.schema}.m05_writeback_ops")
+    assert ops == [("pending", 1, None, RETRY_DELAYS_S[0])], ops
+    assert writes == 0
+
+
+def test_b3b_s11c_oracle_holds_on_the_b3a_lifecycle(inst: b3.Install) -> None:
+    """C (red gate 55c17fc): the S11 oracle passes for the accepted worker on the B3a
+    lifecycle alone (premise measured: discovered 1, deferred 1, the seeded read raised
+    EhrUnavailable, op pending r1_failures 1, next_at + 60 s)."""
+    seed = b3.seed_recovery(inst, "r2")[0]
+    _s11_oracle(inst, seed, *_gen2_tick(inst, app_name="b3b-s11c", b3b=False))
+
+
+def test_b3b_s11n_noop_tick_fails_the_oracle(inst: b3.Install) -> None:
+    """C (negative control, red gate 55c17fc): with the write-back tick replaced by a no-op,
+    the S11 oracle rejects the run (no read, no tick result, no deferral)."""
+    seed = b3.seed_recovery(inst, "r2")[0]
+    observed = _gen2_tick(inst, app_name="b3b-s11n", b3b=False, noop=True)
+    with pytest.raises(AssertionError):
+        _s11_oracle(inst, seed, *observed)
+
+
 def test_b3b_s11_ehr_state_is_process_memory_across_restart(inst: b3.Install) -> None:
-    """A (Codex Q2 = a, explicit restart behaviour): generation 1 puts an appointment and
-    stops; generation 2's port wraps a NEW, empty SimulatedEhr; a write-back for a reply to
-    that appointment then reads EhrUnavailable and follows the accepted unavailable-EHR rules
-    (retry, then ehr_unreachable / could_not_verify): never observed_positive, no write."""
+    """A (Codex Q2 = a, explicit restart behaviour; red gate 55c17fc): generation 1 puts the
+    seeded appointment into the simulated EHR through the simulator and stops; generation 2,
+    composed through the B3b app, starts with a NEW, empty SimulatedEhr; its write-back tick
+    reads that appointment, gets EhrUnavailable, and takes the accepted retry step (deferred;
+    pending, r1_failures 1, next_at + RETRY_DELAYS_S[0]): never observed_positive, no write."""
     seed = b3.seed_recovery(inst, "r2")[0]
 
-    async def gen1() -> int:
+    async def gen1() -> tuple[int, int]:
         async with bb.running(inst, app_name="b3b-g1") as (lc, app):
             token = await bb.session_token(app)
             r = await bb.asgi(app, "POST", bb.path("sim_ehr"), headers=bb.post_headers(token),
                               body=bb.jbody({"operation": "put_appointment", **seed}))
-            return id(lc.port.ehr) if r.status == 200 else -1
+            return r.status, len(lc.port.ehr.snapshot().appointments)
 
-    async def gen2() -> tuple[int, Any, int]:
-        async with bb.running(inst, app_name="b3b-g2") as (lc, _app):
-            empty = len(lc.port.ehr.snapshot().appointments)
-            result = await asyncio.wait_for(lc.schedulers["writeback"].tick(), 120)
-            return empty, result, len(lc.port.ehr.writes)
-
-    assert run(gen1()) != -1
-    empty, result, writes = run(gen2())
-    assert empty == 0 and writes == 0
-    ops = inst.admin(f"SELECT state FROM {inst.schema}.m05_writeback_ops")
-    assert [o[0] for o in ops] and all(o[0] != "observed_positive" for o in ops), ops
-    del result
+    assert run(gen1()) == (200, 1)
+    _s11_oracle(inst, seed, *_gen2_tick(inst, app_name="b3b-g2", b3b=True))
 
 
 # =========================================================================== L: labels
