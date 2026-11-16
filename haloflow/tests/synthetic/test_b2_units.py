@@ -55,6 +55,9 @@ B3A_CODES = frozenset({
     "RUNTIME_STOP_FAILED", "LEASE_CLEANUP_UNKNOWN", "CLOSE_TIMEOUT", "DRAIN_DEADLINE",
     "POOL_NOT_QUIESCENT", "WATCHER_STOP_FAILED", "LEASE_CHECK_INVALID", "BUDGET_INVALID",
     "BUDGET_TOTAL_EXCEEDED", "RUNTIME_NOT_STARTABLE", "BIND_NOT_LOOPBACK"})
+# Option B B3b (local exposure gate, HTTP drain).
+B3B_CODES = frozenset({"HTTP_NOT_DRAINED", "HOST_REFUSED", "CROSS_SITE_REFUSED",
+                       "ORIGIN_REFUSED", "CSRF_REFUSED"})
 
 
 def test_b2_u_c1_closed_code_set() -> None:
@@ -67,7 +70,7 @@ def test_b2_u_c1_closed_code_set() -> None:
         "STATE_LOCK_REPLACED", "SERVER_VERSION_UNSUPPORTED", "CLUSTER_NOT_FRESH",
         "CLUSTER_MISMATCH", "TARGET_MISMATCH", "NOT_RESERVED", "RESERVED_BY_OTHER",
         "EPOCH_SUPERSEDED", "ISOLATION_NOT_READ_COMMITTED", "STATE_DIVERGED", "INSTALL_LOCKED",
-        "INSTALL_LOCK_LOST"}) | B3A_CODES == errors.CODES
+        "INSTALL_LOCK_LOST"}) | B3A_CODES | B3B_CODES == errors.CODES
     e = errors.SyntheticRefused("CLUSTER_NOT_FRESH", ("role",))
     assert (e.code, e.detail) == ("CLUSTER_NOT_FRESH", ("role",))
     with pytest.raises(ValueError):

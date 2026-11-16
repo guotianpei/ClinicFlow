@@ -307,3 +307,43 @@ def build(rt: Any, tenant_id: str, *, sender: Any, ehr: Any,
                         tenants=tenants, batch_limit=100)
     return Wiring(sender=sender, port=port,
                   schedulers={"due": due, "reminder": reminder, "writeback": writeback})
+
+
+# ---------------------------------------------------------------------------- B3b services
+
+M05_PRODUCER: Final = "m05_followup"     # the production staff-service producer (startup.py)
+INGRESS_PRODUCER: Final = PRODUCER       # the S-G1a intake producer ("m05_intake")
+
+
+@dataclass(frozen=True)
+class SyntheticServices:
+    """What the B3b staff routes and simulator call (R-B3b-2/6): the composed resolver, the
+    M01 staff service (self standing), the M05 staff service (StaffServiceV3, with the install's
+    note keys), the tenant runtime's gateway, and the fixed tenant and staff identities."""
+
+    resolver: Any
+    staff: Any
+    m05: Any
+    gateway: Any
+    tenant_id: str
+    staff_id: str
+
+
+def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any]) -> SyntheticServices:
+    from haloflow.m01.staff.service import StaffService
+    from haloflow.m05.writeback import StaffServiceV3
+
+    m05 = StaffServiceV3(rt.gateway, keys=note_keys,
+                         foundation=EventFoundation(rt.gateway, producer_service=M05_PRODUCER))
+    return SyntheticServices(resolver=rt.resolver, staff=StaffService(rt.gateway), m05=m05,
+                             gateway=rt.gateway, tenant_id=str(state["tenant_id"]),
+                             staff_id=str(state["staff_id"]))
+
+
+def reply_intake(gateway: Any) -> Any:
+    """The S-G1a intake chain (ReplyIntake over IntakeService), as the accepted harness builds
+    it, for the simulator's unmounted ingress app."""
+    from haloflow.m05.reply_classifier import ReplyIntake
+
+    return ReplyIntake(IntakeService(EventFoundation(gateway,
+                                                     producer_service=INGRESS_PRODUCER)))

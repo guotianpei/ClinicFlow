@@ -12,7 +12,9 @@ No reset. Not referenced by any packaging entry point (B2-U-F1).
 
 `serve [--host 127.0.0.1] [--port N]` (B3a, Codex Q3) runs the synthetic app with uvicorn.
 The host is validated BEFORE anything binds: only a loopback IP literal is accepted; any
-other value prints `refused: BIND_NOT_LOOPBACK` (never the value) and exits 2.
+other value prints `refused: BIND_NOT_LOOPBACK` (never the value) and exits 2. B3b: port 0 is
+refused the same way (the Host allowlist needs a known port); the app gets the same bind, and
+uvicorn's graceful shutdown is bounded by the lifecycle's T_total.
 """
 
 from __future__ import annotations
@@ -55,16 +57,20 @@ def _loopback(host: str) -> bool:
 
 
 def _serve(host: str, port: int) -> int:
-    if not _loopback(host) or not 0 <= port <= 65535:
+    # B3b: port 0 is refused too, because the Host allowlist needs a known port.
+    if not _loopback(host) or not 1 <= port <= 65535:
         sys.stderr.write("refused: BIND_NOT_LOOPBACK\n")
         return REFUSED_EXIT
     import uvicorn
 
-    from haloflow.synthetic.app import create_synthetic_app
+    from haloflow.synthetic import app as app_module
+    from haloflow.synthetic.lifecycle import LifecycleConfig
 
-    app = create_synthetic_app(dict(os.environ))
+    app = app_module.create_synthetic_app(dict(os.environ), bind=(host, port))
     uvicorn.Server(uvicorn.Config(app, host=host, port=port, lifespan="on",
-                                  log_level="warning", access_log=False)).run()
+                                  log_level="warning", access_log=False,
+                                  timeout_graceful_shutdown=int(LifecycleConfig().t_total))
+                   ).run()
     return 0
 
 

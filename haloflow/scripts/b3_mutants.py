@@ -1,9 +1,12 @@
-"""Option B B3a mutation controls, group ``b3`` (B3-M1..B3-M40). SYNTHETIC ONLY.
+"""Option B B3a/B3b mutation controls, group ``b3`` (B3-M1..B3-M60). SYNTHETIC ONLY.
 
 Mutant list: v1r1 §5 (1-26) and v1r2 (27-34) as aligned for the B3a red packet, plus B3-M35
 (the pinned SEALED_READY_DIGEST comparison skipped; Codex red gate bb62696, green condition 3)
 and B3-M36 (the F-R1 resolution activation not provisioned), and B3-M37..M40 (lease ownership under
-startup cancellation; Codex reviews 85d836a, 0e11467, 2c673fe). Each mutant is ONE exact textual
+startup cancellation; Codex reviews 85d836a, 0e11467, 2c673fe), and B3-M41..M60 (Option B B3b:
+the local exposure gate, identity, closed routes, simulator, labels and the HTTP drain; B3b red
+packet v1 map, with the `http` step mutant split into the lifecycle and coordinator forms). Each
+mutant is ONE exact textual
 edit (the old text must occur exactly once in the clean target, else the run fails as stale).
 
 Judgement (B3 rule; the part-A whole-module rule does not fit the 6-hour job with PostgreSQL
@@ -42,6 +45,10 @@ LIFECYCLE, GUARD, RUNTIME, PROVISION, SEAL, MAIN = (
     SYN / "lifecycle.py", SYN / "guard.py", SYN / "runtime.py", SYN / "provision.py",
     SYN / "seal_scope.py", SYN / "__main__.py")
 POOL: Final = Path("src/haloflow/m01/pool.py")
+GATE, LABELS, STAFF, SIMU, APP = (SYN / "gate.py", SYN / "labels.py", SYN / "staff_routes.py",
+                                  SYN / "simulator.py", SYN / "app.py")
+BU: Final = "tests/synthetic/test_b3b_units.py::"
+BP: Final = "tests/synthetic/test_b3b_postgres.py::"
 U: Final = "tests/synthetic/test_b3a_units.py::"
 P: Final = "tests/synthetic/test_b3a_postgres.py::"
 C: Final = "tests/synthetic/test_b3a_controls_postgres.py::"
@@ -98,6 +105,7 @@ _WATCHER_END = (
     '        fire("b3.start.watcher", {})\n')
 _STEPS = (
     '        return [Step("watcher", "watcher", cfg.t_watcher, watcher, "WATCHER_STOP_FAILED"),\n'
+    '                Step("http", "http", cfg.t_http, http, "HTTP_NOT_DRAINED"),\n'
     '                Step("port", "port", cfg.t_port, port, "CLOSE_TIMEOUT"),\n'
     '                Step("pool", "pool", cfg.t_pool, pool, "POOL_NOT_QUIESCENT"),\n'
     '                Step("quiesce", "quiesce", cfg.t_quiesce, quiesce, "POOL_NOT_QUIESCENT"),\n'
@@ -228,6 +236,7 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            _STEPS,
            '        return [Step("watcher", "watcher", cfg.t_watcher, watcher,'
            ' "WATCHER_STOP_FAILED"),\n'
+           '                Step("http", "http", cfg.t_http, http, "HTTP_NOT_DRAINED"),\n'
            '                Step("port", "port", cfg.t_port, port, "CLOSE_TIMEOUT"),\n'
            '                Step("lease", "lease", cfg.t_lease, lease, "CLOSE_TIMEOUT"),\n'
            '                Step("pool", "pool", cfg.t_pool, pool, "POOL_NOT_QUIESCENT"),\n'
@@ -281,9 +290,9 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            "        watchdog.start()\n", "",
            (f"{P}test_b3a_d10_blocked_event_loop_watchdog_exit",)),
     Mutant("B3-M32", "lifecycle: the watcher stop is outside the drain budget", LIFECYCLE,
-           "        return (self.t_watcher + 2 * sum(self.stop_timeout_s) + self.t_port"
-           " + self.t_pool\n",
-           "        return (2 * sum(self.stop_timeout_s) + self.t_port + self.t_pool\n",
+           "        return (self.t_watcher + 2 * sum(self.stop_timeout_s) + self.t_http"
+           " + self.t_port\n",
+           "        return (2 * sum(self.stop_timeout_s) + self.t_http + self.t_port\n",
            (f"{U}test_b3a_u1_defaults_and_total_budget",)),
     Mutant("B3-M33", "lifecycle: the quiescence check is skipped", LIFECYCLE,
            "            if self.runtime is None or self.runtime.pool is None:\n"
@@ -327,6 +336,121 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
     Mutant("B3-M40", "lifecycle: no single releaser election (abandon and callback both release)",
            LIFECYCLE, "        if self._lease_release_claimed:\n            return False\n", "",
            (f"{P}test_b3a_s8b_done_before_callback_interleaving_releases_exactly_once",)),
+    # ------------------------------------------------------------------ Option B B3b
+    Mutant("B3-M41", "gate: the Host check is removed", GATE,
+           "        if len(hosts) != 1 or hosts[0] not in self.allowed:\n",
+           "        if not hosts:\n",
+           (f"{BU}test_b3b_h1u_spoofed_host_refused_before_routing[evil.example]",
+            f"{BP}test_b3b_h2_spoofed_host_refused_on_every_route_while_running")),
+    Mutant("B3-M42", "gate: the POST Origin check is removed", GATE,
+           '            if len(origins) != 1 or origins[0] != f"http://{host}":\n',
+           "            if False:\n",
+           (f"{BP}test_b3b_h3_post_origin_required_and_exact[None]",
+            f"{BP}test_b3b_h3b_cross_alias_origin_refused")),
+    Mutant("B3-M43", "gate: the CSRF comparison always passes", GATE,
+           "            if (len(tokens) != 1 or token is None\n",
+           "            if False and (len(tokens) != 1 or token is None\n",
+           (f"{BP}test_b3b_h5_csrf_token_required[wrong]",)),
+    Mutant("B3-M44", "gate: the JSON content-type check is removed", GATE,
+           "            if len(media) != 1 or media[0].strip().lower() not in _JSON:\n",
+           "            if False:\n",
+           (f"{BP}test_b3b_h4_post_content_type_must_be_json[text/plain]",)),
+    Mutant("B3-M45", "app: a permissive CORS middleware is added (outermost)", APP,
+           "    app.add_middleware(LocalGate, lifecycle=lc, allowed=allowed)\n",
+           "    app.add_middleware(LocalGate, lifecycle=lc, allowed=allowed)\n"
+           "    from starlette.middleware.cors import CORSMiddleware\n"
+           '    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])\n',
+           (f"{BU}test_b3b_h7u_options_405_no_cors_headers",)),
+    Mutant("B3-M46", "gate: fetch metadata is ignored", GATE,
+           "        if any(site.strip().lower() not in _FETCH_OK for site in sites):\n",
+           "        if False:\n",
+           (f"{BP}test_b3b_h6_cross_site_fetch_metadata_refused",)),
+    Mutant("B3-M47", "staff_routes: the principal is not the fixed staff member", STAFF,
+           "    principal = Principal(kind=PrincipalKind.ACTOR, id=services.staff_id,\n",
+           "    principal = Principal(kind=PrincipalKind.ACTOR, id=str(uuid.uuid4()),\n",
+           (f"{BP}test_b3b_i1_fixed_principal_on_every_staff_route",
+            f"{BP}test_b3b_i3_request_chosen_actor_headers_ignored")),
+    Mutant("B3-M48", "staff_routes: capabilities from a fixed full set, not the standing", STAFF,
+           "        held = capabilities_for(await services.staff.self_standing(context))\n",
+           "        await services.staff.self_standing(context)\n"
+           "        from haloflow.platform.capabilities import CAPABILITY_MATRIX\n"
+           "        held = frozenset().union(*CAPABILITY_MATRIX.values())\n",
+           (f"{BP}test_b3b_i4_capabilities_come_from_the_standing",)),
+    Mutant("B3-M49", "staff_routes: an admin route is mounted", STAFF,
+           '    "resolve": ("POST", PREFIX + "/{item_id}/resolve"),\n}\n',
+           '    "resolve": ("POST", PREFIX + "/{item_id}/resolve"),\n'
+           '    "admin": ("POST", "/synthetic/v1/staff/admin"),\n}\n',
+           (f"{BU}test_b3b_r7u_route_inventory_is_closed",
+            f"{BP}test_b3b_r7_not_served_paths_are_404")),
+    Mutant("B3-M50", "simulator: the reply bypasses the ingress handler (direct receive)", SIMU,
+           "    status, out = await _deliver(_ingress_app(lifecycle), lifecycle.ingress_secret,"
+           " payload)\n",
+           "    from haloflow.m05.reply_classifier import InboundMessage\n"
+           "    services = lifecycle.services\n"
+           "    ctx = await services.resolver.resolve(principal=Principal("
+           "kind=PrincipalKind.WORKLOAD, id=W_INGRESS, auth_method='synthetic_ingress',"
+           " authorized_tenant_ids=frozenset({services.tenant_id}), capabilities=INGRESS_CAPS),"
+           " tenant_hint=services.tenant_id, purpose='operations', capabilities=INGRESS_CAPS,"
+           " source=TrustedSource.HTTP, execution_id=uuid.uuid4(), correlation_id=uuid.uuid4(),"
+           " correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)\n"
+           "    result = await wiring.reply_intake(services.gateway).receive(ctx, InboundMessage("
+           "channel='sms', provider_message_id=str(uuid.uuid4()), phone=phone, text=text))\n"
+           "    status, out = 202, {'outcome': result.outcome, 'decision': result.decision,"
+           " 'inbound_id': str(result.inbound_id)}\n",
+           (f"{BP}test_b3b_s2_reply_goes_through_the_ingress_handler",)),
+    Mutant("B3-M51", "app: the ingress path is mounted on the public app", APP,
+           "    install_simulator(app, lc)\n",
+           "    install_simulator(app, lc)\n"
+           '    app.add_api_route("/v1/synthetic/inbound-sms", lambda: {"x": 1},'
+           ' methods=["POST"])\n',
+           (f"{BU}test_b3b_r7u_route_inventory_is_closed",
+            f"{BP}test_b3b_s5_ingress_route_not_on_the_public_app")),
+    Mutant("B3-M52", "simulator: the canonical phone check is removed", SIMU,
+           "        if type(phone) is not str or not PHONE.fullmatch(phone):\n",
+           "        if type(phone) is not str:\n",
+           (f"{BP}test_b3b_s3_non_canonical_phone_refused_before_ingress[+15555550200]",)),
+    Mutant("B3-M53", "labels: refusals lose the simulated key", LABELS,
+           '    return labelled({"code": code, **extra}, status_code)\n',
+           '    return JSONResponse({"code": code, **extra}, status_code=status_code)\n',
+           (f"{BU}test_b3b_l2u_unknown_path_and_method_are_labelled[GET-/nope]",
+            f"{BP}test_b3b_l1_every_route_labelled_on_success_and_refusal")),
+    Mutant("B3-M54", "gate: its own exception path is unlabelled", GATE,
+           "                await internal()(scope, receive, labelled_send)\n",
+           '                await JSONResponse({"code": "INTERNAL"}, status_code=500)('
+           "scope, receive, send)\n",
+           (f"{BP}test_b3b_l4_middleware_fault_is_labelled_500[gate]",)),
+    Mutant("B3-M55", "lifecycle: the http drain step is skipped", LIFECYCLE,
+           '                Step("http", "http", cfg.t_http, http, "HTTP_NOT_DRAINED"),\n', "",
+           (f"{BP}test_b3b_d1_held_request_is_awaited_before_the_port",)),
+    Mutant("B3-M56", "lifecycle: the coordinator step order omits http", LIFECYCLE,
+           'STEP_ORDER: Final = ("watcher", "http", "port", "pool", "quiesce", "lease")\n',
+           'STEP_ORDER: Final = ("watcher", "port", "pool", "quiesce", "lease")\n',
+           (f"{BU}test_b3b_d1u_http_step_runs_after_producers_before_port",)),
+    Mutant("B3-M57", "lifecycle: an unconfirmed http step continues to port, pool and lease",
+           LIFECYCLE, _REST_CHECK,
+           '            if outcome != "ok" and step.name != "http":\n'
+           "                return self._terminal(drain, self._code(outcome, step.code),"
+           " step.name)\n"
+           '            if step.name == "lease":\n',
+           (f"{BU}test_b3b_d2u_unconfirmed_http_is_terminal_no_close[hold]",
+            f"{BP}test_b3b_d2_unconfirmed_http_drain_terminal_through_a_child[no_db]")),
+    Mutant("B3-M58", "gate: the in-flight count is released when the response starts", GATE,
+           "                started = True\n",
+           "                started = True\n"
+           "                if counted:\n"
+           "                    self.lifecycle.http_leave()\n",
+           (f"{BP}test_b3b_d1b_held_body_stream_is_counted",)),
+    Mutant("B3-M59", "gate: admission is not checked", GATE,
+           "                if not counted:\n",
+           "                if False:\n",
+           (f"{BP}test_b3b_d3_after_stop_request_new_requests_are_503",)),
+    Mutant("B3-M60", "simulator: the EHR route also writes to the database (through intake)",
+           SIMU, "            lifecycle.port.ehr.put(read)\n",
+           "            lifecycle.port.ehr.put(read)\n"
+           "            await _deliver(_ingress_app(lifecycle), lifecycle.ingress_secret,"
+           " json.dumps({'channel': 'sms', 'provider_message_id': str(uuid.uuid4()),"
+           " 'phone': '+15555550144', 'text': '1'}).encode())\n",
+           (f"{BP}test_b3b_s9_reply_writes_only_the_ingress_set_and_ehr_writes_nothing",)),
 )
 
 

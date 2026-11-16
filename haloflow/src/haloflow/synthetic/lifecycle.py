@@ -38,6 +38,7 @@ import asyncio
 import concurrent.futures
 import contextlib
 import os
+import secrets
 import sys
 import threading
 import time
@@ -62,6 +63,9 @@ QUIESCE_POLL_S: Final = 0.02
 CLEANUP_CONNECT_TIMEOUT_S: Final = 5
 
 FatalExit = Callable[..., Any]
+# The non-producer drain steps, in order (B3b v1r1 §1: `http` after the producers, before the
+# port). The coordinator runs `watcher`, then the producers, then the rest in this order.
+STEP_ORDER: Final = ("watcher", "http", "port", "pool", "quiesce", "lease")
 
 
 def default_fatal_exit(rc: int, code: str, step: str) -> None:
@@ -85,6 +89,7 @@ class LifecycleConfig:
     t_pool: float = 5
     t_quiesce: float = 2
     t_lease: float = 5
+    t_http: float = 2           # B3b (v1r1 §1): the HTTP drain step, bound [1, 10]
 
     def __post_init__(self) -> None:
         lease = self.lease_check_s
@@ -97,14 +102,17 @@ class LifecycleConfig:
         for value in (self.t_watcher, self.t_port, self.t_pool, self.t_quiesce, self.t_lease):
             if not _positive(value):
                 raise SyntheticRefused("BUDGET_INVALID")
+        if not _positive(self.t_http) or not 1 <= self.t_http <= 10:
+            raise SyntheticRefused("BUDGET_INVALID")
         if self.t_total > MAX_TOTAL_S:
             raise SyntheticRefused("BUDGET_TOTAL_EXCEEDED")
 
     @property
     def t_total(self) -> float:
-        """v1r2 D3.4a: t_watcher + 2 x sum(stop) + t_port + t_pool + t_quiesce + t_lease."""
-        return (self.t_watcher + 2 * sum(self.stop_timeout_s) + self.t_port + self.t_pool
-                + self.t_quiesce + self.t_lease)
+        """v1r2 D3.4a + B3b v1r1 §1: t_watcher + 2 x sum(stop) + t_http + t_port + t_pool
+        + t_quiesce + t_lease."""
+        return (self.t_watcher + 2 * sum(self.stop_timeout_s) + self.t_http + self.t_port
+                + self.t_pool + self.t_quiesce + self.t_lease)
 
     def stop_timeout(self, producer: str) -> float:
         return float(self.stop_timeout_s[PRODUCERS.index(producer)])
@@ -193,15 +201,15 @@ class DrainCoordinator:
         """Fake resources with `.name` and `async close()` (unit rows D4u/D9u)."""
         del rec                                     # the resources record themselves
         by = {s.name: s for s in steps}
-        budgets = {"watcher": config.t_watcher, "port": config.t_port, "pool": config.t_pool,
-                   "quiesce": config.t_quiesce, "lease": config.t_lease}
-        codes = {"watcher": "WATCHER_STOP_FAILED", "port": "CLOSE_TIMEOUT",
-                 "pool": "POOL_NOT_QUIESCENT", "quiesce": "POOL_NOT_QUIESCENT",
-                 "lease": "CLOSE_TIMEOUT"}
+        budgets = {"watcher": config.t_watcher, "http": config.t_http, "port": config.t_port,
+                   "pool": config.t_pool, "quiesce": config.t_quiesce, "lease": config.t_lease}
+        codes = {"watcher": "WATCHER_STOP_FAILED", "http": "HTTP_NOT_DRAINED",
+                 "port": "CLOSE_TIMEOUT", "pool": "POOL_NOT_QUIESCENT",
+                 "quiesce": "POOL_NOT_QUIESCENT", "lease": "CLOSE_TIMEOUT"}
 
         def make() -> list[Step]:
             return [Step(n, n, budgets[n], by[n].close, codes[n])
-                    for n in ("watcher", "port", "pool", "quiesce", "lease") if n in by]
+                    for n in STEP_ORDER if n in by]
 
         def producers() -> list[tuple[str, Callable[[], Awaitable[Any]], float]]:
             return [(n, by[n].close, config.stop_timeout(n)) for n in PRODUCERS if n in by]
@@ -370,6 +378,15 @@ class SyntheticLifecycle:
         self.note_keys: Any = None
         self.note_keys_names: tuple[str, ...] = ()
         self.watcher_checks = 0
+        # B3b: the HTTP surface. `services` exists while RUNNING; the CSRF token and the ingress
+        # secret are per lifespan (memory only, never logged); `http_in_flight` is counted by
+        # the gate for every route except health (R-B3b-8).
+        self.services: Any = None
+        self.csrf_token: str | None = None
+        self.ingress_secret: str | None = None
+        self.http_in_flight = 0
+        self._http_idle = asyncio.Event()
+        self._http_idle.set()
         self._endpoint: AdminEndpoint | None = None
         self._started: list[str] = []
         self._watcher_task: asyncio.Task[None] | None = None
@@ -479,6 +496,9 @@ class SyntheticLifecycle:
                              gate=self._tick_gate)
         self.port = built.port
         self.schedulers = built.schedulers
+        self.services = wiring.build_services(rt, self.note_keys, state)
+        self.csrf_token = secrets.token_urlsafe(32)
+        self.ingress_secret = secrets.token_urlsafe(48)
         fire("b3.start.wiring", {})
         for name in ("due", "reminder"):
             self.schedulers[name].start()
@@ -552,6 +572,22 @@ class SyntheticLifecycle:
         self._coordinator.request_stop("STARTUP_FAILED")
         await self._coordinator.wait()
 
+    # -- HTTP admission (B3b, R-B3b-8) -----------------------------------------------------
+
+    def http_enter(self) -> bool:
+        """Count one admitted request; False (not counted) once admission is closed."""
+        if not self.admission_open:
+            return False
+        self.http_in_flight += 1
+        self._http_idle.clear()
+        return True
+
+    def http_leave(self) -> None:
+        self.http_in_flight -= 1
+        if self.http_in_flight <= 0:
+            self.http_in_flight = 0
+            self._http_idle.set()
+
     # -- stop ----------------------------------------------------------------------------
 
     def request_stop(self, reason: str) -> None:
@@ -615,6 +651,10 @@ class SyntheticLifecycle:
         async def watcher() -> None:
             await self._watcher_stop()
 
+        async def http() -> None:
+            while self.http_in_flight > 0:
+                await self._http_idle.wait()
+
         async def port() -> None:
             if self.port is not None:
                 self.port.close()
@@ -638,6 +678,7 @@ class SyntheticLifecycle:
                 await asyncio.to_thread(self.runtime.lease.release)
 
         return [Step("watcher", "watcher", cfg.t_watcher, watcher, "WATCHER_STOP_FAILED"),
+                Step("http", "http", cfg.t_http, http, "HTTP_NOT_DRAINED"),
                 Step("port", "port", cfg.t_port, port, "CLOSE_TIMEOUT"),
                 Step("pool", "pool", cfg.t_pool, pool, "POOL_NOT_QUIESCENT"),
                 Step("quiesce", "quiesce", cfg.t_quiesce, quiesce, "POOL_NOT_QUIESCENT"),
