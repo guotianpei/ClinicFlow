@@ -372,7 +372,12 @@ def test_b4_p_res1_note_is_recorded_but_never_shown(
                 f, outcome_code="no_contact_no_answer", note=secret)), item_id)
             v = await view(app, item_id)
             assert "note recorded" in v.text and secret not in v.raw
-            assert b4.history_rows(i, item_id)[-1]["note_id"] is not None
+            # Oracle corrected at implementation (disclosed): the history TABLE has no note_id
+            # column (that is a field of the service's history view); the note is stored in
+            # m05_followup_notes, encrypted (the plaintext never appears in the ciphertext).
+            notes = i.admin(f"SELECT ciphertext FROM {i.schema}.m05_followup_notes"
+                            " WHERE item_id = %s::uuid", (item_id,))
+            assert len(notes) == 1 and secret.encode() not in bytes(notes[0][0])
 
     run(body())
 

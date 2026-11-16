@@ -41,6 +41,7 @@ from haloflow.platform.http import body as production_body
 from haloflow.synthetic.errors import SyntheticRefused
 from haloflow.synthetic.hooks import fire
 from haloflow.synthetic.labels import LABEL_HEADER, internal, refusal, relabel
+from haloflow.synthetic.ui import UI_FORM_MEDIA, UI_FORM_ROUTE
 
 LOGGER: Final = logging.getLogger("haloflow.synthetic")
 CSRF_HEADER: Final = "x-haloflow-synthetic-csrf"
@@ -69,6 +70,16 @@ def _routed(scope: Scope) -> bool:
     app = scope.get("app")
     routes = getattr(getattr(app, "router", None), "routes", ())
     return any(route.matches(scope)[0] != Match.NONE for route in routes)
+
+
+def _ui_form(scope: Scope) -> bool:
+    """True only for a POST whose path fully matches one registered B4 form route, with the
+    raw path identical to the decoded one (no percent-encoded variant can match)."""
+    path = scope.get("path")
+    raw = scope.get("raw_path")
+    if type(path) is not str or (raw is not None and bytes(raw) != path.encode("latin-1")):
+        return False
+    return UI_FORM_ROUTE.fullmatch(path) is not None
 
 
 def _values(headers: Iterable[tuple[bytes, bytes]], name: bytes) -> list[str]:
@@ -137,6 +148,13 @@ class LocalGate:
             if len(origins) != 1 or origins[0] != f"http://{host}":
                 return refusal(403, "ORIGIN_REFUSED")
             media = _values(headers, b"content-type")
+            if _ui_form(scope):
+                # B4 (v1r1 F1.1, v1r2 C4): the two registered staff-screen form routes take
+                # exactly the form media type; their CSRF token is in the form body and is
+                # checked by the screen before any principal resolution or service call.
+                if len(media) != 1 or media[0].strip().lower() != UI_FORM_MEDIA:
+                    return refusal(415, "UNSUPPORTED_MEDIA")
+                return None
             if len(media) != 1 or media[0].strip().lower() not in _JSON:
                 return refusal(415, "UNSUPPORTED_MEDIA")
             tokens = _values(headers, CSRF_HEADER.encode("latin-1"))

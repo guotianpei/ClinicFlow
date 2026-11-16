@@ -5,7 +5,9 @@ Mutant list: v1r1 §5 (1-26) and v1r2 (27-34) as aligned for the B3a red packet,
 and B3-M36 (the F-R1 resolution activation not provisioned), and B3-M37..M40 (lease ownership under
 startup cancellation; Codex reviews 85d836a, 0e11467, 2c673fe), and B3-M41..M60 (Option B B3b:
 the local exposure gate, identity, closed routes, simulator, labels and the HTTP drain; B3b red
-packet v1 map, with the `http` step mutant split into the lifecycle and coordinator forms). Each
+packet v1 map, with the `http` step mutant split into the lifecycle and coordinator forms), and
+B3-M61..M72 (Option B B4: the staff-screen form boundary, escaping, labels and replay; B4 red
+packet v1 map, Codex red gate PASS at 54a71ef). Each
 mutant is ONE exact textual
 edit (the old text must occur exactly once in the clean target, else the run fails as stale).
 
@@ -47,8 +49,11 @@ LIFECYCLE, GUARD, RUNTIME, PROVISION, SEAL, MAIN = (
 POOL: Final = Path("src/haloflow/m01/pool.py")
 GATE, LABELS, STAFF, SIMU, APP = (SYN / "gate.py", SYN / "labels.py", SYN / "staff_routes.py",
                                   SYN / "simulator.py", SYN / "app.py")
+UI: Final = SYN / "ui.py"
 BU: Final = "tests/synthetic/test_b3b_units.py::"
 BP: Final = "tests/synthetic/test_b3b_postgres.py::"
+B4U: Final = "tests/synthetic/test_b4_units.py::"
+B4P: Final = "tests/synthetic/test_b4_postgres.py::"
 U: Final = "tests/synthetic/test_b3a_units.py::"
 P: Final = "tests/synthetic/test_b3a_postgres.py::"
 C: Final = "tests/synthetic/test_b3a_controls_postgres.py::"
@@ -451,6 +456,63 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            " json.dumps({'channel': 'sms', 'provider_message_id': str(uuid.uuid4()),"
            " 'phone': '+15555550144', 'text': '1'}).encode())\n",
            (f"{BP}test_b3b_s9_reply_writes_only_the_ingress_set_and_ehr_writes_nothing",)),
+    Mutant("B3-M61", "ui: the form CSRF comparison accepts anything", UI,
+           '    return hmac.compare_digest(given.encode("utf-8"), token.encode("utf-8"))\n',
+           "    return True\n",
+           (f"{B4P}test_b4_p_frm4_csrf_403_precedes_missing_fields[wrong]",)),
+    Mutant("B3-M62", "ui: the CSRF refusal comes after a service call", UI,
+           '    if not _csrf_ok(fields["csrf"], lifecycle.csrf_token):       # step 5\n',
+           '    if not _csrf_ok(fields["csrf"], lifecycle.csrf_token) and await execute(\n'
+           '            lifecycle, "get", lambda m05, ctx: m05.get(ctx, item_id)) is not None:\n',
+           (f"{B4P}test_b4_p_frm4_csrf_403_precedes_missing_fields[wrong]",)),
+    Mutant("B3-M63", "gate: the form exception becomes a prefix match", GATE,
+           "    return UI_FORM_ROUTE.fullmatch(path) is not None\n",
+           '    return path.startswith("/synthetic/ui/")\n',
+           (f"{B4P}test_b4_p_frm6_form_media_never_widens_beyond_the_registered_routes",)),
+    Mutant("B3-M64", "gate: the Origin check is skipped for staff-screen POSTs", GATE,
+           '            if len(origins) != 1 or origins[0] != f"http://{host}":\n',
+           '            if not _ui_form(scope) and (len(origins) != 1'
+           ' or origins[0] != f"http://{host}"):\n',
+           (f"{B4P}test_b4_p_sec4_ui_post_keeps_the_b3b_gate[cross_origin]",
+            f"{B4P}test_b4_p_sec4_ui_post_keeps_the_b3b_gate[no_origin]")),
+    Mutant("B3-M65", "ui: one render site (closed-map labels) drops escaping", UI,
+           "        return esc(mapping[code])\n",
+           "        return mapping[code]\n",
+           (f"{B4P}test_b4_p_esc1_injected_labels_render_inert",)),
+    Mutant("B3-M66", "ui: Other is accepted without a note on the screen path", UI,
+           "            value.update(outcome_code=fields[\"outcome_code\"],"
+           " note=note if note else None)\n",
+           "            value.update(outcome_code=fields[\"outcome_code\"],"
+           " note=note if note else \"-\")\n",
+           (f"{B4P}test_b4_p_res3_other_without_note_refused_before_service[None]",)),
+    Mutant("B3-M67", "ui: error pages lose the banner and headers", UI,
+           '    return _page(f"<p class=\\"message\\">{esc(MESSAGES[\'refused\'])}</p>"\n',
+           '    return HTMLResponse(f"<p class=\\"message\\">{esc(MESSAGES[\'refused\'])}</p>"\n',
+           (f"{B4P}test_b4_p_lbl1_every_ui_page_and_error_page_is_labelled",)),
+    Mutant("B3-M68", "ui: duplicate form fields are not refused", UI,
+           "    if len(set(names)) != len(names) or any(name not in allowed for name in names):\n",
+           "    if any(name not in allowed for name in names):\n",
+           (f"{B4P}test_b4_p_frm2_structure_refused_400_before_service[dup_type]",
+            f"{B4U}test_b4_u_frm2b_duplicate_unknown_and_count[note=1&note=2]")),
+    Mutant("B3-M69", "ui: the streamed byte cap is removed", UI,
+           "        if size > UI_FORM_MAX_BYTES:\n",
+           "        if False:\n",
+           (f"{B4P}test_b4_p_frm1_byte_cap_before_decoding",)),
+    Mutant("B3-M70", "ui: the percent-triplet check is removed", UI,
+           "    if not _RAW_BYTES.fullmatch(body) or _BAD_PERCENT.search(body):\n",
+           "    if not _RAW_BYTES.fullmatch(body):\n",
+           (f"{B4P}test_b4_p_frm3_encoding_refused_400_before_service[bad_hex]",)),
+    Mutant("B3-M71", "ui: other missing fields are refused (400) before the absent CSRF (403)",
+           UI, '    if "csrf" not in fields:                                     # step 4\n',
+           '    if any(name not in fields for name in required - {"csrf"}):\n'
+           "        return _error_page(400)\n"
+           '    if "csrf" not in fields:                                     # step 4\n',
+           (f"{B4P}test_b4_p_frm4_csrf_403_precedes_missing_fields[absent_and_type_absent]",)),
+    Mutant("B3-M72", "ui: the action type is derived from the endpoint at submit, not the form",
+           UI, '        "client_action_id": fields["client_action_id"], "type": fields["type"],\n',
+           '        "client_action_id": fields["client_action_id"],'
+           ' "type": "claim" if endpoint == "claim" else "resolve",\n',
+           (f"{B4P}test_b4_p_ui7bc_close_replay_keeps_its_type[claim_and_resolve]",)),
 )
 
 

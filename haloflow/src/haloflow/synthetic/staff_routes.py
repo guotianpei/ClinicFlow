@@ -84,13 +84,34 @@ async def _resolve(services: Any, held: frozenset[str], requested: frozenset[str
         correlation_source=CorrelationSource.ENTRY_POINT_GENERATED)
 
 
-async def serve(lifecycle: Any, name: str, request: Request) -> Response:
+def _failure(name: str, error: BaseException) -> Response:
+    """The one error map for both paths: production's `error_response`, with the single
+    synthetic adapter for the S-I reason read (below), all labelled."""
+    if isinstance(error, _Malformed):
+        return relabel(malformed(error.field))
+    if isinstance(error, ReadFailed):
+        # The S-I reason read reports an unknown, other-tenant, other-kind or unbound item as
+        # ReadFailed ITEM_NOT_FOUND (its pin); production has no reason route, and its map
+        # would call that 503 UNAVAILABLE. For `reason` only it is production's 404 NOT_FOUND
+        # (as the accepted S-J test router did); everything else is production's map.
+        if name == "reason" and getattr(error, "reason_code", None) == "ITEM_NOT_FOUND":
+            return relabel(body("NOT_FOUND"))
+        return relabel(error_response(error))
+    try:
+        return relabel(error_response(error))
+    except Exception:  # noqa: BLE001
+        return internal()
+
+
+async def execute(lifecycle: Any, name: str, call: Call) -> Any:
+    """The one action path shared by the JSON routes and the B4 screen (B4 v1 Q2): the
+    production two-step capability resolution for the fixed principal, then exactly one service
+    call. Returns the service value, or a labelled refusal Response (production's map)."""
     services = lifecycle.services
     route = "get" if name == "reason" else name
     try:
         if services is None:
             return relabel(body("UNAVAILABLE"))
-        call = await _parse(name, request)
         execution_id, correlation_id = uuid.uuid4(), uuid.uuid4()
         own = frozenset({SELF_STANDING})
         context = await _resolve(services, own, own, execution_id, correlation_id)
@@ -99,23 +120,25 @@ async def serve(lifecycle: Any, name: str, request: Request) -> Response:
         if requested is None:
             return relabel(body("FORBIDDEN"))
         context = await _resolve(services, held, requested, execution_id, correlation_id)
-        value = await call(services.m05, context)
-        return labelled(dict(value))
-    except _Malformed as error:
-        return relabel(malformed(error.field))
-    except ReadFailed as error:
-        # The S-I reason read reports an unknown, other-tenant, other-kind or unbound item as
-        # ReadFailed ITEM_NOT_FOUND (its pin); production has no reason route, and its map
-        # would call that 503 UNAVAILABLE. For `reason` only it is production's 404 NOT_FOUND
-        # (as the accepted S-J test router did); everything else is production's map.
-        if name == "reason" and getattr(error, "reason_code", None) == "ITEM_NOT_FOUND":
-            return relabel(body("NOT_FOUND"))
-        return relabel(error_response(error))
+        return await call(services.m05, context)
     except Exception as error:  # noqa: BLE001 - production's closed status map
-        try:
-            return relabel(error_response(error))
-        except Exception:  # noqa: BLE001
-            return internal()
+        return _failure(name, error)
+
+
+async def serve(lifecycle: Any, name: str, request: Request) -> Response:
+    if lifecycle.services is None:
+        return relabel(body("UNAVAILABLE"))
+    try:
+        call = await _parse(name, request)
+    except Exception as error:  # noqa: BLE001 - production's closed status map
+        return _failure(name, error)
+    value = await execute(lifecycle, name, call)
+    if isinstance(value, Response):
+        return value
+    try:
+        return labelled(dict(value))
+    except Exception as error:  # noqa: BLE001
+        return _failure(name, error)
 
 
 ROUTES: Final[dict[str, tuple[str, str]]] = {

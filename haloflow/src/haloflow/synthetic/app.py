@@ -6,7 +6,8 @@ awaits the coordinator's completion (never the drain steps directly).
 
 Routes (R-B3b-1, closed): `GET /synthetic/health` (B3a), `GET /synthetic/session` (the
 per-lifespan CSRF token, `Cache-Control: no-store`), the six staff routes (`staff_routes`) and
-the two simulator routes (`simulator`). The S-G1a ingress is NOT mounted. Every request passes
+the two simulator routes (`simulator`) and the B4 staff screen (`ui`: four HTML routes and
+one stylesheet). The S-G1a ingress is NOT mounted. Every request passes
 the local exposure gate first (`gate`, built from the loopback `bind`), and every response is
 labelled SIMULATED (`labels`). No docs or OpenAPI routes.
 """
@@ -27,6 +28,7 @@ from haloflow.synthetic.labels import EXCEPTION_HANDLERS, labelled
 from haloflow.synthetic.lifecycle import SyntheticLifecycle
 from haloflow.synthetic.simulator import install_simulator
 from haloflow.synthetic.staff_routes import install_staff_routes
+from haloflow.synthetic.ui import install_ui
 
 HEALTH_ROUTE: Final = "/synthetic/health"
 SESSION_ROUTE: Final = "/synthetic/session"
@@ -69,6 +71,7 @@ def create_synthetic_app(environ: Mapping[str, str] | None = None, *,
 
     install_staff_routes(app, lc)
     install_simulator(app, lc)
+    install_ui(app, lc)
     app.add_middleware(LocalGate, lifecycle=lc, allowed=allowed)
     app.state.lifecycle = lc
     return app
