@@ -407,9 +407,12 @@ def test_b4_p_res3_other_without_note_refused_before_service(
             spy = Spies(lc)
             before = bb.item_row(i, item_id)
             r = await post(app, f.action, b4.submit_fields(f, outcome_code="other", note=note))
+            # Codex red-gate review 6479663: zero M05 calls during the POST itself (principal
+            # resolution is allowed); the later view GET is outside this oracle.
+            during_post = [c for c in spy.calls if c in Spies.M05]
+            assert during_post == [], during_post
             redirected_to_view(r, item_id, "note")
             assert bb.item_row(i, item_id) == before
-            assert spy.writes == []
             assert b4.MESSAGES["note"] in (await view(app, item_id, "note")).text
 
     run(body())
