@@ -31,6 +31,31 @@ import pytest
 pytestmark = pytest.mark.postgres
 
 
+@pytest.fixture(autouse=True)
+def _haloflow_loggers_enabled() -> Iterator[None]:
+    """Re-enable every `haloflow` logger that an earlier in-process alembic run disabled.
+
+    alembic/env.py calls `fileConfig(alembic.ini)`, which has disable_existing_loggers=True.
+    In the full CI order, tests/m05 (sg_harness) creates `haloflow.synthetic`, and then the
+    in-process `apply_migrations` rows in tests/platform disable it. That was measured locally
+    on 267a8b3 and is the cause of the S10 failure in CI 43798983975. A disabled logger makes
+    a positive log row fail, and a negative one (H9, the ingress-secret row, S10's
+    identifier exclusion) pass vacuously. This is the J12 precedent (test_sj_postgres.py),
+    applied to the whole module. The test re-enables the loggers and restores their state on
+    exit. It changes no production code."""
+    manager = logging.Logger.manager
+    names = [n for n, lg in list(manager.loggerDict.items())
+             if (n == "haloflow" or n.startswith("haloflow."))
+             and isinstance(lg, logging.Logger) and lg.disabled]
+    for n in names:
+        logging.getLogger(n).disabled = False
+    try:
+        yield
+    finally:
+        for n in names:
+            logging.getLogger(n).disabled = True
+
+
 @pytest.fixture
 def pg(tmp_path: Path) -> Iterator[s.PgCluster]:
     with s.cluster(tmp_path) as c:
@@ -1117,15 +1142,23 @@ def test_b3b_s10_simulator_audit_lines(inst: b3.Install,
     async def body() -> None:
         async with bb.running(inst) as (_lc, app):
             token = await bb.session_token(app)
-            await bb.asgi(app, "POST", bb.path("sim_reply"), headers=bb.post_headers(token),
-                          body=_reply_body(phone, "unique-text-s10"))
-            await bb.asgi(app, "POST", bb.path("sim_ehr"), headers=bb.post_headers(token),
-                          body=bb.jbody({"operation": "put_appointment",
-                                         "appointment_id": "appt-secret-s10",
-                                         "status": "neutral",
-                                         "start_at": "2026-12-01T15:00:00+00:00"}))
+            r1 = await bb.asgi(app, "POST", bb.path("sim_reply"),
+                               headers=bb.post_headers(token),
+                               body=_reply_body(phone, "unique-text-s10"))
+            r2 = await bb.asgi(app, "POST", bb.path("sim_ehr"), headers=bb.post_headers(token),
+                               body=bb.jbody({"operation": "put_appointment",
+                                              "appointment_id": "appt-secret-s10",
+                                              "status": "neutral",
+                                              "start_at": "2026-12-01T15:00:00+00:00"}))
+            # Codex 267a8b3 review: pin both responses, so an absent audit line can be told
+            # apart from a request refused before the simulator ran.
+            assert (r1.status, r2.status) == (202, 200), (r1.status, r1.raw[:200],
+                                                          r2.status, r2.raw[:200])
 
     run(body())
+    # Positive control for the capture itself: the emitting logger must be live here, or the
+    # exclusion checks below would pass vacuously.
+    assert logging.getLogger("haloflow.synthetic").disabled is False
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("SIMULATOR ")]
     assert lines == ["SIMULATOR action=patient_reply status=202 code=-",
                      "SIMULATOR action=ehr_put_appointment status=200"], lines
