@@ -322,6 +322,9 @@ def _src_trees() -> dict[Path, ast.AST]:
 # `EventFoundation` in exactly one module. No other name, no other synthetic module.
 B3A_SYNTHETIC_SITES: dict[str, frozenset[Path]] = {
     "EventFoundation": frozenset({SRC / "synthetic/wiring.py"}),
+    # Option B B3b: the synthetic staff routes need the M01 staff service (self standing),
+    # built in the same module only (`wiring.build_services`).
+    "StaffService": frozenset({SRC / "synthetic/wiring.py"}),
 }
 # ... and its note keys are the install's per-setup keys (state file), one provider class.
 B3A_SYNTHETIC_PROVIDERS: frozenset[tuple[Path, str]] = frozenset({
@@ -342,12 +345,13 @@ def test_b3a_b5_k01_k03_synthetic_allowances_are_exact() -> None:
     """B3a negative control: the allowances name one synthetic module and one class; no
     production path, no other service and no other synthetic module is admitted."""
 
-    assert set(B3A_SYNTHETIC_SITES) == {"EventFoundation"}
+    assert set(B3A_SYNTHETIC_SITES) == {"EventFoundation", "StaffService"}   # B3b: + StaffService
     for sites in B3A_SYNTHETIC_SITES.values():
         assert all(p.is_relative_to(SRC / "synthetic") for p in sites)
         assert len(sites) == 1
     assert {p for p, _ in B3A_SYNTHETIC_PROVIDERS} == {SRC / "synthetic/wiring.py"}
     assert {n for _, n in B3A_SYNTHETIC_PROVIDERS} == {"StateNoteKeys"}
+    assert "M05Service" not in B3A_SYNTHETIC_SITES    # B3b uses StaffServiceV3, never M05Service
 
 
 def test_b5_k02_startup_fixes_the_producer_literal() -> None:

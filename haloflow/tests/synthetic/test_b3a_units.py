@@ -38,7 +38,9 @@ def test_b3a_u1_defaults_and_total_budget() -> None:
     assert tuple(cfg.stop_timeout_s) == (2, 2, 2)
     want = cfg.t_watcher + 2 * sum(cfg.stop_timeout_s) + cfg.t_port + cfg.t_pool \
         + cfg.t_quiesce + cfg.t_lease
-    assert cfg.t_total == want == 28
+    # B3b amendment (v1r1 §1, disclosed in the B3b red packet): the http step adds t_http to
+    # T_total; the B3a part is unchanged at 28 s (test_b3b_u3 pins the 30 s total).
+    assert cfg.t_total == want + getattr(cfg, "t_http", 0) and want == 28
 
 
 @pytest.mark.parametrize("field,value,code", [

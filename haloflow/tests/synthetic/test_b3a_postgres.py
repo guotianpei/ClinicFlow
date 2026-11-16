@@ -26,6 +26,9 @@ import pytest
 pytestmark = pytest.mark.postgres
 
 APP = "b3a-row"
+# B3b amendment (disclosed): the local exposure gate requires an allowlisted Host header on
+# every request (R-B3b-4 step 1); the default bind is 127.0.0.1:8765.
+HOST = {"host": "127.0.0.1:8765"}
 
 
 @pytest.fixture
@@ -97,6 +100,16 @@ def make_lc(inst: b3.Install, **kw: Any) -> Any:
 
 def run(coro: Any) -> Any:
     return asyncio.run(coro)
+
+
+def free_port() -> int:
+    """A currently free loopback port (B3b amendment, disclosed in the B3b red packet: `serve`
+    refuses port 0 once the Host allowlist needs a known port)."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 async def start_stop(lc: Any) -> Any:
@@ -562,7 +575,7 @@ def test_b3a_s4_s5_admits_at_94_and_starts_in_order(inst: b3.Install) -> None:
         app = b3.mod("app").create_synthetic_app(lifecycle=lc)
         import sj_harness as sj
 
-        status, out = await sj.http(app, "GET", "/synthetic/health")
+        status, out = await sj.http(app, "GET", "/synthetic/health", headers=HOST)
         lc.request_stop("TEST")
         await lc.wait_stopped()
         return h, (status, out)
@@ -973,7 +986,8 @@ def test_b3a_l1_lease_backend_killed_stops_and_503(inst: b3.Install) -> None:
         result = await asyncio.wait_for(lc.wait_stopped(), cfg.lease_check_s + cfg.t_total)
         import sj_harness as sj
 
-        return time.monotonic() - t0, result, await sj.http(app, "GET", "/synthetic/health")
+        probe = await sj.http(app, "GET", "/synthetic/health", headers=HOST)
+        return time.monotonic() - t0, result, probe
 
     elapsed, result, (status, out) = run(body())
     assert result.disposition in ("lease_lost_drained", "terminal")
@@ -1004,7 +1018,7 @@ def test_b3a_d1_normal_stop_order_quiescence_and_admission(inst: b3.Install) -> 
 
         async def probe() -> None:
             while lc.state not in ("STOPPED", "STOP_FAILED", "FAILED"):
-                probes.append((await sj.http(app, "GET", "/synthetic/health"))[0])
+                probes.append((await sj.http(app, "GET", "/synthetic/health", headers=HOST))[0])
                 await asyncio.sleep(0.01)
 
         task = asyncio.create_task(probe())
@@ -1016,8 +1030,9 @@ def test_b3a_d1_normal_stop_order_quiescence_and_admission(inst: b3.Install) -> 
         return h, result, probes
 
     h, result, probes = run(body())
-    assert h.points("b3.stop.") == ["b3.stop.watcher", "b3.stop.producers", "b3.stop.port",
-                                    "b3.stop.pool", "b3.stop.quiesce", "b3.stop.lease"]
+    assert h.points("b3.stop.") == ["b3.stop.watcher", "b3.stop.producers", "b3.stop.http",
+                                    "b3.stop.port", "b3.stop.pool", "b3.stop.quiesce",
+                                    "b3.stop.lease"]
     for p in ("b3.stop.port", "b3.stop.pool"):
         o = h.at(p)
         assert o["live_tasks"] == 0 and set(o["schedulers"].values()) == {"STOPPED"}, o
@@ -1058,7 +1073,7 @@ def test_b3a_d3s_terminal_failure_through_real_serve(inst: b3.Install, tmp_path:
     stderr line, then (eventually) no backend and K_S free."""
     lc_mod()
     child = b3.spawn(inst, tmp_path / "bar", "serve", app=APP,
-                     extra={"args": ["--port", "0"], "hang_stop": "writeback"})
+                     extra={"args": ["--port", str(free_port())], "hang_stop": "writeback"})
     child.seen("b3.start.watcher", 120)
     t0 = time.monotonic()
     child.proc.send_signal(signal.SIGTERM)
