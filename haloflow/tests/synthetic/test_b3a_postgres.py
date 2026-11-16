@@ -99,6 +99,16 @@ def run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
+def free_port() -> int:
+    """A currently free loopback port (B3b amendment, disclosed in the B3b red packet: `serve`
+    refuses port 0 once the Host allowlist needs a known port)."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
 async def start_stop(lc: Any) -> Any:
     await lc.start()
     lc.request_stop("TEST")
@@ -1058,7 +1068,7 @@ def test_b3a_d3s_terminal_failure_through_real_serve(inst: b3.Install, tmp_path:
     stderr line, then (eventually) no backend and K_S free."""
     lc_mod()
     child = b3.spawn(inst, tmp_path / "bar", "serve", app=APP,
-                     extra={"args": ["--port", "0"], "hang_stop": "writeback"})
+                     extra={"args": ["--port", str(free_port())], "hang_stop": "writeback"})
     child.seen("b3.start.watcher", 120)
     t0 = time.monotonic()
     child.proc.send_signal(signal.SIGTERM)
