@@ -105,16 +105,73 @@ def test_b1_e0_frozen_manifest_is_the_committed_oracle() -> None:
         u["migration_id"] for u in frozen["registry"]["units"]]
 
 
+# B5 (v1r1 C1/C4, v1r2 §6, v1r3 §2): the synthetic registry and catalogue gain EXACTLY the
+# three B5 units and keys. E1/E2 compare everything else with the frozen oracle unchanged;
+# B5-E1/E2 below pin the delta itself.
+B5_UNITS: Final = ("t095_m05_synthetic_display", "t096_m05_synthetic_scenario_claim",
+                   "t097_m05_synthetic_scenario_present")
+B5_KEYS: Final = ("m05.synthetic.display", "m05.synthetic.scenario_claim",
+                  "m05.synthetic.scenario_present")
+
+
+def _without_b5_registry(manifest: dict[str, Any]) -> dict[str, Any]:
+    units = [u for u in manifest["units"] if u["migration_id"] not in B5_UNITS]
+    return {**manifest, "units": units, "migration_ids": [u["migration_id"] for u in units],
+            "target_version": len(units)}
+
+
+def _without_b5_catalog(manifest: dict[str, Any]) -> dict[str, Any]:
+    out = dict(manifest)
+    out["keys"] = [k for k in manifest["keys"] if k not in B5_KEYS]
+    out["statements"] = {k: v for k, v in manifest["statements"].items() if k not in B5_KEYS}
+    out["write_capabilities"] = [c for c in manifest["write_capabilities"]
+                                 if c != "m05.synthetic.scenario_claim"]
+    out["activation_protected"] = [k for k in manifest["activation_protected"]
+                                   if k not in B5_KEYS]
+    return out
+
+
 def test_b1_e1_synthetic_registry_equals_the_frozen_registry() -> None:
     gen = _generator()
     actual = gen.registry_manifest(_synthetic().build_synthetic_registry())
-    assert actual == _frozen()["registry"]
+    assert _without_b5_registry(actual) == _frozen()["registry"]
 
 
 def test_b1_e2_synthetic_catalog_equals_the_frozen_catalog() -> None:
     gen = _generator()
     actual = gen.catalog_manifest(_synthetic().build_synthetic_catalog())
-    assert actual == _frozen()["catalog"]
+    assert _without_b5_catalog(actual) == _frozen()["catalog"]
+
+
+def test_b5_e1_registry_delta_is_exactly_the_three_b5_units() -> None:
+    """B (B5 v1r1 C1, v1r2 §6, v1r3 §2): target 97; the last three units are t095..t097 in
+    order, typed functions owned by the M05 owner role. On B4 (`main` b358637): fails
+    `target 94, B5 units missing`."""
+    gen = _generator()
+    actual = gen.registry_manifest(_synthetic().build_synthetic_registry())
+    ids = actual["migration_ids"]
+    assert actual["target_version"] == 97 and tuple(ids[-3:]) == B5_UNITS, \
+        f"target {actual['target_version']}, B5 units missing"
+    assert _synthetic().SYNTHETIC_TARGET == 97
+    for u in actual["units"][-3:]:
+        assert u["execution_role"] == "haloflow_m05_owner", u["migration_id"]
+
+
+def test_b5_e2_catalog_delta_is_exactly_the_three_b5_keys() -> None:
+    """B (B5 v1r1 C1): the synthetic catalogue gains exactly the three keys with their modes
+    and capabilities; none is activation-protected. On B4: fails `B5 keys missing`."""
+    gen = _generator()
+    actual = gen.catalog_manifest(_synthetic().build_synthetic_catalog())
+    frozen = _frozen()["catalog"]
+    added = set(actual["keys"]) - set(frozen["keys"])
+    assert added == set(B5_KEYS), f"B5 keys missing: {sorted(set(B5_KEYS) - added)}"
+    want = {"m05.synthetic.display": ("read", "m05.followup.read"),
+            "m05.synthetic.scenario_claim": ("write", "m05.synthetic.scenario_claim"),
+            "m05.synthetic.scenario_present": ("read", "m05.followup.read")}
+    for key, (mode, cap) in want.items():
+        st = actual["statements"][key]
+        assert (st["mode"], st["required_capability"]) == (mode, cap), (key, st)
+        assert key not in actual["activation_protected"], key
 
 
 def test_b1_e3_test_profile_sql_equals_the_frozen_digests() -> None:
