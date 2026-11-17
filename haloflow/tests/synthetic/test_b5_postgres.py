@@ -1406,7 +1406,7 @@ async def _side(inst: b3.Install, adapter: str, action: str, fields: dict[str, s
                        tenant(inst), inst.schema,
                        ehr=(ehr0, b5.ehr_state(lc.port.ehr)),
                        sends=tuple(lc.sender.calls[sent0:]))
-        if outcome in ((200, None), (303, "loaded")):          # a successful load
+        if b5.is_load_success(action, outcome):
             assert len(clock.seen) == seen0 + 1, clock.seen
             assert_appointments(inst, f["scenario"], clock.seen[-1], b5.TEST_ZONES)
         return {"outcome": outcome, "lines": lines, "side": side}

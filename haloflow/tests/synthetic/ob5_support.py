@@ -457,6 +457,28 @@ TIME_TOL: Final = 5.0
 _UUID_RE: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
+def ref_labels(tenant_id: str, ids: Any = None) -> dict[str, str]:
+    """uuid text -> stable role label ("S1.confirm.patient" / "S1.confirm.ref") for every
+    fixture row of the four scenarios, so two installs (different tenants, different uuid5
+    values) compare by role. `ids` defaults to the pinned `scenarios.ids`; a control may pass
+    a stand-in with the same signature (U-C7)."""
+    ids_fn = ids if ids is not None else mod("scenarios").ids
+    out: dict[str, str] = {}
+    for name in NAMES:
+        for key in FIXTURE_SHAPE[name][0]:
+            patient, ref = (str(x) for x in ids_fn(tenant_id, name, key))
+            out[patient] = f"{name}.{key}.patient"
+            out[ref] = f"{name}.{key}.ref"
+    return out
+
+
+def is_load_success(action: str, outcome: tuple[int, str | None]) -> bool:
+    """P-PAR's predicate for "this compared request was a SUCCESSFUL scenario load" (Codex
+    07f30e0 fix 2): only a load action, and only its success result on either adapter
+    (JSON 200, form 303 m=loaded). A successful tick or EHR action is never a load."""
+    return action == "load" and outcome in ((200, None), (303, "loaded"))
+
+
 class Unclassified(AssertionError):
     pass
 

@@ -261,6 +261,38 @@ def test_b5_u_c6_ehr_structural_encoding() -> None:
                                 side(base_read, p2, tables_permit=str(uuid.uuid4()))) != []
 
 
+def test_b5_u_c7_par_integration_helpers() -> None:
+    """C (Codex 07f30e0 fixes 1-2; no B5 code): the two helpers P-PAR's `_side` calls.
+    (1) `ref_labels` exists and, given an ids function with the pinned signature, labels
+    every fixture patient and appointment of S1..S4 (7 rows, 14 distinct uuids), each with
+    its "<scenario>.<key>.patient|ref" role; two tenants give disjoint uuids and equal label
+    sets. (2) `is_load_success` is true only for a load with a success result on either
+    adapter: a successful tick (JSON 200 / form m=tick), EHR put or reply (JSON 200 or 202,
+    form 303 with no m), a load refusal, and a load's 409 are all false."""
+    import uuid
+
+    def ids(tenant: str, name: str, key: str) -> tuple[uuid.UUID, uuid.UUID]:
+        ns = uuid.uuid5(uuid.NAMESPACE_URL, tenant)
+        return uuid.uuid5(ns, f"{name}/{key}/p"), uuid.uuid5(ns, f"{name}/{key}/a")
+
+    la = b5.ref_labels("clinic-syn-aaaaaaaa", ids=ids)
+    lb = b5.ref_labels("clinic-syn-bbbbbbbb", ids=ids)
+    rows = sum(len(keys) for keys, _, _ in b5.FIXTURE_SHAPE.values())
+    assert rows == 7 and len(la) == 14 and len(set(la.values())) == 14
+    assert not set(la) & set(lb) and sorted(la.values()) == sorted(lb.values())
+    p, a = ids("clinic-syn-aaaaaaaa", "S2", "stop")
+    assert (la[str(p)], la[str(a)]) == ("S2.stop.patient", "S2.stop.ref")
+    yes = [("load", (200, None)), ("load", (303, "loaded"))]
+    no = [("tick", (200, None)), ("tick", (303, "tick")), ("ehr", (200, None)),
+          ("ehr", (303, None)), ("reply", (202, None)), ("reply", (303, None)),
+          ("load", (409, "SCENARIO_PRESENT")), ("load", (303, "present")),
+          ("load", (422, "UNKNOWN_SCENARIO")), ("load", (422, None)),
+          ("load", (303, None)), ("load", (303, "hours"))]
+    assert all(b5.is_load_success(x, o) for x, o in yes)
+    assert not any(b5.is_load_success(x, o) for x, o in no), \
+        [(x, o) for x, o in no if b5.is_load_success(x, o)]
+
+
 # =========================================================================== A: placement
 
 def test_b5_u_zn0_product_zone_is_eastern_only() -> None:
