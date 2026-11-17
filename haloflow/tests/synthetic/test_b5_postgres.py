@@ -307,8 +307,13 @@ def test_b5_p_ld2_concurrent_same_scenario(inst: b3.Install, test_zones: None) -
             await reached_or_done(reached, a)
             clock.pause.pop("b5.load.after_claim")          # B must not pause here
             b = asyncio.create_task(b5.load_json(app, token, "S1"))
-            await wait_for(lambda: len(s.waiting_advisory(inst.c)) == 1)
-            go.set()
+            try:
+                await wait_for(lambda: len(s.waiting_advisory(inst.c)) == 1)
+            finally:
+                # Green amendment (as P-RDY1/2): A is always released, so a failed wait is
+                # reported as this row's failure instead of a drain that cannot finish (the
+                # lifecycle watchdog's fatal exit 3 ends the process before the report).
+                go.set()
             ra = await a
             loaded_ok(ra, "S1")
             ehr_a = dict(lc.port.ehr.snapshot().appointments)
