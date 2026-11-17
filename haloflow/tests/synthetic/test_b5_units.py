@@ -136,36 +136,129 @@ def test_b5_u_c4_ehr_state_oracle_sees_every_field() -> None:
         assert b5.ehr_state(e) != ref, name
 
 
-def test_b5_u_c5_parity_oracle_rejects_same_table_different_value() -> None:
-    """C (Codex c05c2c9 R3 negative control; no B5 code): two deltas touching the same table
-    with a different value (a reply text, a state, the fixture role of a ref, an extra row)
-    are unequal; deltas that differ only in random uuids, timestamps, the tenant id, or the
-    per-tenant uuid of the SAME fixture role are equal."""
+def _side(rows: list[dict[str, Any]], anchor: datetime, *, labels: dict[str, str] | None = None,
+          types: dict[str, str] | None = None) -> Any:
+    """A synthetic one-table install pair (before empty) for the typed parity oracle."""
+    t = "{tenant}.m05_reminder_windows"
+    ty = types or {"reminder_id": "uuid", "source_event_id": "uuid", "appointment_ref": "uuid",
+                   "start_at": "timestamp with time zone",
+                   "deadline": "timestamp with time zone",
+                   "created_at": "timestamp with time zone", "text": "text",
+                   "state": "character varying"}
+    before = b5.Capture({t: []}, {t: ty}, anchor)
+    after = b5.Capture({t: rows}, {t: ty}, anchor)
+    return b5.Side(before, after, labels or {}, "clinic-syn-x", "tenant_x")
+
+
+def test_b5_u_c5_typed_parity_oracle_controls() -> None:
+    """C (Codex 0052e54 R3 focused investigation; no B5 code). Accepts: random generated ids
+    (consistently linked), incidental created_at, and business times shifted together with
+    each install's request anchor. Rejects: Codex's reproduced counterexample (start_at,
+    deadline and source_event_id all different), a changed start_at or deadline alone, a
+    broken link (two rows that shared an id no longer do), a changed uuid-shaped or
+    timestamp-shaped TEXT value, and an unclassified timestamp field."""
     import uuid
 
-    table = "{tenant}.m05_inbound_replies"
-    roles = {t: {str(uuid.uuid4()): "S2.reschedule.ref", str(uuid.uuid4()): "S2.cancel.ref"}
-             for t in ("clinic-syn-aaaaaaaa", "clinic-syn-bbbbbbbb")}
+    t0 = datetime(2026, 11, 17, 15, tzinfo=UTC)
 
-    def row(tenant: str, text: str, state: str, role: str = "S2.reschedule.ref") -> str:
-        ref = next(k for k, v in roles[tenant].items() if v == role)
-        return json.dumps({"event_id": str(uuid.uuid4()), "text": text, "state": state,
-                           "appointment_ref": ref, "tenant": tenant,
-                           "received_at": datetime.now(UTC).isoformat()})
+    def rows(anchor: datetime, *, start: str = "2026-11-19T23:00:00Z",
+             deadline: timedelta = timedelta(hours=24), text: str = "2",
+             linked: bool = True, src: str | None = None) -> list[dict[str, Any]]:
+        ev = src or str(uuid.uuid4())
+        return [{"reminder_id": str(uuid.uuid4()), "source_event_id": ev,
+                 "appointment_ref": "11111111-0000-5000-8000-000000000001",
+                 "start_at": start, "deadline": (anchor + deadline).isoformat(),
+                 "created_at": (anchor + timedelta(seconds=uuid.uuid4().int % 50)).isoformat(),
+                 "text": text, "state": "closed"},
+                {"reminder_id": str(uuid.uuid4()),
+                 "source_event_id": ev if linked else str(uuid.uuid4()),
+                 "appointment_ref": "11111111-0000-5000-8000-000000000001",
+                 "start_at": start, "deadline": (anchor + deadline).isoformat(),
+                 "created_at": anchor.isoformat(), "text": "ack", "state": "open"}]
 
-    def delta(tenant: str, *rows: str) -> Any:
-        def norm(x: str) -> str:
-            return b5.normalize(x, roles[tenant], tenant, "tenant_x")
+    labels = {"11111111-0000-5000-8000-000000000001": "S1.confirm.ref"}
+    a_anchor, b_anchor = t0, t0 + timedelta(seconds=17)
+    base = _side(rows(a_anchor), a_anchor, labels=labels)
+    assert b5.parity_mismatches(base, _side(rows(b_anchor), b_anchor, labels=labels)) == []
+    # Codex's counterexample, made exact: A vs B with all three values different.
+    a1 = _side([{"reminder_id": str(uuid.uuid4()), "start_at": "2026-11-19T23:00:00Z",
+                 "deadline": "2026-11-18T23:00:00Z",
+                 "source_event_id": "11111111-1111-4111-8111-111111111111"}], t0)
+    b1 = _side([{"reminder_id": str(uuid.uuid4()), "start_at": "2026-11-20T23:00:00Z",
+                 "deadline": "2026-11-25T23:00:00Z",
+                 "source_event_id": "22222222-2222-4222-8222-222222222222"},
+                {"reminder_id": str(uuid.uuid4()), "start_at": "2026-11-20T23:00:00Z",
+                 "deadline": "2026-11-25T23:00:00Z",
+                 "source_event_id": "22222222-2222-4222-8222-222222222222"}][:1], t0)
+    assert b5.parity_mismatches(a1, b1) != []
+    bad = {
+        "start_at +1h": rows(b_anchor, start="2026-11-20T00:00:00Z"),
+        "start_at +1d": rows(b_anchor, start="2026-11-20T23:00:00Z"),
+        "deadline +1d": rows(b_anchor, deadline=timedelta(hours=48)),
+        "deadline +5min": rows(b_anchor, deadline=timedelta(hours=24, minutes=5)),
+        "broken link": rows(b_anchor, linked=False),
+        "uuid-shaped text": rows(b_anchor, text=str(uuid.uuid4())),
+        "timestamp-shaped text": rows(b_anchor, text="2026-11-20T23:00:00Z"),
+        "state": [dict(r, state="open") for r in rows(b_anchor)],
+    }
+    for name, rs in bad.items():
+        got = b5.parity_mismatches(base, _side(rs, b_anchor, labels=labels))
+        assert got != [], name
+    ut = {"x": "uuid", "when": "timestamp with time zone"}
+    with pytest.raises(b5.Unclassified):
+        b5.parity_mismatches(_side([{"x": str(uuid.uuid4()), "when": t0.isoformat()}], t0,
+                                   types=ut),
+                             _side([{"x": str(uuid.uuid4()), "when": t0.isoformat()}], t0,
+                                   types=ut))
+    # A uuid-shaped text value is compared literally on both sides (equal text -> equal).
+    same = str(uuid.uuid4())
+    assert b5.parity_mismatches(_side(rows(a_anchor, text=same), a_anchor, labels=labels),
+                                _side(rows(b_anchor, text=same), b_anchor, labels=labels)) == []
 
-        return b5.row_delta({table: []}, {table: list(rows)}, norm)
 
-    t1, t2 = sorted(roles)
-    base = delta(t1, row(t1, "2", "open"))
-    assert b5.parity_equal(base, delta(t2, row(t2, "2", "open")))
-    for other in (delta(t2, row(t2, "3", "open")), delta(t2, row(t2, "2", "closed")),
-                  delta(t2, row(t2, "2", "open", role="S2.cancel.ref")),
-                  delta(t2, row(t2, "2", "open"), row(t2, "2", "open"))):
-        assert not b5.parity_equal(base, other), other
+def test_b5_u_c6_ehr_structural_encoding() -> None:
+    """C (Codex 0052e54 R3: EHR serialized structurally, never by repr): two SimulatedEhr with
+    the same fixture appointment and a write under different random permit ids compare equal
+    through the token maps; a start_at shifted by one hour, a different status (no write on
+    either side, since a write sets "positive"), or a write to a different permit
+    relationship compares unequal."""
+    import asyncio
+    import dataclasses
+    import uuid
+
+    from haloflow.m05.simulated_ehr import EhrRead, SimulatedEhr
+
+    ref = "11111111-0000-5000-8000-000000000001"
+    labels = {ref: "S1.confirm.ref"}
+    t0 = datetime(2026, 11, 17, 15, tzinfo=UTC)
+    base_read = EhrRead(status="neutral", appointment_id=ref,
+                        start_at=datetime(2026, 11, 19, 23, tzinfo=UTC), provider_ref="p1",
+                        department_ref="d1", replaced_by=None)
+
+    def side(read: Any, permit: str, tables_permit: str | None = None,
+             write: bool = True) -> Any:
+        e = SimulatedEhr(clock=lambda: datetime.now(UTC))
+        e.put(read)
+        if write:
+            asyncio.run(e.write_confirmation(
+                ref, permit_id=permit, apply_deadline=datetime.now(UTC) + timedelta(hours=1)))
+        t = "{tenant}.m05_writeback_permits"
+        rows = [{"permit_id": tables_permit or permit}]
+        cap = b5.Capture({t: rows}, {t: {"permit_id": "uuid"}}, t0)
+        return b5.Side(cap, cap, labels, "clinic-syn-x", "tenant_x",
+                       ehr=(b5.ehr_state(e), b5.ehr_state(e)))
+
+    p1, p2 = str(uuid.uuid4()), str(uuid.uuid4())
+    assert b5.parity_mismatches(side(base_read, p1), side(base_read, p2)) == []
+    shifted = dataclasses.replace(base_read, start_at=base_read.start_at + timedelta(hours=1))
+    assert b5.parity_mismatches(side(base_read, p1), side(shifted, p2)) != []
+    assert b5.parity_mismatches(side(base_read, p1, write=False),
+                                side(base_read, p2, write=False)) == []
+    assert b5.parity_mismatches(side(base_read, p1, write=False),
+                                side(dataclasses.replace(base_read, status="negative"),
+                                     p2, write=False)) != []
+    assert b5.parity_mismatches(side(base_read, p1),
+                                side(base_read, p2, tables_permit=str(uuid.uuid4()))) != []
 
 
 # =========================================================================== A: placement

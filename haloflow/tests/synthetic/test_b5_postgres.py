@@ -1369,9 +1369,10 @@ def _json_value(action: str, fields: dict[str, str]) -> dict[str, Any]:
 
 async def _side(inst: b3.Install, adapter: str, action: str, fields: dict[str, str],
                 setup: str, caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
-    """One install, one adapter: the setup, then the compared request; returns the
-    normalized outcome (status/code/message key, audit lines, row delta, EHR delta, sender
-    delta) and the per-install oracle facts of a load."""
+    """One install, one adapter: the setup, then the compared request. Everything that
+    reads the database happens HERE, while the install's cluster is alive (Codex 0052e54
+    R3): the typed before/after captures (b5.Side), the EHR state, the sender delta, and the
+    per-install oracle check of a valid load. Returns immutable data only."""
     clock = Clock()
     clock.install()
     async with bb.running(inst) as (lc, app):
@@ -1383,20 +1384,14 @@ async def _side(inst: b3.Install, adapter: str, action: str, fields: dict[str, s
         if setup == "sent_s2":
             await lc.schedulers["reminder"].tick()
         f = _resolve_fields(inst, lc, fields)
-        t = tenant(inst)
-        labels = b5.ref_labels(t)
-
-        def norm(x: str) -> str:
-            return b5.normalize(x, labels, t, inst.schema)
-
-        rows0, ehr0, sent0 = b5.table_rows(inst), b5.ehr_state(lc.port.ehr), \
-            len(lc.sender.calls)
+        before = b5.capture(inst, b5.db_now(inst))
+        ehr0, sent0 = b5.ehr_state(lc.port.ehr), len(lc.sender.calls)
+        seen0 = len(clock.seen)
         caplog.clear()
         if adapter == "json":
             r = await bb.asgi(app, "POST", JSON_ROUTE[action], headers=bb.post_headers(token),
                               body=bb.jbody(_json_value(action, f)))
-            code = (r.json or {}).get("code")
-            outcome: Any = (r.status, code)
+            outcome: Any = (r.status, (r.json or {}).get("code"))
         else:
             r = await b5.post_form(app, action, [("csrf", csrf), *f.items()])
             if r.status == 303:
@@ -1405,13 +1400,16 @@ async def _side(inst: b3.Install, adapter: str, action: str, fields: dict[str, s
             else:
                 b4.html_ok(r)
                 outcome = (r.status, None)
-        lines = [norm(x.getMessage()) for x in caplog.records
+        lines = [x.getMessage() for x in caplog.records
                  if x.getMessage().startswith("SIMULATOR")]
-        return {"outcome": outcome, "lines": lines,
-                "rows": b5.row_delta(rows0, b5.table_rows(inst), norm),
-                "ehr": (norm(repr(ehr0)), norm(repr(b5.ehr_state(lc.port.ehr)))),
-                "sent": [(norm(a), b, norm(c)) for a, b, c in lc.sender.calls[sent0:]],
-                "seen": list(clock.seen)}
+        side = b5.Side(before, b5.capture(inst, before.anchor), b5.ref_labels(tenant(inst)),
+                       tenant(inst), inst.schema,
+                       ehr=(ehr0, b5.ehr_state(lc.port.ehr)),
+                       sends=tuple(lc.sender.calls[sent0:]))
+        if outcome in ((200, None), (303, "loaded")):          # a successful load
+            assert len(clock.seen) == seen0 + 1, clock.seen
+            assert_appointments(inst, f["scenario"], clock.seen[-1], b5.TEST_ZONES)
+        return {"outcome": outcome, "lines": lines, "side": side}
 
 
 @pytest.mark.parametrize("case,action,fields,setup", PARITY, ids=[c[0] for c in PARITY])
@@ -1419,16 +1417,18 @@ def test_b5_p_par_json_and_form_adapters_agree(pg: s.PgCluster, tmp_path: Path,
                                                test_zones: None, case: str, action: str,
                                                fields: dict[str, str], setup: str,
                                                caplog: pytest.LogCaptureFixture) -> None:
-    """A (v1r1 D3 P-PAR1..4; Codex c05c2c9 R3): the same input through the JSON route (install
-    A) and the form route (install B), each from an equivalent fresh install with the same
-    setup. Equal: the normalized row-level delta of every table, the normalized simulated-EHR
-    before/after, the FakeSender delta, and the audit lines (which carry the exact refusal
-    code for both adapters). The adapter result maps exactly: a load code in CODE_MESSAGE
-    <-> 303 m=<key>; any other JSON 4xx (422 or the ingress's own) <-> form 422 HTML page;
-    JSON 2xx <-> 303 m=loaded / m=tick / no m. (An unknown form field is refused 400 by the
-    closed form field set before the action, so it is a P-CSRF-class form row, not parity.)
-    A load's rows also match the independent oracle for each install's own clock. Negative
-    control for the oracle: U-C5."""
+    """A (v1r1 D3 P-PAR1..4; Codex c05c2c9 R3, 0052e54 R3): the same input through the JSON
+    route (install A) and the form route (install B), each from an equivalent fresh install
+    with the same setup. All database reads happen inside the live cluster scope. Equal under
+    the TYPED parity oracle (b5.parity_mismatches: id tokens by role signature, business
+    times within TIME_TOL, named incidental fields only, literal text; its controls are U-C5,
+    U-C6, PO1 and PO2): every table's row delta, the structural EHR state before/after, and
+    the FakeSender delta; and the audit lines literally (they carry the exact refusal code).
+    The adapter result maps exactly: a load code in CODE_MESSAGE <-> 303 m=<key>; any other
+    JSON 4xx (422 or the ingress's own) <-> form 422 HTML page; JSON 2xx <-> 303 m=loaded /
+    m=tick / no m. A valid load also matches the independent oracle for each install's own
+    clock (checked while that install is alive). (An unknown form field is refused 400 by
+    the closed form field set before the action: P-CSRF.)"""
     caplog.set_level(logging.INFO, logger="haloflow.synthetic")
     for d in ("a", "b", "b2"):
         (tmp_path / d).mkdir()
@@ -1450,12 +1450,8 @@ def test_b5_p_par_json_and_form_adapters_agree(pg: s.PgCluster, tmp_path: Path,
     else:
         raise AssertionError(f"unexpected JSON result {ja['outcome']}")
     assert fb["outcome"] == want, (case, ja["outcome"], fb["outcome"])
-    for k in ("lines", "rows", "ehr", "sent"):
-        assert b5.parity_equal(ja[k], fb[k]), (case, k, ja[k], fb[k])
-    assert ja["lines"], "no audit line"
-    if case == "load-valid":
-        for side, inst_ in ((ja, a), (fb, b)):
-            assert_appointments(inst_, "S2", side["seen"][-1], b5.TEST_ZONES)
+    assert ja["lines"] and ja["lines"] == fb["lines"], (case, ja["lines"], fb["lines"])
+    assert b5.parity_mismatches(ja["side"], fb["side"]) == [], case
 
 
 @pytest.mark.parametrize("method,path,ctype,want", [

@@ -420,70 +420,285 @@ def unchanged(before: Snap, after: Snap) -> None:
 
 
 # ---------------------------------------------------------------------------- parity oracle
+#
+# Codex 0052e54 R3 focused investigation: a TYPED comparison of two independent installs.
+# - Column types come from information_schema. uuid columns, and the named text/json id
+#   fields, are mapped through a per-install BIJECTIVE token map (fixture uuid5 values -> role
+#   labels first, then every other id -> id<n> in a deterministic traversal), so a broken
+#   link (an event, op or permit pointing elsewhere) changes the tokens.
+# - timestamptz values are typed: the explicitly named INCIDENTAL record-keeping columns
+#   compare as present/absent only; every other (business) time must match the other install
+#   within TIME_TOL either absolutely or relative to each install's measured request anchor;
+#   an unclassified timestamptz column is an error, never silently erased.
+# - everything else (texts, phones, states, codes, numbers) compares literally, including
+#   uuid- or timestamp-shaped text.
 
-_UUID: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-_TS: Final = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}(:\d{2})?|Z)?")
+INCIDENTAL_TIMES: Final = frozenset({
+    "created_at", "updated_at", "occurred_at", "projected_at", "completed_at", "started_at",
+    "at", "issued_at", "consumed_at", "captured_at", "received_at", "detected_at", "added_at",
+    "auth_time", "last_activity_at", "granted_at", "status_changed_at", "effective_from"})
+BUSINESS_TIMES: Final = frozenset({
+    "start_at", "deadline", "sent_at", "lease_until", "next_at", "next_check_at",
+    "apply_deadline", "spent_at", "closed_at", "voided_at", "opted_out_at", "expires_at",
+    "starts_at", "revoked_at", "retired_at", "available_at", "lease_expires_at",
+    "delivered_at", "due_at", "next_eligible_at", "deadline_at"})
+TEXT_IDS: Final = frozenset({"provider_message_id", "appointment_id", "permit_id",
+                             "op_id", "attempt_id", "wb_op_id", "event_id", "item_id"})
+# Install-keyed values (an HMAC under the install's own key): equal inputs differ per
+# install by construction; compared as present/absent only.
+# Each is derived from ids and/or the install's own key (HMAC, digest, dedupe hash); the
+# relations they summarize are compared through the id tokens instead.
+INCIDENTAL_VALUES: Final = frozenset({"fingerprint", "create_digest", "dispatch_fingerprint",
+                                      "content_fingerprint", "dedupe_key", "r1_digest",
+                                      "producer_dedupe_key"})
+TENANT_FIELDS: Final = frozenset({"tenant_id"})
+SCHEMA_FIELDS: Final = frozenset({"schema_key", "schema_name"})
+TIME_TOL: Final = 5.0
+_UUID_RE: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-def ref_labels(tenant_id: str) -> dict[str, str]:
-    """uuid text -> stable label ("S1.confirm.patient" / "S1.confirm.ref") for every fixture
-    row, so two installs (different tenants, different uuid5 values) compare by role."""
-    out: dict[str, str] = {}
-    for name in NAMES:
-        for key, (patient, ref) in scenario_refs(tenant_id, name).items():
-            out[patient] = f"{name}.{key}.patient"
-            out[ref] = f"{name}.{key}.ref"
-    return out
+class Unclassified(AssertionError):
+    pass
 
 
-def normalize(text: str, labels: Mapping[str, str], tenant_id: str, schema: str) -> str:
-    """Value-level normalization (Codex c05c2c9 R3): fixture uuids -> role labels, the tenant
-    id and schema -> fixed tokens, any other uuid -> <uuid>, timestamps -> <ts>. Every other
-    value (texts, phones, states, kinds, codes, counts) is compared exactly."""
-    for raw, label in labels.items():
-        text = text.replace(raw, label)
-    text = text.replace(tenant_id, "<tenant>").replace(schema, "<schema>")
-    return _TS.sub("<ts>", _UUID.sub("<uuid>", text))
+@dataclass(frozen=True)
+class Capture:
+    """One install's rows (parsed to_jsonb objects), column types and the request anchor."""
+    tables: dict[str, list[dict[str, Any]]]
+    types: dict[str, dict[str, str]]
+    anchor: datetime
 
 
-def table_rows(inst: b3.Install) -> dict[str, list[str]]:
-    """Every row of every user table as to_jsonb text (admin connection), keyed as
-    table_digests keys them."""
+@dataclass(frozen=True)
+class Side:
+    before: Capture
+    after: Capture
+    labels: Mapping[str, str]
+    tenant: str
+    schema: str
+    ehr: tuple[Any, Any] | None = None
+    sends: tuple[tuple[str, str, str], ...] = ()
+
+
+def capture(inst: b3.Install, anchor: datetime) -> Capture:
+    """Admin read of every user table (to_jsonb objects) and of the column types."""
     import psycopg
 
-    out: dict[str, list[str]] = {}
+    tables: dict[str, list[dict[str, Any]]] = {}
+    types: dict[str, dict[str, str]] = {}
+
+    def key(sc: str, t: str) -> str:
+        return ("{tenant}" if sc == inst.schema else sc) + "." + t
+
     with inst.c.connect() as a:
+        for sc, t, col, ty, udt in a.execute(
+                "SELECT table_schema, table_name, column_name, data_type, udt_name FROM"
+                " information_schema.columns WHERE table_schema NOT IN"
+                " ('pg_catalog','information_schema')").fetchall():
+            types.setdefault(key(sc, t), {})[col] = "uuid[]" if udt == "_uuid" else ty
         tabs = a.execute("SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n"
                          " ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname"
                          " NOT IN ('pg_catalog','information_schema') ORDER BY 1, 2").fetchall()
         for sc, t in tabs:
-            q = psycopg.sql.SQL("SELECT to_jsonb(r)::text FROM {}.{} AS r").format(
+            q = psycopg.sql.SQL("SELECT to_jsonb(r) FROM {}.{} AS r").format(
                 psycopg.sql.Identifier(sc), psycopg.sql.Identifier(t))
-            out[("{tenant}" if sc == inst.schema else sc) + "." + t] = \
-                [r[0] for r in a.execute(q).fetchall()]
+            tables[key(sc, t)] = [dict(r[0]) for r in a.execute(q).fetchall()]
+    return Capture(tables, types, anchor)
+
+
+def _time(v: Any) -> datetime:
+    if isinstance(v, datetime):
+        return v if v.tzinfo else v.replace(tzinfo=UTC)
+    return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+
+
+def _is_id_key(k: str) -> bool:
+    return k in TEXT_IDS or k.endswith("_id") or k.endswith("_ref") or k in ("id", "ref")
+
+
+class _Tok:
+    """One install's bijective id -> token map and the typed row encoder."""
+
+    def __init__(self, side: Side) -> None:
+        self.side = side
+        self.map: dict[str, str] = dict(side.labels)
+        self.found: set[str] = set()
+
+    def tok(self, v: str) -> str:
+        if v not in self.map:
+            self.found.add(v)
+            return v
+        return self.map[v]
+
+    def enc(self, name: str, v: Any, ty: str | None, times: list[Any], *, assign: bool) -> Any:
+        if v is None:
+            return None
+        if name in INCIDENTAL_VALUES:
+            return "<inc>"
+        if name in TENANT_FIELDS and v == self.side.tenant:
+            return "<tenant>"
+        if name in SCHEMA_FIELDS and v == self.side.schema:
+            return "<schema>"
+        if ty == "uuid[]" and isinstance(v, list):
+            return [self.tok(x) if assign else self.map.get(x, "?") for x in v]
+        if ty == "uuid" or (isinstance(v, str) and _is_id_key(name) and _UUID_RE.fullmatch(v)):
+            return self.tok(v) if assign else self.map.get(v, "?")
+        if ty == "timestamp with time zone" or (ty is None and isinstance(v, str)
+                                                 and (name in INCIDENTAL_TIMES
+                                                      or name in BUSINESS_TIMES)):
+            if name in INCIDENTAL_TIMES:
+                return "<inc>"
+            if name not in BUSINESS_TIMES:
+                raise Unclassified(f"unclassified timestamp field {name!r}")
+            t = _time(v)
+            times.append((name, t, (t - self.side.after.anchor).total_seconds()))
+            return f"<T:{name}>"
+        if isinstance(v, dict):
+            return {k: self.enc(k, x, None, times, assign=assign) for k, x in sorted(v.items())}
+        if isinstance(v, list):
+            return [self.enc(name, x, None, times, assign=assign) for x in v]
+        return v
+
+    def row(self, table: str, row: Mapping[str, Any], *, assign: bool
+            ) -> tuple[str, list[Any]]:
+        types = self.side.after.types.get(table) or self.side.before.types.get(table) or {}
+        times: list[Any] = []
+        obj = {k: self.enc(k, v, types.get(k), times, assign=assign)
+               for k, v in sorted(row.items())}
+        return json.dumps(obj, sort_keys=True, default=str), times
+
+
+def _ids_in(row: Mapping[str, Any], types: Mapping[str, str]) -> dict[str, list[str]]:
+    """column path -> the generated ids it holds (uuid, uuid[] and id-named json/text)."""
+    out: dict[str, list[str]] = {}
+
+    def walk(path: str, k: str, v: Any, ty: str | None) -> None:
+        if v is None:
+            return
+        if ty == "uuid[]" and isinstance(v, list):
+            out.setdefault(path, []).extend(str(x) for x in v)
+        elif ty == "uuid" or (isinstance(v, str) and _is_id_key(k) and _UUID_RE.fullmatch(v)):
+            out.setdefault(path, []).append(str(v))
+        elif isinstance(v, dict):
+            for a, b in v.items():
+                walk(f"{path}.{a}", a, b, None)
+        elif isinstance(v, list):
+            for x in v:
+                walk(path + "[]", k, x, None)
+
+    for k, v in row.items():
+        walk(k, k, v, types.get(k))
     return out
 
 
-def row_delta(before: Mapping[str, list[str]], after: Mapping[str, list[str]],
-              norm: Any) -> dict[str, tuple[list[str], list[str]]]:
-    """Per table: (normalized rows removed, normalized rows added), multiset difference after
-    normalization; tables with no normalized change are omitted."""
+def _mask(row: Mapping[str, Any], types: Mapping[str, str]) -> str:
+    """Row text independent of ids, times and install-keyed values (id signatures)."""
+    def m(k: str, v: Any, ty: str | None) -> Any:
+        if k in INCIDENTAL_VALUES or k in TENANT_FIELDS or k in SCHEMA_FIELDS:
+            return ""
+        if ty in ("uuid", "uuid[]", "timestamp with time zone") or (
+                isinstance(v, str) and (_UUID_RE.fullmatch(v) or k in BUSINESS_TIMES
+                                        or k in INCIDENTAL_TIMES)):
+            return ""
+        if isinstance(v, dict):
+            return {a: m(a, b, None) for a, b in sorted(v.items())}
+        if isinstance(v, list):
+            return [m(k, x, None) for x in v]
+        return v
+    return json.dumps({k: m(k, v, types.get(k)) for k, v in sorted(row.items())},
+                      sort_keys=True, default=str)
+
+
+def _encoded_delta(side: Side) -> tuple[_Tok, dict[str, tuple[list[Any], list[Any]]]]:
     from collections import Counter
 
-    out: dict[str, tuple[list[str], list[str]]] = {}
-    for t in sorted(set(before) | set(after)):
-        b = Counter(norm(x) for x in before.get(t, []))
-        a = Counter(norm(x) for x in after.get(t, []))
-        removed, added = sorted((b - a).elements()), sorted((a - b).elements())
+    tok = _Tok(side)
+    # Pass 1: collect every generated id and its SIGNATURE: the sorted (table, column,
+    # masked row) of each occurrence (masked = ids, times and install-keyed values removed).
+    # Ids are then numbered in signature order, so the same business role gets the same
+    # token on both installs whatever its random value (bijective per install).
+    sig: dict[str, list[str]] = {}
+    for cap in (side.after, side.before):
+        for t in sorted(cap.tables):
+            types = cap.types.get(t, {})
+            for r in cap.tables[t]:
+                masked = _mask(r, types)
+                for col, ids in _ids_in(r, types).items():
+                    for x in ids:
+                        if x not in tok.map:
+                            sig.setdefault(x, []).append(f"{t}|{col}|{masked}")
+    for n, x in enumerate(sorted(sig, key=lambda i: sorted(sig[i]))):
+        tok.map[x] = f"id{n}"
+    out: dict[str, tuple[list[Any], list[Any]]] = {}
+    for t in sorted(set(side.before.tables) | set(side.after.tables)):
+        def raw(rows: list[dict[str, Any]]) -> Counter[str]:
+            return Counter(json.dumps(r, sort_keys=True, default=str) for r in rows)
+        b, a = raw(side.before.tables.get(t, [])), raw(side.after.tables.get(t, []))
+        removed = [tok.row(t, json.loads(x), assign=False) for x in (b - a).elements()]
+        added = [tok.row(t, json.loads(x), assign=False) for x in (a - b).elements()]
         if removed or added:
-            out[t] = (removed, added)
+            out[t] = (sorted(removed, key=lambda e: e[0]), sorted(added, key=lambda e: e[0]))
+    return tok, out
+
+
+def _times_close(x: list[Any], y: list[Any]) -> bool:
+    if len(x) != len(y):
+        return False
+    for (n1, a1, r1), (n2, a2, r2) in zip(x, y, strict=True):
+        if n1 != n2:
+            return False
+        if abs((a1 - a2).total_seconds()) > TIME_TOL and abs(r1 - r2) > TIME_TOL:
+            return False
+    return True
+
+
+def _rows_equal(xs: list[Any], ys: list[Any]) -> bool:
+    if [e[0] for e in xs] != [e[0] for e in ys]:
+        return False
+    return all(_times_close(a[1], b[1]) for a, b in zip(xs, ys, strict=True))
+
+
+def _ehr_enc(tok: _Tok, state: Any) -> tuple[str, list[Any]]:
+    """Structural EHR encoding (no repr): appointment and permit ids through the token map,
+    datetimes as typed business times, everything else literal."""
+    apps, writes, closed, used, rf, wf = state
+    times: list[Any] = []
+    obj = {
+        "apps": [[tok.map.get(k, k), {f: tok.enc(f, v, None, times, assign=False)
+                                      if f not in ("start_at",) else tok.enc(
+                                          f, v.isoformat(), None, times, assign=False)
+                                      for f, v in fields}] for k, fields in apps],
+        "writes": [[tok.map.get(a, a), tok.map.get(p, "?")] for a, p in writes],
+        "closed": sorted(tok.map.get(p, "?") for p in closed),
+        "used": sorted(tok.map.get(p, "?") for p in used),
+        "faults": [rf, wf]}
+    return json.dumps(obj, sort_keys=True, default=str), times
+
+
+def parity_mismatches(a: Side, b: Side) -> list[str]:
+    """[] when the two installs' typed deltas are equivalent; otherwise the named
+    differences (table / EHR / sender)."""
+    ta, da = _encoded_delta(a)
+    tb, db = _encoded_delta(b)
+    out: list[str] = []
+    for t in sorted(set(da) | set(db)):
+        ra, aa = da.get(t, ([], []))
+        rb, ab = db.get(t, ([], []))
+        if not (_rows_equal(ra, rb) and _rows_equal(aa, ab)):
+            out.append(f"table {t}: A removed {[e[0] for e in ra]} added {[e[0] for e in aa]}"
+                       f" / B removed {[e[0] for e in rb]} added {[e[0] for e in ab]}")
+    if (a.ehr is None) != (b.ehr is None):
+        out.append("ehr captured on one side only")
+    elif a.ehr is not None and b.ehr is not None:
+        for i, label in ((0, "before"), (1, "after")):
+            ea, eb = _ehr_enc(ta, a.ehr[i]), _ehr_enc(tb, b.ehr[i])
+            if ea[0] != eb[0] or not _times_close(ea[1], eb[1]):
+                out.append(f"ehr {label}: {ea[0]} != {eb[0]}")
+    sa = [(ta.map.get(o, "?"), p, x) for o, p, x in a.sends]
+    sb = [(tb.map.get(o, "?"), p, x) for o, p, x in b.sends]
+    if sa != sb:
+        out.append(f"sends: {sa} != {sb}")
     return out
-
-
-def parity_equal(left: Any, right: Any) -> bool:
-    """The parity oracle: equal normalized outcomes (used on row deltas, EHR deltas, sender
-    deltas, codes and audit lines). Its negative control is U-C5."""
-    return bool(left == right)
 
 
 # ---------------------------------------------------------------------------- requests
