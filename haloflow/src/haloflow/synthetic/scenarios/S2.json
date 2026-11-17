@@ -1,0 +1,41 @@
+{
+  "name": "S2",
+  "rows": [
+    {
+      "key": "reschedule",
+      "first_name": "Blake",
+      "phone": "+15555550181",
+      "provider_ref": "prov-syn-1",
+      "department_ref": "dept-syn-1",
+      "lead_days": 2,
+      "ehr": false
+    },
+    {
+      "key": "cancel",
+      "first_name": "Casey",
+      "phone": "+15555550182",
+      "provider_ref": "prov-syn-2",
+      "department_ref": "dept-syn-1",
+      "lead_days": 2,
+      "ehr": false
+    },
+    {
+      "key": "unclear",
+      "first_name": "Devon",
+      "phone": "+15555550183",
+      "provider_ref": "prov-syn-1",
+      "department_ref": "dept-syn-1",
+      "lead_days": 2,
+      "ehr": false
+    },
+    {
+      "key": "stop",
+      "first_name": "Emery",
+      "phone": "+15555550184",
+      "provider_ref": "prov-syn-2",
+      "department_ref": "dept-syn-1",
+      "lead_days": 2,
+      "ehr": false
+    }
+  ]
+}

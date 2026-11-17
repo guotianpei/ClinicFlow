@@ -7,9 +7,18 @@ startup cancellation; Codex reviews 85d836a, 0e11467, 2c673fe), and B3-M41..M60 
 the local exposure gate, identity, closed routes, simulator, labels and the HTTP drain; B3b red
 packet v1 map, with the `http` step mutant split into the lifecycle and coordinator forms), and
 B3-M61..M72 (Option B B4: the staff-screen form boundary, escaping, labels and replay; B4 red
-packet v1 map, Codex red gate PASS at 54a71ef). Each
-mutant is ONE exact textual
-edit (the old text must occur exactly once in the clean target, else the run fails as stale).
+packet v1 map, Codex red gate PASS at 54a71ef), and M-B5-1..16 (Option B B5: the scenario
+load, the display, the simulator page and the Eastern placement; B5 red packet map, Codex red
+gate PASS at f246ffa). Each mutant is ONE exact textual edit (the old text must occur exactly
+once in the clean target, else the run fails as stale); a B5 mutant may carry further exact
+edits (`also`, each checked the same way) when one behaviour spans two places.
+
+B5 `repin` mutants edit a synthetic SQL function body. The sealed installed-state profile
+(`installed_profile.py`) pins those bodies, so an unpinned edit would be refused at start
+(STATE_DIVERGED) and "killed" by the seal, not by its rows. For these mutants the harness runs
+`scripts/b2_measure_profile.py` after the edit (re-pinning the profile to the MUTATED
+functions), runs the rows, then restores the target AND the profile; a failed re-pin is a
+failed run, never a kill.
 
 Judgement (B3 rule; the part-A whole-module rule does not fit the 6-hour job with PostgreSQL
 lifecycle rows, so it is replaced, stated openly, by a declared-rows rule):
@@ -50,6 +59,11 @@ POOL: Final = Path("src/haloflow/m01/pool.py")
 GATE, LABELS, STAFF, SIMU, APP = (SYN / "gate.py", SYN / "labels.py", SYN / "staff_routes.py",
                                   SYN / "simulator.py", SYN / "app.py")
 UI: Final = SYN / "ui.py"
+SIMA, SIMUI, DISP, SCEN = (SYN / "sim_actions.py", SYN / "sim_ui.py", SYN / "display_units.py",
+                           SYN / "scenarios" / "__init__.py")
+PROFILE: Final = SYN / "installed_profile.py"
+B5U: Final = "tests/synthetic/test_b5_units.py::"
+B5P: Final = "tests/synthetic/test_b5_postgres.py::"
 BU: Final = "tests/synthetic/test_b3b_units.py::"
 BP: Final = "tests/synthetic/test_b3b_postgres.py::"
 B4U: Final = "tests/synthetic/test_b4_units.py::"
@@ -71,6 +85,11 @@ class Mutant:
     new: str
     rows: tuple[str, ...]
     hang: bool = False
+    also: tuple[tuple[Path, str, str], ...] = ()
+    repin: bool = False
+
+    def edits(self) -> tuple[tuple[Path, str, str], ...]:
+        return ((self.target, self.old, self.new), *self.also)
 
 
 def g2(case: str) -> str:
@@ -411,8 +430,9 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            (f"{BU}test_b3b_r7u_route_inventory_is_closed",
             f"{BP}test_b3b_s5_ingress_route_not_on_the_public_app")),
     Mutant("B3-M52", "simulator: the canonical phone check is removed", SIMU,
-           "        if type(phone) is not str or not PHONE.fullmatch(phone):\n",
-           "        if type(phone) is not str:\n",
+           # B5: re-anchored (deliver_reply split; same edit, 4-space indent).
+           "    if type(phone) is not str or not PHONE.fullmatch(phone):\n",
+           "    if type(phone) is not str:\n",
            (f"{BP}test_b3b_s3_non_canonical_phone_refused_before_ingress[+15555550200]",)),
     Mutant("B3-M53", "labels: refusals lose the simulated key", LABELS,
            '    return labelled({"code": code, **extra}, status_code)\n',
@@ -513,6 +533,92 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            '        "client_action_id": fields["client_action_id"],'
            ' "type": "claim" if endpoint == "claim" else "resolve",\n',
            (f"{B4P}test_b4_p_ui7bc_close_replay_keeps_its_type[claim_and_resolve]",)),
+    # ------------------------------------------------------------------ Option B B5
+    Mutant("M-B5-1", "load: the present check is skipped (a loaded scenario is put again)",
+           SIMA, '        if claim["present"] != 0:\n', "        if False:\n",
+           (f"{B5P}test_b5_p_ld5_present_after_restart_never_redates",
+            f"{B5P}test_b5_p_ld2_concurrent_same_scenario")),
+    Mutant("M-B5-2", "display: the appointment is found by the item's patient, not its source row",
+           DISP, "    IF v_n <> 1 OR v_ref IS NULL THEN\n", "    IF false THEN\n",
+           (f"{B5P}test_b5_p_ds2_uncorrelated_reply_shows_no_appointment",),
+           also=((DISP, "     WHERE a.appointment_ref = v_ref;\n",
+                  "     WHERE a.patient_id = v_item.patient_id ORDER BY a.start_at LIMIT 1;\n"),),
+           repin=True),
+    Mutant("M-B5-3", "view: the display lines are not escaped", UI,
+           '    parts.extend(f"<p>{esc(line)}</p>"\n', '    parts.extend(f"<p>{line}</p>"\n',
+           (f"{B5P}test_b5_p_esc1_injection_in_every_display_slot_is_inert",)),
+    Mutant("M-B5-4", "simulator forms: the CSRF field is not checked", SIMUI,
+           '    if "csrf" not in fields or not _csrf_ok(fields["csrf"], lifecycle.csrf_token):\n',
+           "    if False:\n",
+           (f"{B5P}test_b5_p_csrf_form_token_checked_first[missing]",
+            f"{B5P}test_b5_p_csrf_form_token_checked_first[wrong]")),
+    Mutant("M-B5-5", "load: a non-allowlisted spelling is normalised and accepted", SIMA,
+           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           "    scenario = scenario.upper() if type(scenario) is str else scenario\n"
+           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           (f"{B5P}test_b5_p_ld6_malformed_load_writes_nothing[lower-body1-422-UNKNOWN_SCENARIO]",
+            )),
+    Mutant("M-B5-6", "tick: the tick path writes (it loads S1 before ticking)", SIMA,
+           "        outcome = await lifecycle.schedulers[scheduler].tick()\n",
+           "        _zones = scenarios.LOAD_ZONES\n"
+           '        scenarios.LOAD_ZONES = ("Pacific/Honolulu", "America/Bogota", "Africa/Abidjan",'
+           ' "Asia/Karachi", "Pacific/Port_Moresby")\n'
+           "        try:\n"
+           '            await load(lifecycle, "S1")\n'
+           "        finally:\n"
+           "            scenarios.LOAD_ZONES = _zones\n"
+           "        outcome = await lifecycle.schedulers[scheduler].tick()\n",
+           (f"{B5P}test_b5_p_tk4_tick_with_nothing_due_moves_no_deadline",)),
+    Mutant("M-B5-7", "reply: the phone is logged", SIMU,
+           '    LOGGER.info("SIMULATOR action=patient_reply status=%d code=%s", status,'
+           ' shown or "-")\n',
+           '    LOGGER.info("SIMULATOR action=patient_reply status=%d code=%s phone=%s", status,'
+           ' shown or "-", phone)\n',
+           (f"{B5P}test_b5_p_prv1_no_phone_text_or_name_in_logs",)),
+    Mutant("M-B5-8", "claim: the advisory lock is shared (concurrent loads do not serialise)",
+           DISP, "    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(\n",
+           "    PERFORM pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended(\n",
+           (f"{B5P}test_b5_p_ld2_concurrent_same_scenario",), repin=True),
+    Mutant("M-B5-9", "display: the appointment's patient is not checked against the item's",
+           DISP, "    IF NOT FOUND OR v_a.patient_id IS DISTINCT FROM v_item.patient_id\n",
+           "    IF NOT FOUND\n",
+           (f"{B5P}test_b5_p_ds5_broken_source_chains_fail_closed",), repin=True),
+    Mutant("M-B5-10", "load: the EHR entries are published after commit", SIMA,
+           "                ehr.put(EhrRead(", "                pending.append(EhrRead(",
+           (f"{B5P}test_b5_p_rdy1_after_commit_writeback_reads_ehr_before_release",
+            f"{B5P}test_b5_p_rdy2_before_commit_nothing_is_sent"),
+           also=((SIMA, "    complete = False\n",
+                  "    complete = False\n    pending: list[Any] = []\n"),
+                 (SIMA, '        await afire("b5.load.after_commit", {})\n',
+                  '        await afire("b5.load.after_commit", {})\n'
+                  "        for _read in pending:\n            ehr.put(_read)\n"))),
+    Mutant("M-B5-11", "load: a returned non-applied directory outcome does not roll back", SIMA,
+           '        raise RuntimeError("directory result not applied")\n', "        pass\n",
+           (f"{B5P}test_b5_p_ld4_returned_refusal_rolls_back[1]",
+            f"{B5P}test_b5_p_ld4_returned_refusal_rolls_back[8]")),
+    Mutant("M-B5-12", "present: t097 answers a count instead of the present subset", DISP,
+           "        COALESCE((SELECT pg_catalog.jsonb_agg(a.appointment_ref::text"
+           " ORDER BY a.appointment_ref)\n",
+           "        COALESCE((SELECT pg_catalog.to_jsonb(pg_catalog.count(*))\n",
+           (f"{B5P}test_b5_p_ss1_exact_present_subset_and_page_states",), repin=True),
+    Mutant("M-B5-13", "page: EHR entries are not intersected with the present refs", SCEN,
+           "    return frozenset(present & ehr)\n", "    return frozenset(ehr)\n",
+           (f"{B5U}test_b5_u_ss6_orphans_are_never_visible",
+            f"{B5P}test_b5_p_rdy3_failure_or_cancel_leaves_nothing[fault-b5.load.before_commit]")),
+    Mutant("M-B5-14", "zones: a second product zone is added", SCEN,
+           "LOAD_ZONES: tuple[str, ...] = (LOAD_ZONE,)",
+           'LOAD_ZONES: tuple[str, ...] = (LOAD_ZONE, "America/Chicago")',
+           (f"{B5U}test_b5_u_zn0_product_zone_is_eastern_only",
+            f"{B5U}test_b5_u_zn0s_source_scan_no_zone_override")),
+    Mutant("M-B5-15", "hours: the load window's end is inclusive", SCEN,
+           "        if LOAD_START <= local.time() < LOAD_END:\n",
+           "        if LOAD_START <= local.time() <= LOAD_END:\n",
+           (f"{B5U}test_b5_u_zn1c_half_open_endpoints[2026-11-17]",)),
+    Mutant("M-B5-16", "start: 18:00 is taken in UTC, not in the placed zone", SCEN,
+           "                    tzinfo=ZoneInfo(zone)).astimezone(UTC)\n",
+           "                    tzinfo=UTC).astimezone(UTC)\n",
+           (f"{B5U}test_b5_u_zn1a_every_minute_matches_the_owner_rule",
+            f"{B5P}test_b5_p_zn0_uninjected_route_follows_the_owner_rule")),
 )
 
 
@@ -523,11 +629,14 @@ def sha(path: Path) -> str:
 def check_edits() -> list[str]:
     problems = []
     for m in MUTANTS:
-        count = m.target.read_text().count(m.old)
-        if count != 1:
-            problems.append(f"{m.id}: old text occurs {count} times in {m.target}")
-        if m.old == m.new:
-            problems.append(f"{m.id}: edit is a no-op")
+        for target, old, new in m.edits():
+            count = target.read_text().count(old)
+            if count != 1:
+                problems.append(f"{m.id}: old text occurs {count} times in {target}")
+            if old == new:
+                problems.append(f"{m.id}: edit is a no-op")
+        if len({t for t, _o, _n in m.edits()}) != 1 and m.repin:
+            problems.append(f"{m.id}: a re-pinned mutant edits one file")
     ids = [m.id for m in MUTANTS]
     if len(set(ids)) != len(ids):
         problems.append("duplicate mutant ids")
@@ -579,7 +688,7 @@ def main(argv: list[str] | None = None) -> int:
     evidence = Path(args.evidence or tempfile.mkdtemp(prefix="b3-mutation-"))
     evidence.mkdir(parents=True, exist_ok=True)
     chosen = [m for m in MUTANTS if args.mutant is None or m.id in args.mutant]
-    targets = sorted({m.target for m in MUTANTS}, key=str)
+    targets = sorted({t for m in MUTANTS for t, _o, _n in m.edits()} | {PROFILE}, key=str)
     original = {t: sha(t) for t in targets}
     results: dict[str, object] = {"targets": {str(t): h for t, h in original.items()}}
     ok = True
@@ -598,20 +707,34 @@ def main(argv: list[str] | None = None) -> int:
             ok = False
     rows_out = []
     for m in chosen:
-        text = m.target.read_text()
+        files = sorted({t for t, _o, _n in m.edits()} | ({PROFILE} if m.repin else set()),
+                       key=str)
+        saved = {t: t.read_text() for t in files}
+        repinned = True
         try:
-            m.target.write_text(text.replace(m.old, m.new, 1))
-            code, outcomes, elapsed = run_rows(
-                args.pytest, m.rows, evidence / f"{m.id}.xml",
-                HANG_TIMEOUT_S if m.hang else RUN_TIMEOUT_S)
+            for target, old, new in m.edits():
+                target.write_text(target.read_text().replace(old, new, 1))
+            if m.repin:
+                repinned = subprocess.run(
+                    [sys.executable, "-I", "scripts/b2_measure_profile.py"],
+                    capture_output=True, text=True, timeout=RUN_TIMEOUT_S, check=False
+                ).returncode == 0
+            if repinned:
+                code, outcomes, elapsed = run_rows(
+                    args.pytest, m.rows, evidence / f"{m.id}.xml",
+                    HANG_TIMEOUT_S if m.hang else RUN_TIMEOUT_S)
+            else:
+                code, outcomes, elapsed = None, {}, 0.0
         finally:
-            m.target.write_text(text)
+            for target, text in saved.items():
+                target.write_text(text)
         failed = sorted(n for n, k in outcomes.items() if k in ("failure", "error"))
-        killed = bool(failed) or (m.hang and code is None)
+        killed = repinned and (bool(failed) or (m.hang and code is None))
         ok = ok and killed
         rows_out.append({"id": m.id, "description": m.description, "target": str(m.target),
                          "rows": list(m.rows), "failed": failed, "exit": code,
-                         "timed_out": code is None, "killed": killed,
+                         "timed_out": code is None and repinned, "killed": killed,
+                         "repin": m.repin, "repinned": repinned,
                          "seconds": round(elapsed, 1)})
         print(f"{m.id} killed={killed} failed={len(failed)}/{len(m.rows)}"
               f"{' timeout' if code is None else ''} seconds={elapsed:.0f} {m.description}")

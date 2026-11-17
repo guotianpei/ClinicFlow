@@ -94,9 +94,12 @@ haloflow.synthetic.scenarios (new package; fixtures are packaged JSON under scen
 haloflow.synthetic.display_units (new):  B5_TENANT_MIGRATIONS, B5_INSTALLED_STATE_PROFILES
   t095_m05_synthetic_display            m05_synthetic_display(p_item_id uuid) -> jsonb, STABLE
   t096_m05_synthetic_scenario_claim     m05_synthetic_scenario_claim(p_scenario text,
-                                            p_refs uuid[]) -> jsonb, VOLATILE
-  t097_m05_synthetic_scenario_present   m05_synthetic_scenario_present(p_refs uuid[]) -> uuid[],
+                                            p_refs jsonb) -> jsonb, VOLATILE
+  t097_m05_synthetic_scenario_present   m05_synthetic_scenario_present(p_refs jsonb) -> jsonb
+                                            {"schema_version": 1, "present": [sorted uuids]},
                                             STABLE
+  p_refs: a JSON array of 0..64 canonical uuid strings (F-INT1: no array type in a
+  signature; green disclosure, relay 73878cd8)
   all SECURITY DEFINER, owner M05_OWNER_ROLE, EXECUTE: haloflow_runtime only (t092 pattern)
 haloflow.synthetic.display_statements (new):
   DISPLAY_KEY = "m05.synthetic.display"           READ, READ_CAPABILITY, params {"item_id"}
@@ -237,10 +240,12 @@ B5_ROUTES: Final[dict[str, tuple[str, str]]] = {
 }
 B5_UNITS: Final = ("t095_m05_synthetic_display", "t096_m05_synthetic_scenario_claim",
                    "t097_m05_synthetic_scenario_present")
+# Green disclosure (relay 73878cd8): the platform rule F-INT1 admits no array type in a
+# function signature, so p_refs is a JSON array of uuid strings and t097 returns jsonb.
 B5_FUNCTIONS: Final = {"m05_synthetic_display": ("p_item_id uuid", "jsonb", "s"),
-                       "m05_synthetic_scenario_claim": ("p_scenario text, p_refs uuid[]",
+                       "m05_synthetic_scenario_claim": ("p_scenario text, p_refs jsonb",
                                                         "jsonb", "v"),
-                       "m05_synthetic_scenario_present": ("p_refs uuid[]", "uuid[]", "s")}
+                       "m05_synthetic_scenario_present": ("p_refs jsonb", "jsonb", "s")}
 # key -> (manifest mode, required capability); READ_CAPABILITY = "m05.followup.read" (t092).
 B5_KEYS: Final = {"m05.synthetic.display": ("read", "m05.followup.read"),
                   "m05.synthetic.scenario_claim": ("write", "m05.synthetic.scenario_claim"),
@@ -451,6 +456,12 @@ TEXT_IDS: Final = frozenset({"provider_message_id", "appointment_id", "permit_id
 INCIDENTAL_VALUES: Final = frozenset({"fingerprint", "create_digest", "dispatch_fingerprint",
                                       "content_fingerprint", "dedupe_key", "r1_digest",
                                       "producer_dedupe_key"})
+# Green classification (B5 green packet): the FakeSender's accepted message id, stored as
+# m05_outbound_ops.provider_ref, is `fake-` + 16 random hex per send (m05.outbound.FakeSender).
+# Incidental ONLY in that table and ONLY in that exact shape; any other value compares
+# literally (provider_ref elsewhere -- the appointment profile -- is a business field).
+INCIDENTAL_TABLE_VALUES: Final = {("m05_outbound_ops", "provider_ref"):
+                                  re.compile(r"fake-[0-9a-f]{16}")}
 TENANT_FIELDS: Final = frozenset({"tenant_id"})
 SCHEMA_FIELDS: Final = frozenset({"schema_key", "schema_name"})
 TIME_TOL: Final = 5.0
@@ -584,6 +595,7 @@ class _Tok:
     def row(self, table: str, row: Mapping[str, Any], *, assign: bool
             ) -> tuple[str, list[Any]]:
         types = self.side.after.types.get(table) or self.side.before.types.get(table) or {}
+        row = _scrub(table, row)
         times: list[Any] = []
         obj = {k: self.enc(k, v, types.get(k), times, assign=assign)
                for k, v in sorted(row.items())}
@@ -610,6 +622,17 @@ def _ids_in(row: Mapping[str, Any], types: Mapping[str, str]) -> dict[str, list[
 
     for k, v in row.items():
         walk(k, k, v, types.get(k))
+    return out
+
+
+def _scrub(table: str, row: Mapping[str, Any]) -> Mapping[str, Any]:
+    """INCIDENTAL_TABLE_VALUES applied to one row of `table` ("{tenant}.<name>" or bare)."""
+    name = table.rsplit(".", 1)[-1]
+    out = dict(row)
+    for (t, col), shape in INCIDENTAL_TABLE_VALUES.items():
+        v = out.get(col)
+        if t == name and isinstance(v, str) and shape.fullmatch(v):
+            out[col] = "<inc:" + col + ">"
     return out
 
 
@@ -644,7 +667,7 @@ def _encoded_delta(side: Side) -> tuple[_Tok, dict[str, tuple[list[Any], list[An
         for t in sorted(cap.tables):
             types = cap.types.get(t, {})
             for r in cap.tables[t]:
-                masked = _mask(r, types)
+                masked = _mask(_scrub(t, r), types)
                 for col, ids in _ids_in(r, types).items():
                     for x in ids:
                         if x not in tok.map:

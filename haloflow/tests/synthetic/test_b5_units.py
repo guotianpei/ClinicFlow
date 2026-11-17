@@ -293,6 +293,19 @@ def test_b5_u_c7_par_integration_helpers() -> None:
         [(x, o) for x, o in no if b5.is_load_success(x, o)]
 
 
+def test_b5_u_c8_outbound_provider_ref_classification_is_narrow() -> None:
+    """C (green classification, disclosed): only m05_outbound_ops.provider_ref in the exact
+    FakeSender shape `fake-<16 hex>` is incidental; another shape, another table, or another
+    column compares literally."""
+    fake = "fake-0123456789abcdef"
+    got = b5._scrub("{tenant}.m05_outbound_ops", {"provider_ref": fake, "phone": fake})
+    assert got == {"provider_ref": "<inc:provider_ref>", "phone": fake}
+    for table, row in (("{tenant}.m05_outbound_ops", {"provider_ref": "fake-0123"}),
+                       ("{tenant}.m05_outbound_ops", {"provider_ref": "prov-syn-1"}),
+                       ("{tenant}.m05_appointment_profile", {"provider_ref": fake})):
+        assert b5._scrub(table, row) == row, (table, row)
+
+
 # =========================================================================== A: placement
 
 def test_b5_u_zn0_product_zone_is_eastern_only() -> None:

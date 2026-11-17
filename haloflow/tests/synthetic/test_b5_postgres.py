@@ -905,8 +905,10 @@ def test_b5_p_ss1_exact_present_subset_and_page_states(inst: b3.Install,
                                                        test_zones: None) -> None:
     """A (v1r3 §2 P-SS1; M-B5-12): S1 loaded through the app, S2 PARTIAL (one row put
     test-side through the directory), S3 absent. The real t097 returns exactly the sorted
-    present subset of the given refs; the page shows S1 Loaded, S2 the partial notice, S3 the
-    Load button; more than 64 refs or a NULL array is COMMAND_MALFORMED."""
+    present subset of the given refs ({"schema_version": 1, "present": [...]}, the jsonb shape
+    of the green disclosure, relay 73878cd8); the page shows S1 Loaded, S2 the partial notice,
+    S3 the Load button; more than 64 refs, NULL, a non-array, a non-string element, a
+    non-uuid string or a non-canonical (upper-case) uuid is COMMAND_MALFORMED."""
     import sh2_support as sh2
     import si_support as si
 
@@ -938,14 +940,16 @@ def test_b5_p_ss1_exact_present_subset_and_page_states(inst: b3.Install,
         with inst.c.connect(s.TARGET_DB, user=inst.state["logins"]["runtime"]["role"],
                             password=inst.state["logins"]["runtime"]["password"]) as a:
             a.execute("SELECT set_config('app.tenant_id', %s, false)", (t,))
-            (r,) = a.execute(f"SELECT {inst.schema}.m05_synthetic_scenario_present(%s::uuid[])",
-                             (arr,)).fetchall()
+            (r,) = a.execute(f"SELECT {inst.schema}.m05_synthetic_scenario_present(%s::jsonb)",
+                             (None if arr is None else json.dumps(arr),)).fetchall()
             return r[0]
 
-    assert [str(x) for x in present(every)] == want
+    got = present(every)
+    assert got == {"schema_version": 1, "present": want}, got
     import psycopg
 
-    for bad in ([b5.new_id() for _ in range(65)], None):
+    for bad in ([b5.new_id() for _ in range(65)], None, {"refs": every}, [1], ["not-a-uuid"],
+                [every[0].upper()]):
         with pytest.raises(psycopg.errors.RaiseException, match="COMMAND_MALFORMED"):
             present(bad)
 
@@ -1151,8 +1155,6 @@ async def _gateway_read(lc: Any, who: str, key: str, params: dict[str, Any]) -> 
     workload contexts the app composes (W_INGRESS + INGRESS_CAPS, W_TIMER + TIMER_CAPS)."""
     import uuid as _uuid
 
-    from psycopg.types.json import Jsonb  # noqa: F401  (params are plain)
-
     from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
     from haloflow.synthetic import composition, simulator, staff_routes, wiring
 
@@ -1191,9 +1193,11 @@ def test_b5_p_ds4_display_and_present_reads_are_staff_only(inst: b3.Install) -> 
     """A (v1r1 C1/C2, v1r3 §2, P-DS4; Codex c05c2c9 R4): through the REAL gateway, the staff
     principal reads m05.synthetic.display (linked) and m05.synthetic.scenario_present; the
     ingress and timer workload contexts are refused both keys with CapabilityDenied
-    (STATEMENT_CAPABILITY_DENIED). Direct SQL under another tenant setting raises; an unknown
-    item id is ITEM_NOT_FOUND."""
+    (STATEMENT_CAPABILITY_DENIED). Direct SQL with an empty or malformed tenant setting raises
+    22023 "tenant context invalid" (the t092 check; corrected in green, relay 73878cd8); an
+    unknown item id is ITEM_NOT_FOUND."""
     import psycopg
+    from psycopg.types.json import Jsonb
 
     from haloflow.m01.errors import CapabilityDenied
 
@@ -1206,11 +1210,11 @@ def test_b5_p_ds4_display_and_present_reads_are_staff_only(inst: b3.Install) -> 
         async with bb.running(inst) as (lc, _app):
             rows = await _gateway_read(lc, "staff", st.DISPLAY_KEY, {"item_id": iid})
             assert rows[0][0]["linked"] is True, rows
-            rows = await _gateway_read(lc, "staff", st.PRESENT_KEY, {"refs": [ref]})
-            assert [str(x) for x in rows[0][0]] == [ref], rows
+            rows = await _gateway_read(lc, "staff", st.PRESENT_KEY, {"refs": Jsonb([ref])})
+            assert rows[0][0] == {"schema_version": 1, "present": [ref]}, rows
             for who in ("ingress", "timer"):
                 for key, params in ((st.DISPLAY_KEY, {"item_id": iid}),
-                                    (st.PRESENT_KEY, {"refs": [ref]})):
+                                    (st.PRESENT_KEY, {"refs": Jsonb([ref])})):
                     with pytest.raises(CapabilityDenied) as e:
                         await _gateway_read(lc, who, key, params)
                     assert e.value.reason_code == "STATEMENT_CAPABILITY_DENIED", (who, key)
@@ -1226,8 +1230,12 @@ def test_b5_p_ds4_display_and_present_reads_are_staff_only(inst: b3.Install) -> 
 
     with pytest.raises(psycopg.errors.RaiseException, match="ITEM_NOT_FOUND"):
         call(tenant(inst), b5.new_id())
-    with pytest.raises(psycopg.Error):
-        call("clinic-other-0000", iid)
+    # Green disclosure (relay 73878cd8): the t092 _TENANT_CHECK checks the setting's presence
+    # and format (isolation is the schema; the gateway routes each tenant to its own schema).
+    for bad in ("", "Not A Tenant!"):
+        with pytest.raises(psycopg.errors.InvalidParameterValue,
+                           match="tenant context invalid"):
+            call(bad, iid)
 
 
 def test_b5_p_ds5_broken_source_chains_fail_closed(inst: b3.Install) -> None:
@@ -1236,7 +1244,10 @@ def test_b5_p_ds5_broken_source_chains_fail_closed(inst: b3.Install) -> None:
     (a) a reply item whose inbound row points at ANOTHER patient's appointment;
     (b) a reply item whose inbound row points at an appointment that does not exist;
     (c) a no_reply item whose window points at another patient's appointment;
-    (d) an ehr_confirmation_check item whose write-back op names a different item_id.
+    (d) an ehr_confirmation_check item whose write-back op points at another patient's
+        appointment (green amendment: the op's item_id is kept, because the existing t092
+        reason read already fails closed -- view 404 -- on an item_id mismatch);
+    (d2) the same check item with the op's item_id forged, asserted on t095 directly.
     Each gives display {"linked": false} and the view shows exactly "No appointment linked"
     with no Patient line. (More than one source row is structurally impossible: P-DS6.)"""
     kinds = bb.seed_kinds(inst, base=60)
@@ -1261,13 +1272,25 @@ def test_b5_p_ds5_broken_source_chains_fail_closed(inst: b3.Install) -> None:
             forge(f"UPDATE {sch}.m05_reminder_windows SET appointment_ref = %s::uuid"
                   " WHERE closed_event_id = %s::uuid", (other["ref"], nr["source_event_id"]))
             ck = bb.item_row(inst, kinds["ehr_confirmation_check"]["item_id"])
-            forge(f"UPDATE {sch}.m05_writeback_ops SET item_id = %s::uuid"
-                  " WHERE event_id = %s::uuid", (b5.new_id(), ck["source_event_id"]))
+            forge(f"UPDATE {sch}.m05_writeback_ops SET appointment_ref = %s::uuid"
+                  " WHERE event_id = %s::uuid", (other["ref"], ck["source_event_id"]))
             for kind in ("reschedule_request", "unclear_reply", "no_reply",
                          "ehr_confirmation_check"):
                 pg_ = await view(app, kinds[kind]["item_id"])
                 assert b5.NO_APPOINTMENT in pg_.text and "Patient:" not in pg_.text, \
                     (kind, pg_.text[:600])
+            # (d2) item_id mismatch: t095 itself (the view 404s through t092 first).
+            forge(f"UPDATE {sch}.m05_writeback_ops SET appointment_ref = %s::uuid,"
+                  " item_id = %s::uuid WHERE event_id = %s::uuid",
+                  (kinds["ehr_confirmation_check"]["ref"], b5.new_id(),
+                   ck["source_event_id"]))
+            lg = inst.state["logins"]["runtime"]
+            with inst.c.connect(s.TARGET_DB, user=lg["role"], password=lg["password"]) as a:
+                a.execute("SELECT set_config('app.tenant_id', %s, false)",
+                          (inst.state["tenant_id"],))
+                (r,) = a.execute(f"SELECT {sch}.m05_synthetic_display(%s::uuid)",
+                                 (ck["item_id"],)).fetchall()
+            assert r[0] == {"schema_version": 1, "linked": False}, r
 
     run(body())
 

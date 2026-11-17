@@ -9,6 +9,10 @@ workload context and `ReplyIntake.receive` all run as in S-G1a. The ingress stat
 returned, labelled. The phone must be the canonical fictional NANP number: E.164
 `+1 555 555-01NN` (NN 00..99), i.e. `^\\+155555501[0-9]{2}$` (v1r1 §2).
 
+B5: the actions are `deliver_reply` and `apply_ehr` (each returns a `sim_actions.Result` and
+writes its own audit line); the JSON routes here and the simulator page forms (`sim_ui`) are
+two adapters over them.
+
 `POST /synthetic/simulator/ehr`: `put_appointment` (SimulatedEhr.put) or `fail_next`
 (fail_reads / fail_writes), on the SAME SimulatedEhr the write-back port wraps. It touches no
 database row. The simulated EHR lives in process memory (Codex Q2 = a): a restart starts empty.
@@ -23,6 +27,7 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Final
 
@@ -37,7 +42,8 @@ from haloflow.m05.synthetic_ingress import ROUTE as INGRESS_ROUTE
 from haloflow.m05.synthetic_ingress import IngressConfig, create_ingress_router
 from haloflow.synthetic import wiring
 from haloflow.synthetic.composition import W_INGRESS
-from haloflow.synthetic.labels import labelled, refusal
+from haloflow.synthetic.labels import labelled
+from haloflow.synthetic.sim_actions import Result
 
 LOGGER: Final = logging.getLogger("haloflow.synthetic")
 PHONE: Final = re.compile(r"\+155555501[0-9]{2}")
@@ -68,10 +74,6 @@ async def _json(request: Request) -> Any:
         return json.loads(bytes(raw).decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError):
         raise _Bad("body") from None
-
-
-def _malformed(field: str) -> Response:
-    return refusal(422, "MALFORMED", field=field)
 
 
 # ---------------------------------------------------------------------------- patient reply
@@ -133,55 +135,76 @@ async def _deliver(app: Any, secret: str, payload: bytes) -> tuple[int, Any]:
     return status, (json.loads(raw) if raw else {})
 
 
-async def patient_reply(lifecycle: Any, request: Request) -> Response:
-    try:
-        value = await _json(request)
-        if type(value) is not dict:
-            raise _Bad("body")
-        if set(value) != {"phone", "text"}:
-            raise _Bad("unknown_field" if set(value) - {"phone", "text"} else
-                       ("phone" if "phone" not in value else "text"))
-        phone, text = value["phone"], value["text"]
-        if type(phone) is not str or not PHONE.fullmatch(phone):
-            raise _Bad("phone")
-        if type(text) is not str or not 1 <= len(text) <= MAX_TEXT:
-            raise _Bad("text")
-    except _Bad as bad:
-        LOGGER.info("SIMULATOR action=patient_reply status=422 code=MALFORMED")
-        return _malformed(bad.field)
+def reply_value(value: object) -> tuple[object, object] | _Bad:
+    """The JSON body shape of a patient reply: exactly {"phone", "text"} (both adapters)."""
+    if type(value) is not dict:
+        return _Bad("body")
+    if set(value) != {"phone", "text"}:
+        return _Bad("unknown_field" if set(value) - {"phone", "text"} else
+                    ("phone" if "phone" not in value else "text"))
+    return value["phone"], value["text"]
+
+
+async def deliver_reply(lifecycle: Any, phone: object, text: object) -> Result:
+    """One simulated patient reply through the unmounted S-G1a app (B5: shared by the JSON
+    route and the simulator page form). Behaviour as B3b `patient_reply`."""
+    if type(phone) is not str or not PHONE.fullmatch(phone):
+        return _refused_reply("phone")
+    if type(text) is not str or not 1 <= len(text) <= MAX_TEXT:
+        return _refused_reply("text")
     payload = json.dumps({"channel": "sms", "provider_message_id": str(uuid.uuid4()),
                           "phone": phone, "text": text}).encode("utf-8")
     status, out = await _deliver(_ingress_app(lifecycle), lifecycle.ingress_secret, payload)
     code = out.get("code") if isinstance(out, dict) else None
-    LOGGER.info("SIMULATOR action=patient_reply status=%d code=%s", status,
-                code if isinstance(code, str) and re.fullmatch(r"[A-Z_]+", code) else "-")
-    return labelled(out if isinstance(out, dict) else {}, status)
+    shown = code if isinstance(code, str) and re.fullmatch(r"[A-Z_]+", code) else None
+    LOGGER.info("SIMULATOR action=patient_reply status=%d code=%s", status, shown or "-")
+    return Result(status=status, code=shown, body=out if isinstance(out, dict) else {})
+
+
+def _refused_reply(field: str) -> Result:
+    LOGGER.info("SIMULATOR action=patient_reply status=422 code=MALFORMED")
+    return Result(status=422, code="MALFORMED", body={"code": "MALFORMED", "field": field})
+
+
+async def patient_reply(lifecycle: Any, request: Request) -> Response:
+    try:
+        value = await _json(request)
+    except _Bad as bad:
+        return _response(_refused_reply(bad.field))
+    shaped = reply_value(value)
+    if isinstance(shaped, _Bad):
+        return _response(_refused_reply(shaped.field))
+    return _response(await deliver_reply(lifecycle, *shaped))
+
+
+def _response(result: Result) -> Response:
+    return labelled(result.body, result.status)
 
 
 # ---------------------------------------------------------------------------- EHR
 
-def _optional(value: dict[str, Any], key: str) -> str | None:
+def _optional(value: Mapping[str, Any], key: str) -> str | None:
     v = value.get(key)
     if v is not None and (type(v) is not str or not 1 <= len(v) <= 128):
         raise _Bad(key)
     return v
 
 
-def _count(value: dict[str, Any], key: str) -> int:
+def _count(value: Mapping[str, Any], key: str) -> int:
     v = value[key]
     if type(v) is not int or not 0 <= v <= FAIL_MAX:
         raise _Bad(key)
     return v
 
 
-async def ehr(lifecycle: Any, request: Request) -> Response:
-    operation = "malformed"
+def apply_ehr(lifecycle: Any, fields: Mapping[str, object]) -> Result:
+    """One simulated EHR change (B5: shared by the JSON route and the simulator page form).
+    Behaviour as B3b `ehr`: `put_appointment` or `fail_next` on the SAME SimulatedEhr the
+    write-back port wraps; no database row."""
+    value: Mapping[str, Any] = fields
+    raw_op = value.get("operation")
+    operation = raw_op if isinstance(raw_op, str) else ""
     try:
-        value = await _json(request)
-        if type(value) is not dict:
-            raise _Bad("body")
-        raw_op = value.get("operation")
-        operation = raw_op if isinstance(raw_op, str) else ""
         if operation == "put_appointment":
             keys = set(value)
             if not keys >= _PUT_REQUIRED or keys - _PUT_REQUIRED - _PUT_OPTIONAL:
@@ -212,13 +235,27 @@ async def ehr(lifecycle: Any, request: Request) -> Response:
             lifecycle.port.ehr.fail_reads(reads)
             lifecycle.port.ehr.fail_writes(writes)
         else:
-            operation = "malformed"
             raise _Bad("operation")
     except _Bad as bad:
-        LOGGER.info("SIMULATOR action=ehr_%s status=422", "malformed")
-        return _malformed(bad.field)
+        return _refused_ehr(bad.field)
     LOGGER.info("SIMULATOR action=ehr_%s status=200", operation)
-    return labelled({"operation": operation, "ehr_state": "process_memory"})
+    return Result(status=200, code=None,
+                  body={"operation": operation, "ehr_state": "process_memory"})
+
+
+def _refused_ehr(field: str) -> Result:
+    LOGGER.info("SIMULATOR action=ehr_%s status=422", "malformed")
+    return Result(status=422, code="MALFORMED", body={"code": "MALFORMED", "field": field})
+
+
+async def ehr(lifecycle: Any, request: Request) -> Response:
+    try:
+        value = await _json(request)
+    except _Bad as bad:
+        return _response(_refused_ehr(bad.field))
+    if type(value) is not dict:
+        return _response(_refused_ehr("body"))
+    return _response(apply_ehr(lifecycle, value))
 
 
 def install_simulator(app: FastAPI, lifecycle: Any) -> None:

@@ -6,10 +6,11 @@ awaits the coordinator's completion (never the drain steps directly).
 
 Routes (R-B3b-1, closed): `GET /synthetic/health` (B3a), `GET /synthetic/session` (the
 per-lifespan CSRF token, `Cache-Control: no-store`), the six staff routes (`staff_routes`) and
-the two simulator routes (`simulator`) and the B4 staff screen (`ui`: four HTML routes and
-one stylesheet). The S-G1a ingress is NOT mounted. Every request passes
-the local exposure gate first (`gate`, built from the loopback `bind`), and every response is
-labelled SIMULATED (`labels`). No docs or OpenAPI routes.
+the two simulator routes (`simulator`), the B4 staff screen (`ui`: four HTML routes and
+one stylesheet), and the B5 simulator actions (`sim_actions`: load-scenario, tick, outbox) and
+simulator page (`sim_ui`: the page and its four form routes). The S-G1a ingress is NOT
+mounted. Every request passes the local exposure gate first (`gate`, built from the loopback
+`bind`), and every response is labelled SIMULATED (`labels`). No docs or OpenAPI routes.
 """
 
 from __future__ import annotations
@@ -26,6 +27,8 @@ from starlette.responses import Response
 from haloflow.synthetic.gate import LocalGate, allowed_hosts
 from haloflow.synthetic.labels import EXCEPTION_HANDLERS, labelled
 from haloflow.synthetic.lifecycle import SyntheticLifecycle
+from haloflow.synthetic.sim_actions import install_sim_actions
+from haloflow.synthetic.sim_ui import install_sim_ui
 from haloflow.synthetic.simulator import install_simulator
 from haloflow.synthetic.staff_routes import install_staff_routes
 from haloflow.synthetic.ui import install_ui
@@ -71,6 +74,8 @@ def create_synthetic_app(environ: Mapping[str, str] | None = None, *,
 
     install_staff_routes(app, lc)
     install_simulator(app, lc)
+    install_sim_actions(app, lc)
+    install_sim_ui(app, lc)
     install_ui(app, lc)
     app.add_middleware(LocalGate, lifecycle=lc, allowed=allowed)
     app.state.lifecycle = lc
