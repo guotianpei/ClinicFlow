@@ -1,4 +1,4 @@
-"""Option B B5: unit rows (no database). Class per row docstring (b5_support docstring).
+"""Option B B5: unit rows (no database). Class per row docstring (ob5_support docstring).
 
 Rows: U-C1..C3 (controls on the oracles), U-ZN0/U-ZN0s (Eastern-only product guard and source
 scan), U-ZN1a (every minute of 2026-2027), U-ZN1c (half-open endpoints, subsecond, DST days),
@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import b5_support as b5
+import ob5_support as b5
 import pytest
 
 YEARS = (2026, 2027)
@@ -86,6 +86,56 @@ def test_b5_u_c3_dst_elapsed_time_is_at_least_49_hours() -> None:
             assert 49 <= hours <= 51.0003, (d, hours)
 
 
+def test_b5_u_c4_ehr_state_oracle_sees_every_field() -> None:
+    """C (Codex 6322924 F1): negative controls for the no-write oracle on a real SimulatedEhr
+    (accepted M05 class, no B5 code). A same-status change of start_at, provider_ref,
+    department_ref, replaced_by or appointment identity, a write, a closed permit, and a
+    pending read or write fault are each detected; an unchanged EHR (reads advance only the
+    port time) compares equal."""
+    import asyncio
+    import dataclasses
+
+    from haloflow.m05.simulated_ehr import EhrRead, SimulatedEhr
+
+    start = datetime(2026, 11, 19, 23, tzinfo=UTC)
+    base = EhrRead(status="neutral", appointment_id="a1", start_at=start, provider_ref="p1",
+                   department_ref="d1", replaced_by=None)
+
+    def fresh() -> Any:
+        e = SimulatedEhr(clock=lambda: datetime.now(UTC))
+        e.put(base)
+        return e
+
+    ref = b5.ehr_state(fresh())
+    e = fresh()
+    asyncio.run(e.read("a1"))
+    assert b5.ehr_state(e) == ref
+    changes = {
+        "start_at": {"start_at": start + timedelta(minutes=1)},
+        "provider_ref": {"provider_ref": "p2"},
+        "department_ref": {"department_ref": "d2"},
+        "replaced_by": {"replaced_by": "a9"},
+    }
+    for field, over in changes.items():
+        e = fresh()
+        e.put(dataclasses.replace(base, **over))
+        assert b5.ehr_state(e) != ref, field
+    e = fresh()
+    e.put(dataclasses.replace(base, appointment_id="a2"))
+    assert b5.ehr_state(e) != ref, "identity"
+    e = fresh()
+    asyncio.run(e.write_confirmation("a1", permit_id="pm1",
+                                     apply_deadline=datetime.now(UTC) + timedelta(hours=1)))
+    assert b5.ehr_state(e) != ref, "write"
+    e = fresh()
+    asyncio.run(e.close_permit("pm2"))
+    assert b5.ehr_state(e) != ref, "closed permit"
+    for name in ("fail_reads", "fail_writes"):
+        e = fresh()
+        getattr(e, name)(1)
+        assert b5.ehr_state(e) != ref, name
+
+
 # =========================================================================== A: placement
 
 def test_b5_u_zn0_product_zone_is_eastern_only() -> None:
@@ -116,6 +166,33 @@ def test_b5_u_zn0s_source_scan_no_zone_override() -> None:
         for node in ast.walk(t):
             if isinstance(node, ast.Call):
                 assert all(k.arg != "zones" for k in node.keywords), (p, node.lineno)
+
+
+def test_b5_u_h1_async_hook_seam() -> None:
+    """A (ob5_support INTERFACE hooks; the B2-U-H1 rule): `hooks.AFAULT` is None, `afire` is a
+    coroutine function that awaits AFAULT when set, and no src module assigns AFAULT after its
+    definition in hooks.py."""
+    import inspect
+
+    hooks = b5.mod("hooks")
+    assert hooks.AFAULT is None
+    assert inspect.iscoroutinefunction(hooks.afire)
+    seen: list[str] = []
+
+    async def probe(point: str, info: Any) -> None:
+        seen.append(point)
+
+    hooks.AFAULT = probe
+    try:
+        import asyncio
+
+        asyncio.run(hooks.afire("b5.load.after_claim", {}))
+    finally:
+        hooks.AFAULT = None
+    assert seen == ["b5.load.after_claim"]
+    defs = [(p.name, ln) for p, t in b5.src_modules().items()
+            for ln in b5.assigns_name(t, "AFAULT")]
+    assert [n for n, _ in defs] == ["hooks.py"], defs
 
 
 def test_b5_u_zn1a_every_minute_matches_the_owner_rule() -> None:

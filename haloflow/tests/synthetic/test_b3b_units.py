@@ -176,8 +176,8 @@ def test_b3b_r7u_route_inventory_is_closed() -> None:
     import b4_support as b4
 
     # B5 (v1 R-B5-2..6, v1r1 D1): plus exactly the eight simulator routes in
-    # b5_support.B5_ROUTES.
-    import b5_support as b5
+    # ob5_support.B5_ROUTES.
+    import ob5_support as b5
 
     want = {(m, p) for m, p in (*bb.ROUTES.values(), *b4.UI_ROUTES.values(),
                                 *b5.B5_ROUTES.values())}

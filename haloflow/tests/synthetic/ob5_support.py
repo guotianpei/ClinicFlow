@@ -1,5 +1,7 @@
 """Option B increment B5: shared test support (TEST ONLY; never imported by `src`).
 
+Named `ob5_support` (Option B B5) because `tests/m05/b5_support.py` already exists (M05 B5).
+
 Governing records (Shared Workspace), Codex technical ALIGN on each revision:
 - `Work Session 2026-11-16/claude_b5-package-v1-2026-11-16.md`
   sha256 a08258d5... (v1; Codex REVISE `codex_b5-package-v1-review.md`)
@@ -117,12 +119,31 @@ haloflow.synthetic.sim_actions (new):
       hooks (hooks.fire): b5.load.clock {"now": <ISO-8601 UTC of the database clock read in the
       load transaction>} then b5.load.after_claim, b5.load.after_ehr, b5.load.before_commit,
       b5.load.after_commit
+      the load is ONE `haloflow.m02.observation.EventFoundation.run_in_transaction(context,
+      body)` as W_DIRECTORY with LOAD_CAPABILITIES; inside `body(binding)` every statement is
+      `binding.handle.fetch_all(<key>, {...})`: CLAIM_KEY first, then (S1/S3) the synchronous
+      SimulatedEhr.put loop, then the directory key (DIRECTORY_KEY) for every contact_put,
+      then every appointment_put. A returned directory result other than
+      {"schema_version": 1, "outcome": "applied"} (contact_put: also "existing") raises
+      inside `body`, so the transaction rolls back.
+      the b5.load.after_* / before_commit points are awaited through hooks.afire (below);
+      b5.load.clock is a plain hooks.fire
+      directory fields per row: appointment_put {appointment_ref, patient_id, start_at (ISO Z),
+      status "booked", first_name, confirmation "not_confirmed", department_tz <placed zone>,
+      source_status "booked", provider_ref, department_ref}; contact_put {phone, patient_id}
+      EHR entry per S1/S3 row: EhrRead(status="neutral", appointment_id=str(appointment_ref),
+      start_at=<the same start>, provider_ref, department_ref, replaced_by=None)
+      success body: {"scenario": name, "outcome": "loaded"}; refusal body {"code": C}
   async tick(lifecycle, scheduler: str) -> Result    200 {"scheduler", "counts": {str: int}}
       | 422 UNKNOWN_SCHEDULER | 503 <stop code>
   outbox(lifecycle) -> list[dict]   newest first, at most OUTBOX_CAP: {"op_id","phone","text"}
   install_sim_actions(app, lifecycle)
   audit: one INFO line "SIMULATOR action=load_scenario status=<n> code=<C|-> scenario=<S1..S4|->"
          one INFO line "SIMULATOR action=tick status=<n> code=<C|-> scheduler=<name|->"
+haloflow.synthetic.hooks (addition, test seam as FAULT):
+  AFAULT: Callable[[str, Mapping[str, Any]], Awaitable[None]] | None = None
+  async afire(point, info=None) -> None      awaits AFAULT when set; no-op otherwise
+  no src module assigns AFAULT (as FAULT)
 haloflow.synthetic.simulator (refactor, behaviour unchanged):
   async deliver_reply(lifecycle, phone: object, text: object) -> sim_actions.Result
   apply_ehr(lifecycle, fields: Mapping[str, object]) -> sim_actions.Result
@@ -136,8 +157,14 @@ haloflow.synthetic.sim_ui (new):
   every form carries the hidden field "csrf" (the lifespan token); fields per action:
       load {csrf, scenario}  tick {csrf, scheduler}  reply {csrf, phone, text}
       ehr  {csrf, operation, ...the JSON /synthetic/simulator/ehr fields of that operation}
-  after a form action: 303 to "/synthetic/simulator?m=<message key>" (no `m` on success
-  without a message); refusals before the action (400/403/413/415) are B4 HTML error pages
+  the form adapter only parses the form into the action function's arguments (EHR
+  fail_next `reads`/`writes`: base-10 digit strings -> int; anything else 422); then:
+      action refused 422 (MALFORMED / UNKNOWN_SCENARIO / UNKNOWN_SCHEDULER, or the ingress's
+          own 4xx) -> a 422 B4 HTML error page
+      a load code in CODE_MESSAGE -> 303 "/synthetic/simulator?m=<key>"; 503 -> m=stopping
+      success -> 303 with m=loaded (load), m=tick (tick), no `m` (reply, EHR)
+  refusals before the action (CSRF missing/wrong 403, duplicate or unknown field 400, 413,
+  415) are B4 HTML error pages, checked before any principal resolution or action
 haloflow.synthetic.ui:
   UI_FORM_ROUTE also fully matches exactly the four simulator form paths
   display_lines(read: Mapping[str, Any], *, clinic_tz: str) -> tuple[str, ...]   (unescaped)
@@ -351,27 +378,42 @@ def wb_ops(inst: b3.Install, refs: Sequence[str]) -> list[dict[str, Any]]:
     return [dict(r[0]) for r in rows]
 
 
+def ehr_state(ehr: Any) -> tuple[Any, ...]:
+    """The simulated EHR's full observable safety state (Codex 6322924 F1): every appointment
+    as ALL of its dataclass fields (never `repr`, which shows the status only), the full write
+    log, the closed and used permit sets, and the pending read/write fault counters. The
+    port's monotonic time is excluded on purpose (it advances on every read)."""
+    import dataclasses
+
+    raw = ehr.snapshot()
+    apps = tuple(sorted((k, tuple(sorted(dataclasses.asdict(v).items())))
+                        for k, v in raw.appointments.items()))
+    return (apps, tuple(raw.writes), tuple(sorted(raw.closed)), tuple(sorted(raw.used)),
+            int(ehr._read_failures), int(ehr._write_failures))
+
+
 @dataclass(frozen=True)
 class Snap:
-    """The no-write oracle (v1r1 D3/D4, Codex v1r4 pin 3): database table digests, the
-    simulated EHR's own snapshot, and the FakeSender call count."""
+    """The no-write oracle (v1r1 D3/D4, Codex v1r4 pin 3, Codex 6322924 F1): database table
+    digests, the simulated EHR's full state (`ehr_state`) and a copy of every FakeSender
+    call (op id, phone, text)."""
     tables: dict[str, tuple[int, str]]
-    ehr: tuple[tuple[str, str], ...]
-    ehr_writes: int
-    sends: int
+    ehr: tuple[Any, ...]
+    sends: tuple[tuple[str, str, str], ...]
+
+    @property
+    def ehr_writes(self) -> int:
+        return len(self.ehr[1])
 
 
 def snap(inst: b3.Install, lc: Any) -> Snap:
-    raw = lc.port.ehr.snapshot()
-    ehr = tuple(sorted((k, repr(v)) for k, v in raw.appointments.items()))
-    return Snap(b3.table_digests(inst), ehr, len(raw.writes), len(lc.sender.calls))
+    return Snap(b3.table_digests(inst), ehr_state(lc.port.ehr), tuple(lc.sender.calls))
 
 
 def unchanged(before: Snap, after: Snap) -> None:
     assert b3.changed(before.tables, after.tables) == set(), \
         b3.changed(before.tables, after.tables)
     assert before.ehr == after.ehr, "simulated EHR changed"
-    assert before.ehr_writes == after.ehr_writes, "simulated EHR written"
     assert before.sends == after.sends, "FakeSender called"
 
 
