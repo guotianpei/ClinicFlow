@@ -99,9 +99,11 @@ haloflow.synthetic.display_units (new):  B5_TENANT_MIGRATIONS, B5_INSTALLED_STAT
                                             STABLE
   all SECURITY DEFINER, owner M05_OWNER_ROLE, EXECUTE: haloflow_runtime only (t092 pattern)
 haloflow.synthetic.display_statements (new):
-  DISPLAY_KEY = "m05.synthetic.display"           READ, READ_CAPABILITY
-  CLAIM_KEY = "m05.synthetic.scenario_claim"      WRITE, capability "m05.synthetic.scenario_claim"
-  PRESENT_KEY = "m05.synthetic.scenario_present"  READ, READ_CAPABILITY
+  DISPLAY_KEY = "m05.synthetic.display"           READ, READ_CAPABILITY, params {"item_id"}
+  CLAIM_KEY = "m05.synthetic.scenario_claim"      WRITE, capability "m05.synthetic.scenario_claim",
+                                                  params {"scenario", "refs"}
+  PRESENT_KEY = "m05.synthetic.scenario_present"  READ, READ_CAPABILITY, params {"refs"}
+  each key's statement returns one row whose single column is the function's result
   B5_STATEMENTS
 haloflow.synthetic.composition: SYNTHETIC_TARGET = 97; the synthetic registry and catalogue
   gain exactly the three units and three keys; production {36} unchanged.
@@ -415,6 +417,73 @@ def unchanged(before: Snap, after: Snap) -> None:
         b3.changed(before.tables, after.tables)
     assert before.ehr == after.ehr, "simulated EHR changed"
     assert before.sends == after.sends, "FakeSender called"
+
+
+# ---------------------------------------------------------------------------- parity oracle
+
+_UUID: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_TS: Final = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}(:\d{2})?|Z)?")
+
+
+def ref_labels(tenant_id: str) -> dict[str, str]:
+    """uuid text -> stable label ("S1.confirm.patient" / "S1.confirm.ref") for every fixture
+    row, so two installs (different tenants, different uuid5 values) compare by role."""
+    out: dict[str, str] = {}
+    for name in NAMES:
+        for key, (patient, ref) in scenario_refs(tenant_id, name).items():
+            out[patient] = f"{name}.{key}.patient"
+            out[ref] = f"{name}.{key}.ref"
+    return out
+
+
+def normalize(text: str, labels: Mapping[str, str], tenant_id: str, schema: str) -> str:
+    """Value-level normalization (Codex c05c2c9 R3): fixture uuids -> role labels, the tenant
+    id and schema -> fixed tokens, any other uuid -> <uuid>, timestamps -> <ts>. Every other
+    value (texts, phones, states, kinds, codes, counts) is compared exactly."""
+    for raw, label in labels.items():
+        text = text.replace(raw, label)
+    text = text.replace(tenant_id, "<tenant>").replace(schema, "<schema>")
+    return _TS.sub("<ts>", _UUID.sub("<uuid>", text))
+
+
+def table_rows(inst: b3.Install) -> dict[str, list[str]]:
+    """Every row of every user table as to_jsonb text (admin connection), keyed as
+    table_digests keys them."""
+    import psycopg
+
+    out: dict[str, list[str]] = {}
+    with inst.c.connect() as a:
+        tabs = a.execute("SELECT n.nspname, c.relname FROM pg_class c JOIN pg_namespace n"
+                         " ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname"
+                         " NOT IN ('pg_catalog','information_schema') ORDER BY 1, 2").fetchall()
+        for sc, t in tabs:
+            q = psycopg.sql.SQL("SELECT to_jsonb(r)::text FROM {}.{} AS r").format(
+                psycopg.sql.Identifier(sc), psycopg.sql.Identifier(t))
+            out[("{tenant}" if sc == inst.schema else sc) + "." + t] = \
+                [r[0] for r in a.execute(q).fetchall()]
+    return out
+
+
+def row_delta(before: Mapping[str, list[str]], after: Mapping[str, list[str]],
+              norm: Any) -> dict[str, tuple[list[str], list[str]]]:
+    """Per table: (normalized rows removed, normalized rows added), multiset difference after
+    normalization; tables with no normalized change are omitted."""
+    from collections import Counter
+
+    out: dict[str, tuple[list[str], list[str]]] = {}
+    for t in sorted(set(before) | set(after)):
+        b = Counter(norm(x) for x in before.get(t, []))
+        a = Counter(norm(x) for x in after.get(t, []))
+        removed, added = sorted((b - a).elements()), sorted((a - b).elements())
+        if removed or added:
+            out[t] = (removed, added)
+    return out
+
+
+def parity_equal(left: Any, right: Any) -> bool:
+    """The parity oracle: equal normalized outcomes (used on row deltas, EHR deltas, sender
+    deltas, codes and audit lines). Its negative control is U-C5."""
+    return bool(left == right)
 
 
 # ---------------------------------------------------------------------------- requests

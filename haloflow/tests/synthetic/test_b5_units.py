@@ -136,6 +136,38 @@ def test_b5_u_c4_ehr_state_oracle_sees_every_field() -> None:
         assert b5.ehr_state(e) != ref, name
 
 
+def test_b5_u_c5_parity_oracle_rejects_same_table_different_value() -> None:
+    """C (Codex c05c2c9 R3 negative control; no B5 code): two deltas touching the same table
+    with a different value (a reply text, a state, the fixture role of a ref, an extra row)
+    are unequal; deltas that differ only in random uuids, timestamps, the tenant id, or the
+    per-tenant uuid of the SAME fixture role are equal."""
+    import uuid
+
+    table = "{tenant}.m05_inbound_replies"
+    roles = {t: {str(uuid.uuid4()): "S2.reschedule.ref", str(uuid.uuid4()): "S2.cancel.ref"}
+             for t in ("clinic-syn-aaaaaaaa", "clinic-syn-bbbbbbbb")}
+
+    def row(tenant: str, text: str, state: str, role: str = "S2.reschedule.ref") -> str:
+        ref = next(k for k, v in roles[tenant].items() if v == role)
+        return json.dumps({"event_id": str(uuid.uuid4()), "text": text, "state": state,
+                           "appointment_ref": ref, "tenant": tenant,
+                           "received_at": datetime.now(UTC).isoformat()})
+
+    def delta(tenant: str, *rows: str) -> Any:
+        def norm(x: str) -> str:
+            return b5.normalize(x, roles[tenant], tenant, "tenant_x")
+
+        return b5.row_delta({table: []}, {table: list(rows)}, norm)
+
+    t1, t2 = sorted(roles)
+    base = delta(t1, row(t1, "2", "open"))
+    assert b5.parity_equal(base, delta(t2, row(t2, "2", "open")))
+    for other in (delta(t2, row(t2, "3", "open")), delta(t2, row(t2, "2", "closed")),
+                  delta(t2, row(t2, "2", "open", role="S2.cancel.ref")),
+                  delta(t2, row(t2, "2", "open"), row(t2, "2", "open"))):
+        assert not b5.parity_equal(base, other), other
+
+
 # =========================================================================== A: placement
 
 def test_b5_u_zn0_product_zone_is_eastern_only() -> None:

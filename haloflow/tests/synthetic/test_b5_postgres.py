@@ -57,6 +57,15 @@ def _haloflow_loggers_enabled() -> Iterator[None]:
             logging.getLogger(n).disabled = True
 
 
+@pytest.fixture(autouse=True)
+def _reset_hooks() -> Iterator[None]:
+    """Every row leaves the test seams (hooks.FAULT / hooks.AFAULT) unset."""
+    yield
+    for attr in ("FAULT", "AFAULT"):
+        with contextlib.suppress(ModuleNotFoundError, AttributeError):
+            setattr(b5.mod("hooks"), attr, None)
+
+
 @pytest.fixture
 def pg(tmp_path: Path) -> Iterator[s.PgCluster]:
     with s.cluster(tmp_path) as c:
@@ -69,9 +78,6 @@ def inst(pg: s.PgCluster, tmp_path: Path) -> Iterator[b3.Install]:
     i = b3.install(pg, tmp_path)
     bb.first_start(i)
     yield i
-    for name, attr in (("hooks", "FAULT"), ("hooks", "AFAULT")):
-        with contextlib.suppress(ModuleNotFoundError, AttributeError):
-            setattr(b5.mod(name), attr, None)
 
 
 @pytest.fixture
@@ -479,8 +485,10 @@ def test_b5_p_zn0_uninjected_route_follows_the_owner_rule(inst: b3.Install) -> N
     The expectation is computed by the independent oracle from the load clock the loader
     actually observed (b5.load.clock), bracketed by database clock reads before and after.
     Loaded: S1's start is the Eastern oracle start, department_tz America/New_York, and the
-    real t062 decision at the observed instant is `send`. Refused: 409 OUTSIDE_LOAD_HOURS,
-    nothing written, and the page (form adapter) shows message 6. Never skips."""
+    Python A3 transcription at the observed instant is `send` (the SQL decision itself is
+    proved by P-ZN1). Refused: 409 OUTSIDE_LOAD_HOURS, nothing written, and the form adapter's
+    result is bound to ITS OWN observed clock (message 6, or a load if it crossed 11:00).
+    Never skips."""
     clock = Clock()
     out: dict[str, Any] = {}
 
@@ -502,10 +510,15 @@ def test_b5_p_zn0_uninjected_route_follows_the_owner_rule(inst: b3.Install) -> N
                 b5.unchanged(before, b5.snap(inst, lc))
                 csrf = await b5.page_csrf(app)
                 fr = await b5.post_form(app, "load", [("csrf", csrf), ("scenario", "S1")])
-                b5.page_redirect(fr, "hours")
-                _, pg = await b5.sim_page(app, "hours")
-                assert b5.MESSAGES["hours"] in pg.text
-                b5.unchanged(before, b5.snap(inst, lc))
+                seen2 = clock.seen[1]                     # the form load's OWN clock sample
+                if b5.expect_eastern(seen2) is None:
+                    b5.page_redirect(fr, "hours")
+                    _, pg = await b5.sim_page(app, "hours")
+                    assert b5.MESSAGES["hours"] in pg.text
+                    b5.unchanged(before, b5.snap(inst, lc))
+                else:                                     # crossed 11:00 between requests
+                    b5.page_redirect(fr, "loaded")
+                    out["want"], out["seen"] = b5.expect_eastern(seen2), seen2
             else:
                 loaded_ok(r, "S1")
 
@@ -574,62 +587,173 @@ def _baselines_match(inst: b3.Install, ref: str) -> None:
     assert (b.get("confirmation"), b.get("provider_ref"), b.get("department_ref")) == row, b
 
 
-@pytest.mark.parametrize("point", ["b5.load.after_commit", "b5.load.before_commit"])
-def test_b5_p_rdy1_2_ticks_during_a_paused_load(inst: b3.Install, test_zones: None,
-                                                point: str,
-                                                monkeypatch: pytest.MonkeyPatch) -> None:
-    """A (v1r2 §5 P-RDY1/P-RDY2, v1r3 §4; M-B5-10): S1 and S3 load paused at `point` while a
-    manual reminder tick runs and the background loops tick (intervals lowered).
-    before_commit: zero sends while paused. after_commit: any send has a baseline captured
-    from the database. After release: every S1/S3 send has its baseline; reply "1" to S1 and
-    write-back ticks: R1 finds the EHR entry (one EHR write, no EhrUnavailable, no
-    no_baseline or ehr_unreachable reason)."""
+class TickCounter:
+    """Counts COMPLETED scheduler ticks per scheduler (loop and manual), by wrapping the B3a
+    `_Managed._run_tick` on the class before the lifecycle starts (Codex c05c2c9 R1: observe
+    loop progress, not a sleep)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from haloflow.synthetic import wiring
+
+        self.done: dict[str, int] = {}
+        real = wiring._Managed._run_tick
+        outer = self
+
+        async def counted(sched: Any, *a: Any, **k: Any) -> Any:
+            try:
+                return await real(sched, *a, **k)
+            finally:
+                name = type(sched).__name__
+                outer.done[name] = outer.done.get(name, 0) + 1
+
+        monkeypatch.setattr(wiring._Managed, "_run_tick", counted)
+
+    def n(self, cls: str) -> int:
+        return self.done.get(cls, 0)
+
+
+def test_b5_p_rdy1_after_commit_writeback_reads_ehr_before_release(
+        inst: b3.Install, test_zones: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (v1r2 §5 P-RDY1, v1r3 §4; Codex c05c2c9 R1; M-B5-10): S1's load is paused at
+    b5.load.after_commit and STAYS paused while: a background reminder loop tick completes
+    (observed) and a manual reminder tick sends S1 with its database baseline; the reply "1"
+    is delivered; manual write-back ticks run the real R1 read and write. Before release:
+    the S1 EHR entry is already readable, the op has r1_failures 0, no EhrUnavailable reason,
+    and the EHR holds exactly one confirmation write for S1. Only then is the load released
+    (200). An EHR publication moved after commit fails the pre-release assertions."""
     _intervals(monkeypatch, 0.2)
+    ticks = TickCounter(monkeypatch)
     clock = Clock()
 
     async def body() -> None:
         clock.install()
         async with bb.running(inst) as (lc, app):
             token = await bb.session_token(app)
-            loaded_ok(await b5.load_json(app, token, "S3"), "S3")
-            reached, go = clock.hold(point)
+            reached, go = clock.hold("b5.load.after_commit")
             task = asyncio.create_task(b5.load_json(app, token, "S1"))
-            await reached_or_done(reached, task)
-            sent_before = len(lc.sender.calls)
-            await lc.schedulers["reminder"].tick()
-            await asyncio.sleep(1.0)                       # background loops tick meanwhile
-            s1 = refs_of(inst, "S1")
-            if point == "b5.load.before_commit":
-                assert [c for c in lc.sender.calls[sent_before:]
-                        if c[1] == rows_of("S1")[0].phone] == []
-            go.set()
-            loaded_ok(await task, "S1")
-            await lc.schedulers["reminder"].tick()
-            phone = rows_of("S1")[0].phone
-            assert [c[1] for c in lc.sender.calls].count(phone) == 1
-            _baselines_match(inst, s1[0])
-            for ref in refs_of(inst, "S3"):
+            try:
+                await reached_or_done(reached, task)
+                (ref,) = refs_of(inst, "S1")
+                phone = rows_of("S1")[0].phone
+                seen = ticks.n("ManagedReminderScheduler")
+                await wait_for(lambda: ticks.n("ManagedReminderScheduler") > seen + 1)
+                await lc.schedulers["reminder"].tick()
+                assert [c[1] for c in lc.sender.calls].count(phone) == 1
                 _baselines_match(inst, ref)
-            assert (await reply(app, token, phone, "1")).status == 202
-            for _ in range(3):
-                await lc.schedulers["writeback"].tick()
-            assert [w[0] for w in lc.port.ehr.snapshot().writes] == [s1[0]]
-            reasons = {w.get("reason") for w in b5.wb_ops(inst, s1)}
-            assert reasons <= {None}, reasons
+                assert ref in lc.port.ehr.snapshot().appointments, "EHR not ready at commit"
+                assert (await reply(app, token, phone, "1")).status == 202
+                for _ in range(3):
+                    await lc.schedulers["writeback"].tick()
+                (w,) = b5.wb_ops(inst, [ref])
+                assert (w["r1_failures"], w["reason"]) == (0, None), w
+                assert [x[0] for x in lc.port.ehr.snapshot().writes] == [ref]
+                assert not task.done(), "load released early"
+            finally:
+                go.set()
+            loaded_ok(await task, "S1")
 
     run(body())
 
 
+def test_b5_p_rdy2_before_commit_nothing_is_sent(inst: b3.Install, test_zones: None,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (v1r2 §5 P-RDY2): S1's load paused at b5.load.before_commit while a background
+    reminder loop tick completes (observed) and a manual tick runs: zero sends to the S1
+    phone and no S1 row visible. After release and commit, one tick sends S1 with its
+    baseline."""
+    _intervals(monkeypatch, 0.2)
+    ticks = TickCounter(monkeypatch)
+    clock = Clock()
+
+    async def body() -> None:
+        clock.install()
+        async with bb.running(inst) as (lc, app):
+            token = await bb.session_token(app)
+            reached, go = clock.hold("b5.load.before_commit")
+            task = asyncio.create_task(b5.load_json(app, token, "S1"))
+            phone = rows_of("S1")[0].phone
+            try:
+                await reached_or_done(reached, task)
+                seen = ticks.n("ManagedReminderScheduler")
+                await wait_for(lambda: ticks.n("ManagedReminderScheduler") > seen + 1)
+                await lc.schedulers["reminder"].tick()
+                assert [c for c in lc.sender.calls if c[1] == phone] == []
+                assert b5.appointments(inst, refs_of(inst, "S1")) == {}
+            finally:
+                go.set()
+            loaded_ok(await task, "S1")
+            await lc.schedulers["reminder"].tick()
+            assert [c[1] for c in lc.sender.calls].count(phone) == 1
+            _baselines_match(inst, refs_of(inst, "S1")[0])
+
+    run(body())
+
+
+class KthBarrier:
+    """Codex c05c2c9 R2: a real barrier INSIDE the k-th directory statement of the load's
+    transaction (EventFoundation.run_in_transaction wrapped as RefuseKth). mode "raise":
+    the k-th statement raises (no barrier). mode "hold": the k-th statement sets `reached`
+    BEFORE executing and then waits on `release` (never set by a cancelling row)."""
+
+    def __init__(self, k: int, mode: str) -> None:
+        self.k, self.mode, self.n = k, mode, 0
+        self.reached = asyncio.Event()
+        self.release = asyncio.Event()
+
+    def install(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from haloflow.m02.observation import EventFoundation
+        from haloflow.m05.intake_statements import DIRECTORY_KEY
+
+        real = EventFoundation.run_in_transaction
+        outer = self
+
+        class Handle:
+            def __init__(self, h: Any) -> None:
+                self._h = h
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self._h, name)
+
+            async def fetch_all(self, key: str, params: Any, *a: Any, **k: Any) -> Any:
+                if key == DIRECTORY_KEY:
+                    outer.n += 1
+                    if outer.n == outer.k:
+                        if outer.mode == "raise":
+                            raise RuntimeError("injected directory failure")
+                        outer.reached.set()
+                        await outer.release.wait()
+                return await self._h.fetch_all(key, params, *a, **k)
+
+        class Binding:
+            def __init__(self, b: Any) -> None:
+                self._b = b
+                self.handle = Handle(b.handle)
+
+            def __getattr__(self, name: str) -> Any:
+                return getattr(self._b, name)
+
+        async def wrapped(fself: Any, context: Any, body: Any, *a: Any, **k: Any) -> Any:
+            async def body2(binding: Any) -> Any:
+                return await body(Binding(binding))
+
+            return await real(fself, context, body2, *a, **k)
+
+        monkeypatch.setattr(EventFoundation, "run_in_transaction", wrapped)
+
+
 @pytest.mark.parametrize("point", ["b5.load.after_claim", "b5.load.after_ehr",
-                                   "b5.load.before_commit", "put:2", "put:5"])
+                                   "b5.load.before_commit", "put:1", "put:2"])
 @pytest.mark.parametrize("how", ["fault", "cancel"])
 def test_b5_p_rdy3_failure_or_cancel_leaves_nothing(inst: b3.Install, test_zones: None,
                                                     point: str, how: str,
                                                     monkeypatch: pytest.MonkeyPatch) -> None:
-    """A (v1r2 §5 P-RDY3a/b, v1r3 §4): a fault at each load hook or at the k-th directory put,
-    or a cancellation of the handler task there: zero S1 rows, zero contacts, zero sends after
-    a reminder tick; the page shows S1 not loaded and no orphan EHR entry. A retry loads and
-    the send has its baseline."""
+    """A (v1r2 §5 P-RDY3a/b, v1r3 §4; Codex c05c2c9 R2): S1 issues exactly two directory
+    statements (put:1 contact_put, put:2 appointment_put). A raised fault at a load hook or
+    at put:k gives 500 SCENARIO_LOAD_FAILED; a cancellation delivered while the handler is
+    HELD at the hook or inside put:k (barrier observed first) cancels the task before commit.
+    Either way: the injection point was reached, zero S1 rows and contacts, zero sends after
+    a reminder tick, the page shows S1 not loaded and no orphan EHR ref. A retry loads and
+    its send has the baseline."""
     clock = Clock()
 
     async def body() -> None:
@@ -637,36 +761,43 @@ def test_b5_p_rdy3_failure_or_cancel_leaves_nothing(inst: b3.Install, test_zones
         async with bb.running(inst) as (lc, app):
             token = await bb.session_token(app)
             sa = b5.mod("sim_actions")
+            held: asyncio.Task[Any] | None = None
             with monkeypatch.context() as m:
-                if point.startswith("put:"):
-                    k = int(point.split(":")[1])
-                    if how == "fault":
-                        RefuseKth(k, "raise").install(m)
+                try:
+                    if point.startswith("put:"):
+                        bar = KthBarrier(int(point.split(":")[1]),
+                                         "raise" if how == "fault" else "hold")
+                        bar.install(m)
+                        if how == "fault":
+                            result = await sa.load(lc, "S1")
+                            assert (result.status, result.code) == (500,
+                                                                    "SCENARIO_LOAD_FAILED")
+                            assert bar.n == bar.k, bar.n
+                        else:
+                            held = asyncio.create_task(sa.load(lc, "S1"))
+                            await reached_or_done(bar.reached, held)
+                    elif how == "fault":
+                        clock.raise_at[point] = RuntimeError("injected")
                         result = await sa.load(lc, "S1")
                         assert (result.status, result.code) == (500, "SCENARIO_LOAD_FAILED")
+                        assert point in clock.points
                     else:
-                        gate = asyncio.Event()
-                        cut = RefuseKth(10**6, "return")
-                        cut.install(m)
-                        task = asyncio.create_task(sa.load(lc, "S1"))
-                        await wait_for(lambda: cut.n >= k - 1)
-                        task.cancel()
+                        reached, _go = clock.hold(point)
+                        held = asyncio.create_task(sa.load(lc, "S1"))
+                        await reached_or_done(reached, held)
+                    if held is not None:
+                        held.cancel()
                         with contextlib.suppress(asyncio.CancelledError):
-                            await task
-                        gate.set()
-                elif how == "fault":
-                    clock.raise_at[point] = RuntimeError("injected")
-                    result = await sa.load(lc, "S1")
-                    assert (result.status, result.code) == (500, "SCENARIO_LOAD_FAILED")
+                            await held
+                        assert held.cancelled(), "cancellation not delivered"
+                        assert "b5.load.after_commit" not in clock.points
+                finally:
                     clock.raise_at.clear()
-                else:
-                    reached, _go = clock.hold(point)
-                    task = asyncio.create_task(sa.load(lc, "S1"))
-                    await reached_or_done(reached, task)
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
                     clock.pause.clear()
+                    if held is not None and not held.done():
+                        held.cancel()
+                        with contextlib.suppress(BaseException):
+                            await held
             assert b5.appointments(inst, refs_of(inst, "S1")) == {}
             assert contacts(inst, [rows_of("S1")[0].phone]) == []
             await lc.schedulers["reminder"].tick()
@@ -718,7 +849,8 @@ def test_b5_p_rdy4_crash_after_commit_then_restart(inst: b3.Install, test_zones:
     3. reply "1", then write-back ticks: R1 cannot read the EHR, the op defers
        (r1_failures 1, next_at in the future); aging next_at three more times gives a check
        item with reason ehr_unreachable, shown SIMULATED on the item view;
-    4. no EHR write, no spent permit, one FakeSender call throughout."""
+    4. no EHR write, ZERO permits issued for that op (Codex c05c2c9 R2), one FakeSender
+       call throughout."""
     import sa_support as sa
     import si_support as si
 
@@ -761,9 +893,10 @@ def test_b5_p_rdy4_crash_after_commit_then_restart(inst: b3.Install, test_zones:
             assert len(lc.sender.calls) == 1
 
     run(body())
-    spent = sa.admin(si_inst, sa.q(si_inst, "SELECT count(*) FROM {s}.m05_writeback_permits"
-                                            " WHERE spent_at IS NOT NULL"))
-    assert spent == [(0,)], spent
+    (w,) = b5.wb_ops(inst, [ref])
+    issued = sa.admin(si_inst, sa.q(si_inst, "SELECT count(*) FROM {s}.m05_writeback_permits"
+                                             " WHERE wb_op_id = %s::uuid"), (w["wb_op_id"],))
+    assert issued == [(0,)], f"permit issued for an unreadable EHR: {issued}"
 
 
 # =========================================================================== state
@@ -956,10 +1089,13 @@ def test_b5_p_ds3_bui_rows_with_the_display(inst: b3.Install) -> None:
     run(body())
 
 
-def test_b5_p_esc1_injection_in_every_display_slot_is_inert(inst: b3.Install) -> None:
-    """A (B-UI6 extended, v1r1 C4): an appointment whose first name is injection-shaped,
-    correlated to an unclear reply (test-side), renders escaped: no element is created from
-    it, the text appears verbatim, and the page passes the HTML oracle."""
+def test_b5_p_esc1_injection_in_every_display_slot_is_inert(
+        inst: b3.Install, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (B-UI6 extended, v1r1 C4; Codex c05c2c9 R4): an appointment whose first name is
+    injection-shaped, correlated to an unclear reply (test-side), and a known provider whose
+    packaged label is injection-shaped (test monkeypatch), render escaped in both display
+    slots: no element is created from either, both texts appear verbatim, and the page passes
+    the HTML oracle. (Simulator output slots: P-OB1.)"""
     import sa_support as sa
     import sh2_support as sh2
     import si_support as si
@@ -996,24 +1132,90 @@ def test_b5_p_esc1_injection_in_every_display_slot_is_inert(inst: b3.Install) ->
 
     run(seed())
 
+    label = "<b>Dr</b> &amp; <i>x</i>\"'"
+    monkeypatch.setitem(b5.mod("scenarios").PROVIDERS, si.PROVIDER, label)
+
     async def body() -> None:
         async with bb.running(inst) as (_lc, app):
             pg = await view(app, out["item"])
             assert f"Patient: {name}" in pg.text, pg.text[:600]
-            assert pg.scripts == 0 and "b" not in pg.tags
+            assert f" — {label}" in pg.text, pg.text[:600]
+            assert pg.scripts == 0 and not {"b", "i"} & set(pg.tags), pg.tags
 
     run(body())
 
 
-def test_b5_p_ds4_display_is_tenant_scoped_and_staff_only(inst: b3.Install) -> None:
-    """A (v1r1 C1/C2, P-DS4): t095 under another tenant setting raises; an unknown item id is
-    ITEM_NOT_FOUND; the ingress and timer workload capability sets do not include the
-    display's READ capability (the gateway refuses the key)."""
+async def _gateway_read(lc: Any, who: str, key: str, params: dict[str, Any]) -> Any:
+    """Run one statement key through the real gateway under a principal: "staff" is the B4
+    two-step staff resolution (staff_routes.execute, route get); "ingress" / "timer" are the
+    workload contexts the app composes (W_INGRESS + INGRESS_CAPS, W_TIMER + TIMER_CAPS)."""
+    import uuid as _uuid
+
+    from psycopg.types.json import Jsonb  # noqa: F401  (params are plain)
+
+    from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
+    from haloflow.synthetic import composition, simulator, staff_routes, wiring
+
+    gw = lc.services.gateway
+
+    async def fetch(ctx: Any) -> Any:
+        async def cb(handle: Any) -> Any:
+            return await handle.fetch_all(key, params)
+
+        return await gw.with_tenant_transaction(ctx, cb)
+
+    if who == "staff":
+        out: list[Any] = []
+
+        async def call(_m05: Any, ctx: Any) -> Any:
+            out.append(await fetch(ctx))
+            return {}
+
+        r = await staff_routes.execute(lc, "get", call)
+        if not out:
+            raise AssertionError(f"staff read refused: {getattr(r, 'status_code', r)}")
+        return out[0]
+    pid, caps = {"ingress": (composition.W_INGRESS, simulator.INGRESS_CAPS),
+                 "timer": (composition.W_TIMER, wiring.TIMER_CAPS)}[who]
+    t = lc.services.tenant_id
+    ctx = await lc.services.resolver.resolve(
+        principal=Principal(kind=PrincipalKind.WORKLOAD, id=pid, auth_method="worker",
+                            authorized_tenant_ids=frozenset({t}), capabilities=caps),
+        tenant_hint=t, purpose="operations", capabilities=caps, source=TrustedSource.WORKER,
+        execution_id=_uuid.uuid4(), correlation_id=_uuid.uuid4(),
+        correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+    return await fetch(ctx)
+
+
+def test_b5_p_ds4_display_and_present_reads_are_staff_only(inst: b3.Install) -> None:
+    """A (v1r1 C1/C2, v1r3 §2, P-DS4; Codex c05c2c9 R4): through the REAL gateway, the staff
+    principal reads m05.synthetic.display (linked) and m05.synthetic.scenario_present; the
+    ingress and timer workload contexts are refused both keys with CapabilityDenied
+    (STATEMENT_CAPABILITY_DENIED). Direct SQL under another tenant setting raises; an unknown
+    item id is ITEM_NOT_FOUND."""
     import psycopg
 
-    from haloflow.synthetic import simulator, wiring
+    from haloflow.m01.errors import CapabilityDenied
 
     kinds = bb.seed_kinds(inst, base=30)
+    iid = kinds["unclear_reply"]["item_id"]
+    ref = kinds["unclear_reply"]["ref"]
+    st = b5.mod("display_statements")
+
+    async def body() -> None:
+        async with bb.running(inst) as (lc, _app):
+            rows = await _gateway_read(lc, "staff", st.DISPLAY_KEY, {"item_id": iid})
+            assert rows[0][0]["linked"] is True, rows
+            rows = await _gateway_read(lc, "staff", st.PRESENT_KEY, {"refs": [ref]})
+            assert [str(x) for x in rows[0][0]] == [ref], rows
+            for who in ("ingress", "timer"):
+                for key, params in ((st.DISPLAY_KEY, {"item_id": iid}),
+                                    (st.PRESENT_KEY, {"refs": [ref]})):
+                    with pytest.raises(CapabilityDenied) as e:
+                        await _gateway_read(lc, who, key, params)
+                    assert e.value.reason_code == "STATEMENT_CAPABILITY_DENIED", (who, key)
+
+    run(body())
     lg = inst.state["logins"]["runtime"]
 
     def call(tenant_id: str, item: str) -> Any:
@@ -1022,16 +1224,71 @@ def test_b5_p_ds4_display_is_tenant_scoped_and_staff_only(inst: b3.Install) -> N
             return a.execute(f"SELECT {inst.schema}.m05_synthetic_display(%s::uuid)",
                              (item,)).fetchall()[0][0]
 
-    iid = kinds["unclear_reply"]["item_id"]
-    assert call(tenant(inst), iid)["linked"] is True
     with pytest.raises(psycopg.errors.RaiseException, match="ITEM_NOT_FOUND"):
         call(tenant(inst), b5.new_id())
     with pytest.raises(psycopg.Error):
         call("clinic-other-0000", iid)
-    for caps in (simulator.INGRESS_CAPS, wiring.TIMER_CAPS):
-        assert "m05.followup.read" not in caps
-    st = b5.mod("display_statements")
-    assert st.DISPLAY_KEY == "m05.synthetic.display"
+
+
+def test_b5_p_ds5_broken_source_chains_fail_closed(inst: b3.Install) -> None:
+    """A (v1r1 C2 fail-closed; Codex c05c2c9 R4): adversarial source chains built test-side
+    on the B4 seed (admin writes after the lifecycle started, as B3b standing_override):
+    (a) a reply item whose inbound row points at ANOTHER patient's appointment;
+    (b) a reply item whose inbound row points at an appointment that does not exist;
+    (c) a no_reply item whose window points at another patient's appointment;
+    (d) an ehr_confirmation_check item whose write-back op names a different item_id.
+    Each gives display {"linked": false} and the view shows exactly "No appointment linked"
+    with no Patient line. (More than one source row is structurally impossible: P-DS6.)"""
+    kinds = bb.seed_kinds(inst, base=60)
+    other = kinds["cancel_request"]                   # another patient and appointment
+    sch = inst.schema
+
+    def forge(q: str, params: tuple[Any, ...]) -> None:
+        """Admin write with triggers off for this statement's session (the intake tables are
+        immutable by trigger): an adversarial fixture state, never a product path."""
+        with inst.c.connect(s.TARGET_DB) as a:
+            a.execute("SET session_replication_role = replica")
+            assert a.execute(q, params).rowcount == 1, q
+
+    async def body() -> None:
+        async with bb.running(inst) as (_lc, app):
+            for kind in ("reschedule_request", "unclear_reply"):
+                item = bb.item_row(inst, kinds[kind]["item_id"])
+                target = other["ref"] if kind == "reschedule_request" else b5.new_id()
+                forge(f"UPDATE {sch}.m05_inbound_replies SET appointment_ref = %s::uuid"
+                      " WHERE event_id = %s::uuid", (target, item["source_event_id"]))
+            nr = bb.item_row(inst, kinds["no_reply"]["item_id"])
+            forge(f"UPDATE {sch}.m05_reminder_windows SET appointment_ref = %s::uuid"
+                  " WHERE closed_event_id = %s::uuid", (other["ref"], nr["source_event_id"]))
+            ck = bb.item_row(inst, kinds["ehr_confirmation_check"]["item_id"])
+            forge(f"UPDATE {sch}.m05_writeback_ops SET item_id = %s::uuid"
+                  " WHERE event_id = %s::uuid", (b5.new_id(), ck["source_event_id"]))
+            for kind in ("reschedule_request", "unclear_reply", "no_reply",
+                         "ehr_confirmation_check"):
+                pg_ = await view(app, kinds[kind]["item_id"])
+                assert b5.NO_APPOINTMENT in pg_.text and "Patient:" not in pg_.text, \
+                    (kind, pg_.text[:600])
+
+    run(body())
+
+
+def test_b5_p_ds6_one_source_row_per_item_is_a_schema_constraint(inst: b3.Install) -> None:
+    """C (Codex c05c2c9 R4 classification): the three source columns the display binds through
+    (m05_inbound_replies.event_id, m05_reminder_windows.closed_event_id,
+    m05_writeback_ops.event_id) are each UNIQUE in the installed schema, so an item can never
+    have more than one source row. M-B5-9 ("take the first of several source rows") is
+    therefore equivalent under the installed constraints; its discriminating rows are the
+    P-DS5 mismatches, not an ambiguity fixture."""
+    rows = inst.admin(
+        "SELECT c.relname, a.attname FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid"
+        " JOIN pg_namespace n ON n.oid = c.relnamespace"
+        " JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = i.indkey[0]"
+        " WHERE n.nspname = %s AND i.indisunique AND i.indnatts = 1", (inst.schema,))
+    got = {(r[0], r[1]) for r in rows}
+    for pair in (("m05_inbound_replies", "event_id"),
+                 ("m05_reminder_windows", "closed_event_id"),
+                 ("m05_writeback_ops", "event_id")):
+        assert pair in got, pair
 
 
 def test_b5_p_acl1_three_functions_installed_as_pinned(inst: b3.Install) -> None:
@@ -1059,72 +1316,146 @@ def test_b5_p_acl1_three_functions_installed_as_pinned(inst: b3.Install) -> None
 
 # =========================================================================== adapters, paths
 
-PARITY: list[tuple[str, str, dict[str, str]]] = [
-    ("load", "unknown", {"scenario": "S9"}),
-    ("load", "lower", {"scenario": "s2"}),
-    ("tick", "valid", {"scheduler": "due"}),
-    ("tick", "unknown", {"scheduler": "weekly"}),
-    ("reply", "no_contact", {"phone": "+15555550199", "text": "1"}),
-    ("reply", "bad_phone", {"phone": "+14155550123", "text": "1"}),
-    ("reply", "empty_text", {"phone": "+15555550199", "text": ""}),
-    ("ehr", "fail_zero", {"operation": "fail_next", "reads": "0", "writes": "0"}),
-    ("ehr", "bad_op", {"operation": "drop_all"}),
-    ("ehr", "bad_status", {"operation": "put_appointment", "appointment_id": "a1",
-                           "status": "booked", "start_at": "2026-11-19T23:00:00+00:00"}),
+# (case id, action, adapter fields, setup) -- setup runs IDENTICALLY on both installs before
+# the compared request (Codex c05c2c9 R3: equivalent isolated initial states).
+# "@S1.confirm.ref" / "@S2.reschedule.phone" placeholders resolve per install.
+PARITY: list[tuple[str, str, dict[str, str], str]] = [
+    ("load-valid", "load", {"scenario": "S2"}, "none"),
+    ("load-present", "load", {"scenario": "S1"}, "load_s1"),
+    ("load-unknown", "load", {"scenario": "S9"}, "none"),
+    ("load-lower", "load", {"scenario": "s2"}, "none"),
+    ("tick-valid", "tick", {"scheduler": "reminder"}, "load_s2"),
+    ("tick-unknown", "tick", {"scheduler": "weekly"}, "none"),
+    ("reply-matched", "reply", {"phone": "@S2.reschedule.phone", "text": "2"}, "sent_s2"),
+    ("reply-no-contact", "reply", {"phone": "+15555550199", "text": "1"}, "none"),
+    ("reply-bad-phone", "reply", {"phone": "+14155550123", "text": "1"}, "none"),
+    ("reply-empty-text", "reply", {"phone": "+15555550199", "text": ""}, "none"),
+    ("ehr-put-valid", "ehr", {"operation": "put_appointment",
+                              "appointment_id": "@S1.confirm.ref", "status": "negative",
+                              "start_at": "@S1.confirm.start"}, "load_s1"),
+    ("ehr-fail-nonzero", "ehr", {"operation": "fail_next", "reads": "2", "writes": "1"},
+     "none"),
+    ("ehr-fail-range", "ehr", {"operation": "fail_next", "reads": "11", "writes": "0"},
+     "none"),
+    ("ehr-bad-op", "ehr", {"operation": "drop_all"}, "none"),
+    ("ehr-bad-status", "ehr", {"operation": "put_appointment", "appointment_id": "a1",
+                               "status": "booked", "start_at": "2026-11-19T23:00:00+00:00"},
+     "none"),
 ]
 JSON_ROUTE = {"load": b5.LOAD_ROUTE, "tick": b5.TICK_ROUTE, "reply": REPLY, "ehr": EHR}
 
 
+def _resolve_fields(inst: b3.Install, lc: Any, fields: dict[str, str]) -> dict[str, str]:
+    out = {}
+    for k, v in fields.items():
+        if v.startswith("@"):
+            name, key, what = v[1:].split(".")
+            if what == "phone":
+                v = next(r.phone for r in rows_of(name) if r.key == key)
+            elif what == "ref":
+                v = b5.scenario_refs(tenant(inst), name)[key][1]
+            else:
+                ref = b5.scenario_refs(tenant(inst), name)[key][1]
+                v = lc.port.ehr.snapshot().appointments[ref].start_at.isoformat()
+        out[k] = v
+    return out
+
+
 def _json_value(action: str, fields: dict[str, str]) -> dict[str, Any]:
     if action == "ehr" and fields.get("operation") == "fail_next":
-        return {**fields, "reads": int(fields["reads"]), "writes": int(fields["writes"])}
+        return {k: (int(v) if k in ("reads", "writes") else v) for k, v in fields.items()}
     return dict(fields)
 
 
-@pytest.mark.parametrize("action,case,fields", PARITY,
-                         ids=[f"{a}-{c}" for a, c, _ in PARITY])
-def test_b5_p_par_json_and_form_adapters_agree(inst: b3.Install, test_zones: None, action: str,
-                                               case: str, fields: dict[str, str],
-                                               caplog: pytest.LogCaptureFixture) -> None:
-    """A (v1r1 D3 P-PAR1..4): the same input through the JSON route and the form route gives
-    the same result (JSON 422 <-> form 422 HTML error page; a load refusal code <-> its
-    message key; success <-> 303 with m=loaded/tick, or no m for reply and EHR), the same
-    database, simulated-EHR and FakeSender delta, and the same audit line."""
-    caplog.set_level(logging.INFO, logger="haloflow.synthetic")
+async def _side(inst: b3.Install, adapter: str, action: str, fields: dict[str, str],
+                setup: str, caplog: pytest.LogCaptureFixture) -> dict[str, Any]:
+    """One install, one adapter: the setup, then the compared request; returns the
+    normalized outcome (status/code/message key, audit lines, row delta, EHR delta, sender
+    delta) and the per-install oracle facts of a load."""
+    clock = Clock()
+    clock.install()
+    async with bb.running(inst) as (lc, app):
+        token = await bb.session_token(app)
+        csrf = await b5.page_csrf(app)
+        if setup in ("load_s1", "load_s2", "sent_s2"):
+            loaded_ok(await b5.load_json(app, token, "S1" if setup == "load_s1" else "S2"),
+                      "S1" if setup == "load_s1" else "S2")
+        if setup == "sent_s2":
+            await lc.schedulers["reminder"].tick()
+        f = _resolve_fields(inst, lc, fields)
+        t = tenant(inst)
+        labels = b5.ref_labels(t)
 
-    async def body() -> None:
-        async with bb.running(inst) as (lc, app):
-            token = await bb.session_token(app)
-            csrf = await b5.page_csrf(app)
-            s0 = b5.snap(inst, lc)
-            caplog.clear()
-            rj = await bb.asgi(app, "POST", JSON_ROUTE[action], headers=bb.post_headers(token),
-                               body=bb.jbody(_json_value(action, fields)))
-            json_lines = [r.getMessage() for r in caplog.records]
-            s1 = b5.snap(inst, lc)
-            caplog.clear()
-            rf = await b5.post_form(app, action, [("csrf", csrf), *fields.items()])
-            form_lines = [r.getMessage() for r in caplog.records]
-            s2 = b5.snap(inst, lc)
-            code = (rj.json or {}).get("code")
-            if rj.status == 422:
-                assert rf.status == 422, (rf.status, rf.raw[:300])
-                b4.html_ok(rf)
+        def norm(x: str) -> str:
+            return b5.normalize(x, labels, t, inst.schema)
+
+        rows0, ehr0, sent0 = b5.table_rows(inst), b5.ehr_state(lc.port.ehr), \
+            len(lc.sender.calls)
+        caplog.clear()
+        if adapter == "json":
+            r = await bb.asgi(app, "POST", JSON_ROUTE[action], headers=bb.post_headers(token),
+                              body=bb.jbody(_json_value(action, f)))
+            code = (r.json or {}).get("code")
+            outcome: Any = (r.status, code)
+        else:
+            r = await b5.post_form(app, action, [("csrf", csrf), *f.items()])
+            if r.status == 303:
+                loc = b4.location(r)
+                outcome = (303, loc.split("?m=")[1] if "?m=" in loc else None)
             else:
-                assert rf.status == 303, (rf.status, rf.raw[:300])
-                loc = b4.location(rf)
-                key = loc.split("?m=")[1] if "?m=" in loc else None
-                want = b5.CODE_MESSAGE[code] if code in b5.CODE_MESSAGE else (
-                    {"load": "loaded", "tick": "tick"}.get(action) if rj.status < 300
-                    else None)
-                assert key == want, (rj.status, code, loc)
-            assert b3.changed(s0.tables, s1.tables) == b3.changed(s1.tables, s2.tables)
-            assert (s1.sends[len(s0.sends):], s1.ehr_writes - s0.ehr_writes) == (
-                s2.sends[len(s1.sends):], s2.ehr_writes - s1.ehr_writes)
-            assert (s0.ehr == s1.ehr) == (s1.ehr == s2.ehr), "EHR delta differs"
-            assert json_lines == form_lines, (json_lines, form_lines)
+                b4.html_ok(r)
+                outcome = (r.status, None)
+        lines = [norm(x.getMessage()) for x in caplog.records
+                 if x.getMessage().startswith("SIMULATOR")]
+        return {"outcome": outcome, "lines": lines,
+                "rows": b5.row_delta(rows0, b5.table_rows(inst), norm),
+                "ehr": (norm(repr(ehr0)), norm(repr(b5.ehr_state(lc.port.ehr)))),
+                "sent": [(norm(a), b, norm(c)) for a, b, c in lc.sender.calls[sent0:]],
+                "seen": list(clock.seen)}
 
-    run(body())
+
+@pytest.mark.parametrize("case,action,fields,setup", PARITY, ids=[c[0] for c in PARITY])
+def test_b5_p_par_json_and_form_adapters_agree(pg: s.PgCluster, tmp_path: Path,
+                                               test_zones: None, case: str, action: str,
+                                               fields: dict[str, str], setup: str,
+                                               caplog: pytest.LogCaptureFixture) -> None:
+    """A (v1r1 D3 P-PAR1..4; Codex c05c2c9 R3): the same input through the JSON route (install
+    A) and the form route (install B), each from an equivalent fresh install with the same
+    setup. Equal: the normalized row-level delta of every table, the normalized simulated-EHR
+    before/after, the FakeSender delta, and the audit lines (which carry the exact refusal
+    code for both adapters). The adapter result maps exactly: a load code in CODE_MESSAGE
+    <-> 303 m=<key>; any other JSON 4xx (422 or the ingress's own) <-> form 422 HTML page;
+    JSON 2xx <-> 303 m=loaded / m=tick / no m. (An unknown form field is refused 400 by the
+    closed form field set before the action, so it is a P-CSRF-class form row, not parity.)
+    A load's rows also match the independent oracle for each install's own clock. Negative
+    control for the oracle: U-C5."""
+    caplog.set_level(logging.INFO, logger="haloflow.synthetic")
+    for d in ("a", "b", "b2"):
+        (tmp_path / d).mkdir()
+    with s.cluster(tmp_path / "b") as pg_b:
+        a = b3.install(pg, tmp_path / "a")
+        bb.first_start(a)
+        b = b3.install(pg_b, tmp_path / "b2")
+        bb.first_start(b)
+        ja = run(_side(a, "json", action, fields, setup, caplog))
+        fb = run(_side(b, "form", action, fields, setup, caplog))
+    s.reap()
+    status, code = ja["outcome"]
+    if code in b5.CODE_MESSAGE:
+        want = (303, b5.CODE_MESSAGE[code])
+    elif 400 <= status < 500:
+        want = (422, None)
+    elif 200 <= status < 300:
+        want = (303, {"load": "loaded", "tick": "tick"}.get(action))
+    else:
+        raise AssertionError(f"unexpected JSON result {ja['outcome']}")
+    assert fb["outcome"] == want, (case, ja["outcome"], fb["outcome"])
+    for k in ("lines", "rows", "ehr", "sent"):
+        assert b5.parity_equal(ja[k], fb[k]), (case, k, ja[k], fb[k])
+    assert ja["lines"], "no audit line"
+    if case == "load-valid":
+        for side, inst_ in ((ja, a), (fb, b)):
+            assert_appointments(inst_, "S2", side["seen"][-1], b5.TEST_ZONES)
 
 
 @pytest.mark.parametrize("method,path,ctype,want", [
@@ -1163,20 +1494,23 @@ def test_b5_p_path_noncanonical_and_wrong_media_refused(inst: b3.Install, test_z
     run(body())
 
 
-@pytest.mark.parametrize("case", ["missing", "wrong", "duplicate"])
+@pytest.mark.parametrize("case", ["missing", "wrong", "duplicate", "unknown_field"])
 def test_b5_p_csrf_form_token_checked_first(inst: b3.Install, test_zones: None,
                                             case: str) -> None:
     """A (C-3; v1r1 D2; M-B5-4): the form CSRF field is checked before any action: missing or
-    wrong is a 403 HTML error page, a duplicate field a 400; nothing written."""
+    wrong is a 403 HTML error page; a duplicate field, or a field outside the action's closed
+    field set, is a 400 HTML error page; nothing written."""
     async def body() -> None:
         async with bb.running(inst) as (lc, app):
             csrf = await b5.page_csrf(app)
             fields = {"missing": [("scenario", "S1")],
                       "wrong": [("csrf", "x" * len(csrf)), ("scenario", "S1")],
-                      "duplicate": [("csrf", csrf), ("csrf", csrf), ("scenario", "S1")]}[case]
+                      "duplicate": [("csrf", csrf), ("csrf", csrf), ("scenario", "S1")],
+                      "unknown_field": [("csrf", csrf), ("scenario", "S1"),
+                                        ("tenant", "x")]}[case]
             before = b5.snap(inst, lc)
             r = await b5.post_form(app, "load", fields)
-            assert r.status == (400 if case == "duplicate" else 403), r.status
+            assert r.status == (403 if case in ("missing", "wrong") else 400), r.status
             b4.html_ok(r)
             b5.unchanged(before, b5.snap(inst, lc))
 
@@ -1265,7 +1599,7 @@ def test_b5_p_ob1_outbox_view(inst: b3.Install) -> None:
                                body=b"{}")
             assert r2.status == 405
             _, pg2 = await b5.sim_page(app)
-            assert "<i>text 54</i>" in pg2.text and "<i>" not in pg2.tags
+            assert "<i>text 54</i>" in pg2.text and "i" not in pg2.tags, pg2.tags
 
     run(body())
 
