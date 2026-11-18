@@ -1,0 +1,61 @@
+{
+ "M01r": [
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[3]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[4]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[5]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_preserves_clock_time",
+  "tests/m05/test_el1_units.py::test_e1_u02_fall_back_ambiguous_takes_earlier",
+  "tests/m05/test_el1_units.py::test_e1_u02_same_fixtures_for_not_received_deadline",
+  "tests/m05/test_el1_units.py::test_e1_u02_spring_forward_gap_moves_to_first_valid_instant",
+  "tests/m05/test_el1_units.py::test_e1_u05_not_received_default_one_day_same_clock"
+ ],
+ "M01s": [
+  "tests/m05/test_el1_postgres.py::test_el1_p02_present_priority_enrols_with_three_triggers",
+  "tests/m05/test_el1_postgres.py::test_el1_p03_pending_enrols_without_verification_or_case",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start0-3]",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start1-3]",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start2-5]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage0]"
+ ],
+ "M02r": [
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[3]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[4]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_each_lead[5]",
+  "tests/m05/test_el1_units.py::test_e1_u01_previsit_preserves_clock_time",
+  "tests/m05/test_el1_units.py::test_e1_u02_fall_back_ambiguous_takes_earlier",
+  "tests/m05/test_el1_units.py::test_e1_u02_spring_forward_gap_moves_to_first_valid_instant"
+ ],
+ "M02s": [
+  "tests/m05/test_el1_postgres.py::test_el1_p02_present_priority_enrols_with_three_triggers",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start0-3]",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start1-3]",
+  "tests/m05/test_el1_postgres.py::test_el1_p15_sql_due_matches_rules[local_start2-5]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage0]"
+ ],
+ "M03": [
+  "tests/m05/test_el1_postgres.py::test_el1_p01_legacy_put_enrols_nothing[True]",
+  "tests/m05/test_el1_postgres.py::test_el1_p08_later_put_without_block_keeps_enrolment"
+ ],
+ "M04": [
+  "tests/m05/test_el1_postgres.py::test_el1_p06b_counts_are_per_appointment"
+ ],
+ "M05": [
+  "tests/m05/test_el1_postgres.py::test_el1_p03_pending_enrols_without_verification_or_case",
+  "tests/m05/test_el1_postgres.py::test_el1_p04_coverage_received_first_is_never_raised",
+  "tests/m05/test_el1_postgres.py::test_el1_p04_not_received_raised_once_after_deadline",
+  "tests/m05/test_el1_postgres.py::test_el1_p10_second_writer_waits_and_commits_after_first"
+ ],
+ "M06": [
+  "tests/m05/test_el1_postgres.py::test_el1_p10_second_writer_waits_and_commits_after_first"
+ ],
+ "M07": [
+  "tests/m05/test_el1_postgres.py::test_el1_p04_deadline_seam_exact_instants[0-True]"
+ ],
+ "M08": [
+  "tests/m05/test_el1_postgres.py::test_el1_p04_tick_decides_only_through_the_seam"
+ ],
+ "M09": [
+  "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage0]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage1]"
+ ]
+}
