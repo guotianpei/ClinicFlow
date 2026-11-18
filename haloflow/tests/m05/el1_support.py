@@ -6,8 +6,9 @@ owner decisions OD-EL1..EL10. Synthetic only.
 
 SQL interface pins (E1 red packet v1, section 2):
 - Registry: `build_synthetic_registry(include_el1=True)` = the synthetic registry (S-I TEST units
-  + B5 t095..t097) + E1 units t098..t101, target **101**. Catalogue:
-  `build_synthetic_catalog(include_el1=True)`.
+  + B5 t095..t097) + E1 units t098..t105, target **105** (green deviation D-G1: the red pin was
+  t098..t101 / 101, set before the t101 seam and the t100 local-time helper existed).
+  Catalogue: `build_synthetic_catalog(include_el1=True)`.
 - t098 `m05_el_settings` (singleton: enabled bool DEFAULT false, lead_days 3..5 DEFAULT 3,
   not_received_days 0..5 DEFAULT 1, settings_version, updated_at) and
   `m05_el_priority_payers (payer_id)`; owner-written (support path), no runtime privilege.
@@ -48,7 +49,7 @@ import sh2_support as sh2
 import si_support as si
 from psycopg import sql
 
-EL1_TARGET: Final = 101
+EL1_TARGET: Final = 105
 EL1_SUPPORTED: Final = range(EL1_TARGET, EL1_TARGET + 1)
 NY: Final = "America/New_York"
 PRIORITY: Final = ("SYN-ANTHEM", "SYN-SENTARA", "SYN-UHC")
@@ -65,7 +66,7 @@ def el1_registry() -> Any:
 
 
 class EL1Install(si.SIInstall):
-    """A synthetic tenant at target 101 (S-I TEST + B5 + E1), provisioned in the row body."""
+    """A synthetic tenant at target 105 (S-I TEST + B5 + E1), provisioned in the row body."""
 
     b5 = True
 

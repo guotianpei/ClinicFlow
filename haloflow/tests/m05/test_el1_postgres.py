@@ -92,10 +92,17 @@ def _q(install: el.EL1Install, text: str, params: Any = None) -> list[tuple[Any,
     return sa.admin(install, sa.q(install, text), params)
 
 
+def _utc(value: Any) -> Any:
+    """Instants compared in UTC. Green deviation D-G2: psycopg returns timestamptz in the
+    session zone, and PEP 495 makes an ambiguous (fall-back) wall time compare unequal to the
+    same instant in another zone, so every instant oracle normalizes to UTC first."""
+    return value.astimezone(UTC) if isinstance(value, datetime) else value
+
+
 def _triggers(install: el.EL1Install, ref: str) -> dict[str, tuple[Any, ...]]:
     got = _q(install, "SELECT trigger, coverage_version, due_at, status FROM {s}.m05_el_triggers"
              " WHERE appointment_ref = %s", (ref,))
-    return {r[0]: r[1:] for r in got}
+    return {r[0]: (r[1], _utc(r[2]), r[3]) for r in got}
 
 
 def _events(install: el.EL1Install, ref: str) -> list[tuple[Any, ...]]:
@@ -593,9 +600,9 @@ def test_el1_p15_sql_due_matches_rules(install: el.EL1Install, local_start: date
     trig = _triggers(inst, ref)
     assert trig["previsit"][1] == rules.previsit_due(start, el.NY, lead)
     assert trig["dayof"][1] == rules.dayof_due(start, el.NY)
-    assert _q(inst, "SELECT not_received_due_at FROM {s}.m05_el_appointments"
-              " WHERE appointment_ref = %s", (ref,)) == [(rules.not_received_due(
-                  start, el.NY, lead),)]
+    got = _q(inst, "SELECT not_received_due_at FROM {s}.m05_el_appointments"
+             " WHERE appointment_ref = %s", (ref,))
+    assert [(_utc(got[0][0]),)] == [(rules.not_received_due(start, el.NY, lead),)]
 
 
 # --- E1-P16 malformed blocks ------------------------------------------------------------
