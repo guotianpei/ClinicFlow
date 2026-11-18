@@ -5,7 +5,8 @@ the time of day (rules and SQL); lead off by one (rules and SQL); omission treat
 counts keyed without the appointment; pending opens a case at booking; seq read before the
 key lock; seam `<` instead of `<=`; tick compares outside the seam; a guessed zone when none
 is usable; (green review feb1fea9) a JSON-null relationship read as complete and a corrected
-department zone not adopted. Kill sets are declared in scripts/el1_mutant_kills.json before the CI run.
+department zone not adopted. Kill sets are declared in scripts/el1_mutant_kills.json before
+the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/sc_activation_mutants.py: each group's control run must pass completely; a mutant is
