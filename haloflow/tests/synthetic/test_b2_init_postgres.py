@@ -245,7 +245,8 @@ def test_b2_i1_positive_init(pg: s.PgCluster, tmp_path: Path) -> None:
     with pg.connect() as d:
         assert d.execute("SELECT tenant_id, schema_key, lifecycle_state, schema_version"
                          " FROM shared.tenants").fetchall() == [
-            (st["tenant_id"], schema, "active", 94)]
+            # Option B B5: the synthetic registry gained t095..t097 (target 97, B5-E1).
+            (st["tenant_id"], schema, "active", 97)]
         acts = d.execute(f"SELECT change, actor_id::text, ticket_reference FROM {schema}"
                          ".m05_activation_records").fetchall()
         assert acts == [("grant", st["activation_actor_id"], st["ticket_reference"])]

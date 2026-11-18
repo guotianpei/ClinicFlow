@@ -176,6 +176,7 @@ def as_si_install(inst: Install) -> Any:
         "haloflow_provisioner": dsn("provisioner")})
     si_inst = si.SIInstall(ids, (st["tenant_id"], st["schema_key"]))
     si_inst._attempted = True
+    si_inst.b5 = True        # Option B B5: the synthetic install is at target 97
     return si_inst
 
 

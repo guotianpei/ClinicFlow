@@ -164,8 +164,8 @@ def _app_b3a() -> Any:
 
 def test_b3b_r7u_route_inventory_is_closed() -> None:
     """B (R-B3b-1, extended by B4 v1r1 §3 Q2): the served (method, path) set equals ROUTES plus
-    the B4 UI routes exactly; docs are off. On B3b (`main` 43fe4f2): fails `route inventory
-    differs` (the five UI routes are missing)."""
+    the B4 UI routes and the B5 simulator routes exactly; docs are off. On B4 (`main` b358637):
+    fails `route inventory differs` (the eight B5 routes are missing)."""
     from starlette.routing import Route
 
     app = _app_b3a()
@@ -175,7 +175,12 @@ def test_b3b_r7u_route_inventory_is_closed() -> None:
     # CSS route, named in b4_support.UI_ROUTES. Nothing else in B3b changes.
     import b4_support as b4
 
-    want = {(m, p) for m, p in (*bb.ROUTES.values(), *b4.UI_ROUTES.values())}
+    # B5 (v1 R-B5-2..6, v1r1 D1): plus exactly the eight simulator routes in
+    # ob5_support.B5_ROUTES.
+    import ob5_support as b5
+
+    want = {(m, p) for m, p in (*bb.ROUTES.values(), *b4.UI_ROUTES.values(),
+                                *b5.B5_ROUTES.values())}
     assert served == want, f"route inventory differs: missing {sorted(want - served)}," \
         f" extra {sorted(served - want)}"
     assert (app.docs_url, app.redoc_url, app.openapi_url) == (None, None, None)

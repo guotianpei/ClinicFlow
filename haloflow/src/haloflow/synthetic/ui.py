@@ -27,6 +27,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Final
 from urllib.parse import parse_qsl, urlencode
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI
 from starlette.requests import Request
@@ -39,14 +40,18 @@ from haloflow.platform.routes import (
     _resolve_action,
     _staff_action,
 )
-from haloflow.synthetic.provision import STAFF_NAME
+from haloflow.synthetic.display_statements import DISPLAY_KEY
+from haloflow.synthetic.provision import SETTINGS, STAFF_NAME
 from haloflow.synthetic.staff_routes import execute
 
 UI_PREFIX: Final = "/synthetic/ui/items"
 CSS_PATH: Final = "/synthetic/ui/static/app.css"
+# B4 staff form routes, plus (B5 v1r1 D2) exactly the four simulator form routes. The gate
+# accepts the form media type only on a full match of this union.
 UI_FORM_ROUTE: Final = re.compile(
     r"/synthetic/ui/items/(?P<item_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
-    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve)")
+    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve)"
+    r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr)")
 UI_FORM_MEDIA: Final = "application/x-www-form-urlencoded"
 UI_FORM_MAX_BYTES: Final = 8192
 UI_FORM_MAX_FIELDS: Final = 6
@@ -55,6 +60,7 @@ UI_PAGE_SIZE = 100  # module constant; tests lower it (v1r1 F2.1)
 BANNER: Final = "SIMULATED — synthetic data, no real patients, no texts sent, no EHR changed"
 TITLE: Final = "SIMULATED — HaloFlow synthetic staff screen"
 UNRECOGNIZED: Final = "Unrecognized"
+NO_APPOINTMENT: Final = "No appointment linked"     # OD-B4-1 / T-B5-2 (approved)
 PAGE_LOCAL: Final = "Ordered within this page."
 
 # Exact approved wording (v1r1 §5; demonstrator PR #43 and S-I C5(a)).
@@ -194,6 +200,40 @@ def _when(value: object) -> str:
     return moment.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def _zone(name: object, fallback: str) -> ZoneInfo:
+    if type(name) is str and name:
+        try:
+            return ZoneInfo(name)
+        except (ZoneInfoNotFoundError, ValueError, OSError):
+            pass
+    return ZoneInfo(fallback)
+
+
+def display_lines(read: Mapping[str, Any], *, clinic_tz: str) -> tuple[str, ...]:
+    """B5 (T-B5-1/T-B5-2, v1r1 C2/C3): the synthetic display lines, UNESCAPED (the page
+    escapes each line once). Linked: the first name, then the appointment's local date and
+    time in its department zone (the clinic zone when that is not a valid zone name) and,
+    for a known packaged provider ref, its label. Anything else, or any incomplete linked
+    read, is exactly "No appointment linked" (fail closed; never a guess)."""
+    from haloflow.synthetic.scenarios import PROVIDERS
+
+    first = read.get("first_name")
+    raw_start = read.get("start_at")
+    if read.get("linked") is not True or type(first) is not str or type(raw_start) is not str:
+        return (NO_APPOINTMENT,)
+    try:
+        start = datetime.fromisoformat(raw_start.replace("Z", "+00:00"))
+    except ValueError:
+        return (NO_APPOINTMENT,)
+    if start.tzinfo is None:
+        return (NO_APPOINTMENT,)
+    tz = _zone(read.get("department_tz"), clinic_tz)
+    when = f"Appointment: {start.astimezone(tz):%Y-%m-%d %H:%M} {tz.key}"
+    provider = read.get("provider_ref")
+    label_text = PROVIDERS.get(provider) if type(provider) is str else None
+    return (f"Patient: {first}", when + (f" — {label_text}" if label_text else ""))
+
+
 def _patient_ref(patient_id: object) -> str:
     text = str(patient_id).replace("-", "")
     return esc(text[:8]) if re.fullmatch(r"[0-9a-f]{32}", text) else UNRECOGNIZED
@@ -201,20 +241,23 @@ def _patient_ref(patient_id: object) -> str:
 
 # ---------------------------------------------------------------------------- form parsing
 
-def parse_form(body: bytes, *, allowed: frozenset[str]) -> dict[str, str]:
+def parse_form(body: bytes, *, allowed: frozenset[str],
+               max_fields: int = UI_FORM_MAX_FIELDS) -> dict[str, str]:
     """v1r2 C3 then C4 steps 2-3: byte set, explicit percent triplets, pair structure, field
-    count, strict decoding, then duplicate and unknown names. Raises FormRefused(400)."""
+    count, strict decoding, then duplicate and unknown names. Raises FormRefused(400).
+    `max_fields` is UI_FORM_MAX_FIELDS for the B4 forms; the B5 simulator EHR form, whose
+    closed field set is larger, passes its own bound."""
     if not _RAW_BYTES.fullmatch(body) or _BAD_PERCENT.search(body):
         raise FormRefused(400)
     pairs = body.split(b"&")
     if any(not pair or b"=" not in pair or pair.startswith(b"=") for pair in pairs):
         raise FormRefused(400)
-    if len(pairs) > UI_FORM_MAX_FIELDS:
+    if len(pairs) > max_fields:
         raise FormRefused(400)
     try:
         decoded = parse_qsl(body.decode("ascii"), keep_blank_values=True,
                             strict_parsing=True, encoding="utf-8", errors="strict",
-                            max_num_fields=UI_FORM_MAX_FIELDS)
+                            max_num_fields=max_fields)
     except (UnicodeDecodeError, ValueError):
         raise FormRefused(400) from None
     names = [name for name, _ in decoded]
@@ -288,6 +331,17 @@ def _actor(lifecycle: Any, actor_id: object) -> str:
     if services is not None and str(actor_id) == str(services.staff_id):
         return STAFF_NAME
     return UNRECOGNIZED
+
+
+async def _display_read(lifecycle: Any, context: Any, item_id: uuid.UUID) -> Mapping[str, Any]:
+    """B5 (v1r1 C1/C2): the staff READ of the synthetic display (t095), under the same
+    two-step staff resolution as the item read (route `get`, READ capability)."""
+    async def run(handle: Any) -> Any:
+        return await handle.fetch_all(DISPLAY_KEY, {"item_id": str(item_id)})
+
+    rows = await lifecycle.services.gateway.with_tenant_transaction(context, run)
+    value = rows[0][0] if rows and rows[0] else None
+    return dict(value) if isinstance(value, Mapping) else {"linked": False}
 
 
 # ---------------------------------------------------------------------------- pages
@@ -382,6 +436,8 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         if item.get("item_kind") == "ehr_confirmation_check":
             reason = await _read(lifecycle, "reason",
                                  lambda m05, ctx: m05.reason(ctx, item_id))
+        display = await _read(lifecycle, "get",
+                              lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
     except _Failed as failure:
         return _error_page(failure.status)
     parts = []
@@ -394,6 +450,8 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         f"<p>Assignee: {esc(_actor(lifecycle, assignee)) if assignee is not None else '—'}</p>"
         f"<p>Created: {esc(_when(item.get('created_at')))}</p>"
         f"<p>Synthetic patient ref: {_patient_ref(item.get('patient_id'))}</p>")
+    parts.extend(f"<p>{esc(line)}</p>"
+                 for line in display_lines(display, clinic_tz=str(SETTINGS["clinic_tz"])))
     if reason is not None:
         parts.append(f"<p>Reason: {label(REASON_LABELS, reason.get('reason'))}</p>")
     rows = []

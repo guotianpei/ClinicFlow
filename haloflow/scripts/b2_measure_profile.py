@@ -134,7 +134,7 @@ def render(points: list[tuple[str, str, dict[str, frozenset[str]]]], sealed: str
         "The approved installed-state profile of a synthetic install (Option B B2 S1/S2): the",
         "normalised owned-state digest (`view.capture(...).profile_digest`) of EVERY legitimate",
         "committed state of one install, in order, and the index of each phase's completion",
-        "point. Pinned to PostgreSQL 17, the synthetic registry (target 94) and Alembic head 009;",
+        "point. Pinned to PostgreSQL 17, the synthetic registry (target 97) and Alembic head 009;",
         "control B2-P1 re-measures and must equal this module.",
         "",
         "SEALED_READY_DIGEST (Option B B3a, v1r1 D1.2a): `seal_scope.sealed_digest` of the ready",

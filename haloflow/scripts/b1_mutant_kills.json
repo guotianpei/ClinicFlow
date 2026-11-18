@@ -50,7 +50,8 @@
   "B1-M7": [
     "tests/synthetic/test_b1_units.py::test_b1_c1b_synthetic_imports_nothing_from_tests_runtime",
     "tests/synthetic/test_b1_units.py::test_b1_e1_synthetic_registry_equals_the_frozen_registry",
-    "tests/synthetic/test_b1_units.py::test_b1_e4_builders_are_deterministic_and_fresh"
+    "tests/synthetic/test_b1_units.py::test_b1_e4_builders_are_deterministic_and_fresh",
+    "tests/synthetic/test_b1_units.py::test_b5_e1_registry_delta_is_exactly_the_three_b5_units"
   ],
   "B1-M8": [
     "tests/synthetic/test_b1_units.py::test_b1_e3_test_profile_sql_equals_the_frozen_digests"

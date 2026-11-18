@@ -174,8 +174,9 @@ class Runtime:
                 pool=self.pool, control_store=PsycopgControlStore(self.pool),
                 migrator_connect=sv._factory(self.install.ids.logins[sa.MIGRATOR]),
                 provisioner_connect=sv._factory(self.install.ids.logins["haloflow_provisioner"])),
-            registry=si.si_registry(), catalog=si.si_catalog(),
-            supported_schema_versions=frozenset({si.SI_TARGET}),
+            registry=si.si_registry(b5=getattr(self.install, "b5", False)),
+            catalog=si.si_catalog(b5=getattr(self.install, "b5", False)),
+            supported_schema_versions=frozenset({si.si_target(self.install)}),
             activation_policy=ActivationPolicy[self.policy])
         return self.rt
 

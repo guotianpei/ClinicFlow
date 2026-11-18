@@ -179,6 +179,7 @@ SI_UNIT_IDS: Final = (
     "t094_m05_writeback_create_settled_item",
 )
 SI_TARGET: Final = 94
+SI_B5_TARGET: Final = 97     # a synthetic install (Option B B5): S-I + t095..t097
 SI_SUPPORTED: Final = range(SI_TARGET, SI_TARGET + 1)
 CLOSURE_UNITS: Final = ("t078_m05_directory_v2_closure", "t093_m05_si_runtime_closure")
 TABLES: Final = ("m05_writeback_baselines", "m05_writeback_ops", "m05_writeback_permits")
@@ -229,23 +230,34 @@ def si_amendments() -> Any:
     return SI_ACL_AMENDMENTS
 
 
-def si_registry() -> Any:
+def si_registry(*, b5: bool = False) -> Any:
     """The S-I TEST registry (target 94). Single source since Option B B1:
     `haloflow.synthetic.composition.build_synthetic_registry`, pinned against the frozen
     pre-move manifest (tests/synthetic, B1-E1)."""
 
     from haloflow.synthetic.composition import build_synthetic_registry
 
-    return build_synthetic_registry()
+    # Option B B5: the synthetic app's registry adds three synthetic-only units (target 97);
+    # the S-I TEST assembly these suites pin stays the 94-unit registry. `b5=True` only for a
+    # B2+ synthetic install driven through this harness (`SIInstall.b5`, set by
+    # tests/synthetic/b3a_support.as_si_install).
+    return build_synthetic_registry(include_b5=b5)
 
 
-def si_catalog() -> Any:
+def si_catalog(*, b5: bool = False) -> Any:
     """The S-I TEST catalogue. Single source since Option B B1:
     `haloflow.synthetic.composition.build_synthetic_catalog` (B1-E2)."""
 
     from haloflow.synthetic.composition import build_synthetic_catalog
 
-    return build_synthetic_catalog()
+    # Option B B5: without the three synthetic-only B5 keys unless `b5` (see si_registry).
+    return build_synthetic_catalog(include_b5=b5)
+
+
+def si_target(install: Any) -> int:
+    """The registry target of the install this harness drives: 94 for an S-I install, 97 for
+    a synthetic (B5) install (`SIInstall.b5`)."""
+    return SI_B5_TARGET if getattr(install, "b5", False) else SI_TARGET
 
 
 # Single source since Option B B1 (B1-E3 pins its digest), resolved LAZILY for the same
@@ -271,7 +283,11 @@ def __getattr__(name: str) -> Any:
 
 class SIInstall(sh3.SH3Install):
     """The H3 install shape, provisioned through the S-I registry (target 94), with the S-I
-    test profile (FIXTURE: activates the check event type and maps the five reasons)."""
+    test profile (FIXTURE: activates the check event type and maps the five reasons).
+    `b5` is True only for a synthetic (B2+) install wrapped by the synthetic tests; such an
+    install is at target 97 and is never provisioned here."""
+
+    b5: bool = False
 
     def require(self) -> None:
         if not self._attempted:
@@ -333,9 +349,9 @@ async def runtime(install: SIInstall, *, policy: str = "ENFORCE",
                 migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
                 provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"]),
             ),
-            registry=si_registry(),
-            catalog=si_catalog(),
-            supported_schema_versions=frozenset({SI_TARGET}),
+            registry=si_registry(b5=install.b5),
+            catalog=si_catalog(b5=install.b5),
+            supported_schema_versions=frozenset({si_target(install)}),
             activation_policy=ActivationPolicy[policy],
         )
     finally:

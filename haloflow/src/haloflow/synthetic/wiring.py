@@ -340,6 +340,13 @@ def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any]) -> Synthet
                              staff_id=str(state["staff_id"]))
 
 
+def load_foundation(gateway: Any) -> EventFoundation:
+    """The B5 scenario load's transaction foundation (`sim_actions.load`): the S-G1a intake
+    producer; the load appends no observation, it only runs its statements in one
+    transaction."""
+    return EventFoundation(gateway, producer_service=INGRESS_PRODUCER)
+
+
 def reply_intake(gateway: Any) -> Any:
     """The S-G1a intake chain (ReplyIntake over IntakeService), as the accepted harness builds
     it, for the simulator's unmounted ingress app."""

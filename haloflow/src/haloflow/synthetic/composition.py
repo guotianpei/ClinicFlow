@@ -10,10 +10,13 @@ Production never imports this module (B1-C1/C1r), and `allow_test_units` is neve
 (R-E12).
 
 What it composes is the S-I TEST assembly (registry target 94) that the test suite
-previously assembled in `tests/m05/si_support.py`. Its output is pinned against the frozen
-pre-move manifest `tests/synthetic/b1_premove_manifest.json`, which was generated at bc28c90
-before this module existed (B1-E1..E3). Every unit, profile, amendment and statement part
-here is an existing, reviewed `src` constant; nothing new is defined.
+previously assembled in `tests/m05/si_support.py`, plus (Option B B5) exactly the three
+synthetic display/scenario units t095..t097 and their three statement keys
+(`synthetic.display_units`, `synthetic.display_statements`): target 97. Everything except the
+B5 delta is pinned against the frozen pre-move manifest
+`tests/synthetic/b1_premove_manifest.json`, generated at bc28c90 (B1-E1..E3); the delta is
+pinned by B5-E1/E2. Every other unit, profile, amendment and statement part is an existing,
+reviewed `src` constant.
 
 The TEST profile SQL below is a FIXTURE for synthetic installs only. It activates the test
 families and event types and maps the synthetic workloads; every intake-map row is
@@ -79,8 +82,11 @@ from haloflow.m05.writeback_units import (
     SI_INSTALLED_STATE_PROFILES,
     SI_TENANT_MIGRATIONS,
 )
+from haloflow.synthetic.display_statements import B5_STATEMENTS
+from haloflow.synthetic.display_units import B5_INSTALLED_STATE_PROFILES, B5_TENANT_MIGRATIONS
 
-SYNTHETIC_TARGET: Final = 94
+SYNTHETIC_TARGET: Final = 97
+S_I_TARGET: Final = 94          # the S-I TEST assembly alone (include_b5=False)
 
 # --- synthetic contract and workload identities (FIXTURE values, unchanged) --------------
 
@@ -165,24 +171,31 @@ def _parts() -> tuple[Any, ...]:
                  for part in parts)
 
 
-def build_synthetic_catalog() -> Any:
-    """The S-I TEST statement catalogue (synthetic only). Pinned by B1-E2."""
+def build_synthetic_catalog(*, include_b5: bool = True) -> Any:
+    """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
+    B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
+    harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2."""
 
-    return build_statement_catalog(*_parts(), SI_REBOUND, SI_STATEMENTS,
+    extra = (B5_STATEMENTS,) if include_b5 else ()
+    return build_statement_catalog(*_parts(), SI_REBOUND, SI_STATEMENTS, *extra,
                                    activation_protected=_protected())
 
 
-def build_synthetic_registry() -> Any:
-    """The S-I TEST per-tenant migration registry, target 94 (synthetic only). Pinned by
-    B1-E1."""
+def build_synthetic_registry(*, include_b5: bool = True) -> Any:
+    """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
+    B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
+    target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
+    Pinned by B1-E1 (all but the B5 delta) and B5-E1 (the delta)."""
 
+    b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
+    b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     return build_tenant_migration_registry(
         *APPROVED_TENANT_MIGRATIONS, SA_TENANT_MIGRATIONS,
         # SB/SC sets are un-annotated MappingProxyType literals in their modules; the
         # cast only states their declared role (no conversion, no copy).
         cast("UnitDefinitions", SB_TENANT_MIGRATIONS),
         cast("UnitDefinitions", SC_TENANT_MIGRATIONS), SH_TENANT_MIGRATIONS, SH2_TENANT_MIGRATIONS,
-        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS,
+        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES,
                                   **SA_INSTALLED_STATE_PROFILES,
@@ -191,7 +204,8 @@ def build_synthetic_registry() -> Any:
                                   **SH_INSTALLED_STATE_PROFILES,
                                   **SH2_INSTALLED_STATE_PROFILES,
                                   **SH3_INSTALLED_STATE_PROFILES,
-                                  **SI_INSTALLED_STATE_PROFILES},
+                                  **SI_INSTALLED_STATE_PROFILES,
+                                  **b5_profiles},
         acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,
                         *SI_ACL_AMENDMENTS),
     )
