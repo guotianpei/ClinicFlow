@@ -1,10 +1,11 @@
-"""Eligibility E1 mutation controls, group family ``el1`` (M01r..M09).
+"""Eligibility E1 mutation controls, group family ``el1`` (M01r..M11).
 
 Targets predeclared in the E1 red packet v1r1 §3 (Codex red gate PASS 61b5336d): due drops
 the time of day (rules and SQL); lead off by one (rules and SQL); omission treated as `none`;
 counts keyed without the appointment; pending opens a case at booking; seq read before the
 key lock; seam `<` instead of `<=`; tick compares outside the seam; a guessed zone when none
-is usable. Kill sets are declared in scripts/el1_mutant_kills.json before the CI run.
+is usable; (green review feb1fea9) a JSON-null relationship read as complete and a corrected
+department zone not adopted. Kill sets are declared in scripts/el1_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/sc_activation_mutants.py: each group's control run must pass completely; a mutant is
@@ -74,6 +75,12 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M08", "the tick compares the deadline outside the seam", UNITS,
      "           AND {schema}.m05_el_deadline_passed(a.not_received_due_at, v_now)\n",
      "           AND a.not_received_due_at <= v_now\n"),
+    ("M10", "a JSON-null relationship falls through as complete (green review item 1)", UNITS,
+     "             WHEN COALESCE(v_cov OPERATOR(pg_catalog.->>) 'relationship', '')\n",
+     "             WHEN (v_cov OPERATOR(pg_catalog.->>) 'relationship')\n"),
+    ("M11", "a corrected department zone is not adopted (green review item 2)", UNITS,
+     "        IF v_zone IS NOT NULL AND v_zone IS DISTINCT FROM v_k.zone THEN\n",
+     "        IF false THEN\n"),
     ("M09", "a zone is guessed (UTC) when none is usable", UNITS,
      '    return f"COALESCE({ok(dept)}, {ok(clinic)})"\n',
      '    return f"COALESCE({ok(dept)}, {ok(clinic)}, \'UTC\')"\n'),

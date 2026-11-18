@@ -403,6 +403,7 @@ DECLARE
     v_pre timestamptz;
     v_day timestamptz;
     v_nr timestamptz;
+    v_replan boolean := false;
 BEGIN
     v_op := p_command OPERATOR(pg_catalog.->>) 'op';
     v_ref := (p_command OPERATOR(pg_catalog.->>) 'appointment_ref')::uuid;
@@ -554,9 +555,23 @@ BEGIN
             -- A cancelled or replaced appointment is not re-enrolled by a later put.
             RETURN pg_catalog.jsonb_build_object('outcome', 'unchanged');
         END IF;
+        -- Every put carries the department zone: persist a correction, and adopt a newly
+        -- usable or changed zone (re-plan). An unusable new zone never replaces a usable one
+        -- and is never guessed (Codex D-1 / green review feb1fea9 item 2).
+        IF v_dept IS DISTINCT FROM v_k.department_tz THEN
+            UPDATE {schema}.m05_el_appointments SET department_tz = v_dept, updated_at = v_now
+             WHERE appointment_ref = v_ref;
+        END IF;
+        v_zone := """ + _zone_choice("v_dept", "v_clinic") + r""";
+        IF v_zone IS NOT NULL AND v_zone IS DISTINCT FROM v_k.zone THEN
+            UPDATE {schema}.m05_el_appointments
+               SET zone = v_zone, deferred_reason = NULL, updated_at = v_now
+             WHERE appointment_ref = v_ref;
+            v_replan := true;
+        END IF;
         IF NOT v_has THEN
             -- C2: omission keeps enrolment and the current coverage version.
-            IF v_start IS DISTINCT FROM v_k.start_at THEN
+            IF v_start IS DISTINCT FROM v_k.start_at OR v_replan THEN
                 UPDATE {schema}.m05_el_appointments SET start_at = v_start, updated_at = v_now
                  WHERE appointment_ref = v_ref;
                 RETURN {schema}.m05_el_intake(pg_catalog.jsonb_build_object('op', 'plan',
@@ -567,7 +582,7 @@ BEGIN
         SELECT c.block INTO v_old FROM {schema}.m05_el_coverage AS c
          WHERE c.appointment_ref = v_ref AND c.coverage_version = v_k.coverage_version;
         IF v_old = v_cov THEN
-            IF v_start IS DISTINCT FROM v_k.start_at THEN
+            IF v_start IS DISTINCT FROM v_k.start_at OR v_replan THEN
                 UPDATE {schema}.m05_el_appointments SET start_at = v_start, updated_at = v_now
                  WHERE appointment_ref = v_ref;
                 RETURN {schema}.m05_el_intake(pg_catalog.jsonb_build_object('op', 'plan',
@@ -599,7 +614,9 @@ BEGIN
         subscriber_name, subscriber_dob, subscriber_member_id, block, received_at)
     VALUES (v_ref, v_version, v_state,
         CASE WHEN v_state <> 'present' THEN NULL
-             WHEN (v_cov OPERATOR(pg_catalog.->>) 'relationship') NOT IN ('self', 'dependent')
+             -- COALESCE: a JSON-null relationship must not fall through as UNKNOWN (Codex).
+             WHEN COALESCE(v_cov OPERATOR(pg_catalog.->>) 'relationship', '')
+                  NOT IN ('self', 'dependent')
                OR COALESCE(v_cov OPERATOR(pg_catalog.->>) 'payer_id', '') = ''
                OR COALESCE(v_cov OPERATOR(pg_catalog.->>) 'member_id', '') = ''
                OR COALESCE(v_cov OPERATOR(pg_catalog.->>) 'patient_name', '') = ''

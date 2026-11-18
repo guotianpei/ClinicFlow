@@ -668,3 +668,83 @@ def test_el1_p17_no_zone_defers_then_recovers_once(install: el.EL1Install,
     assert (third["replanned"], third["deferred_no_zone"]) == (0, 0)
     assert el.count(inst, "m05_el_case_events") in (0, 1)
     assert el.count(inst, "m05_el_counts") in (0, 1)
+
+
+# --- Green review feb1fea9: nullable relationship; department-zone recovery -------------
+
+def test_el1_p06c_routed_null_relationship_priority_is_manual_incomplete(
+        install: el.EL1Install) -> None:
+    """Codex feb1fea9 item 1: a JSON-null relationship with every common field populated and a
+    PRIORITY payer is incomplete (as E1-U07 and the Python rule), settled manual through the
+    routed put, never checkable."""
+    import asyncio
+
+    inst = el.ready(install)
+    ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
+    fields = si.appointment3(ref, patient, start)
+    fields["coverage"] = el.present(el.PRIORITY[0], relationship=None)  # type: ignore[arg-type]
+
+    async def run() -> dict[str, Any]:
+        async with el.runtime(inst) as rt:
+            return await el.routed_put(rt, inst, fields)
+
+    assert asyncio.run(run()) == {"schema_version": 1, "outcome": "applied"}
+    assert _q(inst, "SELECT completeness FROM {s}.m05_el_coverage WHERE appointment_ref = %s",
+              (ref,)) == [("incomplete",)]
+    assert _q(inst, "SELECT owner_trigger, state, result_class, reason"
+              " FROM {s}.m05_el_verifications WHERE appointment_ref = %s", (ref,)) == [
+        ("booking", "settled", "manual_required", "incomplete")]
+    assert _events(inst, ref) == [(1, 1, "open_or_note", "manual_required", "incomplete")]
+    assert _q(inst, "SELECT bucket, payer_key FROM {s}.m05_el_counts"
+              " WHERE appointment_ref = %s", (ref,)) == [("incomplete", "-")]
+    assert _triggers(inst, ref)["previsit"][2] == "not_applicable"
+
+
+@pytest.mark.parametrize("with_block", [True, False])
+@pytest.mark.parametrize("payer", [el.PRIORITY[0], el.OTHER_PAYER])
+def test_el1_p17b_department_zone_correction_recovers_once(install: el.EL1Install,
+                                                           with_block: bool,
+                                                           payer: str) -> None:
+    """Codex feb1fea9 item 2: deferred for want of a zone (department invalid, clinic none);
+    a routed put correcting the department zone (with the same coverage block, or omitting
+    it) persists the correction and recovers exactly once; a tick and a replayed put then
+    change nothing (no duplicate case event or count)."""
+    import asyncio
+
+    import sh2_support as sh2
+
+    from haloflow.m05 import eligibility_rules as rules
+
+    inst = el.ready(install)
+    sh2.settings_raw(inst, clinic_tz=None)
+    ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
+    cov = el.present(payer)
+    el.put(inst, ref, patient, start, coverage=cov, department_tz="Bad/Zone")
+    assert _q(inst, "SELECT zone, deferred_reason FROM {s}.m05_el_appointments"
+              " WHERE appointment_ref = %s", (ref,)) == [(None, "no_zone")]
+    fields = si.appointment3(ref, patient, start, department_tz=el.NY)
+    if with_block:
+        fields["coverage"] = cov
+
+    async def put_routed() -> dict[str, Any]:
+        async with el.runtime(inst) as rt:
+            return await el.routed_put(rt, inst, fields)
+
+    assert asyncio.run(put_routed()) == {"schema_version": 1, "outcome": "applied"}
+    assert _q(inst, "SELECT department_tz, zone, deferred_reason, coverage_version"
+              " FROM {s}.m05_el_appointments WHERE appointment_ref = %s", (ref,)) == [
+        (el.NY, el.NY, None, 1)]
+    trig = _triggers(inst, ref)
+    assert trig["previsit"][1] == rules.previsit_due(start, el.NY, 3)
+    if payer in el.PRIORITY:
+        assert {v[2] for v in trig.values()} == {"pending"}
+        expected_events: list[tuple[Any, ...]] = []
+    else:
+        expected_events = [(1, 1, "open_or_note", "manual_required", "nonpriority")]
+    assert _events(inst, ref) == expected_events
+    tick = el.tick(inst)
+    assert (tick["replanned"], tick["deferred_no_zone"]) == (0, 0)
+    assert asyncio.run(put_routed()) == {"schema_version": 1, "outcome": "applied"}  # replay
+    assert _events(inst, ref) == expected_events
+    assert el.count(inst, "m05_el_counts") == (0 if payer in el.PRIORITY else 1)
+    assert el.count(inst, "m05_el_verifications") == (0 if payer in el.PRIORITY else 1)

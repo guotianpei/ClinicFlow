@@ -57,5 +57,14 @@
  "M09": [
   "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage0]",
   "tests/m05/test_el1_postgres.py::test_el1_p17_no_zone_defers_then_recovers_once[coverage1]"
+ ],
+ "M10": [
+  "tests/m05/test_el1_postgres.py::test_el1_p06c_routed_null_relationship_priority_is_manual_incomplete"
+ ],
+ "M11": [
+  "tests/m05/test_el1_postgres.py::test_el1_p17b_department_zone_correction_recovers_once[SYN-ANTHEM-False]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17b_department_zone_correction_recovers_once[SYN-ANTHEM-True]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17b_department_zone_correction_recovers_once[SYN-OTHER-False]",
+  "tests/m05/test_el1_postgres.py::test_el1_p17b_department_zone_correction_recovers_once[SYN-OTHER-True]"
  ]
 }
