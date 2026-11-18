@@ -37,7 +37,8 @@ SQL interface pins (E1 red packet v1, section 2):
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Final
 
@@ -168,3 +169,78 @@ def count(install: EL1Install, table: str, where: str = "true", params: Any = No
 
 def el_snapshot(install: EL1Install) -> dict[str, int]:
     return {t: count(install, t) for t in EL_TABLES}
+
+
+# --- the authorized routing boundary (Codex 878899b6) ------------------------------------
+# The real resolver + gateway at target 101 with the E1 catalogue, in which the directory key
+# `m05.intake.directory` is REBOUND to `m05_directory_v4` (pin; the t053 same-key pattern).
+
+
+def el1_catalog() -> Any:
+    from haloflow.synthetic.composition import build_synthetic_catalog
+
+    return build_synthetic_catalog(include_el1=True)
+
+
+@asynccontextmanager
+async def runtime(install: EL1Install, *, max_size: int = 4) -> AsyncIterator[Any]:
+    import service_support as sv
+
+    from haloflow.m01.activation import ActivationPolicy
+    from haloflow.m01.control_store import PsycopgControlStore
+    from haloflow.m01.pool import TenantPool
+    from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
+
+    pool = TenantPool(install.ids.logins[sa.RUNTIME], min_size=1, max_size=max_size)
+    await pool.open()
+    try:
+        yield compose_tenant_runtime(
+            TenantRuntimeDependencies(
+                pool=pool, control_store=PsycopgControlStore(pool),
+                migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
+                provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"]),
+            ),
+            registry=el1_registry(), catalog=el1_catalog(),
+            supported_schema_versions=frozenset({EL1_TARGET}),
+            activation_policy=ActivationPolicy.ENFORCE,
+        )
+    finally:
+        await pool.close()
+
+
+async def routed_put(rt: Any, install: EL1Install, fields: dict[str, Any], *,
+                     authorized_for: EL1Install | None = None) -> dict[str, Any]:
+    """appointment_put through the resolver and gateway (directory key, workload principal).
+    `authorized_for` (default: `install`) is the tenant the principal is authorized for; the
+    tenant hint is always `install`'s tenant."""
+    from uuid import NAMESPACE_URL, uuid4, uuid5
+
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.intake import _attribution
+    from haloflow.m05.intake_statements import DIRECTORY_KEY
+
+    owner = authorized_for or install
+    caps = sa.CAPS["directory"]
+    ctx = await rt.resolver.resolve(
+        principal=Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_DIRECTORY, auth_method="test",
+                            authorized_tenant_ids=frozenset({owner.tenant[0]}),
+                            capabilities=caps),
+        tenant_hint=install.tenant[0], purpose="operations", capabilities=caps,
+        source=TrustedSource.HTTP,
+        execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:el1:{uuid4()}"),
+        correlation_id=uuid4(),
+        correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+    command = {"schema_version": 1, "op": "appointment_put", **fields,
+               "attribution": _attribution(ctx)}
+
+    async def body(binding: Any) -> dict[str, Any]:
+        got = await binding.handle.fetch_all(DIRECTORY_KEY, {"command": Jsonb(command)})
+        assert len(got) == 1, got
+        return dict(got[0][0])
+
+    result: dict[str, Any] = await EventFoundation(
+        rt.gateway, producer_service=sa.PRODUCER).run_in_transaction(ctx, body)
+    return result

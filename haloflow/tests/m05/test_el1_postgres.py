@@ -19,19 +19,21 @@ Rows (stage-3 ids; trace in brackets):
 - E1-P07 coverage v2: triggers re-pointed to v2 and pending, booking due again [R2]
 - E1-P08 enrolled appointment, later put without block: version unchanged; status processed [C2]
 - E1-P09 cancelled / replaced: triggers cancelled, note-only event with the next seq [EL-6f, W13]
-- E1-P10 forced interleaving: tick A holds the key-row lock open; cancel put B waits; after A
-  commits, seq 1 (A) then 2 (B), both complete [M2; kills E1-M06]
+- E1-P10 forced interleaving: tick A holds the key-row lock open; cancel put B is blocked BY A
+  (pg_blocking_pids(B) contains A); after A commits, seq 1 (A) then 2 (B) [M2; kills E1-M06]
 - E1-P11 settings disabled: a coverage block enrols nothing [EL-13]
-- E1-P12 isolation against existing foreign data: same ref in both tenants; A's gateway
-  (own or foreign tenant context) never changes B's rows [§6a]
+- E1-P12a routed: own tenant succeeds; principal authorized for A asking for B -> TenantDenied
+  TENANT_BINDING_MISMATCH, both tenants unchanged [§6a]
+- E1-P12b direct SQL, NARROWER: schema-bound only; B's context on A's function writes A only,
+  B byte-identical [§6a]
 - E1-P13 ACL: runtime EXECUTE on m05_directory_v4 and m05_el_tick, none on m05_directory_v3,
   no runtime privilege on any m05_el_* table [R7]
 - E1-P15 SQL due instants equal the Python rules on the pinned DST fixtures [R5, parity]
 - E1-P16 malformed coverage blocks -> COMMAND_MALFORMED, nothing written [M3]
 - E1-P04s the deadline seam m05_el_deadline_passed at -1 us / equal / +1 us; the tick decides
   only through it [OD-EL9, Codex 5d2877d0 item 3]
-- E1-P14 no identifiers (synthetic sentinels) in results, derived rows, tick output or the
-  malformed-block error [EL-14]
+- E1-P14 no identifiers (synthetic sentinels) in captured logs (positive control), routed
+  results/errors, derived rows, tick output, or the direct SQL error fields [EL-14]
 - E1-P17 no usable zone: booking recorded, all date actions deferred, tick diagnostic,
   recovery once after zone repair, no duplicates [Codex D-1 ruling]
 - E1-C00 CONTROL: the existing m05_directory_v3 still applies on an S-I install.
@@ -250,26 +252,52 @@ def _no_sentinel(text: str) -> None:
         assert s_ not in text, s_
 
 
-def test_el1_p14_no_identifiers_in_results_errors_or_derived_rows(install: el.EL1Install
-                                                                  ) -> None:
+def test_el1_p14_no_identifiers_in_logs_results_errors_or_derived_rows(
+        install: el.EL1Install, caplog: pytest.LogCaptureFixture) -> None:
+    """Evidence boundary: Python logging (root and every `haloflow*` logger, DEBUG) during a
+    routed success and a routed malformed intake, plus results, derived rows, tick output and
+    the error fields. A positive control proves the capture sees a haloflow M05 record. The
+    PostgreSQL server log is outside this row (statement parameters are not logged on error by
+    default: log_parameter_max_length_on_error = 0); disclosed in the packet."""
+    import asyncio
+    import logging
+
     inst = el.ready(install)
     cov = el.present(el.OTHER_PAYER, relationship="dependent", member_id=SENTINELS[0],
                      patient_name=SENTINELS[1], subscriber_member_id=SENTINELS[2],
                      subscriber_name=SENTINELS[3], patient_dob=SENTINELS[4])
     ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
-    _no_sentinel(str(el.put(inst, ref, patient, start, coverage=cov)))
-    # Derived rows never copy identifiers (only the coverage table holds them).
+    ok = si.appointment3(ref, patient, start)
+    ok["coverage"] = cov
+    bad = si.appointment3(sa.new_id(), sa.new_id(), start)
+    bad["coverage"] = {**cov, "subscriber_dob": "11/11/1911"}
+    caplog.set_level(logging.DEBUG)
+    control = "EL1-P14-CAPTURE-CONTROL"
+    logging.getLogger("haloflow.m05.eligibility").warning(control)
+
+    async def run() -> tuple[dict[str, Any], BaseException]:
+        async with el.runtime(inst) as rt:
+            result = await el.routed_put(rt, inst, ok)
+            try:
+                await el.routed_put(rt, inst, bad)
+            except Exception as error:  # noqa: BLE001 - examined below
+                return result, error
+            raise AssertionError("malformed coverage was accepted")
+
+    result, error = asyncio.run(run())
+    logged = "\n".join(f"{r.name} {r.getMessage()} {r.exc_text or ''}" for r in caplog.records)
+    assert control in logged, "log capture is not working"
+    _no_sentinel(logged)
+    _no_sentinel(str(result))
+    _no_sentinel(f"{type(error).__name__} {error!s} {error!r}")
     for table in el.EL_TABLES:
         if table != "m05_el_coverage":
             _no_sentinel(str(_q(inst, "SELECT to_jsonb(x)::text FROM {s}." + table + " AS x")))
     _no_sentinel(str(el.tick(inst)))
-    # Error boundary: a malformed block carrying sentinels is refused without echoing them.
-    bad = {**cov, "subscriber_dob": "11/11/1911"}
-    fields = si.appointment3(sa.new_id(), sa.new_id(), start)
-    fields["coverage"] = bad
+    # Direct SQL error fields (the layer below the gateway) also echo nothing.
     with pytest.raises(psycopg.errors.RaiseException) as caught:
         sa.call(inst, "m05_directory_v4", {"schema_version": 1, "op": "appointment_put",
-                                           **fields,
+                                           **bad,
                                            "attribution": sa.attribution(sa.W_DIRECTORY)})
     diag = caught.value.diag
     _no_sentinel(" ".join(str(x) for x in (diag.message_primary, diag.message_detail,
@@ -390,10 +418,9 @@ def test_el1_p09_replacement_enrols_as_new_booking(install: el.EL1Install) -> No
 
 # --- E1-P10 sequence under the appointment lock (forced interleaving) -------------------
 
-def _waiting_on_lock(inst: el.EL1Install) -> int:
-    got = sa.admin(inst, "SELECT count(*) FROM pg_stat_activity"
-                   " WHERE wait_event_type = 'Lock' AND datname = current_database()")
-    return int(got[0][0])
+def _blockers(inst: el.EL1Install, pid: int) -> list[int]:
+    got = sa.admin(inst, "SELECT pg_blocking_pids(%s)", (pid,))
+    return list(got[0][0] or [])
 
 
 def test_el1_p10_second_writer_waits_and_commits_after_first(install: el.EL1Install) -> None:
@@ -412,23 +439,32 @@ def test_el1_p10_second_writer_waits_and_commits_after_first(install: el.EL1Inst
     tick_cmd = {"schema_version": 1, "attribution": sa.attribution(sa.W_TIMER)}
     done: dict[str, Any] = {}
 
-    def writer_b() -> None:
-        try:
-            done["b"] = el.put(inst, ref, patient, start, coverage={"state": "pending"},
-                               status="cancelled")
-        except BaseException as error:  # noqa: BLE001 - surfaced below
-            done["b_error"] = error
+    b_fields = si.appointment3(ref, patient, start, status="cancelled")
+    b_fields["coverage"] = {"state": "pending"}
+    b_cmd = {"schema_version": 1, "op": "appointment_put", **b_fields,
+             "attribution": sa.attribution(sa.W_DIRECTORY)}
 
-    with sa.runtime_conn(inst) as conn_a:
+    with sa.runtime_conn(inst) as conn_a, sa.runtime_conn(inst) as conn_b:
+        a_pid = conn_a.execute("SELECT pg_backend_pid()").fetchone()[0]  # type: ignore[index]
+        b_pid = conn_b.execute("SELECT pg_backend_pid()").fetchone()[0]  # type: ignore[index]
+
+        def writer_b() -> None:
+            try:
+                with conn_b.transaction():
+                    done["b"] = sa.call_in(conn_b, inst, "m05_directory_v4", b_cmd)
+            except BaseException as error:  # noqa: BLE001 - surfaced below
+                done["b_error"] = error
+
         with conn_a.transaction():
             done["a"] = sa.call_in(conn_a, inst, "m05_el_tick", tick_cmd)
             assert done["a"]["raised"] == 1
             b = threading.Thread(target=writer_b)
             b.start()
             deadline = time.monotonic() + 10
-            while _waiting_on_lock(inst) == 0 and time.monotonic() < deadline:
+            while (a_pid not in _blockers(inst, b_pid)) and time.monotonic() < deadline:
                 time.sleep(0.05)
-            assert _waiting_on_lock(inst) >= 1, "writer B never waited on A's key lock"
+            # B is blocked BY A specifically (not by any other waiter in the database).
+            assert a_pid in _blockers(inst, b_pid), "writer B never waited on A"
             assert "b" not in done and "b_error" not in done
         # A committed here.
         b.join(30)
@@ -457,39 +493,64 @@ def _el_rows(inst: el.EL1Install) -> dict[str, list[tuple[Any, ...]]]:
             for t in el.EL_TABLES}
 
 
-@pytest.mark.parametrize("context", ["own", "foreign"])
-def test_el1_p12_gateway_is_bound_to_its_tenant(install: el.EL1Install,
-                                                install_b: el.EL1Install, context: str) -> None:
-    """Both tenants hold the SAME appointment_ref with different coverage. A write through
-    tenant A's gateway changes only A's rows; B's rows stay byte-identical. With B's tenant
-    context set on the connection ("foreign"), A's gateway either refuses or still writes only
-    A's schema — never B's (the gateway is schema-bound)."""
-    a, b = el.ready(install), el.ready(install_b)
+def _seed_both(a: el.EL1Install, b: el.EL1Install) -> tuple[str, str, datetime]:
     ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
     el.put(a, ref, patient, start, coverage={"state": "none"})
     el.put(b, ref, patient, start, coverage=el.present(el.OTHER_PAYER))
-    b_before, a_before = _el_rows(b), _el_rows(a)
+    return ref, patient, start
+
+
+def test_el1_p12a_routed_own_tenant_succeeds_and_wrong_tenant_is_denied(
+        install: el.EL1Install, install_b: el.EL1Install) -> None:
+    """The authorized routing boundary (resolver + gateway, target 101, directory key rebound
+    to m05_directory_v4). Own tenant: success, only A changes. A principal authorized for A
+    asking for tenant B: TenantDenied TENANT_BINDING_MISMATCH before any SQL; both unchanged."""
+    import asyncio
+
+    from haloflow.m01.errors import TenantDenied
+
+    a, b = el.ready(install), el.ready(install_b)
+    ref, patient, start = _seed_both(a, b)
+    a0, b0 = _el_rows(a), _el_rows(b)
+    fields = si.appointment3(ref, patient, start, status="cancelled")
+    fields["coverage"] = {"state": "none"}
+
+    async def run() -> None:
+        async with el.runtime(a) as rt:
+            with pytest.raises(TenantDenied) as denied:
+                await el.routed_put(rt, b, fields, authorized_for=a)
+            assert denied.value.reason_code == "TENANT_BINDING_MISMATCH"
+            assert _el_rows(a) == a0 and _el_rows(b) == b0
+            got = await el.routed_put(rt, a, fields)
+            assert got == {"schema_version": 1, "outcome": "applied"}
+
+    asyncio.run(run())
+    assert _el_rows(b) == b0
+    assert _events(a, ref)[-1] == (2, 1, "note_only", None, "appointment_cancelled")
+
+
+def test_el1_p12b_direct_sql_is_schema_bound_only(install: el.EL1Install,
+                                                  install_b: el.EL1Install) -> None:
+    """NARROWER guarantee, labelled as such: direct SQL below the routing boundary is confined
+    to the function's own schema. Own context: success (no error tolerated). B's tenant context
+    on A's function: the gateway checks only the context's form, so the write still lands in
+    A's schema; B's rows stay byte-identical. Tenant authorization is the routing boundary's
+    job (P12a), not this layer's."""
+    a, b = el.ready(install), el.ready(install_b)
+    ref, patient, start = _seed_both(a, b)
+    b0 = _el_rows(b)
     fields = si.appointment3(ref, patient, start, status="cancelled")
     fields["coverage"] = {"state": "none"}
     cmd = {"schema_version": 1, "op": "appointment_put", **fields,
            "attribution": sa.attribution(sa.W_DIRECTORY)}
-    refused = False
     with sa.runtime_conn(a) as conn, conn.transaction():
-        try:
-            if context == "own":
-                sa.call_in(conn, a, "m05_directory_v4", cmd)
-            else:
-                conn.execute("SELECT set_config('app.tenant_id', %s, true)", (b.tenant_id,))
-                conn.execute(sql.SQL("SELECT {}.{}(%s)").format(
-                    sql.Identifier(a.schema), sql.Identifier("m05_directory_v4")),
-                    (Jsonb(cmd),))
-        except psycopg.Error:
-            refused = True
-    assert _el_rows(b) == b_before
-    if refused:
-        assert _el_rows(a) == a_before
-    else:
-        assert _events(a, ref)[-1] == (2, 1, "note_only", None, "appointment_cancelled")
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)", (b.tenant_id,))
+        got = conn.execute(sql.SQL("SELECT {}.{}(%s)").format(
+            sql.Identifier(a.schema), sql.Identifier("m05_directory_v4")),
+            (Jsonb(cmd),)).fetchone()
+    assert got is not None and got[0] == {"schema_version": 1, "outcome": "applied"}
+    assert _el_rows(b) == b0
+    assert _events(a, ref)[-1] == (2, 1, "note_only", None, "appointment_cancelled")
 
 
 # --- E1-P13 ACL -------------------------------------------------------------------------
