@@ -15,9 +15,19 @@ SQL interface pins (E1 red packet v1, section 2):
   `m05_el_verifications`, `m05_el_counts`, `m05_el_case_events`; gateway
   **`m05_directory_v4(jsonb)`** = `m05_directory_v3` + an optional `coverage` key on
   `appointment_put` (result unchanged: `{"schema_version": 1, "outcome": "applied"}`).
-- t100 gateway **`m05_el_tick(jsonb)`** (timer workload): raises the not-received case event
-  for pending coverage whose deadline has passed (`<= clock_timestamp()`); result
-  `{"schema_version": 1, "outcome": "applied", "raised": n}`.
+- t100 gateway **`m05_el_tick(jsonb)`** (timer workload): (a) raises the not-received case
+  event for pending coverage whose deadline has passed, deciding ONLY through the seam
+  **`m05_el_deadline_passed(p_due timestamptz, p_now timestamptz) RETURNS boolean`**
+  (IMMUTABLE, `p_due <= p_now`, owner-internal: no runtime EXECUTE) with one
+  `clock_timestamp()` read per tick; (b) re-plans appointments deferred for want of a zone
+  once a zone is usable (idempotent). Result `{"schema_version": 1, "outcome": "applied",
+  "raised": n, "replanned": m, "deferred_no_zone": k}` (k = appointments still deferred: the
+  tenant-scoped configuration diagnostic).
+- No usable zone (department tz and clinic tz both unusable; Codex D-1 ruling 5d2877d0): the
+  booking and its coverage are recorded (key row `zone` NULL, `deferred_reason` 'no_zone');
+  every action needing a local service date is deferred — all three triggers `deferred` with
+  `due_at` NULL, no verification, case event or count (the count period is a local month).
+  Never a guessed zone, never an inferred coverage class.
 - t101 remove-only closure: runtime EXECUTE leaves `m05_directory_v3`.
 - Coverage block: `{"state": "pending"}` | `{"state": "none"}` | `{"state": "present",
   "payer_id", "member_id", "relationship", "patient_name", "patient_dob", "subscriber_name",

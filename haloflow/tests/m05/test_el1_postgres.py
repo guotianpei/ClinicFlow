@@ -19,18 +19,28 @@ Rows (stage-3 ids; trace in brackets):
 - E1-P07 coverage v2: triggers re-pointed to v2 and pending, booking due again [R2]
 - E1-P08 enrolled appointment, later put without block: version unchanged; status processed [C2]
 - E1-P09 cancelled / replaced: triggers cancelled, note-only event with the next seq [EL-6f, W13]
-- E1-P10 two concurrent writers on one appointment: seq strictly increasing, no duplicate [M2]
+- E1-P10 forced interleaving: tick A holds the key-row lock open; cancel put B waits; after A
+  commits, seq 1 (A) then 2 (B), both complete [M2; kills E1-M06]
 - E1-P11 settings disabled: a coverage block enrols nothing [EL-13]
-- E1-P12 tenant isolation: enrolment in tenant A leaves tenant B's eligibility tables empty [§6a]
+- E1-P12 isolation against existing foreign data: same ref in both tenants; A's gateway
+  (own or foreign tenant context) never changes B's rows [§6a]
 - E1-P13 ACL: runtime EXECUTE on m05_directory_v4 and m05_el_tick, none on m05_directory_v3,
   no runtime privilege on any m05_el_* table [R7]
 - E1-P15 SQL due instants equal the Python rules on the pinned DST fixtures [R5, parity]
 - E1-P16 malformed coverage blocks -> COMMAND_MALFORMED, nothing written [M3]
-- E1-P17 PROVISIONAL (Codex ruling pending): no valid zone -> booking trigger due, time-based
-  triggers pending with due_at NULL, no case event [open point D-1]
+- E1-P04s the deadline seam m05_el_deadline_passed at -1 us / equal / +1 us; the tick decides
+  only through it [OD-EL9, Codex 5d2877d0 item 3]
+- E1-P14 no identifiers (synthetic sentinels) in results, derived rows, tick output or the
+  malformed-block error [EL-14]
+- E1-P17 no usable zone: booking recorded, all date actions deferred, tick diagnostic,
+  recovery once after zone repair, no duplicates [Codex D-1 ruling]
 - E1-C00 CONTROL: the existing m05_directory_v3 still applies on an S-I install.
 
-E1-P14 (no identifiers in logs) moves to E2: E1 has no Python service path that logs.
+Mutant killers (wired at green): M01 due drops time of day -> U01/P15; M02 lead off-by-one ->
+U01 each-lead/P15; M03 omission treated as none -> P01/P08; M04 counts key without
+appointment -> P06b; M05 pending opens a case at booking -> P03; M06 seq before the lock ->
+P10; M07 seam `<` instead of `<=` -> P04s (equal); M08 tick compares outside the seam ->
+P04 static row; M09 guessed zone (UTC) on no zone -> P17.
 """
 
 from __future__ import annotations
@@ -48,6 +58,8 @@ import psycopg
 import pytest
 import sa_support as sa
 import si_support as si
+from psycopg import sql
+from psycopg.types.json import Jsonb
 
 pytestmark = pytest.mark.postgres
 
@@ -200,6 +212,71 @@ def test_el1_p04_coverage_received_first_is_never_raised(install: el.EL1Install)
     assert _events(inst, ref) == []
 
 
+@pytest.mark.parametrize(("offset_us", "expected"), [(-1, False), (0, True), (1, True)])
+def test_el1_p04_deadline_seam_exact_instants(install: el.EL1Install, offset_us: int,
+                                              expected: bool) -> None:
+    """The tick's only decision seam: due <= now. Equal instants count as passed."""
+    inst = el.ready(install)
+    due = datetime(2026, 11, 19, 20, 0, tzinfo=UTC)
+    now = due + timedelta(microseconds=offset_us)
+    assert _q(inst, "SELECT {s}.m05_el_deadline_passed(%s, %s)", (due, now)) == [(expected,)]
+    assert _q(inst, "SELECT {s}.m05_el_deadline_passed(%s, %s)", (due, now)) == [(expected,)]
+
+
+def test_el1_p04_tick_decides_only_through_the_seam(install: el.EL1Install) -> None:
+    """Static: the tick body calls the seam and compares not_received_due_at nowhere else;
+    the seam is IMMUTABLE and not executable by the runtime role."""
+    inst = el.ready(install)
+    body = _q(inst, "SELECT pg_get_functiondef(format('%%I.m05_el_tick(jsonb)', %s::text)"
+              "::regprocedure)", (inst.schema,))[0][0]
+    assert "m05_el_deadline_passed(" in body
+    for op in ("not_received_due_at <", "not_received_due_at >", "< clock_timestamp",
+               "<= clock_timestamp", "> clock_timestamp"):
+        assert op not in body.replace("  ", " "), op
+    meta = _q(inst, "SELECT p.provolatile, has_function_privilege('haloflow_runtime', p.oid,"
+              " 'EXECUTE') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace"
+              " WHERE n.nspname = %s AND p.proname = 'm05_el_deadline_passed'", (inst.schema,))
+    assert meta == [("i", False)]
+
+
+# --- E1-P14 privacy at the E1 intake and error boundary ---------------------------------
+
+SENTINELS = ("SENTINEL-MEMBER-7731", "Sentinel Patientname", "SENTINEL-SUB-7732",
+             "Sentinel Subscribername", "1911-11-11")
+
+
+def _no_sentinel(text: str) -> None:
+    for s_ in SENTINELS:
+        assert s_ not in text, s_
+
+
+def test_el1_p14_no_identifiers_in_results_errors_or_derived_rows(install: el.EL1Install
+                                                                  ) -> None:
+    inst = el.ready(install)
+    cov = el.present(el.OTHER_PAYER, relationship="dependent", member_id=SENTINELS[0],
+                     patient_name=SENTINELS[1], subscriber_member_id=SENTINELS[2],
+                     subscriber_name=SENTINELS[3], patient_dob=SENTINELS[4])
+    ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
+    _no_sentinel(str(el.put(inst, ref, patient, start, coverage=cov)))
+    # Derived rows never copy identifiers (only the coverage table holds them).
+    for table in el.EL_TABLES:
+        if table != "m05_el_coverage":
+            _no_sentinel(str(_q(inst, "SELECT to_jsonb(x)::text FROM {s}." + table + " AS x")))
+    _no_sentinel(str(el.tick(inst)))
+    # Error boundary: a malformed block carrying sentinels is refused without echoing them.
+    bad = {**cov, "subscriber_dob": "11/11/1911"}
+    fields = si.appointment3(sa.new_id(), sa.new_id(), start)
+    fields["coverage"] = bad
+    with pytest.raises(psycopg.errors.RaiseException) as caught:
+        sa.call(inst, "m05_directory_v4", {"schema_version": 1, "op": "appointment_put",
+                                           **fields,
+                                           "attribution": sa.attribution(sa.W_DIRECTORY)})
+    diag = caught.value.diag
+    _no_sentinel(" ".join(str(x) for x in (diag.message_primary, diag.message_detail,
+                                          diag.message_hint, diag.context, str(caught.value))))
+    assert diag.message_primary == "COMMAND_MALFORMED"
+
+
 # --- E1-P05 non-priority replay ---------------------------------------------------------
 
 def test_el1_p05_nonpriority_replay_is_one_case_one_count(install: el.EL1Install) -> None:
@@ -311,31 +388,58 @@ def test_el1_p09_replacement_enrols_as_new_booking(install: el.EL1Install) -> No
     assert {t[2] for t in _triggers(inst, new).values()} == {"pending"}
 
 
-# --- E1-P10 sequence under the appointment lock -----------------------------------------
+# --- E1-P10 sequence under the appointment lock (forced interleaving) -------------------
 
-def test_el1_p10_concurrent_writers_get_distinct_increasing_seq(install: el.EL1Install) -> None:
+def _waiting_on_lock(inst: el.EL1Install) -> int:
+    got = sa.admin(inst, "SELECT count(*) FROM pg_stat_activity"
+                   " WHERE wait_event_type = 'Lock' AND datname = current_database()")
+    return int(got[0][0])
+
+
+def test_el1_p10_second_writer_waits_and_commits_after_first(install: el.EL1Install) -> None:
+    """Writer A is the timer tick, in an OPEN transaction, raising the not-received event
+    (seq 1) and so holding the appointment KEY row (m05_el_appointments) lock. Writer B is a
+    cancel put: it takes the m05_appointments row (free, A never touched it) and must then
+    WAIT on the key row, not read next_seq early. (E1-M06 = seq taken before the key lock: B
+    would read next_seq = 1, then collide or reorder.) Two writers that both go through
+    m05_appointments would be serialized by that row lock and could not detect M06, so the
+    tick is the first writer here. After A commits, B completes; durable effects are exactly
+    seq 1 (A) then seq 2 (B)."""
     inst = el.ready(install)
     ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
-    el.put(inst, ref, patient, start, coverage={"state": "none"})       # seq 1
-    errors: list[BaseException] = []
+    el.put(inst, ref, patient, start, coverage={"state": "pending"})
+    _set_deadline(inst, ref, -1.0)
+    tick_cmd = {"schema_version": 1, "attribution": sa.attribution(sa.W_TIMER)}
+    done: dict[str, Any] = {}
 
-    def writer(cov: dict[str, Any], status: str) -> None:
+    def writer_b() -> None:
         try:
-            el.put(inst, ref, patient, start, coverage=cov, status=status)
+            done["b"] = el.put(inst, ref, patient, start, coverage={"state": "pending"},
+                               status="cancelled")
         except BaseException as error:  # noqa: BLE001 - surfaced below
-            errors.append(error)
+            done["b_error"] = error
 
-    threads = [threading.Thread(target=writer, args=(el.present(el.OTHER_PAYER), "booked")),
-               threading.Thread(target=writer, args=({"state": "none"}, "cancelled"))]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(30)
-    assert not errors, errors
-    seqs = [e[0] for e in _events(inst, ref)]
-    assert seqs == sorted(set(seqs)) and seqs[0] == 1 and len(seqs) >= 2
+    with sa.runtime_conn(inst) as conn_a:
+        with conn_a.transaction():
+            done["a"] = sa.call_in(conn_a, inst, "m05_el_tick", tick_cmd)
+            assert done["a"]["raised"] == 1
+            b = threading.Thread(target=writer_b)
+            b.start()
+            deadline = time.monotonic() + 10
+            while _waiting_on_lock(inst) == 0 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert _waiting_on_lock(inst) >= 1, "writer B never waited on A's key lock"
+            assert "b" not in done and "b_error" not in done
+        # A committed here.
+        b.join(30)
+    assert not b.is_alive(), "writer B did not complete"
+    assert "b_error" not in done, done.get("b_error")
+    assert done["b"] == {"schema_version": 1, "outcome": "applied"}
+    assert _events(inst, ref) == [
+        (1, 1, "open_or_note", "manual_required", "coverage_not_received"),
+        (2, 1, "note_only", None, "appointment_cancelled")]
     assert _q(inst, "SELECT next_seq FROM {s}.m05_el_appointments"
-              " WHERE appointment_ref = %s", (ref,)) == [(seqs[-1] + 1,)]
+              " WHERE appointment_ref = %s", (ref,)) == [(3,)]
 
 
 # --- E1-P11 disabled --------------------------------------------------------------------
@@ -346,15 +450,46 @@ def test_el1_p11_disabled_enrols_nothing(install: el.EL1Install) -> None:
     assert el.el_snapshot(inst) == dict.fromkeys(el.EL_TABLES, 0)
 
 
-# --- E1-P12 tenant isolation ------------------------------------------------------------
+# --- E1-P12 tenant isolation against existing foreign data ----------------------------
 
-def test_el1_p12_enrolment_stays_in_its_tenant(install: el.EL1Install,
-                                               install_b: el.EL1Install) -> None:
+def _el_rows(inst: el.EL1Install) -> dict[str, list[tuple[Any, ...]]]:
+    return {t: _q(inst, "SELECT to_jsonb(x)::text FROM {s}." + t + " AS x ORDER BY 1")
+            for t in el.EL_TABLES}
+
+
+@pytest.mark.parametrize("context", ["own", "foreign"])
+def test_el1_p12_gateway_is_bound_to_its_tenant(install: el.EL1Install,
+                                                install_b: el.EL1Install, context: str) -> None:
+    """Both tenants hold the SAME appointment_ref with different coverage. A write through
+    tenant A's gateway changes only A's rows; B's rows stay byte-identical. With B's tenant
+    context set on the connection ("foreign"), A's gateway either refuses or still writes only
+    A's schema — never B's (the gateway is schema-bound)."""
     a, b = el.ready(install), el.ready(install_b)
-    ref, patient = sa.new_id(), sa.new_id()
-    el.put(a, ref, patient, _future(10), coverage={"state": "none"})
-    assert el.count(a, "m05_el_appointments") == 1
-    assert el.el_snapshot(b) == dict.fromkeys(el.EL_TABLES, 0)
+    ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
+    el.put(a, ref, patient, start, coverage={"state": "none"})
+    el.put(b, ref, patient, start, coverage=el.present(el.OTHER_PAYER))
+    b_before, a_before = _el_rows(b), _el_rows(a)
+    fields = si.appointment3(ref, patient, start, status="cancelled")
+    fields["coverage"] = {"state": "none"}
+    cmd = {"schema_version": 1, "op": "appointment_put", **fields,
+           "attribution": sa.attribution(sa.W_DIRECTORY)}
+    refused = False
+    with sa.runtime_conn(a) as conn, conn.transaction():
+        try:
+            if context == "own":
+                sa.call_in(conn, a, "m05_directory_v4", cmd)
+            else:
+                conn.execute("SELECT set_config('app.tenant_id', %s, true)", (b.tenant_id,))
+                conn.execute(sql.SQL("SELECT {}.{}(%s)").format(
+                    sql.Identifier(a.schema), sql.Identifier("m05_directory_v4")),
+                    (Jsonb(cmd),))
+        except psycopg.Error:
+            refused = True
+    assert _el_rows(b) == b_before
+    if refused:
+        assert _el_rows(a) == a_before
+    else:
+        assert _events(a, ref)[-1] == (2, 1, "note_only", None, "appointment_cancelled")
 
 
 # --- E1-P13 ACL -------------------------------------------------------------------------
@@ -425,17 +560,43 @@ def test_el1_p16_malformed_block_refused(install: el.EL1Install, coverage: Any) 
     assert el.el_snapshot(inst) == dict.fromkeys(el.EL_TABLES, 0)
 
 
-# --- E1-P17 PROVISIONAL: no valid zone --------------------------------------------------
+# --- E1-P17 no usable zone: record, defer, diagnose, recover once (Codex D-1) ----------
 
-def test_el1_p17_provisional_no_zone(install: el.EL1Install) -> None:
+@pytest.mark.parametrize("coverage", [el.present(), el.present(el.OTHER_PAYER)])
+def test_el1_p17_no_zone_defers_then_recovers_once(install: el.EL1Install,
+                                                   coverage: dict[str, Any]) -> None:
     import sh2_support as sh2
+
+    from haloflow.m05 import eligibility_rules as rules
 
     inst = el.ready(install)
     sh2.settings_raw(inst, clinic_tz=None)
-    ref = sa.new_id()
-    el.put(inst, ref, sa.new_id(), _future(10), coverage=el.present(), department_tz="Bad/Zone")
+    ref, patient, start = sa.new_id(), sa.new_id(), _future(10)
+    el.put(inst, ref, patient, start, coverage=coverage, department_tz="Bad/Zone")
+    assert _q(inst, "SELECT coverage_state, coverage_version, zone, deferred_reason"
+              " FROM {s}.m05_el_appointments WHERE appointment_ref = %s", (ref,)) == [
+        ("present", 1, None, "no_zone")]
     trig = _triggers(inst, ref)
-    assert trig["booking"][1] is not None and trig["booking"][2] == "pending"
-    assert trig["previsit"][1] is None and trig["dayof"][1] is None
-    assert el.count(inst, "m05_el_case_events") == 0
-    time.sleep(0)  # no clock dependency
+    assert {k: (v[1], v[2]) for k, v in trig.items()} == {
+        "booking": (None, "deferred"), "previsit": (None, "deferred"),
+        "dayof": (None, "deferred")}
+    for table in ("m05_el_verifications", "m05_el_case_events", "m05_el_counts"):
+        assert el.count(inst, table) == 0, table
+    first = el.tick(inst)
+    assert (first["replanned"], first["deferred_no_zone"]) == (0, 1)
+    # Repair the clinic zone: the next tick re-plans exactly once.
+    sh2.settings_raw(inst, clinic_tz=el.NY)
+    second = el.tick(inst)
+    assert (second["replanned"], second["deferred_no_zone"]) == (1, 0)
+    trig = _triggers(inst, ref)
+    if coverage["payer_id"] in el.PRIORITY:
+        assert trig["previsit"][1] == rules.previsit_due(start, el.NY, 3)
+        assert {v[2] for v in trig.values()} == {"pending"}
+        assert el.count(inst, "m05_el_case_events") == 0
+    else:
+        assert _events(inst, ref) == [(1, 1, "open_or_note", "manual_required", "nonpriority")]
+        assert el.count(inst, "m05_el_counts") == 1
+    third = el.tick(inst)
+    assert (third["replanned"], third["deferred_no_zone"]) == (0, 0)
+    assert el.count(inst, "m05_el_case_events") in (0, 1)
+    assert el.count(inst, "m05_el_counts") in (0, 1)
