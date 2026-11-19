@@ -23,10 +23,12 @@ Rows (stage-3 ids; trace in brackets):
 - E2-P09 revalidation at dispatch: coverage / cancelled / activation off [R2]
 - E2-P10 revalidation at settlement: same three; activation recovery settles from the stored
   answer without a new slot [R2, R1]
-- E2-C01 crash after the dispatched commit, before any port call: takeover -> ambiguous,
-  slot consumed, 0 calls [R1, C2]
-- E2-C02 crash after the port call: attempt 2 answers inactive; 2 slots; the old answer is
-  late [R1, W4]
+- E2-C01 (v1r1) the REAL worker crashes inside attempt 1 before the port: the recording
+  port sees attempt 1 committed `dispatched` at entry (separate connection); takeover ->
+  ambiguous, never re-sent; attempt 2 (new id) answers inactive; 2 slots, 1 call, 1 event
+  [R1, C2, Codex finding 1]
+- E2-C02 (v1r1) the same, crashing AFTER the port answered attempt 1: 2 slots, 2 calls with
+  distinct ids, inactive, 1 event; attempt 1's late answer changes nothing [R1, W4]
 - E2-C03 crash after the answer is recorded: takeover settles from it, no new slot [R1]
 - E2-C04 old worker after takeover: dispatch / timeout / settle fenced, answer late [R1]
 - E2-C05 takeover before lease + margin refused; seam exact instants [R1]
@@ -36,12 +38,16 @@ Rows (stage-3 ids; trace in brackets):
 - E2-P13 expiry: identifiers, benefit fields, txn ref and digest gone; class/reason/times
   kept; idempotent; not before; seam exact [R4, EL-14a]
 - E2-P14 audit/privacy: column allowlists; sentinels only in coverage (and the dispatch
-  request); digest is not the member id [R4, EL-14]
+  request); (v1r1) digest stable per appointment+member and different across appointments
+  and members; one case event per settlement carrying its verification id, unchanged by a
+  replayed settle (Codex D-3) [R4, EL-14]
 - E2-P16 retry delay: seam exact; live not-before/after; never a third attempt [EL-9]
 - E2-P17 no retry on non-transient results: exactly one slot [EL-9]
 - E2-P18 freshness against stored rows: each key component altered alone -> stale [EL-5]
 - E2-P19 due: result shape, per-appointment order, limit [R2]
-- E2-P20 malformed commands / wrong workload refused, nothing written [§6a]
+- E2-P20 malformed commands / wrong workload refused, nothing written; (v1r1) malformed
+  answers derived from an accepted control by ONE field, after which the valid answer is
+  still recorded [§6a, Codex finding 3]
 - E2-P21 privileges: runtime EXECUTE on the seven gateways only; seams owner-only IMMUTABLE;
   no runtime table privilege; catalogue keys [R4, R7]
 - E2-P22 routed: EligibilityService + EligibilityWorker + SimulatedClearinghouse through the
@@ -56,7 +62,6 @@ inactive -> U02/P17.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -380,34 +385,74 @@ def _takeover(inst: e2.EL2Install, vb: str) -> dict[str, Any]:
     return got
 
 
-def test_el2_c01_crash_after_dispatch_commit_before_port_call(install: e2.EL2Install) -> None:
-    inst = e2.ready(install)
-    ref, vb, epoch, sent = _claimed_dispatch(inst)
-    port_calls = 0                                   # the crash happened before any call
-    taken = _takeover(inst, vb)
-    assert taken["epoch"] == epoch + 1
-    assert e2.attempts(inst, vb) == [(sent["attempt_id"], 1, "ambiguous")]
-    assert (e2.slots(inst, ref), port_calls) == (1, 0)
-    assert _out(e2.dispatch(inst, vb, taken["epoch"])) == "retry_not_ready"
+async def _crash_then_recover(inst: e2.EL2Install, *, crash_before: int,
+                              crash_after: int) -> tuple[Any, str, str]:
+    """The REAL worker at a crash boundary, then takeover and recovery (Codex finding 1).
+
+    Run 1 dies inside attempt 1's port call (before the inner port, or after it answered).
+    The lease is aged past takeover; run 2 takes over (attempt 1 becomes ambiguous) and
+    stops at the retry delay; the delay is aged; run 3 dispatches attempt 2, whose answer
+    is `inactive`. Every count below comes from the recording port, never from the test."""
+    from haloflow.m05.eligibility import EligibilityWorker
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    member = el.present()["member_id"]
+    inner = SimulatedClearinghouse(clock=_now)
+    inner.set_member(member, "inactive")
+    port = e2.RecordingPort(inst, inner, crash_before=crash_before, crash_after=crash_after)
+    ref, _p = e2.enrol(inst, e2.future(10))
+    async with e2.worker_runtime(inst) as (service, context):
+        worker = EligibilityWorker(service, port, call_timeout_s=5.0)
+        ids = await service.due(await context(), 100)
+        vb = e2.own_verification(inst, ref, "booking")
+        assert ids == [vb]
+        with pytest.raises(e2.Crash):
+            await worker.run_one(await context(), vb)
+        first = port.entries[0]
+        assert e2.attempts(inst, vb) == [(first, 1, "dispatched")]
+        e2.age_lease(inst, vb, -(e2.TAKEOVER_MARGIN_S + 1))
+        assert await service.due(await context(), 100) == [vb]
+        assert await worker.run_one(await context(), vb) == "retry_pending"
+        assert e2.attempts(inst, vb) == [(first, 1, "ambiguous")]
+        assert len(port.entries) == 1                    # takeover never re-sent attempt 1
+        e2.age_failure(inst, first, -(e2.RETRY_DELAY_S + 1))
+        assert await worker.run_one(await context(), vb) == "settled"
+    return port, ref, vb
 
 
-def test_el2_c02_crash_after_port_call_attempt_two_inactive(install: e2.EL2Install) -> None:
+async def test_el2_c01_crash_after_dispatch_commit_before_port_call(
+        install: e2.EL2Install) -> None:
     inst = e2.ready(install)
-    ref, vb, epoch, first = _claimed_dispatch(inst)
-    port_calls = 1                                   # the port answered; the worker died
-    claimed = _takeover(inst, vb)
-    e2.age_failure(inst, first["attempt_id"], -(e2.RETRY_DELAY_S + 1))
-    second = e2.dispatch(inst, vb, claimed["epoch"])
-    assert (second["outcome"], second["n"]) == ("dispatched", 2)
-    assert second["attempt_id"] != first["attempt_id"]
-    port_calls += 1
-    assert e2.record(inst, second["attempt_id"], claimed["epoch"], e2.echo_of(second),
-                     e2.result_of("inactive", "coverage_inactive", _now())) == RECORDED
-    assert e2.settle(inst, vb, claimed["epoch"]) == _settled("inactive", "coverage_inactive")
-    assert (e2.slots(inst, ref), port_calls) == (2, 2)
+    port, ref, vb = await _crash_then_recover(inst, crash_before=1, crash_after=0)
+    first, second = port.entries
+    assert first != second
+    assert port.committed_at_entry == ["dispatched", "dispatched"]   # intent before send
+    assert port.calls == [second]                    # attempt 1 never reached the port
+    assert e2.attempts(inst, vb) == [(first, 1, "ambiguous"), (second, 2, "answered")]
+    assert (e2.slots(inst, ref), len(port.calls)) == (2, 1)          # C2: slots vs calls
+    assert e2.q(inst, "SELECT state, result_class, reason FROM {s}.m05_el_verifications"
+                " WHERE verification_id = %s", (vb,)) == [
+        ("settled", "inactive", "coverage_inactive")]
     assert e2.events(inst, ref) == [(1, 1, "open_or_note", "inactive", "coverage_inactive")]
-    late = e2.record(inst, first["attempt_id"], epoch, e2.echo_of(first),
-                     e2.active_result(_now()))
+
+
+async def test_el2_c02_crash_after_port_call_attempt_two_inactive(
+        install: e2.EL2Install) -> None:
+    inst = e2.ready(install)
+    port, ref, vb = await _crash_then_recover(inst, crash_before=0, crash_after=1)
+    first, second = port.entries
+    assert first != second
+    assert port.committed_at_entry == ["dispatched", "dispatched"]
+    assert port.calls == [first, second]             # attempt 1 reached the port; never resent
+    assert e2.attempts(inst, vb) == [(first, 1, "ambiguous"), (second, 2, "answered")]
+    assert (e2.slots(inst, ref), len(port.calls)) == (2, 2)
+    assert e2.events(inst, ref) == [(1, 1, "open_or_note", "inactive", "coverage_inactive")]
+    # attempt 1's real answer arrives late: recorded as late, changes nothing
+    echo = {"attempt_id": first, "tenant_id": inst.tenant_id, "appointment_ref": ref,
+            "patient_id": e2.q(inst, "SELECT patient_id::text FROM {s}.m05_el_appointments"
+                               " WHERE appointment_ref = %s", (ref,))[0][0],
+            "member_id": el.present()["member_id"], "coverage_version": 1}
+    late = e2.record(inst, first, 1, echo, e2.active_result(_now()))
     assert late == {"schema_version": 1, "outcome": "late", "cause": "closed_attempt"}
     assert e2.q(inst, "SELECT result_class FROM {s}.m05_el_verifications"
                 " WHERE verification_id = %s", (vb,)) == [("inactive",)]
@@ -592,21 +637,67 @@ def test_el2_p14_audit_rows_carry_ids_class_reason_time_only(install: e2.EL2Inst
     inst = e2.ready(install)
     assert _columns(inst, "m05_el_case_events") == {
         "event_id", "appointment_ref", "seq", "coverage_version", "kind", "class", "reason",
-        "created_at", "applied_at"}
+        "created_at", "applied_at", "verification_id"}
     assert _columns(inst, "m05_el_late_answers") == {
         "late_id", "attempt_id", "verification_id", "cause", "class", "received_at"}
-    ref, vb = _settle_sentinel(inst, e2.future(10))
+    _ref, _vb = _settle_sentinel(inst, e2.future(10))
     for table in e2.EL2_TABLES:
-        if table in ("m05_el_coverage",):
+        if table == "m05_el_coverage":
             continue
         text = "\n".join(r[0] for r in e2.table_text(inst)[table])
-        for s_ in (*SENTINEL_COVERAGE.values(), ):
+        for s_ in SENTINEL_COVERAGE.values():
             assert s_ not in text, (table, s_)
-    digest = e2.q(inst, "SELECT member_digest FROM {s}.m05_el_verifications"
-                  " WHERE verification_id = %s", (vb,))[0][0]
-    assert isinstance(digest, str) and len(digest) == 64
-    assert digest == digest.lower() and all(c in "0123456789abcdef" for c in digest)
-    assert SENTINEL_COVERAGE["member_id"].lower() not in digest
+
+
+def _digests(inst: e2.EL2Install, ref: str) -> dict[str, str]:
+    got = e2.q(inst, "SELECT owner_trigger, member_digest FROM {s}.m05_el_verifications"
+               " WHERE appointment_ref = %s", (ref,))
+    return {r[0]: r[1] for r in got}
+
+
+def test_el2_p14_digest_is_salted_per_appointment_and_stable(install: e2.EL2Install) -> None:
+    """Codex finding 2: a constant or unsalted digest must fail."""
+    inst = e2.ready(install)
+    start = e2.future(10)
+    x, _px = e2.enrol(inst, start, member_id=SENTINEL_COVERAGE["member_id"])
+    y, _py = e2.enrol(inst, start, member_id=SENTINEL_COVERAGE["member_id"])
+    z, _pz = e2.enrol(inst, start, member_id="SENTINEL-MEMBER-9939")
+    e2.due(inst)
+    for ref in (x, y, z):
+        e2.run(inst, e2.own_verification(inst, ref, "booking"), [e2.active_result(_now())])
+    e2.make_due(inst, x, "previsit")
+    e2.due(inst)
+    e2.run(inst, e2.own_verification(inst, x, "previsit"),
+           [e2.active_result(e2.window_starts(start)["previsit"] + timedelta(minutes=1))])
+    dx, dy, dz = _digests(inst, x), _digests(inst, y), _digests(inst, z)
+    for digest in (*dx.values(), *dy.values(), *dz.values()):
+        assert isinstance(digest, str) and len(digest) == 64
+        assert digest == digest.lower() and all(c in "0123456789abcdef" for c in digest)
+        assert SENTINEL_COVERAGE["member_id"].lower() not in digest
+    assert dx["booking"] == dx["previsit"]          # stable: same appointment and member
+    assert dx["booking"] != dy["booking"]           # salted: same member, other appointment
+    assert dx["booking"] != dz["booking"]           # other member
+
+
+def test_el2_p14_one_event_per_settlement_with_its_verification_id(
+        install: e2.EL2Install) -> None:
+    """Codex D-3: the settlement's durable identity and replay source for E3's single M02
+    settled event; a replayed settle neither adds nor changes it."""
+    inst = e2.ready(install)
+    ref, _p = e2.enrol(inst, e2.future(10))
+    e2.due(inst)
+    vb = e2.own_verification(inst, ref, "booking")
+    got = e2.run(inst, vb, [e2.active_result(_now())])
+    before = e2.q(inst, "SELECT event_id::text, verification_id::text, seq"
+                  " FROM {s}.m05_el_case_events WHERE appointment_ref = %s", (ref,))
+    assert len(before) == 1 and before[0][1:] == (vb, 1)
+    assert e2.settle(inst, vb, got["epoch"]) == OK          # replay: the stored result
+    assert e2.q(inst, "SELECT event_id::text, verification_id::text, seq"
+                " FROM {s}.m05_el_case_events WHERE appointment_ref = %s", (ref,)) == before
+    unique = e2.q(inst, "SELECT count(*) FROM pg_indexes WHERE schemaname = %s AND tablename ="
+                  " 'm05_el_case_events' AND indexdef ILIKE '%%UNIQUE%%(verification_id)%%'",
+                  (inst.schema,))
+    assert unique == [(1,)]
 
 
 def test_el2_p14_gateway_results_carry_no_identifiers(install: e2.EL2Install) -> None:
@@ -773,20 +864,51 @@ def test_el2_p20_extra_key_and_wrong_workload_refused(install: e2.EL2Install,
          "WORKLOAD_NOT_AUTHORIZED")
 
 
-@pytest.mark.parametrize("result", [
-    {"class": "inactive"},                                        # no reason
-    {"class": "maybe", "reason": "coverage_active", "source": "simulated"},
-    {"class": "active", "reason": "payer_unavailable", "source": "simulated"},
-    {"class": "inconclusive", "reason": "coverage_inactive", "source": "simulated"},
-])
-def test_el2_p20_malformed_result_refused(install: e2.EL2Install,
-                                          result: dict[str, Any]) -> None:
+def _drop(key: str) -> Any:
+    def mutate(r: dict[str, Any]) -> dict[str, Any]:
+        r.pop(key)
+        return r
+    return mutate
+
+
+def _set(key: str, value: Any) -> Any:
+    def mutate(r: dict[str, Any]) -> dict[str, Any]:
+        r[key] = value
+        return r
+    return mutate
+
+
+MALFORMED_RESULT = {
+    "class-unknown": _set("class", "maybe"),
+    "class-missing": _drop("class"),
+    "reason-missing": _drop("reason"),
+    "reason-of-other-class": _set("reason", "payer_unavailable"),
+    "observed-missing": _drop("observed_at"),
+    "observed-not-iso": _set("observed_at", "yesterday"),
+    "observed-naive": _set("observed_at", "2026-11-19T12:00:00"),
+    "extra-key": _set("surprise", "x"),
+    "copay-type": _set("copay", 25),
+    "referral-type": _set("referral_required", "no"),
+}
+
+
+@pytest.mark.parametrize("variant", list(MALFORMED_RESULT))
+def test_el2_p20_malformed_result_refused_attempt_stays_answerable(
+        install: e2.EL2Install, variant: str) -> None:
+    """Codex finding 3: each malformed answer is the accepted control with ONE field
+    changed; the refusal writes nothing and the attempt still takes the valid answer."""
     inst = e2.ready(install)
-    _ref, _vb, epoch, sent = _claimed_dispatch(inst)
+    _ref, vb, epoch, sent = _claimed_dispatch(inst)
+    control = e2.active_result(_now())
+    bad = MALFORMED_RESULT[variant](dict(control))
+    assert bad != control
     _bad(inst, "m05_el_record_answer",
          {"schema_version": 1, "attempt_id": sent["attempt_id"], "epoch": epoch,
-          "echo": e2.echo_of(sent), "result": result,
+          "echo": e2.echo_of(sent), "result": bad,
           "attribution": sa.attribution(sa.W_TIMER)}, "COMMAND_MALFORMED")
+    assert e2.attempts(inst, vb) == [(sent["attempt_id"], 1, "dispatched")]
+    assert e2.record(inst, sent["attempt_id"], epoch, e2.echo_of(sent), control) == RECORDED
+    assert e2.settle(inst, vb, epoch) == OK
 
 
 # --- E2-P21 privileges and catalogue --------------------------------------------------------
@@ -834,57 +956,21 @@ def test_el2_p21_catalogue_keys_and_flag_dependency() -> None:
 # --- E2-P22 routed worker end to end ---------------------------------------------------------
 
 async def test_el2_p22_routed_worker_runs_the_booking_check(install: e2.EL2Install) -> None:
-    from uuid import NAMESPACE_URL, uuid5
-
-    import service_support as sv
-
-    from haloflow.m01.activation import ActivationPolicy
-    from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
-    from haloflow.m01.control_store import PsycopgControlStore
-    from haloflow.m01.pool import TenantPool
-    from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
-    from haloflow.m02.observation import EventFoundation
-    from haloflow.m05.eligibility import EligibilityService, EligibilityWorker
+    from haloflow.m05.eligibility import EligibilityWorker
     from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
 
     inst = e2.ready(install)
     ref, _p = e2.enrol(inst, e2.future(10))
-    caps = frozenset({e2.WORKER_CAPABILITY})
-    pool = TenantPool(inst.ids.logins[sa.RUNTIME], min_size=1, max_size=2)
-    await pool.open()
-    try:
-        rt = compose_tenant_runtime(
-            TenantRuntimeDependencies(
-                pool=pool, control_store=PsycopgControlStore(pool),
-                migrator_connect=sv._factory(inst.ids.logins[sa.MIGRATOR]),
-                provisioner_connect=sv._factory(inst.ids.logins["haloflow_provisioner"])),
-            registry=e2.el2_registry(), catalog=e2.el2_catalog(),
-            supported_schema_versions=frozenset({e2.EL2_TARGET}),
-            activation_policy=ActivationPolicy.ENFORCE)
-
-        async def context() -> Any:
-            return await rt.resolver.resolve(
-                principal=Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_TIMER,
-                                    auth_method="test",
-                                    authorized_tenant_ids=frozenset({inst.tenant[0]}),
-                                    capabilities=caps),
-                tenant_hint=inst.tenant[0], purpose="operations", capabilities=caps,
-                source=TrustedSource.WORKER,
-                execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:el2:{uuid.uuid4()}"),
-                correlation_id=uuid.uuid4(),
-                correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
-
-        service = EligibilityService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
-        port = SimulatedClearinghouse(clock=_now)
-        port.set_member(el.present()["member_id"], "active")
+    inner = SimulatedClearinghouse(clock=_now)
+    inner.set_member(el.present()["member_id"], "active")
+    port = e2.RecordingPort(inst, inner)
+    async with e2.worker_runtime(inst) as (service, context):
         ids = await service.due(await context(), 100)
         vb = e2.own_verification(inst, ref, "booking")
         assert ids == [vb]
         worker = EligibilityWorker(service, port, call_timeout_s=5.0)
         assert await worker.run_one(await context(), vb) == "settled"
-        assert len(port.calls) == 1
-        assert e2.events(inst, ref) == [(1, 1, "open_or_note", "active", "coverage_active")]
         assert await service.expire(await context(), 100) == 0
-    finally:
-        await pool.close()
-
+    assert port.committed_at_entry == ["dispatched"]
+    assert port.calls == port.entries and len(port.calls) == 1
+    assert e2.events(inst, ref) == [(1, 1, "open_or_note", "active", "coverage_active")]

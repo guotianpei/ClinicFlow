@@ -46,8 +46,10 @@ in WORKER_OUTCOMES = ("settled", "retry_pending", "not_claimed", "fenced", "supe
 "cancelled", "activation_off", "in_flight"). Protocol: claim -> dispatch -> ONE bounded port
 call per dispatched attempt -> record_answer (normalized, echo from the response) | timeout
 (on any port failure or timeout) -> dispatch again (attempt 2, or `retry_pending` when the
-delay is not over) -> settle. An attempt id is never sent twice. Logs carry codes and class
-names only (EL-14).
+delay is not over) -> settle. An attempt id is never sent twice. Only an `Exception` from the
+port (or the call timeout) is a port failure; any other BaseException (cancellation, a process
+crash) propagates out of `run_one` with nothing recorded. Logs carry codes and class names only
+(EL-14).
 
 PINNED SCHEDULER (`haloflow.m05.eligibility_scheduler`), the S-J pattern:
 `EligibilityScheduler(*, contexts, service, worker, tenants, interval_s=60, stop_timeout_s=10,

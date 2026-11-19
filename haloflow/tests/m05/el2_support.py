@@ -28,6 +28,12 @@ Schema (migrator unit t106; owner `haloflow_m05_owner`; no runtime table privile
 - New `m05_el_late_answers (late_id uuid PK, attempt_id uuid, verification_id uuid NULL,
   cause CHECK IN ('unknown_attempt','closed_attempt','superseded','stale_epoch','mismatch'),
   class varchar(16) NULL, received_at timestamptz NOT NULL)` - ids, class, cause, time only.
+- `m05_el_case_events` gains `verification_id uuid NULL` with a UNIQUE index (v1r1, Codex D-3):
+  every settlement writes exactly ONE event carrying its verification id, so a settlement has a
+  durable identity and a replay source for E3's single M02 "verification settled" event
+  (including settlements made before E3 exists). E1's intake events keep it NULL.
+- `member_digest` (v1r1, Codex finding 2) = SHA-256 hex over (appointment_ref, member id):
+  stable for one appointment and member, different for the same member on another appointment.
 - `m05_el_case_events.reason` CHECK extended with the payer reasons (OD-EL8 codes):
   `coverage_active` (active; no staff text), `coverage_inactive`, `subscriber_not_found`,
   `name_dob_mismatch`, `member_id_not_recognized`, `service_type_unsupported`,
@@ -74,7 +80,12 @@ set is closed -> COMMAND_MALFORMED otherwise). Results are `{"schema_version": 1
   `{"outcome": "late", "cause": c}`; `echo` = {attempt_id, tenant_id, appointment_ref,
   patient_id, member_id, coverage_version}; `result` = the normalized answer (below). Late
   (stored in m05_el_late_answers, nothing else changes): unknown attempt; attempt not
-  `dispatched`; verification superseded/cancelled; stale epoch; any echo mismatch.
+  `dispatched`; verification superseded/cancelled; stale epoch; any echo mismatch. A
+  malformed `result` (v1r1, Codex finding 3) is COMMAND_MALFORMED and writes nothing: keys
+  outside the normalized set, class outside the three, a reason not of its class
+  (active -> coverage_active; inactive -> coverage_inactive; inconclusive -> the six), a
+  missing or non-ISO/naive observed_at (it may be absent ONLY for response_unreadable), or a
+  field of the wrong JSON type.
 - `m05_el_timeout({attempt_id, epoch})` -> `timed_out` | `fenced` | `not_dispatched`.
 - `m05_el_settle({verification_id, epoch})` -> fenced; revalidates like dispatch; settles from
   the stored answer (or `inconclusive`/`payer_unavailable` after two failed attempts) ->
@@ -98,7 +109,8 @@ Statement keys (catalogue, capability `m05.eligibility.worker`): `m05.eligibilit
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
@@ -389,3 +401,90 @@ def table_text(install: EL2Install) -> dict[str, list[tuple[Any, ...]]]:
 
 def ident(name: str) -> sql.Identifier:
     return sql.Identifier(name)
+
+
+# --- the routed worker path (real resolver + gateway, el2 catalogue) ----------------------
+
+
+@asynccontextmanager
+async def worker_runtime(install: EL2Install) -> AsyncIterator[tuple[Any, Any]]:
+    """Yields (EligibilityService over the real gateway, async context factory) for the
+    timer workload holding only the worker capability."""
+    import uuid
+    from uuid import NAMESPACE_URL, uuid5
+
+    import service_support as sv
+
+    from haloflow.m01.activation import ActivationPolicy
+    from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
+    from haloflow.m01.control_store import PsycopgControlStore
+    from haloflow.m01.pool import TenantPool
+    from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.eligibility import EligibilityService
+
+    caps = frozenset({WORKER_CAPABILITY})
+    pool = TenantPool(install.ids.logins[sa.RUNTIME], min_size=1, max_size=3)
+    await pool.open()
+    try:
+        rt = compose_tenant_runtime(
+            TenantRuntimeDependencies(
+                pool=pool, control_store=PsycopgControlStore(pool),
+                migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
+                provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"])),
+            registry=el2_registry(), catalog=el2_catalog(),
+            supported_schema_versions=frozenset({EL2_TARGET}),
+            activation_policy=ActivationPolicy.ENFORCE)
+
+        async def context() -> Any:
+            return await rt.resolver.resolve(
+                principal=Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_TIMER,
+                                    auth_method="test",
+                                    authorized_tenant_ids=frozenset({install.tenant[0]}),
+                                    capabilities=caps),
+                tenant_hint=install.tenant[0], purpose="operations", capabilities=caps,
+                source=TrustedSource.WORKER,
+                execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:el2:{uuid.uuid4()}"),
+                correlation_id=uuid.uuid4(),
+                correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+
+        service = EligibilityService(EventFoundation(rt.gateway, producer_service=sa.PRODUCER))
+        yield service, context
+    finally:
+        await pool.close()
+
+
+class Crash(BaseException):
+    """FIXTURE: a worker process dying mid-call. Not an Exception, so a worker that handles
+    port failures (Exception) cannot turn it into a timeout; the run ends here."""
+
+
+class RecordingPort:
+    """FIXTURE port around the real SimulatedClearinghouse.
+
+    At ENTRY it records the attempt id and reads, on a SEPARATE admin connection, the
+    committed state of that attempt row (it must already be committed as `dispatched`:
+    R1 intent before send). `crash_before` / `crash_after` are attempt ordinals (1-based)
+    at which the call dies before reaching the inner port / after the inner port answered.
+    `entries` = every submit that started; `calls` = every submit that reached the port."""
+
+    def __init__(self, install: EL2Install, inner: Any, *, crash_before: int = 0,
+                 crash_after: int = 0) -> None:
+        self.install, self.inner = install, inner
+        self.crash_before, self.crash_after = crash_before, crash_after
+        self.entries: list[str] = []
+        self.committed_at_entry: list[Any] = []
+        self.calls: list[str] = []
+
+    async def submit(self, attempt_id: str, request: Any) -> Any:
+        self.entries.append(attempt_id)
+        got = q(self.install, "SELECT state FROM {s}.m05_el_attempts WHERE attempt_id = %s",
+                (attempt_id,))
+        self.committed_at_entry.append(got[0][0] if got else None)
+        if len(self.entries) == self.crash_before:
+            raise Crash()
+        answer = await self.inner.submit(attempt_id, request)
+        self.calls.append(attempt_id)
+        if len(self.entries) == self.crash_after:
+            raise Crash()
+        return answer
