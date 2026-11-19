@@ -40,11 +40,15 @@ from haloflow.m01.statements import build_statement_catalog
 from haloflow.m05.activation_units import SC_INSTALLED_STATE_PROFILES, SC_TENANT_MIGRATIONS
 from haloflow.m05.due_statements import SB_PROTECTED, SB_STATEMENTS
 from haloflow.m05.due_units import SB_INSTALLED_STATE_PROFILES, SB_TENANT_MIGRATIONS
-from haloflow.m05.eligibility_statements import EL1_REBOUND, EL1_STATEMENTS
+from haloflow.m05.eligibility_statements import EL1_REBOUND, EL1_STATEMENTS, EL2_STATEMENTS
 from haloflow.m05.eligibility_units import (
     EL1_ACL_AMENDMENTS,
     EL1_INSTALLED_STATE_PROFILES,
     EL1_TENANT_MIGRATIONS,
+)
+from haloflow.m05.eligibility_worker_units import (
+    EL2_INSTALLED_STATE_PROFILES,
+    EL2_TENANT_MIGRATIONS,
 )
 from haloflow.m05.intake_statements import (
     DIRECTORY_KEY,
@@ -177,23 +181,30 @@ def _parts() -> tuple[Any, ...]:
                  for part in parts)
 
 
-def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = False) -> Any:
+def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = False,
+                            include_el2: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
     `include_el1=True` (eligibility E1; default off, so every existing pin is unchanged)
-    rebinds the directory key to `m05_directory_v4` and adds the eligibility tick key."""
+    rebinds the directory key to `m05_directory_v4` and adds the eligibility tick key.
+    `include_el2=True` (requires `include_el1`) adds the seven eligibility worker keys."""
 
+    if include_el2 and not include_el1:
+        raise ValueError("eligibility E2 composes on E1")
     extra = (B5_STATEMENTS,) if include_b5 else ()
     rebound = SI_REBOUND
     if include_el1:
         rebound = MappingProxyType({k: v for k, v in SI_REBOUND.items() if k not in EL1_REBOUND})
         extra = (*extra, EL1_REBOUND, EL1_STATEMENTS)
+    if include_el2:
+        extra = (*extra, EL2_STATEMENTS)
     return build_statement_catalog(*_parts(), rebound, SI_STATEMENTS, *extra,
                                    activation_protected=_protected())
 
 
-def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = False) -> Any:
+def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = False,
+                             include_el2: bool = False) -> Any:
     """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
     B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
     target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
@@ -201,18 +212,22 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
 
     if include_el1 and not include_b5:
         raise ValueError("eligibility E1 composes on the synthetic (B5) registry")
+    if include_el2 and not include_el1:
+        raise ValueError("eligibility E2 composes on E1")
     b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
     b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     el1_units = (EL1_TENANT_MIGRATIONS,) if include_el1 else ()
     el1_profiles = dict(EL1_INSTALLED_STATE_PROFILES) if include_el1 else {}
     el1_amendments = EL1_ACL_AMENDMENTS if include_el1 else ()
+    el2_units = (EL2_TENANT_MIGRATIONS,) if include_el2 else ()
+    el2_profiles = dict(EL2_INSTALLED_STATE_PROFILES) if include_el2 else {}
     return build_tenant_migration_registry(
         *APPROVED_TENANT_MIGRATIONS, SA_TENANT_MIGRATIONS,
         # SB/SC sets are un-annotated MappingProxyType literals in their modules; the
         # cast only states their declared role (no conversion, no copy).
         cast("UnitDefinitions", SB_TENANT_MIGRATIONS),
         cast("UnitDefinitions", SC_TENANT_MIGRATIONS), SH_TENANT_MIGRATIONS, SH2_TENANT_MIGRATIONS,
-        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units, *el1_units,
+        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units, *el1_units, *el2_units,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES,
                                   **SA_INSTALLED_STATE_PROFILES,
@@ -222,7 +237,7 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
                                   **SH2_INSTALLED_STATE_PROFILES,
                                   **SH3_INSTALLED_STATE_PROFILES,
                                   **SI_INSTALLED_STATE_PROFILES,
-                                  **b5_profiles, **el1_profiles},
+                                  **b5_profiles, **el1_profiles, **el2_profiles},
         acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,
                         *SI_ACL_AMENDMENTS, *el1_amendments),
     )

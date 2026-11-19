@@ -24,3 +24,26 @@ EL1_REBOUND: Final[StatementDefinitions] = MappingProxyType({
 EL1_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
     TICK_KEY: (StatementMode.WRITE, TICK_CAPABILITY, "SELECT m05_el_tick(%(command)s)"),
 })
+
+# --- E2 (synthetic; composed behind `include_el2`) ---------------------------------------
+# The worker gateways (t111..t117), all under one capability held only by the eligibility
+# worker's timer-workload context. Not activation-protected: the eligibility switch is
+# `m05_el_settings.enabled`, revalidated inside dispatch and settle (R2).
+
+WORKER_CAPABILITY: Final = "m05.eligibility.worker"
+DUE_KEY: Final = "m05.eligibility.due"
+CLAIM_KEY: Final = "m05.eligibility.claim"
+DISPATCH_KEY: Final = "m05.eligibility.dispatch"
+ANSWER_KEY: Final = "m05.eligibility.answer"
+TIMEOUT_KEY: Final = "m05.eligibility.timeout"
+SETTLE_KEY: Final = "m05.eligibility.settle"
+EXPIRE_KEY: Final = "m05.eligibility.expire"
+
+EL2_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
+    key: (StatementMode.WRITE, WORKER_CAPABILITY, f"SELECT {function}(%(command)s)")
+    for key, function in (
+        (DUE_KEY, "m05_el_due"), (CLAIM_KEY, "m05_el_claim"),
+        (DISPATCH_KEY, "m05_el_dispatch"), (ANSWER_KEY, "m05_el_record_answer"),
+        (TIMEOUT_KEY, "m05_el_timeout"), (SETTLE_KEY, "m05_el_settle"),
+        (EXPIRE_KEY, "m05_el_expire"))
+})

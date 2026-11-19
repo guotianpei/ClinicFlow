@@ -62,6 +62,7 @@ inactive -> U02/P17.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -274,6 +275,28 @@ def test_el2_p07_w8_returned_once_then_owns_one(install: e2.EL2Install) -> None:
     assert [v[1] for v in e2.verifications(inst, ref)] == ["booking", "dayof"]
 
 
+def test_el2_p07b_returned_trigger_owns_never_reattaches(install: e2.EL2Install) -> None:
+    """Added at green (disclosed): after its return, the day-of trigger owns its next
+    verification even when another unsettled verification exists (M1: returned once)."""
+    inst = e2.ready(install)
+    start = e2.future(10)
+    ref, _p = e2.enrol(inst, start)
+    ws = e2.window_starts(start)
+    e2.make_due(inst, ref, "dayof")
+    e2.due(inst)
+    vb = e2.own_verification(inst, ref, "booking")
+    # observed before BOTH windows: previsit is not fresh and owns a new verification
+    e2.run(inst, vb, [e2.active_result(ws["previsit"] - timedelta(seconds=60))])
+    assert e2.triggers(inst, ref)["dayof"] == ("pending", None, True)
+    e2.make_due(inst, ref, "previsit")
+    got = e2.due(inst)
+    assert (got["created"], got["attached"]) == (2, 0)
+    vp = e2.own_verification(inst, ref, "previsit")
+    vd = e2.own_verification(inst, ref, "dayof")
+    assert vp != vd
+    assert e2.triggers(inst, ref)["dayof"] == ("assigned", vd, True)
+
+
 # --- E2-P08 bound --------------------------------------------------------------------------
 
 def test_el2_p08_bound_three_verifications_six_slots(install: e2.EL2Install) -> None:
@@ -420,10 +443,12 @@ async def _crash_then_recover(inst: e2.EL2Install, *, crash_before: int,
     return port, ref, vb
 
 
-async def test_el2_c01_crash_after_dispatch_commit_before_port_call(
+def test_el2_c01_crash_after_dispatch_commit_before_port_call(
         install: e2.EL2Install) -> None:
+    # Green deviation D-G3: a sync row (provisioning runs its own event loop) driving the
+    # async worker through asyncio.run; oracles unchanged.
     inst = e2.ready(install)
-    port, ref, vb = await _crash_then_recover(inst, crash_before=1, crash_after=0)
+    port, ref, vb = asyncio.run(_crash_then_recover(inst, crash_before=1, crash_after=0))
     first, second = port.entries
     assert first != second
     assert port.committed_at_entry == ["dispatched", "dispatched"]   # intent before send
@@ -436,10 +461,10 @@ async def test_el2_c01_crash_after_dispatch_commit_before_port_call(
     assert e2.events(inst, ref) == [(1, 1, "open_or_note", "inactive", "coverage_inactive")]
 
 
-async def test_el2_c02_crash_after_port_call_attempt_two_inactive(
+def test_el2_c02_crash_after_port_call_attempt_two_inactive(
         install: e2.EL2Install) -> None:
-    inst = e2.ready(install)
-    port, ref, vb = await _crash_then_recover(inst, crash_before=0, crash_after=1)
+    inst = e2.ready(install)                                  # D-G3: sync row
+    port, ref, vb = asyncio.run(_crash_then_recover(inst, crash_before=0, crash_after=1))
     first, second = port.entries
     assert first != second
     assert port.committed_at_entry == ["dispatched", "dispatched"]
@@ -621,8 +646,10 @@ def test_el2_p13_expiry_removes_identifiers_keeps_class(install: e2.EL2Install) 
 def test_el2_p13_expiry_seam_exact(install: e2.EL2Install, days: int, expected: bool) -> None:
     inst = e2.ready(install)
     service = date(2026, 11, 23)
+    # Green deviation D-G2: ISO text dates (the platform admits no `date` parameter, F-INT1).
     assert e2.q(inst, "SELECT {s}.m05_el_expired(%s, %s)",
-                (service, service + timedelta(days=days))) == [(expected,)]
+                (service.isoformat(), (service + timedelta(days=days)).isoformat())) == [
+        (expected,)]
 
 
 # --- E2-P14 audit and privacy --------------------------------------------------------------
@@ -677,6 +704,24 @@ def test_el2_p14_digest_is_salted_per_appointment_and_stable(install: e2.EL2Inst
     assert dx["booking"] == dx["previsit"]          # stable: same appointment and member
     assert dx["booking"] != dy["booking"]           # salted: same member, other appointment
     assert dx["booking"] != dz["booking"]           # other member
+
+
+def test_el2_p14_digest_binds_the_member_on_one_appointment(install: e2.EL2Install) -> None:
+    """Codex b690404c (added at green, disclosed): the same appointment with a new member
+    (coverage v2) gives a different digest; the member alone is varied."""
+    inst = e2.ready(install)
+    start = e2.future(10)
+    ref, patient = e2.enrol(inst, start, member_id="SENTINEL-MEMBER-9941")
+    e2.due(inst)
+    v1 = e2.own_verification(inst, ref, "booking")
+    e2.run(inst, v1, [e2.active_result(_now())])
+    el.put(inst, ref, patient, start, coverage=el.present(member_id="SENTINEL-MEMBER-9942"))
+    e2.due(inst)
+    got = e2.q(inst, "SELECT coverage_version, member_digest FROM {s}.m05_el_verifications"
+               " WHERE appointment_ref = %s AND owner_trigger = 'booking'"
+               " ORDER BY coverage_version", (ref,))
+    assert [g[0] for g in got] == [1, 2]
+    assert got[0][1] != got[1][1]
 
 
 def test_el2_p14_one_event_per_settlement_with_its_verification_id(
@@ -926,7 +971,7 @@ def test_el2_p21_runtime_privileges(install: e2.EL2Install) -> None:
     for fn, args in (("m05_el_retry_ready", "(timestamptz, timestamptz)"),
                      ("m05_el_takeover_ready", "(timestamptz, timestamptz)"),
                      ("m05_el_fresh", "(timestamptz, timestamptz)"),
-                     ("m05_el_expired", "(date, date)")):
+                     ("m05_el_expired", "(text, text)")):          # D-G2
         assert not can_execute(fn + args), fn
     vol = e2.q(inst, "SELECT p.proname, p.provolatile FROM pg_proc p JOIN pg_namespace n"
                " ON n.oid = p.pronamespace WHERE n.nspname = %s AND p.proname = ANY(%s)",
@@ -943,34 +988,41 @@ def test_el2_p21_runtime_privileges(install: e2.EL2Install) -> None:
 def test_el2_p21_catalogue_keys_and_flag_dependency() -> None:
     from haloflow.synthetic.composition import build_synthetic_catalog, build_synthetic_registry
 
+    # Green deviation D-G4: the red row searched repr(catalog), which does not list keys;
+    # the catalogue's own keys() / write_capabilities are read instead (same oracle).
     catalog = build_synthetic_catalog(include_el1=True, include_el2=True)
-    text = repr(catalog)
+    keys = set(catalog.catalog.keys())
     for key in e2.STATEMENT_KEYS:
-        assert key in text, key
-    assert e2.WORKER_CAPABILITY in text
+        assert key in keys, key
+    assert e2.WORKER_CAPABILITY in catalog.write_capabilities
     with pytest.raises(ValueError):
         build_synthetic_registry(include_el1=False, include_el2=True)
-    assert "m05.eligibility.due" not in repr(build_synthetic_catalog(include_el1=True))
+    assert "m05.eligibility.due" not in set(
+        build_synthetic_catalog(include_el1=True).catalog.keys())
 
 
 # --- E2-P22 routed worker end to end ---------------------------------------------------------
 
-async def test_el2_p22_routed_worker_runs_the_booking_check(install: e2.EL2Install) -> None:
+def test_el2_p22_routed_worker_runs_the_booking_check(install: e2.EL2Install) -> None:
     from haloflow.m05.eligibility import EligibilityWorker
     from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
 
-    inst = e2.ready(install)
+    inst = e2.ready(install)                                  # D-G3: sync row
     ref, _p = e2.enrol(inst, e2.future(10))
     inner = SimulatedClearinghouse(clock=_now)
     inner.set_member(el.present()["member_id"], "active")
     port = e2.RecordingPort(inst, inner)
-    async with e2.worker_runtime(inst) as (service, context):
-        ids = await service.due(await context(), 100)
-        vb = e2.own_verification(inst, ref, "booking")
-        assert ids == [vb]
-        worker = EligibilityWorker(service, port, call_timeout_s=5.0)
-        assert await worker.run_one(await context(), vb) == "settled"
-        assert await service.expire(await context(), 100) == 0
+
+    async def body() -> None:
+        async with e2.worker_runtime(inst) as (service, context):
+            ids = await service.due(await context(), 100)
+            vb = e2.own_verification(inst, ref, "booking")
+            assert ids == [vb]
+            worker = EligibilityWorker(service, port, call_timeout_s=5.0)
+            assert await worker.run_one(await context(), vb) == "settled"
+            assert await service.expire(await context(), 100) == 0
+
+    asyncio.run(body())
     assert port.committed_at_entry == ["dispatched"]
     assert port.calls == port.entries and len(port.calls) == 1
     assert e2.events(inst, ref) == [(1, 1, "open_or_note", "active", "coverage_active")]
