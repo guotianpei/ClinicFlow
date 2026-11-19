@@ -27,6 +27,7 @@ import asyncio
 import logging
 import re
 import time
+from collections.abc import Iterator
 from typing import Any
 
 import psycopg
@@ -34,6 +35,26 @@ import pytest
 import sa_support as sa
 import sb_runtime as sr
 import sb_support as sb
+
+
+@pytest.fixture(autouse=True)
+def _haloflow_loggers_enabled() -> Iterator[None]:
+    """The B3b 5a57ced fixture (as tests/synthetic/test_b4_postgres.py): re-enable
+    `haloflow.*` loggers that an earlier in-process alembic `fileConfig` disabled
+    (disable_existing_loggers=True), so these log rows do not depend on which module first
+    imported the logger. Added with eligibility E2 (CI 44581863208): the E2 unit rows import
+    the S-E scheduler state earlier in the run. Restored on exit."""
+    manager = logging.Logger.manager
+    names = [n for n, lg in list(manager.loggerDict.items())
+             if (n == "haloflow" or n.startswith("haloflow."))
+             and isinstance(lg, logging.Logger) and lg.disabled]
+    for n in names:
+        logging.getLogger(n).disabled = False
+    try:
+        yield
+    finally:
+        for n in names:
+            logging.getLogger(n).disabled = True
 
 pytestmark = [pytest.mark.postgres, pytest.mark.usefixtures("sa_guard")]
 
