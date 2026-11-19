@@ -297,6 +297,41 @@ def test_el2_p07b_returned_trigger_owns_never_reattaches(install: e2.EL2Install)
     assert e2.triggers(inst, ref)["dayof"] == ("assigned", vd, True)
 
 
+def test_el2_p07c_return_budget_resets_on_a_new_coverage_version(
+        install: e2.EL2Install) -> None:
+    """Codex 7a2e2b91 finding 2: prior return -> new coverage version -> the day-of
+    trigger may attach again (one stale return under v2) and then owns its next
+    verification. A same-version replay keeps the marker."""
+    inst = e2.ready(install)
+    start = e2.future(10)
+    ref, patient = e2.enrol(inst, start)
+    ws = e2.window_starts(start)
+    e2.make_due(inst, ref, "dayof")
+    e2.due(inst)
+    vb1 = e2.own_verification(inst, ref, "booking")
+    e2.run(inst, vb1, [e2.active_result(ws["dayof"] - timedelta(seconds=30))])
+    assert e2.triggers(inst, ref)["dayof"] == ("pending", None, True)
+    el.put(inst, ref, patient, start, coverage=el.present())          # same-version replay
+    assert e2.triggers(inst, ref)["dayof"][2] is True
+    el.put(inst, ref, patient, start, coverage=el.present(member_id="M000666"))   # v2
+    assert e2.triggers(inst, ref)["dayof"][2] is False
+    e2.make_due(inst, ref, "dayof")
+    got = e2.due(inst)
+    assert (got["created"], got["attached"]) == (1, 1)                # dayof attaches
+    vb2 = e2.q(inst, "SELECT verification_id::text FROM {s}.m05_el_verifications"
+               " WHERE appointment_ref = %s AND owner_trigger = 'booking'"
+               " AND coverage_version = 2", (ref,))[0][0]
+    assert e2.triggers(inst, ref)["dayof"] == ("assigned", vb2, False)
+    e2.run(inst, vb2, [e2.active_result(ws["dayof"] - timedelta(seconds=30))])
+    assert e2.triggers(inst, ref)["dayof"] == ("pending", None, True)  # one stale return
+    got = e2.due(inst)
+    assert (got["created"], got["attached"]) == (1, 0)                 # then it owns
+    vd2 = e2.q(inst, "SELECT verification_id::text FROM {s}.m05_el_verifications"
+               " WHERE appointment_ref = %s AND owner_trigger = 'dayof'"
+               " AND coverage_version = 2", (ref,))[0][0]
+    assert e2.triggers(inst, ref)["dayof"] == ("assigned", vd2, True)
+
+
 # --- E2-P08 bound --------------------------------------------------------------------------
 
 def test_el2_p08_bound_three_verifications_six_slots(install: e2.EL2Install) -> None:
@@ -609,6 +644,14 @@ SENTINEL_COVERAGE = {"member_id": "SENTINEL-MEMBER-9931", "patient_name": "Senti
 SENTINEL_TXN = "SENTINEL-TXN-9932"
 
 
+def _age_start(inst: e2.EL2Install, ref: str, start: datetime) -> None:
+    """FIXTURE (v1r1): time passes - the stored visit start moves to `start` (the data was
+    written while the visit was still inside retention; the write-time cutoff of finding 1
+    would otherwise never let it be stored)."""
+    e2.q(inst, "UPDATE {s}.m05_el_appointments SET start_at = %s WHERE appointment_ref = %s",
+         (start, ref))
+
+
 def _settle_sentinel(inst: e2.EL2Install, start: datetime) -> tuple[str, str]:
     ref, patient = sa.new_id(), sa.new_id()
     el.put(inst, ref, patient, start, coverage=el.present(**SENTINEL_COVERAGE))
@@ -620,7 +663,8 @@ def _settle_sentinel(inst: e2.EL2Install, start: datetime) -> tuple[str, str]:
 
 def test_el2_p13_expiry_removes_identifiers_keeps_class(install: e2.EL2Install) -> None:
     inst = e2.ready(install)
-    old_ref, old_vb = _settle_sentinel(inst, _now().replace(microsecond=0) - timedelta(days=40))
+    old_ref, old_vb = _settle_sentinel(inst, _now().replace(microsecond=0) - timedelta(days=10))
+    _age_start(inst, old_ref, _now().replace(microsecond=0) - timedelta(days=40))
     new_ref, new_vb = _settle_sentinel(inst, _now().replace(microsecond=0) - timedelta(days=10))
     assert e2.expire(inst) == {"schema_version": 1, "outcome": "applied", "expired": 1}
     cov = e2.q(inst, "SELECT member_id, patient_name, patient_dob, subscriber_name,"
@@ -640,6 +684,88 @@ def test_el2_p13_expiry_removes_identifiers_keeps_class(install: e2.EL2Install) 
     assert e2.q(inst, "SELECT member_digest IS NOT NULL FROM {s}.m05_el_verifications"
                 " WHERE verification_id = %s", (new_vb,)) == [(True,)]
     assert e2.expire(inst)["expired"] == 0                 # idempotent
+
+
+IDENT = ("member_id", "patient_name", "patient_dob", "subscriber_name", "subscriber_dob",
+         "subscriber_member_id")
+
+
+def _coverage_rows(inst: e2.EL2Install, ref: str) -> list[tuple[Any, ...]]:
+    return e2.q(inst, "SELECT coverage_version, " + ", ".join(IDENT) + ", block"
+                " FROM {s}.m05_el_coverage WHERE appointment_ref = %s"
+                " ORDER BY coverage_version", (ref,))
+
+
+def _no_sentinel_anywhere(inst: e2.EL2Install, *values: str) -> None:
+    for table, rows in e2.table_text(inst).items():
+        text = "\n".join(r[0] for r in rows)
+        for value in values:
+            assert value not in text, (table, value)
+
+
+def test_el2_p13b_correction_after_expiry_keeps_the_cutoff(install: e2.EL2Install) -> None:
+    """Codex 7a2e2b91 finding 1: expiry -> a correction for the already-expired service date
+    -> repeated sweeps. The later write is held to the cutoff and nothing re-appears."""
+    inst = e2.ready(install)
+    start = _now().replace(microsecond=0) - timedelta(days=40)
+    ref, patient = sa.new_id(), sa.new_id()
+    el.put(inst, ref, patient, start + timedelta(days=30),
+           coverage=el.present(**SENTINEL_COVERAGE))
+    _age_start(inst, ref, start)
+    assert e2.expire(inst)["expired"] == 1
+    late = {"member_id": "SENTINEL-MEMBER-9951", "patient_name": "Sentinel Latewrite",
+            "patient_dob": "1912-12-12"}
+    el.put(inst, ref, patient, start, coverage=el.present(relationship="dependent", **late))
+    rows = _coverage_rows(inst, ref)
+    assert [r[0] for r in rows] == [1, 2]
+    for row in rows:
+        assert row[1:7] == (None,) * 6 and row[7] == {"state": "present"}
+    for _ in range(2):
+        assert e2.expire(inst)["expired"] == 0
+    _no_sentinel_anywhere(inst, *SENTINEL_COVERAGE.values(), *late.values())
+
+
+def test_el2_p13c_answer_written_after_the_cutoff_is_trimmed(install: e2.EL2Install) -> None:
+    """Finding 1, outstanding answer writes: an answer recorded for an appointment already
+    past the cutoff keeps only class, reason and observed_at; settlement still works."""
+    inst = e2.ready(install)
+    start = _now().replace(microsecond=0) - timedelta(days=40)
+    ref, _p = e2.enrol(inst, start)
+    e2.due(inst)
+    vb = e2.own_verification(inst, ref, "booking")
+    got = e2.run(inst, vb, [e2.active_result(_now(), txn_ref=SENTINEL_TXN)])
+    assert got["settle"] == OK
+    answer = e2.q(inst, "SELECT answer FROM {s}.m05_el_attempts WHERE verification_id = %s",
+                  (vb,))[0][0]
+    assert set(answer) == {"class", "reason", "observed_at"}
+    assert e2.q(inst, "SELECT member_digest FROM {s}.m05_el_verifications"
+                " WHERE verification_id = %s", (vb,)) == [(None,)]
+    _no_sentinel_anywhere(inst, SENTINEL_TXN)
+
+
+def test_el2_p13d_rescheduled_to_the_future_keeps_new_data(install: e2.EL2Install) -> None:
+    """Finding 1, the rescheduled-future lifecycle: after expiry, a correction that moves
+    the same appointment to a future date keeps its NEW coverage (not past the cutoff); the
+    expired version stays scrubbed; sweeps leave it alone."""
+    inst = e2.ready(install)
+    past = _now().replace(microsecond=0) - timedelta(days=40)
+    ref, patient = sa.new_id(), sa.new_id()
+    el.put(inst, ref, patient, past + timedelta(days=30),
+           coverage=el.present(**SENTINEL_COVERAGE))
+    _age_start(inst, ref, past)
+    assert e2.expire(inst)["expired"] == 1
+    el.put(inst, ref, patient, e2.future(10), coverage=el.present(member_id="M000555"))
+    rows = _coverage_rows(inst, ref)
+    assert rows[0][1:7] == (None,) * 6
+    assert rows[1][1] == "M000555" and rows[1][2] is not None
+    assert e2.expire(inst)["expired"] == 0
+    assert _coverage_rows(inst, ref)[1][1] == "M000555"
+    # the rescheduled visit later passes its own cutoff: the sweep finds it again (it
+    # selects by remaining data, not by an earlier expiry stamp)
+    _age_start(inst, ref, past)
+    assert e2.expire(inst)["expired"] == 1
+    assert all(r[1:7] == (None,) * 6 for r in _coverage_rows(inst, ref))
+    assert e2.expire(inst)["expired"] == 0
 
 
 @pytest.mark.parametrize(("days", "expected"), [(29, False), (30, False), (31, True)])

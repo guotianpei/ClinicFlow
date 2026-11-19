@@ -7,7 +7,10 @@ stage-3 test cases v1 + v1r1 T3; E2 red packet v1r1 (Codex red gate PASS b690404
 
 - t106 (migrator SQL): verification lease/epoch, freshness key and observation columns;
   `returned` on triggers; `m05_el_attempts`; `m05_el_late_answers`; the settlement identity
-  `m05_el_case_events.verification_id` (UNIQUE); the OD-EL8 payer reasons; expiry marker.
+  `m05_el_case_events.verification_id` (UNIQUE); the OD-EL8 payer reasons; the last-scrub
+  stamp; (v1r1, Codex 7a2e2b91) row triggers that keep the retention cutoff on every later
+  write (coverage, attempt answers; the digest in m05_el_due) and reset `returned` on a coverage
+  version change only.
 - t107..t110 owner-only IMMUTABLE seams: `m05_el_retry_ready`, `m05_el_takeover_ready`,
   `m05_el_fresh`, `m05_el_expired` (text ISO dates: the platform admits no `date`
   parameter, F-INT1; the E1 local-instant precedent).
@@ -123,12 +126,101 @@ ALTER TABLE {schema}.m05_el_case_events DROP CONSTRAINT m05_el_case_events_reaso
 ALTER TABLE {schema}.m05_el_case_events ADD CONSTRAINT m05_el_case_events_reason_check
     CHECK (reason IN (""" + _in(ALL_EVENT_REASONS) + r"""));
 
+-- t106:step:integrity
+-- Codex 7a2e2b91 finding 1: the retention cutoff (service date + 30 days, clinic local)
+-- holds for EVERY later write, not only for the sweep: a coverage row, an attempt answer
+-- written for an appointment already past the cutoff keeps only the permitted history (a
+-- verification's digest: at its single write site, m05_el_due). Not named m05_* (the m05_
+-- namespace is reviewed gateways, ME-01).
+CREATE FUNCTION {schema}.el_past_cutoff(p_ref uuid) RETURNS boolean
+    LANGUAGE plpgsql STABLE
+    SECURITY INVOKER
+    SET search_path = pg_catalog, {schema}, pg_temp
+    AS $body$
+DECLARE
+    v_k record;
+BEGIN
+    SELECT a.zone, a.start_at INTO v_k FROM {schema}.m05_el_appointments AS a
+     WHERE a.appointment_ref = p_ref;
+    IF NOT FOUND OR v_k.zone IS NULL THEN
+        RETURN false;
+    END IF;
+    RETURN {schema}.m05_el_expired(
+        pg_catalog.to_char((pg_catalog.timezone(v_k.zone, v_k.start_at))::date, 'YYYY-MM-DD'),
+        pg_catalog.to_char((pg_catalog.timezone(v_k.zone, pg_catalog.clock_timestamp()))::date,
+                           'YYYY-MM-DD'));
+END;
+$body$;
+REVOKE ALL ON FUNCTION {schema}.el_past_cutoff(uuid) FROM PUBLIC;
+CREATE FUNCTION {schema}.el_cutoff_coverage() RETURNS trigger
+    LANGUAGE plpgsql
+    SECURITY INVOKER
+    SET search_path = pg_catalog, {schema}, pg_temp
+    AS $body$
+BEGIN
+    IF {schema}.el_past_cutoff(NEW.appointment_ref) THEN
+        NEW.member_id := NULL;
+        NEW.patient_name := NULL;
+        NEW.patient_dob := NULL;
+        NEW.subscriber_name := NULL;
+        NEW.subscriber_dob := NULL;
+        NEW.subscriber_member_id := NULL;
+        NEW.block := pg_catalog.jsonb_build_object('state', NEW.state);
+    END IF;
+    RETURN NEW;
+END;
+$body$;
+REVOKE ALL ON FUNCTION {schema}.el_cutoff_coverage() FROM PUBLIC;
+CREATE FUNCTION {schema}.el_cutoff_attempt() RETURNS trigger
+    LANGUAGE plpgsql
+    SECURITY INVOKER
+    SET search_path = pg_catalog, {schema}, pg_temp
+    AS $body$
+BEGIN
+    IF NEW.answer IS NOT NULL AND {schema}.el_past_cutoff((
+            SELECT v.appointment_ref FROM {schema}.m05_el_verifications AS v
+             WHERE v.verification_id = NEW.verification_id)) THEN
+        NEW.answer := (SELECT pg_catalog.jsonb_object_agg(e.key, e.value)
+                         FROM pg_catalog.jsonb_each(NEW.answer) AS e
+                        WHERE e.key IN ('class', 'reason', 'observed_at'));
+    END IF;
+    RETURN NEW;
+END;
+$body$;
+REVOKE ALL ON FUNCTION {schema}.el_cutoff_attempt() FROM PUBLIC;
+-- Codex 7a2e2b91 finding 2: the return budget (M1) is per appointment AND coverage
+-- version. E1's trigger re-plan reuses the row; a version change resets `returned`, a
+-- same-version upsert or replay keeps it.
+CREATE FUNCTION {schema}.el_trigger_version_reset() RETURNS trigger
+    LANGUAGE plpgsql
+    SECURITY INVOKER
+    SET search_path = pg_catalog, {schema}, pg_temp
+    AS $body$
+BEGIN
+    IF NEW.coverage_version IS DISTINCT FROM OLD.coverage_version THEN
+        NEW.returned := false;
+    END IF;
+    RETURN NEW;
+END;
+$body$;
+REVOKE ALL ON FUNCTION {schema}.el_trigger_version_reset() FROM PUBLIC;
+CREATE TRIGGER m05_el_coverage_cutoff
+    BEFORE INSERT OR UPDATE ON {schema}.m05_el_coverage
+    FOR EACH ROW EXECUTE FUNCTION {schema}.el_cutoff_coverage();
+CREATE TRIGGER m05_el_attempts_cutoff
+    BEFORE INSERT OR UPDATE ON {schema}.m05_el_attempts
+    FOR EACH ROW EXECUTE FUNCTION {schema}.el_cutoff_attempt();
+CREATE TRIGGER m05_el_triggers_version_reset
+    BEFORE UPDATE ON {schema}.m05_el_triggers
+    FOR EACH ROW EXECUTE FUNCTION {schema}.el_trigger_version_reset();
+
 -- t106:step:runtime_privileges
 REVOKE ALL ON {schema}.m05_el_attempts, {schema}.m05_el_late_answers FROM haloflow_runtime;
 
 -- t106:step:grants
 GRANT SELECT, INSERT, UPDATE ON {schema}.m05_el_attempts TO haloflow_m05_owner;
 GRANT SELECT, INSERT ON {schema}.m05_el_late_answers TO haloflow_m05_owner;
+GRANT EXECUTE ON FUNCTION {schema}.el_past_cutoff(uuid) TO haloflow_m05_owner;
 GRANT UPDATE (member_id, patient_name, patient_dob, subscriber_name, subscriber_dob,
     subscriber_member_id, block) ON {schema}.m05_el_coverage TO haloflow_m05_owner;
 """
@@ -350,7 +442,10 @@ _DUE_BODY: Final = _head(r"""
                 coverage_version, owner_trigger, state, created_at, patient_id, payer_id,
                 member_digest, service_date)
             VALUES (v_vid, v_k.appointment_ref, v_k.coverage_version, v_t.trigger, 'due',
-                v_now, v_k.patient_id, v_c.payer_id, v_digest, v_sdate);
+                v_now, v_k.patient_id, v_c.payer_id,
+                -- retention cutoff at write time (Codex 7a2e2b91 finding 1)
+                CASE WHEN {schema}.el_past_cutoff(v_k.appointment_ref) THEN NULL
+                     ELSE v_digest END, v_sdate);
             UPDATE {schema}.m05_el_triggers
                SET status = 'assigned', verification_id = v_vid, updated_at = v_now
              WHERE appointment_ref = v_k.appointment_ref AND trigger = v_t.trigger;
@@ -768,9 +863,30 @@ _EXPIRE_BODY: Final = _head(r"""
     v_k record;
     v_expired integer := 0;
 """, ("attribution", "limit", "schema_version")) + _int_field("limit", "v_limit", 1, 1000) + r"""
+    -- Codex 7a2e2b91 finding 1: selection is by REMAINING data, never by a marker, so a
+    -- later write for an already-expired appointment is found again; bounded and
+    -- idempotent (a scrubbed appointment no longer matches).
     FOR v_k IN
         SELECT a.appointment_ref FROM {schema}.m05_el_appointments AS a
-         WHERE a.expired_at IS NULL AND a.zone IS NOT NULL
+         WHERE a.zone IS NOT NULL
+           AND (EXISTS (SELECT 1 FROM {schema}.m05_el_coverage AS c
+                         WHERE c.appointment_ref = a.appointment_ref
+                           AND (c.member_id IS NOT NULL OR c.patient_name IS NOT NULL
+                                OR c.patient_dob IS NOT NULL OR c.subscriber_name IS NOT NULL
+                                OR c.subscriber_dob IS NOT NULL
+                                OR c.subscriber_member_id IS NOT NULL
+                                OR (c.block OPERATOR(pg_catalog.-) 'state')
+                                   <> '{}'::jsonb))
+                OR EXISTS (SELECT 1 FROM {schema}.m05_el_verifications AS v
+                            WHERE v.appointment_ref = a.appointment_ref
+                              AND v.member_digest IS NOT NULL)
+                OR EXISTS (SELECT 1 FROM {schema}.m05_el_attempts AS t
+                             JOIN {schema}.m05_el_verifications AS v USING (verification_id)
+                            WHERE v.appointment_ref = a.appointment_ref
+                              AND t.answer IS NOT NULL
+                              AND (t.answer OPERATOR(pg_catalog.-) 'class'
+                                   OPERATOR(pg_catalog.-) 'reason'
+                                   OPERATOR(pg_catalog.-) 'observed_at') <> '{}'::jsonb))
            AND {schema}.m05_el_expired(""" + _date_text(_local_date("a.zone", "a.start_at")) + r""",
                """ + _date_text(_local_date("a.zone", "v_now")) + r""")
          ORDER BY a.appointment_ref

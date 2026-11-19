@@ -1,4 +1,4 @@
-"""Eligibility E2 mutation controls, group family ``el2`` (M01r..M09).
+"""Eligibility E2 mutation controls, group family ``el2`` (M01r..M14).
 
 Targets predeclared in the E2 red packet v1/v1r1 (Codex red gate PASS b690404c): freshness
 on settled_at (SQL) and an exclusive window bound (rules); the attached-return flag lost
@@ -6,7 +6,9 @@ on settled_at (SQL) and an exclusive window bound (rules); the attached-return f
 dispatched attempt not marked ambiguous at takeover (so it is resent / stays in flight);
 settle ignores the epoch; a late answer to a closed attempt applied; expiry keeps the member
 digest; an inconclusive payer error mapped to inactive; (green) a returned trigger attaches
-again. Kill sets are declared in scripts/el2_mutant_kills.json before the CI run.
+again; (green v1r1, Codex 7a2e2b91) the version reset of the return budget, the
+write-time retention cutoff for coverage and answers, and the data-based sweep. Kill sets are
+declared in scripts/el2_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/el1_mutants.py. Stale-bytecode guard as W4b.
@@ -76,6 +78,23 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M09", "a returned trigger attaches again (green)", UNITS,
      "               AND NOT v_t.returned\n",
      "\n"),
+    ("M10", "the return budget is not reset on a new coverage version (green v1r1)", UNITS,
+     "    IF NEW.coverage_version IS DISTINCT FROM OLD.coverage_version THEN\n"
+     "        NEW.returned := false;\n",
+     "    IF NEW.coverage_version IS DISTINCT FROM OLD.coverage_version THEN\n"
+     "        NEW.returned := NEW.returned;\n"),
+    ("M11", "a coverage write after the cutoff keeps identifiers (green v1r1)", UNITS,
+     "    IF {schema}.el_past_cutoff(NEW.appointment_ref) THEN\n        NEW.member_id := NULL;\n",
+     "    IF false THEN\n        NEW.member_id := NULL;\n"),
+    ("M12", "the sweep selects by an expiry stamp, not by remaining data (green v1r1)", UNITS,
+     "         WHERE a.zone IS NOT NULL\n           AND (EXISTS (",
+     "         WHERE a.zone IS NOT NULL AND a.expired_at IS NULL\n           AND (EXISTS ("),
+    ("M13", "an answer written after the cutoff keeps benefit fields (green v1r1)", UNITS,
+     "    IF NEW.answer IS NOT NULL AND {schema}.el_past_cutoff((\n",
+     "    IF false AND {schema}.el_past_cutoff((\n"),
+    ("M14", "a verification created after the cutoff stores the digest (green v1r1)", UNITS,
+     "                CASE WHEN {schema}.el_past_cutoff(v_k.appointment_ref) THEN NULL\n",
+     "                CASE WHEN false THEN NULL\n"),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (
