@@ -1,4 +1,4 @@
-"""Eligibility E2 mutation controls, group family ``el2`` (M01r..M14).
+"""Eligibility E2 mutation controls, group family ``el2`` (M01r..M15).
 
 Targets predeclared in the E2 red packet v1/v1r1 (Codex red gate PASS b690404c): freshness
 on settled_at (SQL) and an exclusive window bound (rules); the attached-return flag lost
@@ -87,11 +87,14 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "    IF {schema}.el_past_cutoff(NEW.appointment_ref) THEN\n        NEW.member_id := NULL;\n",
      "    IF false THEN\n        NEW.member_id := NULL;\n"),
     ("M12", "the sweep selects by an expiry stamp, not by remaining data (green v1r1)", UNITS,
-     "         WHERE a.zone IS NOT NULL\n           AND (EXISTS (",
-     "         WHERE a.zone IS NOT NULL AND a.expired_at IS NULL\n           AND (EXISTS ("),
+     "         WHERE (EXISTS (",
+     "         WHERE a.expired_at IS NULL AND (EXISTS ("),
     ("M13", "an answer written after the cutoff keeps benefit fields (green v1r1)", UNITS,
      "    IF NEW.answer IS NOT NULL AND {schema}.el_past_cutoff((\n",
      "    IF false AND {schema}.el_past_cutoff((\n"),
+    ("M15", "no retention bound without a usable zone (green v1r2, Codex 82910a80)", UNITS,
+     "    IF v_k.zone IS NULL THEN\n        -- Codex 82910a80",
+     "    IF v_k.zone IS NULL THEN\n        RETURN false;\n        -- Codex 82910a80"),
     ("M14", "a verification created after the cutoff stores the digest (green v1r1)", UNITS,
      "                CASE WHEN {schema}.el_past_cutoff(v_k.appointment_ref) THEN NULL\n",
      "                CASE WHEN false THEN NULL\n"),

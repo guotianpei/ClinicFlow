@@ -49,7 +49,8 @@
   "tests/m05/test_el2_postgres.py::test_el2_p07c_return_budget_resets_on_a_new_coverage_version"
  ],
  "M11": [
-  "tests/m05/test_el2_postgres.py::test_el2_p13b_correction_after_expiry_keeps_the_cutoff"
+  "tests/m05/test_el2_postgres.py::test_el2_p13b_correction_after_expiry_keeps_the_cutoff",
+  "tests/m05/test_el2_postgres.py::test_el2_p13e_no_zone_past_bound_is_never_stored"
  ],
  "M12": [
   "tests/m05/test_el2_postgres.py::test_el2_p13d_rescheduled_to_the_future_keeps_new_data"
@@ -59,5 +60,12 @@
  ],
  "M14": [
   "tests/m05/test_el2_postgres.py::test_el2_p13c_answer_written_after_the_cutoff_is_trimmed"
+ ],
+ "M15": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13e_no_zone_past_bound_is_never_stored",
+  "tests/m05/test_el2_postgres.py::test_el2_p13g_no_zone_never_corrected_is_swept_past_the_bound",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[32]",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[33]",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[34]"
  ]
 }

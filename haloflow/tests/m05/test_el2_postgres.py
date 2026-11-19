@@ -768,6 +768,155 @@ def test_el2_p13d_rescheduled_to_the_future_keeps_new_data(install: e2.EL2Instal
     assert e2.expire(inst)["expired"] == 0
 
 
+# --- E2-P13e..h (v1r2, Codex 82910a80): retention without a usable zone ----------------
+
+def _routed_put(inst: e2.EL2Install, ref: str, patient: str, start: datetime,
+                coverage: dict[str, Any], department_tz: str | None) -> dict[str, Any]:
+    """appointment_put through the real resolver and gateway with the E2 catalogue (the
+    directory key is rebound to m05_directory_v4 by E1), as the directory workload."""
+    from uuid import NAMESPACE_URL, uuid4, uuid5
+
+    import service_support as sv
+    import si_support as si
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m01.activation import ActivationPolicy
+    from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
+    from haloflow.m01.control_store import PsycopgControlStore
+    from haloflow.m01.pool import TenantPool
+    from haloflow.m01.runtime import TenantRuntimeDependencies, compose_tenant_runtime
+    from haloflow.m02.observation import EventFoundation
+    from haloflow.m05.intake import _attribution
+    from haloflow.m05.intake_statements import DIRECTORY_KEY
+
+    fields = si.appointment3(ref, patient, start, department_tz=department_tz)
+    fields["coverage"] = coverage
+
+    async def go() -> dict[str, Any]:
+        pool = TenantPool(inst.ids.logins[sa.RUNTIME], min_size=1, max_size=2)
+        await pool.open()
+        try:
+            rt = compose_tenant_runtime(
+                TenantRuntimeDependencies(
+                    pool=pool, control_store=PsycopgControlStore(pool),
+                    migrator_connect=sv._factory(inst.ids.logins[sa.MIGRATOR]),
+                    provisioner_connect=sv._factory(inst.ids.logins["haloflow_provisioner"])),
+                registry=e2.el2_registry(), catalog=e2.el2_catalog(),
+                supported_schema_versions=frozenset({e2.EL2_TARGET}),
+                activation_policy=ActivationPolicy.ENFORCE)
+            caps = sa.CAPS["directory"]
+            ctx = await rt.resolver.resolve(
+                principal=Principal(kind=PrincipalKind.WORKLOAD, id=sa.W_DIRECTORY,
+                                    auth_method="test",
+                                    authorized_tenant_ids=frozenset({inst.tenant[0]}),
+                                    capabilities=caps),
+                tenant_hint=inst.tenant[0], purpose="operations", capabilities=caps,
+                source=TrustedSource.HTTP,
+                execution_id=uuid5(NAMESPACE_URL, f"haloflow-test:el2:{uuid4()}"),
+                correlation_id=uuid4(),
+                correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+            command = {"schema_version": 1, "op": "appointment_put", **fields,
+                       "attribution": _attribution(ctx)}
+
+            async def body(binding: Any) -> dict[str, Any]:
+                got = await binding.handle.fetch_all(DIRECTORY_KEY, {"command": Jsonb(command)})
+                return dict(got[0][0])
+
+            result: dict[str, Any] = await EventFoundation(
+                rt.gateway, producer_service=sa.PRODUCER).run_in_transaction(ctx, body)
+            return result
+        finally:
+            await pool.close()
+
+    return asyncio.run(go())
+
+
+def _no_zone(inst: e2.EL2Install) -> None:
+    import sh2_support as sh2
+
+    sh2.settings_raw(inst, clinic_tz=None)
+
+
+NO_ZONE_SENTINELS = {"member_id": "SENTINEL-MEMBER-9961", "patient_name": "Sentinel Nozone",
+                     "patient_dob": "1913-03-13"}
+
+
+def test_el2_p13e_no_zone_past_bound_is_never_stored(install: e2.EL2Install) -> None:
+    """A routed no-usable-zone enrolment 40 days in the past: recorded and deferred (E1 D-1),
+    identifiers never stored; repeated sweeps find nothing; no sentinel anywhere."""
+    inst = e2.ready(install)
+    _no_zone(inst)
+    ref, patient = sa.new_id(), sa.new_id()
+    start = _now().replace(microsecond=0) - timedelta(days=40)
+    assert _routed_put(inst, ref, patient, start, el.present(**NO_ZONE_SENTINELS),
+                       "Bad/Zone") == {"schema_version": 1, "outcome": "applied"}
+    assert e2.q(inst, "SELECT zone, deferred_reason FROM {s}.m05_el_appointments"
+                " WHERE appointment_ref = %s", (ref,)) == [(None, "no_zone")]
+    assert all(r[1:7] == (None,) * 6 for r in _coverage_rows(inst, ref))
+    for _ in range(2):
+        assert e2.expire(inst)["expired"] == 0
+    _no_sentinel_anywhere(inst, *NO_ZONE_SENTINELS.values())
+
+
+def test_el2_p13f_no_zone_in_window_kept_then_zone_corrected(install: e2.EL2Install) -> None:
+    """Control: a no-zone enrolment 10 days in the past keeps its data (inside every
+    zone's window); a later zone correction re-plans (E1) and keeps it; once the visit is past
+    the cutoff the sweep removes it, once."""
+    import sh2_support as sh2
+
+    inst = e2.ready(install)
+    _no_zone(inst)
+    ref, patient = sa.new_id(), sa.new_id()
+    _routed_put(inst, ref, patient, _now().replace(microsecond=0) - timedelta(days=10),
+                el.present(**NO_ZONE_SENTINELS), "Bad/Zone")
+    assert _coverage_rows(inst, ref)[0][1] == NO_ZONE_SENTINELS["member_id"]
+    assert e2.expire(inst)["expired"] == 0
+    sh2.settings_raw(inst, clinic_tz=e2.NY)
+    assert el.tick(inst)["replanned"] == 1
+    assert e2.q(inst, "SELECT zone FROM {s}.m05_el_appointments WHERE appointment_ref = %s",
+                (ref,)) == [(e2.NY,)]
+    assert _coverage_rows(inst, ref)[0][1] == NO_ZONE_SENTINELS["member_id"]
+    _age_start(inst, ref, _now().replace(microsecond=0) - timedelta(days=40))
+    assert e2.expire(inst)["expired"] == 1
+    assert e2.expire(inst)["expired"] == 0
+    _no_sentinel_anywhere(inst, *NO_ZONE_SENTINELS.values())
+
+
+def test_el2_p13g_no_zone_never_corrected_is_swept_past_the_bound(
+        install: e2.EL2Install) -> None:
+    """Stored inside the window, the zone is never corrected, the visit ages past the bound:
+    the sweep removes the identifiers (retention only; scheduling stays deferred)."""
+    inst = e2.ready(install)
+    _no_zone(inst)
+    ref, patient = sa.new_id(), sa.new_id()
+    _routed_put(inst, ref, patient, _now().replace(microsecond=0) - timedelta(days=10),
+                el.present(**NO_ZONE_SENTINELS), "Bad/Zone")
+    _age_start(inst, ref, _now().replace(microsecond=0) - timedelta(days=40))
+    assert e2.expire(inst)["expired"] == 1
+    assert e2.expire(inst)["expired"] == 0
+    assert e2.q(inst, "SELECT zone, deferred_reason FROM {s}.m05_el_appointments"
+                " WHERE appointment_ref = %s", (ref,)) == [(None, "no_zone")]
+    assert {t: v[0] for t, v in e2.triggers(inst, ref).items()} == dict.fromkeys(
+        ("booking", "previsit", "dayof"), "deferred")
+    _no_sentinel_anywhere(inst, *NO_ZONE_SENTINELS.values())
+
+
+@pytest.mark.parametrize("days", [29, 30, 31, 32, 33, 34])
+def test_el2_p13h_no_zone_bound_matches_the_recorded_boundary(install: e2.EL2Install,
+                                                              days: int) -> None:
+    """The recorded boundary: past iff UTC date of (now - 12 h) > UTC date of
+    (start + 14 h) + 30 days (latest local service date vs earliest local today)."""
+    inst = e2.ready(install)
+    _no_zone(inst)
+    ref, patient = sa.new_id(), sa.new_id()
+    start = _now().replace(microsecond=0) - timedelta(days=days)
+    _routed_put(inst, ref, patient, start, {"state": "pending"}, "Bad/Zone")
+    now = _now()
+    expected = ((now - timedelta(hours=12)).date()
+                > (start + timedelta(hours=14)).date() + timedelta(days=30))
+    assert e2.q(inst, "SELECT {s}.el_past_cutoff(%s::uuid)", (ref,)) == [(expected,)]
+
+
 @pytest.mark.parametrize(("days", "expected"), [(29, False), (30, False), (31, True)])
 def test_el2_p13_expiry_seam_exact(install: e2.EL2Install, days: int, expected: bool) -> None:
     inst = e2.ready(install)

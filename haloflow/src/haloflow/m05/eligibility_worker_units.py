@@ -142,8 +142,20 @@ DECLARE
 BEGIN
     SELECT a.zone, a.start_at INTO v_k FROM {schema}.m05_el_appointments AS a
      WHERE a.appointment_ref = p_ref;
-    IF NOT FOUND OR v_k.zone IS NULL THEN
+    IF NOT FOUND THEN
         RETURN false;
+    END IF;
+    IF v_k.zone IS NULL THEN
+        -- Codex 82910a80: no usable zone (the E1 D-1 deferral). A RETENTION-ONLY bound, never
+        -- a scheduling zone: the latest possible local service date (UTC+14) against the
+        -- earliest possible local today (UTC-12), so it is past only when the cutoff has
+        -- passed in EVERY supported zone. Boundary: UTC date of (now - 12 h) > UTC date of
+        -- (start + 14 h) + 30 days.
+        RETURN {schema}.m05_el_expired(
+            pg_catalog.to_char((pg_catalog.timezone('UTC', v_k.start_at)
+                                OPERATOR(pg_catalog.+) interval '14 hours')::date, 'YYYY-MM-DD'),
+            pg_catalog.to_char((pg_catalog.timezone('UTC', pg_catalog.clock_timestamp())
+                                OPERATOR(pg_catalog.-) interval '12 hours')::date, 'YYYY-MM-DD'));
     END IF;
     RETURN {schema}.m05_el_expired(
         pg_catalog.to_char((pg_catalog.timezone(v_k.zone, v_k.start_at))::date, 'YYYY-MM-DD'),
@@ -868,8 +880,7 @@ _EXPIRE_BODY: Final = _head(r"""
     -- idempotent (a scrubbed appointment no longer matches).
     FOR v_k IN
         SELECT a.appointment_ref FROM {schema}.m05_el_appointments AS a
-         WHERE a.zone IS NOT NULL
-           AND (EXISTS (SELECT 1 FROM {schema}.m05_el_coverage AS c
+         WHERE (EXISTS (SELECT 1 FROM {schema}.m05_el_coverage AS c
                          WHERE c.appointment_ref = a.appointment_ref
                            AND (c.member_id IS NOT NULL OR c.patient_name IS NOT NULL
                                 OR c.patient_dob IS NOT NULL OR c.subscriber_name IS NOT NULL
@@ -887,8 +898,8 @@ _EXPIRE_BODY: Final = _head(r"""
                               AND (t.answer OPERATOR(pg_catalog.-) 'class'
                                    OPERATOR(pg_catalog.-) 'reason'
                                    OPERATOR(pg_catalog.-) 'observed_at') <> '{}'::jsonb))
-           AND {schema}.m05_el_expired(""" + _date_text(_local_date("a.zone", "a.start_at")) + r""",
-               """ + _date_text(_local_date("a.zone", "v_now")) + r""")
+           -- the same cutoff as the write-time triggers, including the no-zone bound
+           AND {schema}.el_past_cutoff(a.appointment_ref)
          ORDER BY a.appointment_ref
          LIMIT v_limit
          FOR UPDATE SKIP LOCKED
