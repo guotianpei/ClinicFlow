@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 # CP2-2a gate reachability harness -- rows 2A-C07..C11 (architecture v4 §6.2).
 #
-# Evidence label for every row: "separate harness invocation in the CI job,
-# executing the resolved gate commands". This harness never claims that the
-# gate step itself observed a specimen.
+# Evidence label for every row (amended 2026-11-20, Codex ALIGN 3e007128): "separate
+# harness invocation in a dedicated reachability job of the same workflow run, at the
+# same commit, with the same verified install and PostgreSQL 17 service as the gate job,
+# executing the resolved gate commands". This harness never claims that the gate step
+# itself observed a specimen. (Before 2026-11-20 it ran as a step of the gate job; the
+# full harness had grown past the hosted 6 h job limit, run 44661617305.)
 #
-# It runs from haloflow/ as its own step inside the actual CI job, after the
-# three gate steps and in the same verified environment:
+# It runs from haloflow/ in each verify-m01-reach matrix job, one --rows group per job:
 #
-#   scripts/gate-reachability.sh --venv "$VENV" \
+#   scripts/gate-reachability.sh --venv "$VENV" --rows lint-type \
 #       --workflow ../.github/workflows/m01.yml --evidence "$RUNNER_TEMP/gate-evidence"
+#
+# --rows selects one group; every row of that group runs unchanged:
+#   lint-type  2A-C07 (ci + make lint) and 2A-C08 (ci + make type), and 2A-F03
+#   test-ci    2A-C09 through the resolved CI test command
+#   test-make  2A-C09 through `make test`
+#   test-unit  2A-C09 through `make test-unit`
+#   all        every group above, in this order (the default; local use)
+# Command resolution (2A-C10) and the clean-tree checks (2A-C11) run in every group.
 #
 # Command resolution fails closed (2A-C10). Each gate `run:` line in the
 # workflow must be preceded by exactly one marker comment:
@@ -33,6 +43,7 @@ WORKFLOW=""
 EVIDENCE=""
 MODE="run"
 RESOLVE_ONLY=0
+ROWS="all"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,10 +52,20 @@ while [ $# -gt 0 ]; do
         --evidence) EVIDENCE="$2"; shift 2 ;;
         --selftest) MODE="selftest"; shift ;;
         --resolve-only) RESOLVE_ONLY=1; shift ;;
+        --rows) ROWS="$2"; shift 2 ;;
         *) echo "gate-reachability: unknown argument $1" >&2; exit 2 ;;
     esac
 done
 
+case "$ROWS" in
+    all|lint-type|test-ci|test-make|test-unit) ;;
+    *) echo "gate-reachability: unknown --rows $ROWS" >&2; exit 2 ;;
+esac
+if [ "$MODE" = "selftest" ] && [ "$ROWS" != "all" ]; then
+    echo "gate-reachability: --selftest takes no --rows" >&2
+    exit 2
+fi
+want() { [ "$ROWS" = "all" ] || [ "$ROWS" = "$1" ]; }
 if [ -z "$VENV_DIR" ] || [ -z "$WORKFLOW" ] || [ -z "$EVIDENCE" ]; then
     echo "gate-reachability: --venv, --workflow and --evidence are required" >&2
     exit 2
@@ -141,7 +162,8 @@ fi
 # --- run -------------------------------------------------------------------
 
 : > "$LOG"
-log "evidence label: separate harness invocation in the CI job, executing the resolved gate commands"
+log "evidence label: separate harness invocation in a dedicated reachability job of the same workflow run, same commit, same verified install and PostgreSQL 17 service, executing the resolved gate commands"
+log "rows: $ROWS"
 resolve_all "$WORKFLOW" 2>>"$LOG" || die "C10: gate command resolution failed closed"
 log "commit: $(git rev-parse HEAD 2>/dev/null || echo unknown)"
 log "resolved lint: $LINT_CMD"
@@ -223,7 +245,7 @@ TYPE_SPECIMEN=$'x: int = "s"\n'
 TEST_SPECIMEN=$'def test_specimen() -> None:\n    assert 1 == 2\n'
 
 # --- 2A-C07: lint ------------------------------------------------------------
-for path in ci:"$LINT_CMD" mk:lint; do
+want lint-type && for path in ci:"$LINT_CMD" mk:lint; do
     kind="${path%%:*}"; target="${path#*:}"
     runner=( ci "$target" ); [ "$kind" = "mk" ] && runner=( mk "$target" )
     row="2A-C07${kind}"
@@ -237,7 +259,7 @@ for path in ci:"$LINT_CMD" mk:lint; do
 done
 
 # --- 2A-C08: type ------------------------------------------------------------
-for path in ci:"$TYPE_CMD" mk:type; do
+want lint-type && for path in ci:"$TYPE_CMD" mk:type; do
     kind="${path%%:*}"; target="${path#*:}"
     runner=( ci "$target" ); [ "$kind" = "mk" ] && runner=( mk "$target" )
     row="2A-C08${kind}"
@@ -255,6 +277,11 @@ done
 # --- 2A-C09: test ------------------------------------------------------------
 for path in ci:"$TEST_CMD" mk:test mu:test-unit; do
     kind="${path%%:*}"; target="${path#*:}"
+    case "$kind" in
+        ci) want test-ci || continue ;;
+        mk) want test-make || continue ;;
+        mu) want test-unit || continue ;;
+    esac
     runner=( ci "$target" ); [ "$kind" != "ci" ] && runner=( mk "$target" )
     row="2A-C09${kind}"
     expect_clean "$row baseline" "${runner[@]}"
@@ -267,13 +294,15 @@ for path in ci:"$TEST_CMD" mk:test mu:test-unit; do
 done
 
 # --- 2A-F03 (via the C07 path lists): tests/conftest.py is in both lint scopes
-printf '%s' "$LINT_CMD" | grep -qE '(^| )tests/conftest\.py( |$)' \
-    || die "2A-F03: tests/conftest.py is not in the CI lint command"
-grep -E '^LINT_PATHS[[:space:]]*=' Makefile | grep -qE '(^| )tests/conftest\.py( |$)' \
-    || die "2A-F03: tests/conftest.py is not in Makefile LINT_PATHS"
-log "2A-F03: tests/conftest.py is in the CI lint command and Makefile LINT_PATHS"
+if want lint-type; then
+    printf '%s' "$LINT_CMD" | grep -qE '(^| )tests/conftest\.py( |$)' \
+        || die "2A-F03: tests/conftest.py is not in the CI lint command"
+    grep -E '^LINT_PATHS[[:space:]]*=' Makefile | grep -qE '(^| )tests/conftest\.py( |$)' \
+        || die "2A-F03: tests/conftest.py is not in Makefile LINT_PATHS"
+    log "2A-F03: tests/conftest.py is in the CI lint command and Makefile LINT_PATHS"
+fi
 
 status=$(git status --porcelain)
 [ -z "$status" ] || die "C11: working tree not clean after the run: $status"
 log "C11: working tree clean before and after"
-log "PASS"
+log "PASS ($ROWS)"

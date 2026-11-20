@@ -1,0 +1,23 @@
+{
+ "M05": [
+  "tests/m05/test_el3a_postgres.py::test_el3a_p07_note_only_event_keeps_the_reason_and_bumps_the_version",
+  "tests/m05/test_el3a_postgres.py::test_el3a_p08_later_active_is_a_note_and_the_case_stays_open",
+  "tests/m05/test_el3a_postgres.py::test_el3a_p16_e2_p03_fixture_materialized"
+ ],
+ "M07": [
+  "tests/m05/test_el3a_postgres.py::test_el3a_p14_view_projects_od_el4_fields_only"
+ ],
+ "M09": [
+  "tests/m05/test_el3a_units.py::test_el3a_u04_evidence_observation_shape[none]",
+  "tests/m05/test_el3a_units.py::test_el3a_u05_call_order_in_one_transaction[none-order2]"
+ ],
+ "M10": [
+  "tests/m05/test_el3a_postgres.py::test_el3a_p06_rule2_older_coverage_version_has_no_effect"
+ ],
+ "M11": [
+  "tests/m05/test_el3a_postgres.py::test_el3a_p06_rule3_seq_at_or_below_the_watermark_has_no_effect"
+ ],
+ "M12": [
+  "tests/m05/test_el3a_postgres.py::test_el3a_p18_backlog_one_settlement_observation_per_verification_across_restart"
+ ]
+}

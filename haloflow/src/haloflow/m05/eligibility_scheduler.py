@@ -8,7 +8,10 @@
 2. run: `EligibilityService.due(ctx, batch_limit)`, then for each verification id (at most
    `batch_limit`) ONE fresh context and `EligibilityWorker.run_one(ctx_i, vid)`; a per-id
    context failure is counted `context_failed` and the next id continues;
-3. expire: `EligibilityService.expire(pass ctx, batch_limit)`.
+3. expire: `EligibilityService.expire(pass ctx, batch_limit)`;
+4. apply (E3a, only when `cases` and `case_contexts` are given): one fresh case context and
+   `EligibilityCaseService.drain(ctx, batch_limit)`; without them the phase is NOT_RUN with
+   zero counts and every E2 behaviour is unchanged.
 
 This module never claims, dispatches, answers, settles or calls the port itself. One tenant
 never stops another; cancellation is never caught and is re-checked before every
@@ -38,6 +41,7 @@ from haloflow.m05.eligibility import (
     EligibilityService,
     EligibilityWorker,
 )
+from haloflow.m05.eligibility_cases import EligibilityCaseRefused, EligibilityCaseService
 
 LOGGER: Final = logging.getLogger(__name__)
 
@@ -55,8 +59,10 @@ OK: Final = "ok"
 NOT_RUN: Final = "NOT_RUN"
 DEGRADED_ITEMS: Final = "DEGRADED_ITEMS"
 INTERNAL: Final = "INTERNAL"
+TENANT_MISMATCH: Final = "TENANT_MISMATCH"
 
 RUN_KEYS: Final = (*WORKER_OUTCOMES, "context_failed", "failed")
+APPLY_KEYS: Final = ("opened", "noted", "none")
 _CAPABILITY_CODES: Final = frozenset({"PRINCIPAL_NOT_WORKLOAD", "CAPABILITIES_INVALID"})
 
 
@@ -85,6 +91,7 @@ class TenantReport:
     context: str
     run: PhaseReport
     expire: PhaseReport
+    apply: PhaseReport = PhaseReport(NOT_RUN, dict.fromkeys(APPLY_KEYS, 0))
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +115,11 @@ def _valid_tenants(tenants: object) -> bool:
             and len(set(tenants)) == len(tenants))
 
 
+def _for_tenant(context: object, tenant: str) -> bool:
+    """True only when the resolved context belongs to the scheduled tenant."""
+    return getattr(context, "tenant_id", None) == tenant
+
+
 def _valid_timeout(value: object) -> bool:
     return (type(value) in (int, float) and math.isfinite(value)  # type: ignore[arg-type]
             and 0 < value <= STOP_TIMEOUT_MAX_S)  # type: ignore[operator]
@@ -120,11 +132,17 @@ def _failure_class(error: Exception) -> str:
         return "CAPABILITY_REFUSED"
     if isinstance(error, EligibilityRefused):
         return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
+    if isinstance(error, EligibilityCaseRefused):
+        return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
     return INTERNAL
 
 
 _RUN_NOT_RUN: Final = PhaseReport(NOT_RUN, dict.fromkeys(RUN_KEYS, 0))
 _EXPIRE_NOT_RUN: Final = PhaseReport(NOT_RUN, {"expired": 0})
+
+
+def _apply_not_run() -> PhaseReport:
+    return PhaseReport(NOT_RUN, dict.fromkeys(APPLY_KEYS, 0))
 
 
 class EligibilityScheduler:
@@ -133,7 +151,10 @@ class EligibilityScheduler:
                  tenants: tuple[str, ...], interval_s: int = DEFAULT_INTERVAL_S,
                  stop_timeout_s: float = 10, batch_limit: int = DEFAULT_BATCH_LIMIT,
                  clock: Callable[[], float] = time.monotonic,
-                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep) -> None:
+                 sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+                 cases: EligibilityCaseService | None = None,
+                 case_contexts: Callable[[str], Awaitable[TenantContext]] | None = None,
+                 ) -> None:
         if not callable(contexts):
             raise EligibilitySchedulerRefused("CONTEXTS_INVALID")
         if not isinstance(service, EligibilityService):
@@ -148,6 +169,12 @@ class EligibilityScheduler:
             raise EligibilitySchedulerRefused("TIMEOUT_INVALID")
         if type(batch_limit) is not int or not 1 <= batch_limit <= BATCH_LIMIT_MAX:
             raise EligibilitySchedulerRefused("BATCH_LIMIT_INVALID")
+        if (cases is None) != (case_contexts is None) or (
+                cases is not None and (not isinstance(cases, EligibilityCaseService)
+                                       or not callable(case_contexts))):
+            raise EligibilitySchedulerRefused("CASES_INVALID")
+        self._cases = cases
+        self._case_contexts = case_contexts
         self._contexts = contexts
         self._service = service
         self._worker = worker
@@ -258,13 +285,39 @@ class EligibilityScheduler:
             context = await self._contexts(tenant)
         except Exception as error:  # noqa: BLE001
             return TenantReport(tenant, DEGRADED, _failure_class(error), _RUN_NOT_RUN,
-                                _EXPIRE_NOT_RUN)
+                                _EXPIRE_NOT_RUN, _apply_not_run())
+        # Every context is checked against the scheduled tenant before use, so nothing
+        # runs, is written or is counted under the wrong tenant (Codex 3e007128, dcd06e8c).
+        if not _for_tenant(context, tenant):
+            return TenantReport(tenant, DEGRADED, TENANT_MISMATCH, _RUN_NOT_RUN,
+                                _EXPIRE_NOT_RUN, _apply_not_run())
         _cancel_pending()
         run = await self._run_phase(tenant, context)
         _cancel_pending()
         expire = await self._expire_phase(context)
-        code = COMPLETE if run.status == OK and expire.status == OK else DEGRADED
-        return TenantReport(tenant, code, OK, run, expire)
+        apply = _apply_not_run()
+        if self._cases is not None:
+            _cancel_pending()
+            apply = await self._apply_phase(tenant)
+        ok = run.status == OK and expire.status == OK and (
+            self._cases is None or apply.status == OK)
+        return TenantReport(tenant, COMPLETE if ok else DEGRADED, OK, run, expire, apply)
+
+    async def _apply_phase(self, tenant: str) -> PhaseReport:
+        counts = dict.fromkeys(APPLY_KEYS, 0)
+        assert self._cases is not None and self._case_contexts is not None
+        try:
+            context = await self._case_contexts(tenant)
+            if not _for_tenant(context, tenant):
+                return PhaseReport(TENANT_MISMATCH, counts)
+            _cancel_pending()
+            drained = await self._cases.drain(context, self._limit)
+        except Exception as error:  # noqa: BLE001
+            return PhaseReport(_failure_class(error), counts)
+        if not isinstance(drained, dict) or not set(drained) <= set(APPLY_KEYS):
+            return PhaseReport(INTERNAL, counts)
+        counts.update(drained)
+        return PhaseReport(OK, counts)
 
     async def _run_phase(self, tenant: str, context: TenantContext) -> PhaseReport:
         counts = dict.fromkeys(RUN_KEYS, 0)
@@ -279,6 +332,9 @@ class EligibilityScheduler:
             try:
                 item_context = await self._contexts(tenant)
             except Exception:  # noqa: BLE001
+                counts["context_failed"] += 1
+                continue
+            if not _for_tenant(item_context, tenant):
                 counts["context_failed"] += 1
                 continue
             _cancel_pending()

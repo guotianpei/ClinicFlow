@@ -30,6 +30,11 @@ jobs:
   # unchanged and in their original order, now run in three parallel jobs with the
   # identical setup; verify-m01-all is green only when all three succeeded. The three
   # gate-reachability markers stay in verify-m01 only, and verify-m01 stays first.
+  # Split 2026-11-20 (claude_e3a-ci-timeout-diagnosis.md, Codex ALIGN 3e007128): the
+  # gate-reachability run (about 8x the pytest step) passed the 6h limit in verify-m01
+  # (run 44661617305). Its rows now run in verify-m01-reach, one matrix job per row
+  # group, at the same commit with the same verified install and PostgreSQL 17; every
+  # runner, specimen, baseline, post-run and marker is unchanged. The self-test stays here.
   verify-m01:
     runs-on: ubuntu-24.04
     services:
@@ -140,24 +145,105 @@ jobs:
       # run even when pytest failed, so a red tranche measures them too.
       - if: ${{ !cancelled() }}
         run: $VENV/bin/pytest scripts/test_uc1_trace.py scripts/test_l1w_trace.py -q -rA -p no:cacheprovider
-      # CP2-2a gate reachability (2A-C07..C11, F03): a separate harness invocation
-      # in this job, executing the resolved gate commands against run-time
-      # specimens. Nothing is committed; its log is uploaded with the evidence.
-      # The self-test runs the C10/C11 negative controls first.
+      # CP2-2a gate reachability self-test (2A-C10/C11 negative controls). The
+      # reachability rows themselves (2A-C07..C11, F03) run in verify-m01-reach.
       - run: >-
           scripts/gate-reachability.sh --selftest
           --venv "$VENV"
           --workflow ../.github/workflows/m01.yml
           --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability-selftest"
-      - run: >-
-          scripts/gate-reachability.sh
-          --venv "$VENV"
-          --workflow ../.github/workflows/m01.yml
-          --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: verify-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/verify-evidence
+
+  # CP2-2a gate reachability (2A-C07..C11, F03), amended 2026-11-20: a separate
+  # harness invocation in a dedicated job of this workflow run, at the same commit, with
+  # the same verified install and PostgreSQL 17 service as verify-m01, executing the gate
+  # commands it resolves from verify-m01's markers. One --rows group per job, each with
+  # its own 6h budget; all four are required by verify-m01-all. Nothing is committed;
+  # each job uploads its own log as separately named evidence.
+  verify-m01-reach:
+    strategy:
+      fail-fast: false
+      matrix:
+        rows: [lint-type, test-ci, test-make, test-unit]
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: haloflow_test_m01
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d haloflow_test_m01"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    defaults:
+      run:
+        working-directory: haloflow
+
+    env:
+      HALOFLOW_TEST_DATABASE_URL: >-
+        postgresql://postgres:postgres@localhost:5432/haloflow_test_m01
+      # L-1W W2: the postgres:17 service above is a fresh container per run, so the
+      # L-1W harness may create its token-named synthetic LOGIN roles here
+      # (Codex final disposition pin 4; tests/platform/l1w_db_support.py).
+      HALOFLOW_TEST_DISPOSABLE_CLUSTER: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: haloflow/locks/linux-x86_64-cp312*.txt
+      # One verified install stage, shared with local verification. It creates a
+      # fresh virtualenv, installs from the hash-pinned locks it snapshots into the
+      # evidence, and checks every premise: approved target, lock parse, coverage in
+      # both directions, installed artifact hashes against the lock, pip check,
+      # declared requirements and the dev extra against the lock, editable-install
+      # source path. It runs no gates; the gates below are CI's.
+      - run: >-
+          scripts/verified-install.sh
+          --python python3.12
+          --target linux-x86_64-cp312
+          --project .
+          --locks locks
+          --evidence "$RUNNER_TEMP/verify-evidence"
+          --envdir "$RUNNER_TEMP/verify-env"
+          --source-revision "$GITHUB_SHA"
+      - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      # Option B B2: PostgreSQL 17 BINARIES (initdb/pg_ctl/postgres) for the per-case
+      # disposable clusters of tests/synthetic/test_b2_*_postgres.py. No cluster is created
+      # here (create_main_cluster = false) and the suite's service container is never
+      # used by those rows except one read-only negative attestation. Without this
+      # variable the B2 PostgreSQL rows FAIL (class-B rule); they never skip.
+      - name: PostgreSQL 17 binaries for B2 per-case clusters
+        working-directory: .
+        run: |
+          sudo install -d /etc/postgresql-common
+          echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-17
+          /usr/lib/postgresql/17/bin/postgres --version
+          echo "HALOFLOW_SYNTHETIC_PG_BIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
+      - run: >-
+          scripts/gate-reachability.sh
+          --rows "${{ matrix.rows }}"
+          --venv "$VENV"
+          --workflow ../.github/workflows/m01.yml
+          --evidence "$RUNNER_TEMP/verify-evidence/gate-reachability-${{ matrix.rows }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-evidence-reach-${{ matrix.rows }}-${{ github.run_id }}
           path: ${{ runner.temp }}/verify-evidence
 
   verify-m01-mutation:
@@ -345,6 +431,14 @@ jobs:
           $VENV/bin/python -I scripts/el2_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/el2-mutation"
+      # Eligibility E3a mutation controls M05, M07, M09..M12: two groups (the case service
+      # against the unit module; the t118..t121 SQL against the PostgreSQL module), kill sets
+      # in scripts/el3a_mutant_kills.json.
+      - run: $VENV/bin/pytest scripts/test_el3a_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/el3a_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/el3a-mutation"
       # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
       # statements against the PostgreSQL module, the worker against the unit module),
       # kill sets in scripts/sh_h1_mutant_kills.json.
@@ -497,14 +591,15 @@ jobs:
 
   verify-m01-all:
     if: ${{ always() }}
-    needs: [verify-m01, verify-m01-mutation, verify-m01-b2-mutation]
+    needs: [verify-m01, verify-m01-reach, verify-m01-mutation, verify-m01-b2-mutation]
     runs-on: ubuntu-24.04
     steps:
-      - name: All three verification jobs succeeded
+      - name: All verification jobs succeeded
         env:
           R_GATES: ${{ needs.verify-m01.result }}
+          R_REACH: ${{ needs.verify-m01-reach.result }}
           R_MUT: ${{ needs.verify-m01-mutation.result }}
           R_B2: ${{ needs.verify-m01-b2-mutation.result }}
         run: |
-          echo "verify-m01=$R_GATES verify-m01-mutation=$R_MUT verify-m01-b2-mutation=$R_B2"
-          test "$R_GATES" = success && test "$R_MUT" = success && test "$R_B2" = success
+          echo "verify-m01=$R_GATES verify-m01-reach=$R_REACH verify-m01-mutation=$R_MUT verify-m01-b2-mutation=$R_B2"
+          test "$R_GATES" = success && test "$R_REACH" = success && test "$R_MUT" = success && test "$R_B2" = success

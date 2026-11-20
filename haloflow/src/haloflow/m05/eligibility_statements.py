@@ -47,3 +47,23 @@ EL2_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
         (TIMEOUT_KEY, "m05_el_timeout"), (SETTLE_KEY, "m05_el_settle"),
         (EXPIRE_KEY, "m05_el_expire"))
 })
+
+# --- E3a (synthetic; composed behind `include_el3a`) -------------------------------------
+# The case applier (t120) and the eligibility item create (t119) under one capability held
+# only by the case service's timer-workload context (with the M02 append capability); the
+# case view (t121) is a staff read under the existing read capability. Not
+# activation-protected (D-R2, Codex agreed): settled findings reach staff after switch-off.
+
+CASES_CAPABILITY: Final = "m05.eligibility.cases"
+APPLY_KEY: Final = "m05.eligibility.apply"
+CREATE_ITEM_KEY: Final = "m05.eligibility.create_item"
+CASE_VIEW_KEY: Final = "m05.eligibility.case_view"
+READ_CAPABILITY: Final = "m05.followup.read"
+
+EL3A_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
+    APPLY_KEY: (StatementMode.WRITE, CASES_CAPABILITY, "SELECT m05_el_apply(%(command)s)"),
+    CREATE_ITEM_KEY: (StatementMode.WRITE, CASES_CAPABILITY,
+                      "SELECT m05_create_item_v3(%(command)s)"),
+    CASE_VIEW_KEY: (StatementMode.READ, READ_CAPABILITY,
+                    "SELECT m05_el_case_view(%(item_id)s)"),
+})
