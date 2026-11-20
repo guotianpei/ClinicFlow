@@ -1,0 +1,71 @@
+{
+ "M01r": [
+  "tests/m05/test_el2_units.py::test_el2_u03_equal_key_active_after_window_is_fresh",
+  "tests/m05/test_el2_units.py::test_el2_u04_observed_before_window_is_not_fresh_whenever_settled"
+ ],
+ "M01s": [
+  "tests/m05/test_el2_postgres.py::test_el2_p05_w6_attempt_two_after_midnight_makes_dayof_fresh",
+  "tests/m05/test_el2_postgres.py::test_el2_p18_each_stored_component_alone_makes_it_stale[None]"
+ ],
+ "M02r": [
+  "tests/m05/test_el2_units.py::test_el2_u05_attached_twice_returned_is_refused"
+ ],
+ "M02s": [
+  "tests/m05/test_el2_postgres.py::test_el2_p07_w8_returned_once_then_owns_one",
+  "tests/m05/test_el2_postgres.py::test_el2_p07b_returned_trigger_owns_never_reattaches",
+  "tests/m05/test_el2_postgres.py::test_el2_p07c_return_budget_resets_on_a_new_coverage_version"
+ ],
+ "M03": [
+  "tests/m05/test_el2_postgres.py::test_el2_p16_retry_not_before_delay_and_never_a_third"
+ ],
+ "M04": [
+  "tests/m05/test_el2_postgres.py::test_el2_c01_crash_after_dispatch_commit_before_port_call",
+  "tests/m05/test_el2_postgres.py::test_el2_c02_crash_after_port_call_attempt_two_inactive"
+ ],
+ "M05": [
+  "tests/m05/test_el2_postgres.py::test_el2_c04_old_worker_is_fenced_after_takeover"
+ ],
+ "M06": [
+  "tests/m05/test_el2_postgres.py::test_el2_c02_crash_after_port_call_attempt_two_inactive",
+  "tests/m05/test_el2_postgres.py::test_el2_p11_late_answers_change_nothing[closed_attempt]"
+ ],
+ "M07": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13_expiry_removes_identifiers_keeps_class"
+ ],
+ "M08": [
+  "tests/m05/test_el2_units.py::test_el2_u01_each_payer_error_is_inconclusive_with_its_reason[member_id_not_recognized]",
+  "tests/m05/test_el2_units.py::test_el2_u01_each_payer_error_is_inconclusive_with_its_reason[name_dob_mismatch]",
+  "tests/m05/test_el2_units.py::test_el2_u01_each_payer_error_is_inconclusive_with_its_reason[service_type_unsupported]",
+  "tests/m05/test_el2_units.py::test_el2_u01_each_payer_error_is_inconclusive_with_its_reason[subscriber_not_found]",
+  "tests/m05/test_el2_units.py::test_el2_u02_inactive_never_produced_from_inconclusive[raw0]",
+  "tests/m05/test_el2_units.py::test_el2_u02_inactive_never_produced_from_inconclusive[raw1]",
+  "tests/m05/test_el2_units.py::test_el2_u02_inactive_never_produced_from_inconclusive[raw2]",
+  "tests/m05/test_el2_units.py::test_el2_u02_inactive_never_produced_from_inconclusive[raw3]"
+ ],
+ "M09": [
+  "tests/m05/test_el2_postgres.py::test_el2_p07b_returned_trigger_owns_never_reattaches"
+ ],
+ "M10": [
+  "tests/m05/test_el2_postgres.py::test_el2_p07c_return_budget_resets_on_a_new_coverage_version"
+ ],
+ "M11": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13b_correction_after_expiry_keeps_the_cutoff",
+  "tests/m05/test_el2_postgres.py::test_el2_p13e_no_zone_past_bound_is_never_stored"
+ ],
+ "M12": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13d_rescheduled_to_the_future_keeps_new_data"
+ ],
+ "M13": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13c_answer_written_after_the_cutoff_is_trimmed"
+ ],
+ "M14": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13c_answer_written_after_the_cutoff_is_trimmed"
+ ],
+ "M15": [
+  "tests/m05/test_el2_postgres.py::test_el2_p13e_no_zone_past_bound_is_never_stored",
+  "tests/m05/test_el2_postgres.py::test_el2_p13g_no_zone_never_corrected_is_swept_past_the_bound",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[32]",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[33]",
+  "tests/m05/test_el2_postgres.py::test_el2_p13h_no_zone_bound_matches_the_recorded_boundary[34]"
+ ]
+}
