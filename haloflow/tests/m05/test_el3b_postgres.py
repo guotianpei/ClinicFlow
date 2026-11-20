@@ -928,7 +928,7 @@ def test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_pending_work(
         ts.start()
         assert hold.held.wait(60) and "staff_error" not in out, out.get("staff_error")
         pending_visible = [r["applied_at"] for r in e3.case_events(inst, ref)
-                           if r["case_event_id"] == seq2["case_event_id"]] == [None]
+                           if r["event_id"] == seq2["event_id"]] == [None]  # G-6
         key_locked = not e4.lockable(inst, "m05_el_appointments", "appointment_ref", ref)
         tb.start()
         tb.join(30)

@@ -73,10 +73,13 @@ import el3a_support as e3
 import m02_support
 import sa_support as sa
 
-EL3B_TARGET: Final = 125
+# Green deviation G-4 (disclosed; anticipated by pins v1 section 1 and Codex D-1 "update the
+# synthetic target"): + t126 `m05_el_project`, the owner-only projection helper; target 126.
+EL3B_TARGET: Final = 126
 EL3B_SUPPORTED: Final = range(EL3B_TARGET, EL3B_TARGET + 1)
 EL3B_UNITS: Final = ("t122_m05_el_staff_tables", "t123_m05_prepare_action_v4",
-                     "t124_m05_apply_action_v4", "t125_m05_action_v3_closure")
+                     "t124_m05_apply_action_v4", "t125_m05_action_v3_closure",
+                     "t126_m05_el_project")
 REBOUND_KEYS: Final = {"m05.followup.prepare": "m05_prepare_action_v4",
                        "m05.followup.apply": "m05_apply_action_v4"}
 
@@ -122,7 +125,7 @@ def el3b_catalog() -> Any:
 
 
 class EL3BInstall(e3.EL3AInstall):
-    """A synthetic tenant at target 125 (E3a + E3b), provisioned in the row, with the same
+    """A synthetic tenant at target 126 (E3a + E3b), provisioned in the row, with the same
     test profiles as E3a."""
 
     runtime_target: int = EL3B_TARGET
@@ -173,7 +176,7 @@ def module_install(request: Any, ids: m02_support.Identities,
 
 @asynccontextmanager
 async def staff_runtime(install: e3.EL3AInstall, *, el3b: bool = True) -> AsyncIterator[Any]:
-    """The tenant runtime for the staff chain: the E3b registry and catalogue (target 125),
+    """The tenant runtime for the staff chain: the E3b registry and catalogue (target 126),
     or with `el3b=False` the E3a ones (target 121) for the v3 parity oracle."""
     import service_support as sv
 
