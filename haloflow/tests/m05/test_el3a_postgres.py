@@ -31,20 +31,27 @@ Rows (stage-3 ids; trace in brackets):
 - E3a-P16 the E2-P03 fixture materialized: two timeouts open inconclusive /
   payer_unavailable; the later active check is a note [T3]
 - E3a-P17 view isolation: another tenant's item -> ITEM_NOT_FOUND [T3 isolation]
-- E3a-P18 exactly-once evidence for a pre-E3 backlog (E1 manual, E2 payer findings, active,
-  note-only): one evidence event per case event, metadata closed, dedupe keys unique,
-  re-drain idle [obligation 1, R4 audit]
+- E3a-P18 (v1r1) a pre-E3 backlog (E1 manual x3, E2 inactive, E2 active, a note-only
+  cancellation) drained across a restart (the third transaction dies after its append):
+  the expected identities come from settled VERIFICATION rows, independently of case
+  events; exactly one `record: settlement` observation per verification; notes and
+  findings carry no verification; only "opened" observations are item sources
+  [obligation 1, R4 audit, Codex red review 1]
 - E3a-P18b restart: a failure after the M02 append (and, separately, after the create)
   rolls everything back; the next run writes exactly one evidence event [obligation 1]
-- E3a-P19 an eligibility item cannot be resolved through the existing staff path (resolve,
-  claim_and_resolve): refused, item open, no resolution history, action or event
-  [obligation 3]
-- E3a-C06 two appliers on one appointment concurrently: one case, unique notes, one
-  evidence event per case event [M2 serialization]
+- E3a-P18c (v1r1) coverage_not_received is a `finding`, never a settlement
+- E3a-P19 (v1r1) an eligibility item cannot be resolved through the existing staff path
+  (resolve, claim_and_resolve): AppendFailed COMMAND_MALFORMED; a comparable legacy item
+  succeeds through the same actor, profile and path; the eligibility item's state, assignee
+  and version unchanged; no resolution history, action or event [obligation 3, review 2]
+- E3a-C06 (v1r1) forced overlap: applier A paused inside its transaction holding the
+  appointment key while applier B runs to completion and applies nothing for it; then A
+  drains; both finish; one case, notes 1..3, three evidence events [M2, review 3]
 - E3a-P20 privileges and catalogue: runtime EXECUTE on t119..t121 only; no runtime table
   privilege; statement keys; production registry {36} unchanged [R4, R7]
 - E3a-P21 refusals: closed key set; actor attribution; other workload -> nothing written
-- E3a-P22 activation off: settled findings still reach staff (D-R2); E2 settles nothing new
+- E3a-P22 activation off: settled findings still reach staff (D-R2, Codex agreed); a
+  checkable verification is refused at dispatch with no attempt row (no payer call)
 - E3a-P23 privacy: no coverage sentinel in cases, notes, evidence or items [EL-14]
 - E3a-P24 create_item_v3: legacy kinds unchanged; an eligibility source that is not an open
   case's -> SOURCE_NOT_ELIGIBLE; replay returns the same item [v1 section 5]
@@ -382,27 +389,80 @@ def _backlog(inst: e3.EL3AInstall) -> list[str]:
     return refs
 
 
-def test_el3a_p18_backlog_gets_exactly_one_evidence_event_per_case_event(
-        install: e3.EL3AInstall) -> None:
+def _settlement_check(inst: e3.EL3AInstall, refs: list[str]) -> None:
+    """Codex red review 1: the expected identities come from settled VERIFICATION rows
+    (independent of case events): exactly one settlement observation per verification;
+    every other observation is a finding or a note and carries no verification."""
+    expected = e3.settled_verifications(inst, refs)
+    assert expected, "the backlog must contain settlements"
+    evidence = [ev for r in refs for ev in e3.evidence(inst, r)]
+    settlements = [ev for ev in evidence if ev["metadata"]["record"] == "settlement"]
+    got = [ev["metadata"]["verification_id"] for ev in settlements]
+    assert sorted(got) == sorted(expected)  # each verification exactly once, none extra
+    for ev in evidence:
+        meta = ev["metadata"]
+        assert sorted(meta) == sorted(e3.METADATA_KEYS)
+        if meta["record"] != "settlement":
+            assert meta["verification_id"] is None
+        if meta["reason"] in e3.NOTE_ONLY:
+            assert meta["record"] == "note" and meta["class"] is None
+
+
+def test_el3a_p18_backlog_one_settlement_observation_per_verification_across_restart(
+        install: e3.EL3AInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    from haloflow.m02.observation import EventFoundation
+
     inst = e3.ready(install)
     refs = _backlog(inst)
     pending = sum(len(e3.case_events(inst, r)) for r in refs)
     assert all(ev["applied_at"] is None for r in refs for ev in e3.case_events(inst, r))
-    got = e3.drain(inst)
-    assert sum(got.values()) == pending
-    evidence = e3.evidence(inst)
-    assert len(evidence) == pending
-    by_event = {ev["metadata"]["case_event_id"]: ev for ev in evidence}
-    assert len(by_event) == pending
+    # E1 manual settlements carry no verification id on the case event (pre-E3 shape)
+    manual_events = [ev for r in refs[:3] for ev in e3.case_events(inst, r)]
+    assert manual_events and all(ev["verification_id"] is None for ev in manual_events)
+    # restart: the third transaction fails after its append; earlier ones stay committed
+    original = EventFoundation.append_observation_in
+    seen = {"n": 0}
+
+    async def third_fails(self: Any, binding: Any, observation: Any) -> Any:
+        got = await original(self, binding, observation)
+        seen["n"] += 1
+        if seen["n"] == 3:
+            raise RuntimeError("process died after the append")
+        return got
+
+    monkeypatch.setattr(EventFoundation, "append_observation_in", third_fails)
+    with pytest.raises(RuntimeError):
+        e3.drain(inst)
+    assert len(e3.evidence(inst)) == 2
+    monkeypatch.undo()
+    got = e3.drain(inst)  # a fresh runtime (restart)
+    assert sum(got.values()) == pending - 2
+    assert e3.drain(inst) == {}  # replay: idle
+    assert len(e3.evidence(inst)) == pending
+    _settlement_check(inst, refs)
     for r in refs:
         for row in e3.case_events(inst, r):
-            ev = by_event[row["event_id"]]
+            (ev,) = [x for x in e3.evidence(inst, r)
+                     if x["metadata"]["case_event_id"] == row["event_id"]]
             assert ev["event_id"] == row["evidence_event_id"]
             assert ev["producer_dedupe_key"] == f"elcase:{uuid.UUID(row['event_id']).hex}"
-            assert sorted(ev["metadata"]) == sorted(e3.METADATA_KEYS)
-            assert (ev["metadata"]["seq"], ev["metadata"]["reason"],
-                    ev["metadata"]["effect"]) == (row["seq"], row["reason"], row["effect"])
-    assert e3.drain(inst) == {} and len(e3.evidence(inst)) == pending
+    # the case-open effect stays distinct and linked: only "opened" evidence is a source
+    sources = {i["source_event_id"] for i in e3.el_items(inst)}
+    opened = {ev["event_id"] for ev in e3.evidence(inst) if ev["metadata"]["effect"] == "opened"}
+    assert sources == opened
+
+
+def test_el3a_p18c_coverage_not_received_is_a_finding_not_a_settlement(
+        install: e3.EL3AInstall) -> None:
+    inst = e3.ready(install, not_received_days=1)
+    ref, patient = sa.new_id(), sa.new_id()
+    el.put(inst, ref, patient, _start(0.5), coverage={"state": "pending"})
+    el.tick(inst)
+    e3.drain(inst)
+    (ev,) = e3.evidence(inst, ref)
+    assert (ev["metadata"]["record"], ev["metadata"]["verification_id"],
+            ev["metadata"]["effect"]) == ("finding", None, "opened")
+    assert e3.settled_verifications(inst, [ref]) == set()
 
 
 @pytest.mark.parametrize("fail_at", ["after_append", "after_create"])
@@ -449,70 +509,133 @@ def test_el3a_p18b_a_failure_mid_transaction_rolls_back_and_the_rerun_is_exactly
 
 # --- E3a-P19 no legacy resolution (Codex obligation 3) -----------------------------------
 
+def _legacy_counts(inst: e3.EL3AInstall, item: str) -> tuple[Any, ...]:
+    return (e3.rows(inst, "m05_followup_items", "item_id = %s::uuid", (item,)),
+            e3.count(inst, "m05_followup_history", "item_id = %s", (item,)),
+            e3.count(inst, "m05_followup_actions", "item_id = %s", (item,)),
+            e3.count(inst, "patient_events",
+                     "event_type = 'm05_followup_resolution_asserted'"))
+
+
 @pytest.mark.parametrize("path", ["resolve", "claim_and_resolve"])
 def test_el3a_p19_an_eligibility_item_cannot_be_resolved_through_the_existing_staff_path(
         install: e3.EL3AInstall, path: str) -> None:
+    """v1r1 (Codex red review 2): the refusal is pinned (AppendFailed COMMAND_MALFORMED,
+    the contract v2 item_kind enum), a comparable LEGACY item succeeds through the same
+    actor, profile and path, and the eligibility item's state and assignee are unchanged."""
+    import sd_support as sd
     import si_support as si
 
-    from haloflow.m05.service import ActionFailed, ActionRefused, ResolveAction
+    from haloflow.m02.observation import AppendFailed
+    from haloflow.m05.service import ResolveAction
 
     inst = e3.ready(install)
+    sd.begin(inst)  # type: ignore[arg-type]
     ref, _ = e3.manual(inst, _start())
     e3.drain(inst)
-    item = uuid.UUID(_one_case(inst, ref)["item_id"])
+    item = _one_case(inst, ref)["item_id"]
+
+    async def act(staff: Any, target: uuid.UUID, version: int) -> Any:
+        return await staff.chain.staff.act(await staff.chain.actor(), ResolveAction(
+            item_id=target, client_action_id=uuid.uuid4(), expected_version=version,
+            type=path, outcome_code="reached_no_change", note=None))
 
     async def body() -> None:
         async with e3.staff_runtime(inst) as rt:
             staff = si.StaffChain(inst, rt)
+            # the comparable legacy item: an unclear reply, same actor and path
+            _, phone, (lref,) = sa.fresh_patient(inst)
+            await staff.chain.dispatch(lref)
+            reply = await staff.chain.inbound(phone, "unclear")
+            legacy = reply.item_id
             version = 1
             if path == "resolve":
-                assert (await staff.chain.claim(item)).outcome == "applied"
+                assert (await staff.chain.claim(legacy)).outcome == "applied"
+                assert (await staff.chain.claim(uuid.UUID(item))).outcome == "applied"
                 version = 2
-            with pytest.raises((ActionFailed, ActionRefused)):
-                await staff.chain.staff.act(await staff.chain.actor(), ResolveAction(
-                    item_id=item, client_action_id=uuid.uuid4(), expected_version=version,
-                    type=path, outcome_code="reached_no_change", note=None))
+            ok = await act(staff, legacy, version)
+            assert (ok.outcome, ok.snapshot["state"]) == ("applied", "resolved")
+            before = _legacy_counts(inst, item)
+            with pytest.raises(AppendFailed) as raised:
+                await act(staff, uuid.UUID(item), version)
+            assert raised.value.reason_code == "COMMAND_MALFORMED"
+            assert _legacy_counts(inst, item)[:3] == before[:3]
 
     asyncio.run(body())
-    (row,) = e3.rows(inst, "m05_followup_items", "item_id = %s::uuid", (str(item),))
-    assert row["state"] != "resolved" and row["outcome_code"] is None
+    (row,) = e3.rows(inst, "m05_followup_items", "item_id = %s::uuid", (item,))
+    if path == "claim_and_resolve":
+        assert (row["state"], row["assignee_id"], row["version"]) == ("open", None, 1)
+    else:
+        assert (row["state"], row["assignee_id"], row["version"]) == ("open", sd.STAFF, 2)
+    assert row["outcome_code"] is None
     assert e3.count(inst, "m05_followup_history",
-                    "item_id = %s AND resolution_event_id IS NOT NULL", (str(item),)) == 0
+                    "item_id = %s AND resolution_event_id IS NOT NULL", (item,)) == 0
     assert e3.count(inst, "m05_followup_actions",
                     "item_id = %s AND requested_action IN ('resolve', 'claim_and_resolve')",
-                    (str(item),)) == 0
+                    (item,)) == 0
+    # exactly one resolution event exists: the legacy item's
     assert e3.count(inst, "patient_events",
-                    "event_type = 'm05_followup_resolution_asserted'") == 0
+                    "event_type = 'm05_followup_resolution_asserted'") == 1
     assert _one_case(inst, ref)["state"] == "open"
 
 
 # --- E3a-C06 concurrent appliers ----------------------------------------------------------
 
-def test_el3a_c06_two_appliers_on_one_appointment_serialize(install: e3.EL3AInstall) -> None:
+def test_el3a_c06_two_appliers_overlap_on_one_appointment_and_serialize(
+        install: e3.EL3AInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1r1 (Codex red review 3): forced overlap. Applier A is paused INSIDE its first
+    transaction (after the gateway locked the appointment key, at the M02 append) until
+    applier B has run to completion against the same appointment; B must apply nothing for
+    it (the key row is locked: SKIP LOCKED). Then A resumes and drains. Both finish."""
+    from haloflow.m02.observation import EventFoundation
+
     inst = e3.ready(install)
     start = _start()
     ref, patient, _ = e3.payer(inst, start, "inconclusive", "subscriber_not_found")
     e3.later(inst, ref, "previsit", "inactive", "coverage_inactive")
     el.put(inst, ref, patient, start, coverage=el.present(), status="cancelled")
     total = len(e3.case_events(inst, ref))
-    results: list[dict[str, int]] = []
+    assert total == 3
+
+    a_holds = threading.Event()
+    b_done = threading.Event()
+    original = EventFoundation.append_observation_in
+
+    async def pausing(self: Any, binding: Any, observation: Any) -> Any:
+        if threading.current_thread().name == "applier-A" and not a_holds.is_set():
+            a_holds.set()
+            await asyncio.get_running_loop().run_in_executor(None, b_done.wait, 60)
+        return await original(self, binding, observation)
+
+    monkeypatch.setattr(EventFoundation, "append_observation_in", pausing)
+    results: dict[str, dict[str, int]] = {}
     errors: list[BaseException] = []
 
-    def worker() -> None:
+    def run(name: str) -> None:
         try:
-            results.append(e3.drain(inst))
+            results[name] = e3.drain(inst)
         except BaseException as error:  # noqa: BLE001 - asserted below
             errors.append(error)
+        finally:
+            if name == "applier-B":
+                b_done.set()
 
-    threads = [threading.Thread(target=worker) for _ in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(60)
+    ta = threading.Thread(target=run, args=("applier-A",), name="applier-A")
+    ta.start()
+    assert a_holds.wait(60), "A never reached its append inside the transaction"
+    # A holds the appointment key now: nothing of this appointment is applied yet
+    assert all(r["applied_at"] is None for r in e3.case_events(inst, ref))
+    tb = threading.Thread(target=run, args=("applier-B",), name="applier-B")
+    tb.start()
+    tb.join(60)
+    assert not tb.is_alive(), "B did not finish while A held the key"
+    assert results["applier-B"] == {}  # B applied nothing for the locked appointment
+    ta.join(60)
+    assert not ta.is_alive(), "A did not finish"
     assert errors == []
-    assert sum(sum(r.values()) for r in results) == total
+    assert sum(results["applier-A"].values()) == total
     case = _one_case(inst, ref)
-    assert [n["seq"] for n in e3.notes(inst, case["case_id"])] == list(range(1, total + 1))
+    assert [n["seq"] for n in e3.notes(inst, case["case_id"])] == [1, 2, 3]
     assert case["case_version"] == total
     assert len(e3.evidence(inst, ref)) == total and len(e3.el_items(inst)) == 1
 
@@ -557,12 +680,23 @@ def test_el3a_p21_refusals_write_nothing(install: e3.EL3AInstall) -> None:
 
 def test_el3a_p22_activation_off_still_delivers_settled_findings(
         install: e3.EL3AInstall) -> None:
+    """D-R2 (Codex agreed): already-settled findings drain after eligibility checking is
+    switched off; workload authorization is unchanged (P21) and no new payer call is made:
+    a checkable appointment's verification is refused at dispatch with no attempt row."""
     inst = e3.ready(install)
     ref, _ = e3.manual(inst, _start())
+    checkable, _ = e2.enrol(inst, _start())
+    e2.due(inst)
+    vid = e2.own_verification(inst, checkable, "booking")
     el.el_settings(inst, enabled=False, lead_days=3, not_received_days=1,
                    priority=el.PRIORITY)
     assert e3.drain(inst) == {"opened": 1}
     assert len(e3.el_items(inst)) == 1
+    claimed = e2.claim(inst, vid)
+    assert claimed["outcome"] == "claimed"
+    assert e2.dispatch(inst, vid, claimed["epoch"])["outcome"] == "activation_off"
+    assert e2.slots(inst, checkable) == 0  # no attempt row: no payer call can follow
+    assert e3.case_events(inst, checkable) == []
 
 
 def test_el3a_p23_no_coverage_sentinel_reaches_cases_notes_evidence_or_items(

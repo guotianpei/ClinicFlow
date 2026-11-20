@@ -23,8 +23,17 @@ table privilege)
 - Event type `m05_eligibility_case_event` (family `m05_intake`, INACTIVE; the E3a test
   profile activates it), contract v1, metadata closed to exactly
   {appointment_ref, case_event_id, verification_id (string|null), seq (int),
-  coverage_version (int), class (string|null), reason, effect, open_kind}; `effect` in
-  {opened, noted, none}; `open_kind` is the item kind when effect = opened, else "none".
+  coverage_version (int), class (string|null), reason, effect, open_kind, record};
+  `effect` in {opened, noted, none}; `open_kind` is the item kind when effect = opened,
+  else "none". `record` (v1r1, Codex red review 1 and event-identity review) is the
+  settlement discriminator: "settlement" iff the case event records a verification
+  settlement - an E2 settlement (the event's own verification_id) or an E1 manual
+  settlement (no verification_id on the event: the applier resolves the BOOKING-owned
+  verification of the same appointment and coverage version, settled manual_required) -
+  and then `verification_id` is that verification; "finding" for an unresolved finding with
+  no verification (`coverage_not_received`); "note" for a note-only event. Only
+  "settlement" carries a verification_id. So exactly one settlement observation exists per
+  settled verification, and a note can never count as a settlement.
   Every metadata path is allow-listed for consumer m05. No identity or benefit field.
   (Deviation D-R1, declared: architecture v1 section 5 named an opens-only type
   `m05_eligibility_case_raised`; Codex obligation 1 needs one evidence event for EVERY
@@ -99,7 +108,8 @@ Service pins (`haloflow.m05.eligibility_cases`)
   patient_id from the result, source_time_quality "trusted", links ()), then for effect
   opened `m05.eligibility.create_item` (v3) with that event as source and the result's
   item_kind. A failure anywhere rolls all of it back (the event stays unapplied); a database
-  refusal is `EligibilityCaseFailed(reason_code)`; a lost acknowledgement after the commit
+  refusal is `EligibilityCaseFailed(reason_code)`; any other exception raised before the body
+  completes propagates unchanged (the IntakeService rule); a lost acknowledgement after the commit
   marker is `EligibilityCaseCommitUnknown`. Admission before any I/O: a WORKLOAD principal
   and context capabilities EQUAL to CASE_CAPABILITIES, else
   `EligibilityCaseRefused("PRINCIPAL_NOT_WORKLOAD" | "CAPABILITIES_INVALID")`.
@@ -118,6 +128,12 @@ Labels (`haloflow.m05.eligibility_labels`)
 
 Statement keys (catalogue): `m05.eligibility.apply`, `m05.eligibility.create_item`
 (capability `m05.eligibility.cases`), `m05.eligibility.case_view` (`m05.followup.read`).
+
+Legacy staff path (Codex obligation 3; v1r1 pins the refusal): until E3b, a resolve or
+claim_and_resolve of an eligibility item through the existing staff chain (M05Service actions
++ StaffServiceV3, resolution contract v2) raises `haloflow.m02.observation.AppendFailed` with
+reason_code "COMMAND_MALFORMED" (the contract v2 `item_kind` enum lists only the five legacy
+kinds), and the transaction rolls back: item state, assignee and version unchanged.
 
 Test profile: `haloflow.synthetic.composition.EL3A_TEST_PROFILE_SQL` activates the event
 type and inserts three intake-map rows (`m05_eligibility_case_event`, 1, 'open_kind',
@@ -146,7 +162,7 @@ KIND_BY_CLASS: Final = {"inactive": "eligibility_inactive",
                         "manual_required": "eligibility_manual"}
 EVENT_TYPE: Final = "m05_eligibility_case_event"
 METADATA_KEYS: Final = ("appointment_ref", "case_event_id", "class", "coverage_version",
-                        "effect", "open_kind", "reason", "seq", "verification_id")
+                        "effect", "open_kind", "reason", "record", "seq", "verification_id")
 EL3A_TABLES: Final = (*e2.EL2_TABLES, "m05_el_cases", "m05_el_case_notes")
 CASE_CAPABILITIES: Final = frozenset({"m05.eligibility.cases", "m02.observation.append"})
 STATEMENT_KEYS: Final = ("m05.eligibility.apply", "m05.eligibility.create_item",
@@ -507,3 +523,11 @@ async def worker_runtime(install: EL3AInstall) -> AsyncIterator[tuple[Any, Any]]
             context
     finally:
         await pool.close()
+
+
+def settled_verifications(install: EL3AInstall, refs: list[str]) -> set[str]:
+    """INDEPENDENT oracle (Codex red review 1): every settled verification of `refs`, read
+    from m05_el_verifications - E1 manual booking owners and E2 settlements alike."""
+    got = q(install, "SELECT verification_id::text FROM {s}.m05_el_verifications"
+            " WHERE state = 'settled' AND appointment_ref = ANY(%s::uuid[])", (refs,))
+    return {str(r[0]) for r in got}

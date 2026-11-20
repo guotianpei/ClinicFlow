@@ -164,7 +164,10 @@ def _applied(effect: str) -> dict[str, Any]:
             "verification_id": None, "seq": 1, "coverage_version": 1,
             "class": "manual_required" if effect != "none" else None,
             "reason": "nonpriority" if effect != "none" else "appointment_cancelled",
-            "effect": effect, "open_kind": "eligibility_manual" if effect == "opened" else "none"}
+            "effect": effect, "open_kind": "eligibility_manual" if effect == "opened" else "none",
+            "record": "note" if effect == "none" else "settlement"}
+    if effect != "none":
+        meta["verification_id"] = str(uuid.uuid4())
     return {"schema_version": 1, "outcome": "applied", "effect": effect,
             "case_event_id": event, "appointment_ref": meta["appointment_ref"], "seq": 1,
             "case_id": str(uuid.uuid4()) if effect != "none" else None,
