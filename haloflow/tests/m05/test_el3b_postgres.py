@@ -194,36 +194,61 @@ def test_el3b_p01c_reminder_kinds_resolution_through_v4_equals_v3(
 
 # --- E3b-P02 wrong-kind codes -------------------------------------------------------------
 
-@pytest.mark.parametrize("case", ["el_item_w1_code", "legacy_item_el_code",
-                                  "legacy_item_el_other_no_note"])
-def test_el3b_p02_wrong_kind_codes_are_malformed(install: e4.EL3BInstall, case: str) -> None:
+def test_el3b_p02_eligibility_item_with_a_w1_code_is_malformed(install: e4.EL3BInstall) -> None:
     inst = _begin(install)
     ref, el_item = _el_item(inst)
 
     async def body() -> str:
+        from haloflow.m05.service import ActionRefused
+
         async with e4.staff_runtime(inst) as rt:
             staff = e4.Staff(inst, rt)
-            from haloflow.m05.service import ActionRefused
-
+            assert (await staff.claim(el_item)).outcome == "applied"
+            call = staff.resolve(el_item, 2, "reached_no_change", await staff.token(el_item))
             try:
-                if case == "el_item_w1_code":
-                    assert (await staff.claim(el_item)).outcome == "applied"
-                    await staff.resolve(el_item, 2, "reached_no_change",
-                                        await staff.token(el_item))
-                else:
-                    legacy = await e3.legacy_check_item(inst, rt)
-                    assert (await staff.claim(legacy)).outcome == "applied"
-                    outcome = "el_self_pay" if case == "legacy_item_el_code" else "el_other"
-                    await staff.legacy_resolve(legacy, 2, outcome)
+                await call
             except ActionRefused as refused:
                 return str(refused.code)
             raise AssertionError("not refused")
 
-    before = e4.side_effects(inst, ref, str(el_item))
     assert asyncio.run(body()) == "COMMAND_MALFORMED"
-    after = e4.side_effects(inst, ref, str(el_item))
-    if case != "el_item_w1_code":
-        assert after == before
+    assert e3.count(inst, "patient_events",
+                    "event_type = 'm05_followup_resolution_asserted'") == 0
+
+
+@pytest.mark.parametrize(("outcome", "note_present"), [("el_self_pay", False),
+                                                       ("el_other", False)])
+def test_el3b_p02_legacy_item_with_an_el_code_is_malformed_at_both_layers(
+        install: e4.EL3BInstall, outcome: str, note_present: bool) -> None:
+    """Green correction (disclosed): the existing `ResolveAction` already refuses any code
+    outside W1 at construction (CommandMalformed outcome_code, production behaviour, unchanged
+    by E3b), so the database layer is exercised directly: the v4 prepare on a CLAIMED legacy
+    item with an OD-EL6 code is COMMAND_MALFORMED - for el_other without a note too (F1: never
+    NOTE_REQUIRED, the kind check precedes the deferred note rule)."""
+    from test_m05_actions_postgres import _cmd
+
+    from haloflow.m01.staff.service import CommandMalformed
+    from haloflow.m05.service import ResolveAction
+
+    with pytest.raises(CommandMalformed):
+        ResolveAction(item_id=uuid.uuid4(), client_action_id=uuid.uuid4(), expected_version=2,
+                      type="resolve", outcome_code=outcome, note=None)
+    inst = _begin(install)
+
+    async def legacy() -> uuid.UUID:
+        async with e4.staff_runtime(inst) as rt:
+            staff = e4.Staff(inst, rt)
+            item = await e3.legacy_check_item(inst, rt)
+            assert (await staff.claim(item)).outcome == "applied"
+            return uuid.UUID(str(item))
+
+    item = asyncio.run(legacy())
+    before = e4.item(inst, str(item))
+    got = sa.call(inst, "m05_prepare_action_v4", _cmd(
+        str(item), 2, "resolve",
+        action_extra={"outcome_code": outcome, "note_present": note_present}))
+    assert got == {"schema_version": 1, "decision": "REFUSED", "code": "COMMAND_MALFORMED"}
+    assert e4.item(inst, str(item)) == before
     assert e3.count(inst, "patient_events",
                     "event_type = 'm05_followup_resolution_asserted'") == 0
 

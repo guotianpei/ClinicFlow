@@ -125,6 +125,14 @@ class EL3BInstall(e3.EL3AInstall):
     """A synthetic tenant at target 125 (E3a + E3b), provisioned in the row, with the same
     test profiles as E3a."""
 
+    runtime_target: int = EL3B_TARGET
+
+    def runtime_registry(self) -> Any:
+        return el3b_registry()
+
+    def runtime_catalog(self) -> Any:
+        return el3b_catalog()
+
     def require(self) -> None:
         if not self._attempted:
             self._attempted = True
