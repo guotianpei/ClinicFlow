@@ -115,6 +115,11 @@ def _valid_tenants(tenants: object) -> bool:
             and len(set(tenants)) == len(tenants))
 
 
+def _for_tenant(context: object, tenant: str) -> bool:
+    """True only when the resolved context belongs to the scheduled tenant."""
+    return getattr(context, "tenant_id", None) == tenant
+
+
 def _valid_timeout(value: object) -> bool:
     return (type(value) in (int, float) and math.isfinite(value)  # type: ignore[arg-type]
             and 0 < value <= STOP_TIMEOUT_MAX_S)  # type: ignore[operator]
@@ -281,6 +286,11 @@ class EligibilityScheduler:
         except Exception as error:  # noqa: BLE001
             return TenantReport(tenant, DEGRADED, _failure_class(error), _RUN_NOT_RUN,
                                 _EXPIRE_NOT_RUN, _apply_not_run())
+        # Every context is checked against the scheduled tenant before use, so nothing
+        # runs, is written or is counted under the wrong tenant (Codex 3e007128, dcd06e8c).
+        if not _for_tenant(context, tenant):
+            return TenantReport(tenant, DEGRADED, TENANT_MISMATCH, _RUN_NOT_RUN,
+                                _EXPIRE_NOT_RUN, _apply_not_run())
         _cancel_pending()
         run = await self._run_phase(tenant, context)
         _cancel_pending()
@@ -298,10 +308,7 @@ class EligibilityScheduler:
         assert self._cases is not None and self._case_contexts is not None
         try:
             context = await self._case_contexts(tenant)
-            # The scheduled tenant owns this phase: a context resolved for any other tenant
-            # is refused before drain, so nothing is written or counted under the wrong
-            # tenant (Codex E3a green review, 2026-11-20).
-            if getattr(context, "tenant_id", None) != tenant:
+            if not _for_tenant(context, tenant):
                 return PhaseReport(TENANT_MISMATCH, counts)
             _cancel_pending()
             drained = await self._cases.drain(context, self._limit)
@@ -325,6 +332,9 @@ class EligibilityScheduler:
             try:
                 item_context = await self._contexts(tenant)
             except Exception:  # noqa: BLE001
+                counts["context_failed"] += 1
+                continue
+            if not _for_tenant(item_context, tenant):
                 counts["context_failed"] += 1
                 continue
             _cancel_pending()
