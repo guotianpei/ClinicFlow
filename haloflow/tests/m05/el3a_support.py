@@ -131,9 +131,11 @@ Statement keys (catalogue): `m05.eligibility.apply`, `m05.eligibility.create_ite
 
 Legacy staff path (Codex obligation 3; v1r1 pins the refusal): until E3b, a resolve or
 claim_and_resolve of an eligibility item through the existing staff chain (M05Service actions
-+ StaffServiceV3, resolution contract v2) raises `haloflow.m02.observation.AppendFailed` with
-reason_code "COMMAND_MALFORMED" (the contract v2 `item_kind` enum lists only the five legacy
-kinds), and the transaction rolls back: item state, assignee and version unchanged.
++ StaffServiceV3, resolution contract v2) raises `haloflow.m05.service.ActionFailed` with
+reason_code "ACTION_RESULT_INVALID": the service checks the NEW decision's item kind against
+its closed staff kind set before any key use, M02 append or apply (green correction G-2,
+measured; v1r1 had predicted AppendFailed COMMAND_MALFORMED at the append, which would also
+have refused, later). The transaction rolls back: item state, assignee and version unchanged.
 
 Test profile: `haloflow.synthetic.composition.EL3A_TEST_PROFILE_SQL` activates the event
 type and inserts three intake-map rows (`m05_eligibility_case_event`, 1, 'open_kind',
@@ -531,3 +533,38 @@ def settled_verifications(install: EL3AInstall, refs: list[str]) -> set[str]:
     got = q(install, "SELECT verification_id::text FROM {s}.m05_el_verifications"
             " WHERE state = 'settled' AND appointment_ref = ANY(%s::uuid[])", (refs,))
     return {str(r[0]) for r in got}
+
+
+async def legacy_check_item(install: EL3AInstall, rt: Any) -> Any:
+    """FIXTURE (E3a-P19 positive control, Codex red review 2): ONE legacy
+    `ehr_confirmation_check` item made through the EXISTING path - the M02 append of a
+    `m05_writeback_check_raised` observation and `m05.followup.create` - as the dispatch
+    workload, in one transaction. Returns the item id."""
+    import uuid
+    from datetime import UTC, datetime
+
+    import service_support as sv
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m02.observation import EventFoundation, Observation
+    from haloflow.m05.intake import _attribution
+
+    caps = frozenset({"m02.observation.append", "m05.followup.create"})
+    ctx = await sv.context(rt, install, sa.W_DISPATCH, caps, kind="workload")
+    foundation = EventFoundation(rt.gateway, producer_service=sa.PRODUCER)
+    event, op = uuid.uuid4(), uuid.uuid4()
+
+    async def body(binding: Any) -> Any:
+        await foundation.append_observation_in(binding, Observation(
+            event_id=event, event_type="m05_writeback_check_raised", contract_version=1,
+            correlation_id=op, producer_dedupe_key=f"wbcheck:{op.hex}", links=(),
+            metadata={"wb_op_id": str(op), "appointment_ref": str(uuid.uuid4()),
+                      "reason": "status_changed"},
+            patient_id=uuid.uuid4(), occurred_at=datetime.now(UTC),
+            source_time_quality="trusted"))
+        rows = await binding.handle.fetch_all("m05.followup.create", {"command": Jsonb({
+            "schema_version": 1, "source_event_id": str(event),
+            "item_kind": "ehr_confirmation_check", "attribution": _attribution(ctx)})})
+        return uuid.UUID(str(rows[0][0]["item_id"]))
+
+    return await foundation.run_in_transaction(ctx, body)

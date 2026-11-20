@@ -40,7 +40,16 @@ from haloflow.m01.statements import build_statement_catalog
 from haloflow.m05.activation_units import SC_INSTALLED_STATE_PROFILES, SC_TENANT_MIGRATIONS
 from haloflow.m05.due_statements import SB_PROTECTED, SB_STATEMENTS
 from haloflow.m05.due_units import SB_INSTALLED_STATE_PROFILES, SB_TENANT_MIGRATIONS
-from haloflow.m05.eligibility_statements import EL1_REBOUND, EL1_STATEMENTS, EL2_STATEMENTS
+from haloflow.m05.eligibility_case_units import (
+    EL3A_INSTALLED_STATE_PROFILES,
+    EL3A_TENANT_MIGRATIONS,
+)
+from haloflow.m05.eligibility_statements import (
+    EL1_REBOUND,
+    EL1_STATEMENTS,
+    EL2_STATEMENTS,
+    EL3A_STATEMENTS,
+)
 from haloflow.m05.eligibility_units import (
     EL1_ACL_AMENDMENTS,
     EL1_INSTALLED_STATE_PROFILES,
@@ -113,6 +122,20 @@ W_DISPATCH: Final = "00000000-0000-4000-8000-00000005a002"
 W_INGRESS: Final = "00000000-0000-4000-8000-00000005a003"
 W_TIMER: Final = "00000000-0000-4000-8000-00000005a004"
 
+# Eligibility E3a (synthetic; with `include_el3a`): activates the evidence event type and maps
+# its opening observations (discriminator `open_kind`) to the three eligibility item kinds,
+# produced by the timer workload. A TEST profile, as the S-I one.
+EL3A_EVENT_TYPE: Final = "m05_eligibility_case_event"
+EL3A_KINDS: Final = ("eligibility_inactive", "eligibility_inconclusive", "eligibility_manual")
+EL3A_TEST_PROFILE_SQL: Final = f"""
+UPDATE {{schema}}.event_types SET is_active = true WHERE event_type = '{EL3A_EVENT_TYPE}';
+INSERT INTO {{schema}}.m05_intake_map (source_event_type, source_contract_version,
+    discriminator_path, discriminator_value, item_kind, producer_workload_id,
+    active_in_production) VALUES
+""" + ",\n".join(
+    f"    ('{EL3A_EVENT_TYPE}', 1, 'open_kind', '{kind}', '{kind}', '{W_TIMER}', false)"
+    for kind in EL3A_KINDS) + ";\n"
+
 SA_TEST_PROFILE_SQL: Final = f"""
 UPDATE {{schema}}.ref_action_families SET is_active = true WHERE action_family = '{FAMILY}';
 UPDATE {{schema}}.event_types SET is_active = true
@@ -182,16 +205,19 @@ def _parts() -> tuple[Any, ...]:
 
 
 def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = False,
-                            include_el2: bool = False) -> Any:
+                            include_el2: bool = False, include_el3a: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
     `include_el1=True` (eligibility E1; default off, so every existing pin is unchanged)
     rebinds the directory key to `m05_directory_v4` and adds the eligibility tick key.
-    `include_el2=True` (requires `include_el1`) adds the seven eligibility worker keys."""
+    `include_el2=True` (requires `include_el1`) adds the seven eligibility worker keys.
+    `include_el3a=True` (requires `include_el2`) adds the case apply / create / view keys."""
 
     if include_el2 and not include_el1:
         raise ValueError("eligibility E2 composes on E1")
+    if include_el3a and not include_el2:
+        raise ValueError("eligibility E3a composes on E2")
     extra = (B5_STATEMENTS,) if include_b5 else ()
     rebound = SI_REBOUND
     if include_el1:
@@ -199,12 +225,14 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         extra = (*extra, EL1_REBOUND, EL1_STATEMENTS)
     if include_el2:
         extra = (*extra, EL2_STATEMENTS)
+    if include_el3a:
+        extra = (*extra, EL3A_STATEMENTS)
     return build_statement_catalog(*_parts(), rebound, SI_STATEMENTS, *extra,
                                    activation_protected=_protected())
 
 
 def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = False,
-                             include_el2: bool = False) -> Any:
+                             include_el2: bool = False, include_el3a: bool = False) -> Any:
     """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
     B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
     target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
@@ -214,6 +242,8 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
         raise ValueError("eligibility E1 composes on the synthetic (B5) registry")
     if include_el2 and not include_el1:
         raise ValueError("eligibility E2 composes on E1")
+    if include_el3a and not include_el2:
+        raise ValueError("eligibility E3a composes on E2")
     b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
     b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     el1_units = (EL1_TENANT_MIGRATIONS,) if include_el1 else ()
@@ -221,13 +251,15 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
     el1_amendments = EL1_ACL_AMENDMENTS if include_el1 else ()
     el2_units = (EL2_TENANT_MIGRATIONS,) if include_el2 else ()
     el2_profiles = dict(EL2_INSTALLED_STATE_PROFILES) if include_el2 else {}
+    el3a_units = (EL3A_TENANT_MIGRATIONS,) if include_el3a else ()
+    el3a_profiles = dict(EL3A_INSTALLED_STATE_PROFILES) if include_el3a else {}
     return build_tenant_migration_registry(
         *APPROVED_TENANT_MIGRATIONS, SA_TENANT_MIGRATIONS,
         # SB/SC sets are un-annotated MappingProxyType literals in their modules; the
         # cast only states their declared role (no conversion, no copy).
         cast("UnitDefinitions", SB_TENANT_MIGRATIONS),
         cast("UnitDefinitions", SC_TENANT_MIGRATIONS), SH_TENANT_MIGRATIONS, SH2_TENANT_MIGRATIONS,
-        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units, *el1_units, *el2_units,
+        SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units, *el1_units, *el2_units, *el3a_units,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES,
                                   **SA_INSTALLED_STATE_PROFILES,
@@ -237,7 +269,8 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
                                   **SH2_INSTALLED_STATE_PROFILES,
                                   **SH3_INSTALLED_STATE_PROFILES,
                                   **SI_INSTALLED_STATE_PROFILES,
-                                  **b5_profiles, **el1_profiles, **el2_profiles},
+                                  **b5_profiles, **el1_profiles, **el2_profiles,
+                                  **el3a_profiles},
         acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,
                         *SI_ACL_AMENDMENTS, *el1_amendments),
     )

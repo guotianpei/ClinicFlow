@@ -41,9 +41,12 @@ Rows (stage-3 ids; trace in brackets):
   rolls everything back; the next run writes exactly one evidence event [obligation 1]
 - E3a-P18c (v1r1) coverage_not_received is a `finding`, never a settlement
 - E3a-P19 (v1r1) an eligibility item cannot be resolved through the existing staff path
-  (resolve, claim_and_resolve): AppendFailed COMMAND_MALFORMED; a comparable legacy item
-  succeeds through the same actor, profile and path; the eligibility item's state, assignee
-  and version unchanged; no resolution history, action or event [obligation 3, review 2]
+  (resolve, claim_and_resolve): ActionFailed ACTION_RESULT_INVALID (green correction G-2);
+  a comparable legacy item (an
+  S-I ehr_confirmation_check made through the existing append + create path; green
+  correction G-1) succeeds through the same actor, profile and path; the eligibility
+  item's state, assignee and version unchanged; no resolution history, action or event
+  [obligation 3, review 2]
 - E3a-C06 (v1r1) forced overlap: applier A paused inside its transaction holding the
   appointment key while applier B runs to completion and applies nothing for it; then A
   drains; both finish; one case, notes 1..3, three evidence events [M2, review 3]
@@ -522,12 +525,19 @@ def test_el3a_p19_an_eligibility_item_cannot_be_resolved_through_the_existing_st
         install: e3.EL3AInstall, path: str) -> None:
     """v1r1 (Codex red review 2): the refusal is pinned (AppendFailed COMMAND_MALFORMED,
     the contract v2 item_kind enum), a comparable LEGACY item succeeds through the same
-    actor, profile and path, and the eligibility item's state and assignee are unchanged."""
+    actor, profile and path, and the eligibility item's state and assignee are unchanged.
+    Green correction G-1: the v1r1 legacy item came from an S-D unclear reply, whose
+    `sa.fresh_patient` seeding calls `m05_directory_put` (t038), closed to runtime by later
+    packages on this install (InsufficientPrivilege); the legacy item is now an S-I check
+    item made through the existing append + `m05.followup.create` path.
+    Green correction G-2 (measured): the refusal happens EARLIER than v1r1 pinned - the
+    existing staff service checks the NEW decision's item kind against its closed staff
+    kind set and raises ActionFailed("ACTION_RESULT_INVALID") before any key use, M02
+    append or apply; v1r1 predicted AppendFailed COMMAND_MALFORMED at the append."""
     import sd_support as sd
     import si_support as si
 
-    from haloflow.m02.observation import AppendFailed
-    from haloflow.m05.service import ResolveAction
+    from haloflow.m05.service import ActionFailed, ResolveAction
 
     inst = e3.ready(install)
     sd.begin(inst)  # type: ignore[arg-type]
@@ -543,11 +553,9 @@ def test_el3a_p19_an_eligibility_item_cannot_be_resolved_through_the_existing_st
     async def body() -> None:
         async with e3.staff_runtime(inst) as rt:
             staff = si.StaffChain(inst, rt)
-            # the comparable legacy item: an unclear reply, same actor and path
-            _, phone, (lref,) = sa.fresh_patient(inst)
-            await staff.chain.dispatch(lref)
-            reply = await staff.chain.inbound(phone, "unclear")
-            legacy = reply.item_id
+            # the comparable legacy item (an S-I check item through the existing append +
+            # create path), resolved by the same actor, profile and path
+            legacy = await e3.legacy_check_item(inst, rt)
             version = 1
             if path == "resolve":
                 assert (await staff.chain.claim(legacy)).outcome == "applied"
@@ -556,9 +564,9 @@ def test_el3a_p19_an_eligibility_item_cannot_be_resolved_through_the_existing_st
             ok = await act(staff, legacy, version)
             assert (ok.outcome, ok.snapshot["state"]) == ("applied", "resolved")
             before = _legacy_counts(inst, item)
-            with pytest.raises(AppendFailed) as raised:
+            with pytest.raises(ActionFailed) as raised:
                 await act(staff, uuid.UUID(item), version)
-            assert raised.value.reason_code == "COMMAND_MALFORMED"
+            assert raised.value.reason_code == "ACTION_RESULT_INVALID"
             assert _legacy_counts(inst, item)[:3] == before[:3]
 
     asyncio.run(body())
@@ -604,7 +612,9 @@ def test_el3a_c06_two_appliers_overlap_on_one_appointment_and_serialize(
     async def pausing(self: Any, binding: Any, observation: Any) -> Any:
         if threading.current_thread().name == "applier-A" and not a_holds.is_set():
             a_holds.set()
-            await asyncio.get_running_loop().run_in_executor(None, b_done.wait, 60)
+            finished = await asyncio.get_running_loop().run_in_executor(None, b_done.wait, 60)
+            # Codex red v1r1 hardening: A resumes only with evidence that B finished first.
+            assert finished is True, "B did not finish before A resumed"
         return await original(self, binding, observation)
 
     monkeypatch.setattr(EventFoundation, "append_observation_in", pausing)

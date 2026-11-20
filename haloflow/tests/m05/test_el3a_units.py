@@ -102,7 +102,7 @@ def test_el3a_u02_catalogue_adds_exactly_the_three_keys() -> None:
     before = set(build_synthetic_catalog(include_el1=True, include_el2=True).catalog.keys())
     after = e3.el3a_catalog().catalog
     assert set(after.keys()) - before == set(e3.STATEMENT_KEYS)
-    caps = {key: getattr(after[key], "capability", None) for key in e3.STATEMENT_KEYS}
+    caps = {key: after.resolve(key).required_capability for key in e3.STATEMENT_KEYS}
     assert caps == {"m05.eligibility.apply": "m05.eligibility.cases",
                     "m05.eligibility.create_item": "m05.eligibility.cases",
                     "m05.eligibility.case_view": "m05.followup.read"}

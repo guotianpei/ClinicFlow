@@ -108,12 +108,32 @@ import inspect
 import logging
 import pathlib
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _haloflow_loggers_enabled() -> Iterator[None]:
+    """The B3b 5a57ced fixture (as tests/m05/test_sb_runner_postgres.py): re-enable
+    `haloflow.*` loggers that an earlier in-process alembic `fileConfig` disabled
+    (disable_existing_loggers=True), so these log rows do not depend on which module first
+    imported the logger. Added with eligibility E3a: the E3a P19 row imports the S-I staff
+    chain (and so `haloflow.m05.outbound`) earlier in the run. Restored on exit."""
+    manager = logging.Logger.manager
+    names = [n for n, lg in list(manager.loggerDict.items())
+             if (n == "haloflow" or n.startswith("haloflow."))
+             and isinstance(lg, logging.Logger) and lg.disabled]
+    for n in names:
+        logging.getLogger(n).disabled = False
+    try:
+        yield
+    finally:
+        for n in names:
+            logging.getLogger(n).disabled = True
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "haloflow"
 LOGGER = "haloflow.m05.writeback"
