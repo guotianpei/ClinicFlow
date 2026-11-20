@@ -17,6 +17,7 @@ No request input selects the tenant, the principal or a capability. `reason` car
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Final
@@ -27,6 +28,7 @@ from starlette.responses import Response
 
 from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
 from haloflow.m01.staff.service import ReadFailed
+from haloflow.m05.eligibility_staff import CaseToken, EligibilityResolveAction, LogContactAction
 from haloflow.m05.service import ResolveAction, StaffAction
 from haloflow.platform.capabilities import SELF_STANDING, capabilities_for, route_capabilities
 from haloflow.platform.http import body, error_response, malformed
@@ -49,6 +51,69 @@ PURPOSE: Final = "operations"
 
 Call = Callable[[Any, Any], Awaitable[Any]]
 
+# Eligibility E3b (pins v1 section 5, F5 / Codex Q-T2a): SYNTHETIC-ONLY request shapes for the
+# eligibility fields; production `platform.routes` is unchanged. `case` carries the `get`
+# requirement (as `reason`); `contact` and `resolve` the `resolve` requirement (D-1 B2: a staff
+# action may project pending case events and append their evidence).
+SYN_RESOLVE_FIELDS: Final = {**RESOLVE_FIELDS, "case_token": False}
+CONTACT_FIELDS: Final = {"client_action_id": True, "expected_version": True,
+                         "contact_code": True, "case_token": True}
+_TOKEN_KEYS: Final = frozenset({"case_id", "item_id", "case_version"})
+_ROUTE_REQUIREMENT: Final = {"reason": "get", "case": "get", "contact": "resolve"}
+_UUID_TEXT: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _uuid_field(value: Any, field: str) -> uuid.UUID:
+    """Local (the B3b platform-import allowance is unchanged): canonical lowercase UUID text."""
+    if type(value) is not str or not _UUID_TEXT.fullmatch(value):
+        raise _Malformed(field)
+    return uuid.UUID(value)
+
+
+def _case_token(value: Any) -> CaseToken:
+    if type(value) is not dict or set(value) != _TOKEN_KEYS:
+        raise _Malformed("case_token")
+    version = value["case_version"]
+    if type(version) is not int or not 1 <= version <= 2147483647:
+        raise _Malformed("case_token")
+    try:
+        return CaseToken(case_id=_uuid_field(value["case_id"], "case_token"),
+                         item_id=_uuid_field(value["item_id"], "case_token"),
+                         case_version=version)
+    except _Malformed:
+        raise _Malformed("case_token") from None
+
+
+def _version(value: Any) -> int:
+    if type(value) is not int or not 1 <= value <= 2147483647:
+        raise _Malformed("expected_version")
+    return value
+
+
+def _eligibility_resolve(item_id: uuid.UUID, value: dict[str, Any]) -> EligibilityResolveAction:
+    note = value.get("note")
+    if note is not None and type(note) is not str:
+        raise _Malformed("note")
+    if type(value["type"]) is not str:
+        raise _Malformed("type")
+    if type(value["outcome_code"]) is not str:
+        raise _Malformed("outcome_code")
+    return EligibilityResolveAction(
+        item_id=item_id, client_action_id=_uuid_field(value["client_action_id"],
+                                                      "client_action_id"),
+        expected_version=_version(value["expected_version"]), type=value["type"],
+        outcome_code=value["outcome_code"], note=note, token=_case_token(value["case_token"]))
+
+
+def _log_contact(item_id: uuid.UUID, value: dict[str, Any]) -> LogContactAction:
+    if type(value["contact_code"]) is not str:
+        raise _Malformed("contact_code")
+    return LogContactAction(
+        item_id=item_id, client_action_id=_uuid_field(value["client_action_id"],
+                                                      "client_action_id"),
+        expected_version=_version(value["expected_version"]),
+        contact_code=value["contact_code"], token=_case_token(value["case_token"]))
+
 
 async def _parse(name: str, request: Request) -> Call:
     if name == "list":
@@ -56,13 +121,19 @@ async def _parse(name: str, request: Request) -> Call:
         return lambda m05, ctx: m05.list_items(ctx, query)
     item_id = _path_uuid(request.path_params["item_id"], "item_id")
     _no_query(request)
-    if name in ("get", "history", "reason"):
+    if name in ("get", "history", "reason", "case"):
         return lambda m05, ctx: getattr(m05, name)(ctx, item_id)
-    action: StaffAction | ResolveAction
+    action: StaffAction | ResolveAction | EligibilityResolveAction | LogContactAction
     if name == "act":
         action = _staff_action(item_id, await _json_object(request, ACT_FIELDS))
+    elif name == "contact":
+        action = _log_contact(item_id, await _json_object(request, CONTACT_FIELDS))
     else:
-        action = _resolve_action(item_id, await _json_object(request, RESOLVE_FIELDS))
+        value = await _json_object(request, SYN_RESOLVE_FIELDS)
+        if "case_token" in value:
+            action = _eligibility_resolve(item_id, value)
+        else:
+            action = _resolve_action(item_id, value)
 
     async def act(m05: Any, ctx: Any) -> dict[str, Any]:
         result = await m05.act(ctx, action)
@@ -94,7 +165,7 @@ def _failure(name: str, error: BaseException) -> Response:
         # ReadFailed ITEM_NOT_FOUND (its pin); production has no reason route, and its map
         # would call that 503 UNAVAILABLE. For `reason` only it is production's 404 NOT_FOUND
         # (as the accepted S-J test router did); everything else is production's map.
-        if name == "reason" and getattr(error, "reason_code", None) == "ITEM_NOT_FOUND":
+        if name in ("reason", "case") and getattr(error, "reason_code", None) == "ITEM_NOT_FOUND":
             return relabel(body("NOT_FOUND"))
         return relabel(error_response(error))
     try:
@@ -108,7 +179,7 @@ async def execute(lifecycle: Any, name: str, call: Call) -> Any:
     production two-step capability resolution for the fixed principal, then exactly one service
     call. Returns the service value, or a labelled refusal Response (production's map)."""
     services = lifecycle.services
-    route = "get" if name == "reason" else name
+    route = _ROUTE_REQUIREMENT.get(name, name)
     try:
         if services is None:
             return relabel(body("UNAVAILABLE"))
@@ -148,6 +219,9 @@ ROUTES: Final[dict[str, tuple[str, str]]] = {
     "reason": ("GET", PREFIX + "/{item_id}/reason"),
     "act": ("POST", PREFIX + "/{item_id}/actions"),
     "resolve": ("POST", PREFIX + "/{item_id}/resolve"),
+    # Eligibility E3b (synthetic only)
+    "case": ("GET", PREFIX + "/{item_id}/case"),
+    "contact": ("POST", PREFIX + "/{item_id}/contact"),
 }
 
 
