@@ -408,3 +408,16 @@ async def legacy_item(install: Any, rt: Any, kind: str) -> uuid.UUID:
 
     result: uuid.UUID = await foundation.run_in_transaction(ctx, body)
     return result
+
+
+def lock_waiters(install: Any, needle: str) -> int:
+    """From a separate admin connection: backends of this database currently WAITING ON A
+    HEAVYWEIGHT LOCK whose running statement contains `needle`."""
+    import psycopg
+
+    with psycopg.connect(install.ids.admin, autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname ="
+            " pg_catalog.current_database() AND wait_event_type = 'Lock'"
+            " AND query LIKE %s", (f"%{needle}%",)).fetchone()
+    return int(row[0]) if row else 0
