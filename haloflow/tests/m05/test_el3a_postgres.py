@@ -62,6 +62,9 @@ Rows (stage-3 ids; trace in brackets):
 - E3a-P25b apply phase refuses a valid case context for another tenant before drain: no
   case, item or evidence for B, zero counts reported under A (TENANT_MISMATCH); matched
   control opens B's case [Codex E3a green review 2026-11-20]
+- E3a-P25c pass context for another tenant: A refused before due/expire/apply
+  (TENANT_MISMATCH, NOT_RUN), B's eligibility rows unchanged; matched control COMPLETE
+  [Codex dcd06e8c]
 
 Mutant killers (wired at green): M05 note-only overwrites the current reason -> P07; M07 the
 view leaks coinsurance / deductible_total / txn_ref -> P14; plus E3a-only mutants declared at
@@ -821,6 +824,52 @@ def test_el3a_p25b_apply_phase_refuses_another_tenants_case_context(
 
     asyncio.run(control())
     assert _one_case(b, ref_b)["state"] == "open" and len(e3.el_items(b)) == 1
+
+
+_P25C_TABLES = ("m05_el_verifications", "m05_el_attempts", "m05_el_case_events",
+                "m05_el_cases", "m05_followup_items")
+
+
+def _snapshot(inst: e3.EL3AInstall) -> dict[str, list[str]]:
+    return {t: sorted(str(r) for r in e3.rows(inst, t)) for t in _P25C_TABLES}
+
+
+def test_el3a_p25c_pass_context_for_another_tenant_is_refused(
+        install: e3.EL3AInstall, other: e3.EL3AInstall) -> None:
+    """Codex dcd06e8c: while scheduling tenant A, the worker-context factory returns a valid
+    context for tenant B. A is refused before due/expire/apply (context TENANT_MISMATCH,
+    phases NOT_RUN); B's eligibility rows are unchanged. Matched control: A's own context
+    runs A to COMPLETE."""
+    from haloflow.m05.eligibility import EligibilityWorker
+    from haloflow.m05.eligibility_scheduler import EligibilityScheduler
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    a, b = e3.ready(install), e3.ready(other)
+    e3.manual(b, _start())
+    before = _snapshot(b)
+
+    async def body(use_b: bool) -> Any:
+        async with e3.worker_runtime(a) as (service_a, context_a), \
+                e3.worker_runtime(b) as (_service_b, context_b), \
+                e3.case_runtime(a) as (cases_a, case_context_a):
+            port = SimulatedClearinghouse(clock=lambda: datetime.now(UTC))
+            worker = EligibilityWorker(service_a, port, call_timeout_s=5)
+            scheduler = EligibilityScheduler(
+                contexts=context_b if use_b else context_a, service=service_a,
+                worker=worker, tenants=(a.tenant_id,), cases=cases_a,
+                case_contexts=case_context_a)
+            (report,) = (await scheduler.tick()).tenants
+            return report
+
+    wrong = asyncio.run(body(True))
+    assert (wrong.tenant, wrong.code, wrong.context) == (a.tenant_id, "DEGRADED",
+                                                         "TENANT_MISMATCH")
+    assert (wrong.run.status, wrong.expire.status, wrong.apply.status) == ("NOT_RUN",) * 3
+    assert _snapshot(b) == before
+    right = asyncio.run(body(False))
+    assert (right.code, right.context, right.run.status, right.expire.status,
+            right.apply.status) == ("COMPLETE", "ok", "ok", "ok", "ok")
+    assert _snapshot(b) == before
 
 
 _ = (timedelta, threading)

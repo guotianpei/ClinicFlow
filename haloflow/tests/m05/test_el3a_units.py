@@ -26,6 +26,12 @@ Rows:
 - E3a-U08 scheduler apply phase: a case context whose tenant differs from the scheduled
   tenant is refused before drain (TENANT_MISMATCH, zero counts, DEGRADED); matched control
   drains [Codex E3a green review 2026-11-20]
+- E3a-U09 scheduler pass context: a context for another tenant is refused before due /
+  expire / apply (context TENANT_MISMATCH, phases NOT_RUN); other tenants still run;
+  matched control [Codex dcd06e8c]
+- E3a-U10 scheduler per-ID context: a context for another tenant is refused before
+  run_one (context_failed), the rest of the batch, expire and apply continue; matched
+  control [Codex dcd06e8c]
 """
 
 from __future__ import annotations
@@ -358,6 +364,110 @@ def test_el3a_u08_control_matched_case_context_drains() -> None:
     assert report.apply.status == "ok"
     assert report.apply.counts == {"opened": 1, "noted": 0, "none": 0}
     assert report.code == "COMPLETE"
+
+
+# --- E3a-U09 / U10 scheduler run/expire tenant identity (Codex dcd06e8c, 2026-11-20) -----
+
+def _u09_world(pass_tenant: dict[str, str], item_tenants: list[str],
+               ids: dict[str, list[str]]) -> tuple[Any, list[tuple[str, str, str]]]:
+    """A scheduler whose context factory returns, for each scheduled tenant, a pass context
+    for `pass_tenant[t]` (default t) and then per-ID contexts from `item_tenants` (default
+    t). Calls are recorded as (op, scheduled tenant or ctx tenant, detail)."""
+    from types import SimpleNamespace
+
+    from haloflow.m05.eligibility import EligibilityService, EligibilityWorker
+    from haloflow.m05.eligibility_cases import EligibilityCaseService
+    from haloflow.m05.eligibility_scheduler import EligibilityScheduler
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    calls: list[tuple[str, str, str]] = []
+    built: dict[str, int] = {}
+    queue = list(item_tenants)
+
+    async def contexts(tenant: str) -> Any:
+        n = built.get(tenant, 0)
+        built[tenant] = n + 1
+        if n == 0:
+            return SimpleNamespace(tenant_id=pass_tenant.get(tenant, tenant))
+        return SimpleNamespace(tenant_id=queue.pop(0) if queue else tenant)
+
+    class Service(EligibilityService):
+        async def due(self, ctx: Any, limit: int = 100) -> list[str]:
+            calls.append(("due", ctx.tenant_id, ""))
+            return list(ids.get(ctx.tenant_id, []))
+
+        async def expire(self, ctx: Any, limit: int = 100) -> int:
+            calls.append(("expire", ctx.tenant_id, ""))
+            return 0
+
+    class Worker(EligibilityWorker):
+        async def run_one(self, ctx: Any, vid: Any) -> str:
+            calls.append(("run_one", ctx.tenant_id, str(vid)))
+            return "settled"
+
+    class Cases(EligibilityCaseService):
+        async def drain(self, ctx: Any, limit: int = 100) -> dict[str, int]:
+            calls.append(("drain", ctx.tenant_id, ""))
+            return {"opened": 0, "noted": 0, "none": 0}
+
+    async def case_contexts(tenant: str) -> Any:
+        return SimpleNamespace(tenant_id=tenant)
+
+    service = Service(_NoIo())
+    worker = Worker(service, SimulatedClearinghouse(clock=lambda: datetime.now(UTC)))
+    scheduler = EligibilityScheduler(contexts=contexts, service=service, worker=worker,
+                                     tenants=tuple(ids), cases=Cases(_NoIo()),
+                                     case_contexts=case_contexts)
+    return asyncio.run(scheduler.tick()), calls
+
+
+def test_el3a_u09_pass_context_for_another_tenant_is_refused_before_due() -> None:
+    """Tenant one's pass context resolves to tenant two: tenant one is refused before due,
+    expire and apply (context TENANT_MISMATCH, every phase NOT_RUN, DEGRADED); nothing runs
+    in either tenant's name for tenant one; tenant two is still processed (isolation)."""
+    result, calls = _u09_world({"tenant-one": "tenant-two"}, [],
+                               {"tenant-one": ["v-1"], "tenant-two": ["v-2"]})
+    one, two = result.tenants
+    assert (one.tenant, one.code, one.context) == ("tenant-one", "DEGRADED",
+                                                   "TENANT_MISMATCH")
+    assert (one.run.status, one.expire.status, one.apply.status) == ("NOT_RUN",) * 3
+    assert sum(one.run.counts.values()) == 0 and one.expire.counts == {"expired": 0}
+    assert one.apply.counts == {"opened": 0, "noted": 0, "none": 0}
+    assert calls == [("due", "tenant-two", ""), ("run_one", "tenant-two", "v-2"),
+                     ("expire", "tenant-two", ""), ("drain", "tenant-two", "")]
+    assert (two.code, two.context, two.run.counts["settled"]) == ("COMPLETE", "ok", 1)
+
+
+def test_el3a_u09_control_matched_pass_contexts_run_both_tenants() -> None:
+    result, calls = _u09_world({}, [], {"tenant-one": ["v-1"], "tenant-two": ["v-2"]})
+    assert [(t.code, t.context, t.run.counts["settled"]) for t in result.tenants] == [
+        ("COMPLETE", "ok", 1), ("COMPLETE", "ok", 1)]
+    assert [c for c in calls if c[0] == "run_one"] == [("run_one", "tenant-one", "v-1"),
+                                                       ("run_one", "tenant-two", "v-2")]
+
+
+def test_el3a_u10_per_id_context_for_another_tenant_is_refused_before_run_one() -> None:
+    """The fresh context for v-1 resolves to tenant two: v-1 is not run (context_failed),
+    v-2 with a matched context runs; expire and apply still run for tenant one; the run
+    phase is DEGRADED_ITEMS and nothing is attributed to tenant two."""
+    result, calls = _u09_world({}, ["tenant-two", "tenant-one"],
+                               {"tenant-one": ["v-1", "v-2"]})
+    (one,) = result.tenants
+    assert [c for c in calls if c[0] == "run_one"] == [("run_one", "tenant-one", "v-2")]
+    assert one.run.status == "DEGRADED_ITEMS"
+    assert (one.run.counts["context_failed"], one.run.counts["settled"]) == (1, 1)
+    assert sum(one.run.counts.values()) == 2
+    assert (one.expire.status, one.apply.status) == ("ok", "ok")
+    assert all(c[1] == "tenant-one" for c in calls)
+    assert one.code == "DEGRADED"
+
+
+def test_el3a_u10_control_matched_per_id_contexts_run_every_id() -> None:
+    result, calls = _u09_world({}, [], {"tenant-one": ["v-1", "v-2"]})
+    (one,) = result.tenants
+    assert [c for c in calls if c[0] == "run_one"] == [("run_one", "tenant-one", "v-1"),
+                                                       ("run_one", "tenant-one", "v-2")]
+    assert (one.run.status, one.run.counts["settled"], one.code) == ("ok", 2, "COMPLETE")
 
 
 # --- E3a-U07 ------------------------------------------------------------------------------

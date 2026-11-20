@@ -525,6 +525,9 @@ def _sched_mod() -> Any:
 class Ctx:
     def __init__(self, tenant: str, n: int) -> None:
         self.tenant, self.n = tenant, n
+        # The real TenantContext's field; the scheduler compares it with the scheduled
+        # tenant before using the context (E3a correction, Codex dcd06e8c).
+        self.tenant_id = tenant
 
 
 class World:
