@@ -935,3 +935,44 @@ def test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_pending_work(
     assert [c["state"] for c in e3.cases(inst, ref)] == ["closed"]
     key = e4.key_row(inst, ref)
     assert key["closure_watermark"] == key["next_seq"] - 1
+
+
+def test_el3b_c05p_control_the_lock_wait_probe_sees_a_waiting_backend(
+        el3a: e3.EL3AInstall) -> None:
+    """CONTROL (passes now): `el3b_support.lock_waiters` counts a backend that is waiting on
+    a row lock while running a statement containing the needle, and stops counting once the
+    holder releases. Proves the C05a probe can observe a lock wait at all."""
+    import threading
+    import time
+
+    import psycopg
+
+    inst = _begin(el3a)
+    ref, _ = e3.manual(inst, _start())
+    needle = "e3b_c05p_" + uuid.uuid4().hex[:8]
+    assert e4.lock_waiters(inst, needle) == 0
+    with psycopg.connect(inst.ids.admin) as holder:
+        holder.execute(sa.q(inst, "SELECT 1 FROM {s}.m05_el_appointments"
+                                  " WHERE appointment_ref = %s FOR UPDATE"), (ref,))
+        done = threading.Event()
+
+        def waiter() -> None:
+            with psycopg.connect(inst.ids.admin) as conn:
+                conn.execute(sa.q(inst, f"SELECT 1 /* {needle} */ FROM {{s}}.m05_el_appointments"
+                                        " WHERE appointment_ref = %s FOR UPDATE"), (ref,))
+                conn.rollback()
+            done.set()
+
+        t = threading.Thread(target=waiter)
+        t.start()
+        seen, deadline = 0, time.monotonic() + 30
+        try:
+            while time.monotonic() < deadline and seen == 0:
+                seen = e4.lock_waiters(inst, needle)
+                if seen == 0:
+                    time.sleep(0.05)
+        finally:
+            holder.rollback()
+            t.join(30)
+    assert seen == 1 and done.is_set()
+    assert e4.lock_waiters(inst, needle) == 0
