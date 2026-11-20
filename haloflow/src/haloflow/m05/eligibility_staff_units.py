@@ -19,7 +19,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Final
 
-from haloflow.m05.eligibility_case_units import EL_KINDS
+from haloflow.m05.eligibility_case_units import _EVENT_SCHEMA, EL_KINDS, EVENT_TYPE, METADATA_KEYS
 from haloflow.m05.eligibility_labels import CONTACT_LABELS, OUTCOME_LABELS
 from haloflow.m05.eligibility_units import _in
 from haloflow.m05.writeback_units import ITEM_KINDS
@@ -143,6 +143,29 @@ INSERT INTO {schema}.m02_envelope_path_allowlist
     ('m05', 'm05_followup_resolution_asserted', 3, 'assertion_kind'),
     ('m05', 'm05_followup_resolution_asserted', 3, 'item_kind');
 
+-- t122:step:case_event_contract_v2
+-- D-1 B1-b (Codex 85e37979): a synthetic-only contract version of the case evidence event
+-- whose producer is the staff follow-up service, for the events a staff action projects. v1
+-- (producer m05_intake, the timer path) is unchanged; metadata schema and allow-list as v1.
+INSERT INTO {schema}.event_contracts (
+    event_type, version, action_family, event_level, allowed_statuses, terminality,
+    compatible_outcome_class, precedence_rank, required_fields, required_links,
+    optional_links, metadata_json_schema, metadata_max_bytes, authorized_producers,
+    required_provenance, correction_policy, projection_rule_id, effective_from,
+    retired_at, signal_rule, value_constraints
+) VALUES (
+    '@@CASE_EVENT@@', 2, 'm05_intake', 'observation',
+    ARRAY['completed']::varchar(64)[], true, 'observation', 100,
+    ARRAY['correlation_id']::varchar(64)[], '[]'::jsonb, '[]'::jsonb,
+    '@@CASE_EVENT_SCHEMA@@'::jsonb, 1024, ARRAY['m05_followup']::varchar(64)[],
+    ARRAY[]::varchar(64)[], NULL, NULL, '2026-11-20T00:00:00Z', NULL,
+    '{"handoff_kind":"event_signal","signal_type":"m02.event.appended"}'::jsonb,
+    '{"operation_id":{"must_be_null":true}}'::jsonb
+);
+INSERT INTO {schema}.m02_envelope_path_allowlist
+    (consumer_module, event_type, contract_version, json_path) VALUES
+@@CASE_EVENT_ALLOW@@;
+
 -- t122:step:runtime_privileges
 REVOKE ALL ON {schema}.m05_outcome_kinds, {schema}.m05_contact_codes,
     {schema}.m05_contact_entries FROM haloflow_runtime;
@@ -156,7 +179,10 @@ GRANT SELECT (outcome_code, note_required, display_label) ON {schema}.m05_outcom
     TO haloflow_m05_owner;
 """
 ).replace("@@ALL_KINDS@@", _in(ALL_KINDS)).replace("@@EL_KINDS@@", _in(EL_KINDS)).replace(
-    "@@ACTIONS@@", _ACTIONS_V4).replace("@@RESOLUTION_SCHEMA@@", _RESOLUTION_V3_SCHEMA)
+    "@@ACTIONS@@", _ACTIONS_V4).replace("@@RESOLUTION_SCHEMA@@", _RESOLUTION_V3_SCHEMA).replace(
+    "@@CASE_EVENT_SCHEMA@@", _EVENT_SCHEMA).replace("@@CASE_EVENT@@", EVENT_TYPE).replace(
+    "@@CASE_EVENT_ALLOW@@", ",\n".join(f"    ('m05', '{EVENT_TYPE}', 2, '{k}')"
+                                      for k in METADATA_KEYS))
 
 
 

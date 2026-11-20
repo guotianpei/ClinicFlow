@@ -156,3 +156,37 @@ def test_el3b_u05_no_network_import() -> None:
     text = (SRC / "m05" / "eligibility_staff.py").read_text()
     for name in ("socket", "http.client", "urllib", "requests", "httpx", "aiohttp"):
         assert f"import {name}" not in text and f"from {name}" not in text
+
+
+# --- E3b-U06 contact entitlement parity (Codex D-1 B2, 85e37979) --------------------------
+
+def test_el3b_u06_contact_resolve_requirement_admits_exactly_the_act_route_actors() -> None:
+    """The `contact` route uses the `resolve` requirement (it may append evidence for projected
+    case events). Parity: over EVERY standing (status x access x roles), the `resolve`
+    requirement is met exactly when the `act` requirement is met - the capability matrix grants
+    prepare, apply and append together in one row - so no actor gains or loses the contact
+    action through the choice. Item-level resolution authority stays the gateway's (standing,
+    assignment, supervise), unchanged."""
+    from itertools import product
+
+    from haloflow.m01.staff.service import Standing
+    from haloflow.platform.capabilities import capabilities_for, route_capabilities
+
+    accesses = [frozenset(a) for a in ((), ("read",), ("act",), ("read", "act"))]
+    roles = [frozenset(r) for r in ((), ("supervisor",), ("clinic_admin",),
+                                    ("supervisor", "clinic_admin"))]
+    checked = 0
+    admitted: set[tuple[str, frozenset[str], frozenset[str]]] = set()
+    for status, access, role in product(("active", "inactive"), accesses, roles):
+        held = capabilities_for(Standing(status=status, access=tuple(sorted(access)),
+                                         roles=tuple(sorted(role))))
+        act = route_capabilities("act", held)
+        res = route_capabilities("resolve", held)
+        assert (act is None) == (res is None), (status, access, role)
+        if res is not None:
+            admitted.add((status, access, role))
+        checked += 1
+    assert checked == 32
+    # non-vacuous: exactly the active members with read AND act are admitted (4 role sets)
+    assert {(s, a) for s, a, _r in admitted} == {("active", frozenset({"read", "act"}))}
+    assert len(admitted) == 4
