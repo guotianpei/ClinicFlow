@@ -150,6 +150,35 @@ def test_el3b_p01b_legacy_resolution_through_v4_equals_v3(
     assert _legacy_resolution(_begin(install), True, outcome) == expected
 
 
+def _kind_resolution(inst: Any, v4: bool, kind: str, outcome: str) -> tuple[Any, ...]:
+    note = "legacy note" if outcome == "other" else None
+
+    async def body() -> tuple[Any, ...]:
+        async with e4.staff_runtime(inst, el3b=v4) as rt:
+            staff = e4.Staff(inst, rt, v4=v4)
+            target = await e4.legacy_item(inst, rt, kind)
+            assert (await staff.claim(target)).outcome == "applied"
+            res = await staff.legacy_resolve(target, 2, outcome, note=note)
+            return target, res.outcome, res.snapshot["state"], res.snapshot["outcome_code"]
+
+    target, *result = asyncio.run(body())
+    actions = [r[0] for r in e3.q(inst, "SELECT action FROM {s}.m05_followup_history"
+                                  " WHERE item_id = %s ORDER BY seq", (str(target),))]
+    (event,) = e3.rows(inst, "patient_events",
+                       "event_type = 'm05_followup_resolution_asserted'")
+    return (*result, actions, event["contract_version"], event["metadata"]["item_kind"])
+
+
+@pytest.mark.parametrize("outcome", e4.W1_CODES)
+@pytest.mark.parametrize("kind", e4.HISTORICAL_KINDS)
+def test_el3b_p01c_reminder_kinds_resolution_through_v4_equals_v3(
+        install: e4.EL3BInstall, el3a: e3.EL3AInstall, kind: str, outcome: str) -> None:
+    """Tranche 2: P01 for the four reminder kinds (fixture `el3b_support.legacy_item`)."""
+    expected = _kind_resolution(_begin(el3a), False, kind, outcome)
+    assert expected[:3] == ("applied", "resolved", outcome) and expected[5] == kind  # oracle
+    assert _kind_resolution(_begin(install), True, kind, outcome) == expected
+
+
 # --- E3b-P02 wrong-kind codes -------------------------------------------------------------
 
 @pytest.mark.parametrize("case", ["el_item_w1_code", "legacy_item_el_code",

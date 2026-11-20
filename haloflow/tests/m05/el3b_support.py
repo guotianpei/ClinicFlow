@@ -355,3 +355,56 @@ def lockable(install: Any, table: str, column: str, value: str) -> bool:
             return False
         conn.rollback()
         return True
+
+
+async def legacy_item(install: Any, rt: Any, kind: str) -> uuid.UUID:
+    """FIXTURE (P01, the four reminder kinds): one item of `kind` made through the EXISTING
+    path - the M02 append of the kind's source observation (`m05_reminder_reply_received`
+    with triage_kind, or `m05_reminder_no_reply`) by its mapped producer workload, then
+    `m05.followup.create`, in one transaction. Avoids `m05_directory_put` (closed to runtime
+    on this install; E3a green correction G-1). Returns the item id."""
+    from datetime import UTC, datetime
+
+    import service_support as sv
+
+    from haloflow.m02.observation import EventFoundation, Observation
+    from haloflow.m05.intake import _attribution
+
+    if kind == "ehr_confirmation_check":
+        return uuid.UUID(str(await e3.legacy_check_item(install, rt)))
+    reply = kind != "no_reply"
+    workload = sa.W_INGRESS if reply else sa.W_TIMER
+    caps = frozenset({"m02.observation.append", "m05.followup.create"})
+    ctx = await sv.context(rt, install, workload, caps, kind="workload")
+    foundation = EventFoundation(rt.gateway, producer_service=sa.PRODUCER)
+    event, inbound, reminder_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    ref, reminder = str(uuid.uuid4()), str(reminder_id)
+    # the intake service's own correlation and dedupe-key shapes (intake.py)
+    correlation, dedupe = ((inbound, f"reply:{inbound.hex}") if reply
+                           else (reminder_id, f"noreply:{reminder_id.hex}"))
+    if reply:
+        reply_class = {"reschedule_request": "reschedule", "cancel_request": "cancel",
+                       "unclear_reply": "unclear"}[kind]
+        event_type = "m05_reminder_reply_received"
+        metadata: dict[str, Any] = {"inbound_id": str(inbound), "reply_class": reply_class,
+                                    "triage_kind": kind, "appointment_ref": ref,
+                                    "reminder_id": reminder}
+    else:
+        event_type = "m05_reminder_no_reply"
+        metadata = {"reminder_id": reminder, "appointment_ref": ref, "triage_kind": "no_reply"}
+
+    async def body(binding: Any) -> Any:
+        from psycopg.types.json import Jsonb
+
+        await foundation.append_observation_in(binding, Observation(
+            event_id=event, event_type=event_type, contract_version=1,
+            correlation_id=correlation, producer_dedupe_key=dedupe, links=(),
+            metadata=metadata, patient_id=uuid.uuid4(), occurred_at=datetime.now(UTC),
+            source_time_quality="trusted"))
+        rows = await binding.handle.fetch_all("m05.followup.create", {"command": Jsonb({
+            "schema_version": 1, "source_event_id": str(event), "item_kind": kind,
+            "attribution": _attribution(ctx)})})
+        return uuid.UUID(str(rows[0][0]["item_id"]))
+
+    result: uuid.UUID = await foundation.run_in_transaction(ctx, body)
+    return result
