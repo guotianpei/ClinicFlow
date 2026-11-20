@@ -33,10 +33,22 @@ Tranche 1 rows:
   item -> case_changed, B open, zero side effects; a token naming a case of ANOTHER
   appointment -> case_changed, that case untouched.
 
-Tranche 2 (next): C01-C03 (W16/W17 projection, resolve and claim_and_resolve), C05 (forced
-overlap of applier and staff close), P15 (log_contact actor standing), routed closure through
-the synthetic `resolve` route (resolve AND claim_and_resolve), P01 for the four reply kinds,
-mutants M01-M04/M06.
+Tranche 2 rows (this file): P01c (the four reminder kinds x six W1 codes, v4 == v3), P15
+(log_contact standing == start_progress, v3 oracle), C01-C03 (W16 unapplied / W17 applied but
+unseen x resolve / claim_and_resolve: committed projection read from a separate transaction, no
+closure effect, refreshed close once, replay), C05a / C05b (forced overlap in both orders:
+applier holds the key -> the close waits, then case_changed; the close holds the key -> the
+applier skips it). Routed rows: test_el3b_routes_postgres.py.
+
+Mutant killers (test cases v1 E3-M rows; the el3b mutation harness is wired at green, as E1-E3a):
+- M01 the (kind, code) membership check moved BEFORE the item lock -> P01a (legacy precedence
+  for W1 inputs must stay v3's), P02 legacy_item_el_other_no_note (COMMAND_MALFORMED, not
+  NOTE_REQUIRED), P03.
+- M02 the (kind, code) membership check skipped -> P02 (all three cases).
+- M03 watermark := next_seq WITHOUT projecting first -> C01-C03 (W16), P10 (next_seq - 1).
+- M04 CASE_CHANGED rolls back its projection -> C01-C03 (projection committed, read from a
+  separate transaction), P13 (stale contact).
+- M06 log_contact allowed on a legacy kind -> P12 legacy_item.
 """
 
 from __future__ import annotations
@@ -669,3 +681,211 @@ def test_el3b_p15_log_contact_standing_equals_start_progress(
     progress, contact = _standing_code(inst, True, condition)
     assert (progress, contact) == (expected, expected)
     assert e3.count(inst, "m05_contact_entries") == 0
+
+
+# --- E3b-C01 .. C03 version-bound closure (W16 / W17, both resolve paths; tranche 2) ------
+
+@pytest.mark.parametrize("path", ["resolve", "claim_and_resolve"])
+@pytest.mark.parametrize("scenario", ["w16_unapplied", "w17_applied_unseen"])
+def test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once(
+        install: e4.EL3BInstall, scenario: str, path: str) -> None:
+    """Test cases v1 E3-C01..C03 + Codex v1r3 review. Staff hold a token for case_version v.
+    W16: a newer unresolved finding (seq2) is committed but UNAPPLIED; W17: seq2 is already
+    APPLIED but was never displayed. A close with the old token -> case_changed (a committed
+    business response, the snapshot is the refreshed case view at v + 1); read from a SEPARATE
+    transaction afterwards: the case is at v + 1 with seq2's note and seq2 applied (W16: the
+    action projected it), and there is NO closure effect (item state / assignee / outcome /
+    version, case state, watermark, history, resolution events, contact entries). The
+    refreshed close then succeeds once; its replay creates nothing."""
+    inst = _begin(install)
+    ref, item = _el_item(inst)
+
+    async def token() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            staff = e4.Staff(inst, rt)
+            if path == "resolve":
+                assert (await staff.claim(item)).outcome == "applied"
+            return await staff.token(item)
+
+    old = asyncio.run(token())
+    e3.later(inst, ref, "previsit", "inactive", "coverage_inactive")  # seq2, unapplied
+    if scenario == "w17_applied_unseen":
+        assert e3.drain(inst) == {"noted": 1}
+    before = e4.side_effects(inst, ref, str(item))
+    version = 2 if path == "resolve" else 1
+
+    async def close(tok: Any, key: uuid.UUID) -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            return await e4.Staff(inst, rt).resolve(item, version, "el_confirmed_inactive",
+                                                    tok, kind=path, key=key)
+
+    changed = asyncio.run(close(old, uuid.uuid4()))
+    assert changed.outcome == "case_changed"
+    assert int(changed.snapshot["case_version"]) == old.case_version + 1
+    # a separate transaction (admin connection, after the call returned)
+    (case,) = e3.cases(inst, ref)
+    assert (case["state"], case["case_version"]) == ("open", old.case_version + 1)
+    assert all(r["applied_at"] is not None for r in e3.case_events(inst, ref))
+    assert len(e3.notes(inst, case["case_id"])) == 2
+    after = e4.side_effects(inst, ref, str(item))
+    assert after[0] == before[0] and after[2:] == before[2:]  # no closure effect
+    assert [(c["state"], c.get("closure_outcome")) for c in e3.cases(inst, ref)] == [
+        ("open", None)]
+
+    async def refreshed() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            return await e4.Staff(inst, rt).token(item)
+
+    key = uuid.uuid4()
+    fresh = asyncio.run(refreshed())
+    first = asyncio.run(close(fresh, key))
+    assert (first.outcome, first.snapshot["state"]) == ("applied", "resolved")
+    replay = asyncio.run(close(fresh, key))
+    assert replay.outcome == "replayed"
+    (case,) = e3.cases(inst, ref)
+    assert (case["state"], case["closure_outcome"]) == ("closed", "el_confirmed_inactive")
+    assert e3.count(inst, "patient_events",
+                    "event_type = 'm05_followup_resolution_asserted'") == 1
+    key_row = e4.key_row(inst, ref)
+    assert key_row["closure_watermark"] == key_row["next_seq"] - 1
+
+
+# --- E3b-C05 applier vs staff close, forced overlap (tranche 2) ---------------------------
+
+def test_el3b_c05a_applier_holds_the_appointment_staff_close_waits_then_is_case_changed(
+        install: e4.EL3BInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex prep review C05: overlap evidence + durable state. The applier (thread
+    applier-A) is paused INSIDE its transaction at its M02 append for seq2, holding the
+    appointment key. A staff close with the pre-seq2 token (thread staff-S) starts and must
+    still be running after 2 s, and a separate connection cannot lock the key row. Then A is
+    released: A applies seq2 (note, case_version + 1) and S finishes case_changed. Durable:
+    one open case with two notes, no closure, no resolution event; then a refreshed close
+    succeeds once and the watermark = next_seq - 1."""
+    import threading
+
+    from haloflow.m02.observation import EventFoundation
+
+    inst = _begin(install)
+    ref, item = _el_item(inst)
+
+    async def tok() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            return await e4.Staff(inst, rt).token(item)
+
+    old = asyncio.run(tok())
+    e3.later(inst, ref, "previsit", "inactive", "coverage_inactive")  # seq2, unapplied
+    a_holds, a_release = threading.Event(), threading.Event()
+    original = EventFoundation.append_observation_in
+
+    async def pausing(self: Any, binding: Any, observation: Any) -> Any:
+        if threading.current_thread().name == "applier-A" and not a_holds.is_set():
+            a_holds.set()
+            released = await asyncio.get_running_loop().run_in_executor(
+                None, a_release.wait, 60)
+            assert released
+        return await original(self, binding, observation)
+
+    monkeypatch.setattr(EventFoundation, "append_observation_in", pausing)
+    out: dict[str, Any] = {}
+
+    def applier() -> None:
+        try:
+            out["applied"] = e3.drain(inst)
+        except BaseException as error:  # noqa: BLE001 - asserted below
+            out["applier_error"] = error
+            a_holds.set()
+
+    async def close() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            return await e4.Staff(inst, rt).resolve(item, 1, "el_self_pay", old,
+                                                    kind="claim_and_resolve")
+
+    def staff() -> None:
+        try:
+            out["close"] = asyncio.run(close())
+        except BaseException as error:  # noqa: BLE001 - asserted below
+            out["staff_error"] = error
+
+    ta = threading.Thread(target=applier, name="applier-A")
+    ta.start()
+    assert a_holds.wait(60) and "applier_error" not in out, out.get("applier_error")
+    ts = threading.Thread(target=staff, name="staff-S")
+    ts.start()
+    ts.join(2)
+    overlap = (ts.is_alive(), e4.lockable(inst, "m05_el_appointments", "appointment_ref", ref))
+    a_release.set()
+    ta.join(60)
+    ts.join(60)
+    assert overlap == (True, False), "the close did not wait for the applier's key lock"
+    assert not ta.is_alive() and not ts.is_alive()
+    assert "applier_error" not in out and "staff_error" not in out, out
+    assert out["applied"] == {"noted": 1}
+    assert out["close"].outcome == "case_changed"
+    (case,) = e3.cases(inst, ref)
+    assert (case["state"], case["case_version"]) == ("open", old.case_version + 1)
+    assert len(e3.notes(inst, case["case_id"])) == 2
+    assert e3.count(inst, "patient_events",
+                    "event_type = 'm05_followup_resolution_asserted'") == 0
+    monkeypatch.undo()
+
+    async def refreshed() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            staff_ = e4.Staff(inst, rt)
+            return await staff_.resolve(item, 1, "el_self_pay", await staff_.token(item),
+                                        kind="claim_and_resolve")
+
+    assert asyncio.run(refreshed()).outcome == "applied"
+    assert [c["state"] for c in e3.cases(inst, ref)] == ["closed"]
+    key = e4.key_row(inst, ref)
+    assert key["closure_watermark"] == key["next_seq"] - 1
+
+
+def test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_it(
+        install: e4.EL3BInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The reverse order. A staff close with a CURRENT token (thread staff-S) is paused right
+    after its prepare statement, holding the appointment key. An applier run meanwhile finds
+    the appointment locked and applies nothing for it (SKIP LOCKED), and a separate
+    connection cannot lock the key row. S is released and closes. Durable: one closed case,
+    watermark = next_seq - 1, one resolution event; a later finding then opens exactly one
+    new case (no lost or duplicate case)."""
+    import threading
+
+    inst = _begin(install)
+    ref, item = _el_item(inst)
+    hold = e4.hold_after(monkeypatch, "m05.followup.prepare", "staff-S")
+    out: dict[str, Any] = {}
+
+    async def close() -> Any:
+        async with e4.staff_runtime(inst) as rt:
+            staff_ = e4.Staff(inst, rt)
+            return await staff_.resolve(item, 1, "el_self_pay", await staff_.token(item),
+                                        kind="claim_and_resolve")
+
+    def staff() -> None:
+        try:
+            out["close"] = asyncio.run(close())
+        except BaseException as error:  # noqa: BLE001 - asserted below
+            out["staff_error"] = error
+            hold.held.set()
+
+    ts = threading.Thread(target=staff, name="staff-S")
+    ts.start()
+    assert hold.held.wait(60) and "staff_error" not in out, out.get("staff_error")
+    locked = not e4.lockable(inst, "m05_el_appointments", "appointment_ref", ref)
+    applied_meanwhile = e3.drain(inst)
+    hold.release.set()
+    ts.join(60)
+    assert not ts.is_alive() and "staff_error" not in out, out.get("staff_error")
+    assert locked, "the close did not hold the appointment key"
+    assert applied_meanwhile == {}
+    assert out["close"].outcome == "applied"
+    (case,) = e3.cases(inst, ref)
+    assert case["state"] == "closed"
+    key = e4.key_row(inst, ref)
+    assert key["closure_watermark"] == key["next_seq"] - 1
+    assert e3.count(inst, "patient_events",
+                    "event_type = 'm05_followup_resolution_asserted'") == 1
+    monkeypatch.undo()
+    e3.later(inst, ref, "previsit", "inactive", "coverage_inactive")
+    e3.drain(inst)
+    assert sorted(c["state"] for c in e3.cases(inst, ref)) == ["closed", "open"]
