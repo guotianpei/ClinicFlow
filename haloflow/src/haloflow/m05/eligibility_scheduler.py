@@ -59,6 +59,7 @@ OK: Final = "ok"
 NOT_RUN: Final = "NOT_RUN"
 DEGRADED_ITEMS: Final = "DEGRADED_ITEMS"
 INTERNAL: Final = "INTERNAL"
+TENANT_MISMATCH: Final = "TENANT_MISMATCH"
 
 RUN_KEYS: Final = (*WORKER_OUTCOMES, "context_failed", "failed")
 APPLY_KEYS: Final = ("opened", "noted", "none")
@@ -297,6 +298,11 @@ class EligibilityScheduler:
         assert self._cases is not None and self._case_contexts is not None
         try:
             context = await self._case_contexts(tenant)
+            # The scheduled tenant owns this phase: a context resolved for any other tenant
+            # is refused before drain, so nothing is written or counted under the wrong
+            # tenant (Codex E3a green review, 2026-11-20).
+            if getattr(context, "tenant_id", None) != tenant:
+                return PhaseReport(TENANT_MISMATCH, counts)
             _cancel_pending()
             drained = await self._cases.drain(context, self._limit)
         except Exception as error:  # noqa: BLE001
