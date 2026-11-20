@@ -502,3 +502,60 @@ def test_el3b_c04_a_token_for_another_case_is_case_changed_and_touches_nothing(
     assert e4.side_effects(inst, ref2, str(other_item)) == before_other
     assert [c["state"] for c in e3.cases(inst, ref) if c["case_id"] == case_b["case_id"]] \
         == ["open"]
+
+
+# --- E3b-P15 log_contact actor standing (tranche 2) ---------------------------------------
+
+def _standing_code(inst: Any, v4: bool, condition: str) -> tuple[str, str | None]:
+    """Claim an item as the staff member, change their standing (`deactivate` or `revoke`
+    act access), then attempt start_progress (and, on v4, log_contact). Returns the two
+    refusal codes ("applied" if not refused; None where not attempted)."""
+    import m05_support as m05
+    import staff_support as st
+
+    from haloflow.m05.service import ActionRefused, StaffAction
+
+    ref, item = _el_item(inst) if v4 else (None, None)
+
+    async def body() -> tuple[str, str | None]:
+        async with e4.staff_runtime(inst, el3b=v4) as rt:
+            staff = e4.Staff(inst, rt, v4=v4)
+            target = item if v4 else await e3.legacy_check_item(inst, rt)
+            assert target is not None
+            assert (await staff.claim(target)).outcome == "applied"
+            token = await staff.token(target) if v4 else None
+            if condition == "deactivate":
+                st.admin_op(inst, st.admin_command("deactivate", m05.S1))
+            else:
+                st.admin_op(inst, st.admin_command("revoke", m05.S1, access="act"))
+
+            async def code(call: Any) -> str:
+                try:
+                    await call
+                    return "applied"
+                except ActionRefused as refused:
+                    return str(refused.code)
+
+            progress = await code(staff.chain.staff.act(await staff.actor(), StaffAction(
+                item_id=target, client_action_id=uuid.uuid4(), expected_version=2,
+                type="start_progress")))
+            contact = (await code(staff.contact(target, 2, "el_left_message", token))
+                       if v4 else None)
+            return progress, contact
+
+    return asyncio.run(body())
+
+
+@pytest.mark.parametrize("condition", ["deactivate", "revoke_act"])
+def test_el3b_p15_log_contact_standing_equals_start_progress(
+        install: e4.EL3BInstall, el3a: e3.EL3AInstall, condition: str) -> None:
+    """Architecture v1r2 M4: log_contact uses the start_progress standing rule. Oracle: the
+    start_progress refusal for the same standing change on the E3a install (v3, measured
+    now); on E3b both start_progress and log_contact give exactly that code, and no contact
+    entry is written."""
+    expected, _ = _standing_code(_begin(el3a), False, condition)
+    assert expected != "applied"  # the oracle refuses
+    inst = _begin(install)
+    progress, contact = _standing_code(inst, True, condition)
+    assert (progress, contact) == (expected, expected)
+    assert e3.count(inst, "m05_contact_entries") == 0
