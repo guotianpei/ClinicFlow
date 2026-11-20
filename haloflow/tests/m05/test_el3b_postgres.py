@@ -327,40 +327,67 @@ def test_el3b_p11_each_contact_code_records_an_entry_and_changes_nothing_else(
                     "item_id = %s AND action = 'log_contact'", (str(item),)) == 4
 
 
+def _resolved_refusal_oracle(inst: Any) -> str:
+    """The existing state refusal for acting on a RESOLVED item: start_progress on a
+    resolved legacy item through v3 (E3a install). Measured now."""
+    from haloflow.m05.service import ActionRefused, StaffAction
+
+    async def body() -> str:
+        async with e4.staff_runtime(inst, el3b=False) as rt:
+            staff = e4.Staff(inst, rt, v4=False)
+            legacy = await e3.legacy_check_item(inst, rt)
+            assert (await staff.claim(legacy)).outcome == "applied"
+            assert (await staff.legacy_resolve(legacy, 2, "reached_no_change")).outcome \
+                == "applied"
+            action = StaffAction(item_id=legacy, client_action_id=uuid.uuid4(),
+                                 expected_version=3, type="start_progress")
+            actor = await staff.actor()
+            try:
+                await staff.chain.staff.act(actor, action)
+            except ActionRefused as refused:
+                return str(refused.code)
+            raise AssertionError("start_progress on a resolved item was not refused")
+
+    return asyncio.run(body())
+
+
 @pytest.mark.parametrize("case", ["legacy_item", "resolved_item", "unknown_code"])
-def test_el3b_p12_log_contact_refusals(install: e4.EL3BInstall, case: str) -> None:
+def test_el3b_p12_log_contact_refusals(install: e4.EL3BInstall, el3a: e3.EL3AInstall,
+                                       case: str) -> None:
+    """Codex tranche-1 review: the resolved-item code comes from the existing contract
+    (oracle, pinned ITEM_RESOLVED); only the contact call itself may raise."""
+    expected = "COMMAND_MALFORMED"
+    if case == "resolved_item":
+        expected = _resolved_refusal_oracle(_begin(el3a))
+        assert expected == "ITEM_RESOLVED"
+    from haloflow.m05.eligibility_staff import CaseToken
+    from haloflow.m05.service import ActionRefused
+
     inst = _begin(install)
     ref, item = _el_item(inst)
 
     async def body() -> str:
-        from haloflow.m05.eligibility_staff import CaseToken
-        from haloflow.m05.service import ActionRefused
-
         async with e4.staff_runtime(inst) as rt:
             staff = e4.Staff(inst, rt)
+            version = 1
+            if case == "legacy_item":
+                target = await e3.legacy_check_item(inst, rt)
+                token = CaseToken(case_id=uuid.uuid4(), item_id=target, case_version=1)
+            else:
+                target, token = item, await staff.token(item)
+            if case == "resolved_item":
+                assert (await staff.claim(item)).outcome == "applied"
+                assert (await staff.resolve(item, 2, "el_self_pay", token)).outcome == "applied"
+                token, version = await staff.token(item), 3
+            code = "el_unknown_code" if case == "unknown_code" else "el_left_message"
+            contact = staff.contact(target, version, code, token)
             try:
-                if case == "legacy_item":
-                    legacy = await e3.legacy_check_item(inst, rt)
-                    await staff.contact(legacy, 1, "el_left_message",
-                                        CaseToken(case_id=uuid.uuid4(), item_id=legacy,
-                                                  case_version=1))
-                elif case == "resolved_item":
-                    assert (await staff.claim(item)).outcome == "applied"
-                    token = await staff.token(item)
-                    assert (await staff.resolve(item, 2, "el_self_pay", token)).outcome \
-                        == "applied"
-                    await staff.contact(item, 3, "el_left_message", await staff.token(item))
-                else:
-                    await staff.contact(item, 1, "el_unknown_code", await staff.token(item))
+                await contact
             except ActionRefused as refused:
                 return str(refused.code)
-            raise AssertionError("not refused")
+            return "applied"
 
-    code = asyncio.run(body())
-    if case == "resolved_item":
-        assert code not in ("", "COMMAND_MALFORMED")  # the existing state refusal, measured
-    else:
-        assert code == "COMMAND_MALFORMED"
+    assert asyncio.run(body()) == expected
     assert e3.count(inst, "m05_contact_entries") == 0
 
 
@@ -412,96 +439,150 @@ def test_el3b_p13_log_contact_token_missing_stale_matching(install: e4.EL3BInsta
 
 # --- E3b-P17 cross-tenant -----------------------------------------------------------------
 
-def test_el3b_p17_another_tenants_item_gets_the_ordinary_missing_item_refusal(
-        install: e4.EL3BInstall, other: e4.EL3BInstall) -> None:
+def test_el3b_p17_cross_tenant_ids_and_tokens(install: e4.EL3BInstall,
+                                               other: e4.EL3BInstall) -> None:
+    """Codex tranche-1 review: an unknown id and another tenant's item id are each refused
+    exactly ITEM_NOT_FOUND (resolve and contact); a LOCAL item with a token naming the other
+    tenant's case is case_changed; both tenants' durable state is unchanged."""
     from haloflow.m05.eligibility_staff import CaseToken
+    from haloflow.m05.service import ActionRefused
 
     a, b = _begin(install), _begin(other)
+    ref_a, item_a = _el_item(a)
     ref_b, item_b = _el_item(b)
-    before_b = e4.side_effects(b, ref_b, str(item_b))
+    (case_b,) = e3.cases(b, ref_b)
+    before = (e4.side_effects(a, ref_a, str(item_a)), e4.side_effects(b, ref_b, str(item_b)))
 
-    async def body(target: uuid.UUID) -> str:
-        from haloflow.m05.service import ActionRefused
-
+    async def refusals(target: uuid.UUID) -> list[str]:
+        out = []
         async with e4.staff_runtime(a) as rt:
             staff = e4.Staff(a, rt)
             token = CaseToken(case_id=uuid.uuid4(), item_id=target, case_version=1)
-            codes = []
-            for call in (staff.resolve(target, 1, "el_self_pay", token, kind="claim_and_resolve"),
-                         staff.contact(target, 1, "el_left_message", token)):
+            for make in (lambda: staff.resolve(target, 1, "el_self_pay", token,
+                                               kind="claim_and_resolve"),
+                         lambda: staff.contact(target, 1, "el_left_message", token)):
+                call = make()
                 try:
                     await call
-                    codes.append("applied")
+                    out.append("applied")
                 except ActionRefused as refused:
-                    codes.append(str(refused.code))
-            return ",".join(codes)
+                    out.append(str(refused.code))
+        return out
 
-    unknown = asyncio.run(body(uuid.uuid4()))  # the oracle: a random unknown id
-    assert asyncio.run(body(item_b)) == unknown
-    assert "applied" not in unknown
-    assert e4.side_effects(b, ref_b, str(item_b)) == before_b
-    assert e3.count(a, "m05_contact_entries") == 0
-    assert e3.count(a, "patient_events",
-                    "event_type = 'm05_followup_resolution_asserted'") == 0
+    assert asyncio.run(refusals(uuid.uuid4())) == ["ITEM_NOT_FOUND", "ITEM_NOT_FOUND"]
+    assert asyncio.run(refusals(item_b)) == ["ITEM_NOT_FOUND", "ITEM_NOT_FOUND"]
+
+    async def foreign_token() -> list[str]:
+        async with e4.staff_runtime(a) as rt:
+            staff = e4.Staff(a, rt)
+            token = CaseToken(case_id=uuid.UUID(case_b["case_id"]), item_id=item_a,
+                              case_version=int(case_b["case_version"]))
+            r1 = await staff.resolve(item_a, 1, "el_self_pay", token, kind="claim_and_resolve")
+            r2 = await staff.contact(item_a, 1, "el_left_message", token)
+            return [r1.outcome, r2.outcome]
+
+    assert asyncio.run(foreign_token()) == ["case_changed", "case_changed"]
+    assert (e4.side_effects(a, ref_a, str(item_a)),
+            e4.side_effects(b, ref_b, str(item_b))) == before
+    assert e3.count(a, "m05_contact_entries") == 0 and e3.count(b, "m05_contact_entries") == 0
 
 
 # --- E3b-C04 exact binding ----------------------------------------------------------------
 
-def test_el3b_c04_a_token_for_another_case_is_case_changed_and_touches_nothing(
-        install: e4.EL3BInstall) -> None:
+def _bound_act(inst: Any, item: uuid.UUID, token: Any, version: int = 1) -> list[str]:
+    async def body() -> list[str]:
+        async with e4.staff_runtime(inst) as rt:
+            staff = e4.Staff(inst, rt)
+            r1 = await staff.resolve(item, version, "el_self_pay", token,
+                                     kind="claim_and_resolve")
+            r2 = await staff.contact(item, version, "el_left_message", token)
+            return [r1.outcome, r2.outcome]
+
+    return asyncio.run(body())
+
+
+def test_el3b_c04_exact_binding_and_no_lock_on_a_named_foreign_case(
+        install: e4.EL3BInstall, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1r1 T1 + Codex tranche-1 review. Appointment R: case A closed, case B open, with A's
+    case_version forced equal to B's; appointment R2: case X open. Each of these is
+    case_changed for resolve AND contact, with zero side effects on B, X and A:
+    (1) B's item + A's case id; (2) B's item + X's case (another appointment);
+    (3) reverse: X's item + B's case; (4) B's item + B's case but X's item id.
+    Lock evidence for (2): while the action is paused right after its prepare statement
+    (transaction open), a separate connection can lock X's case row and R2's key row NOWAIT,
+    and cannot lock B's case row (the action holds it). (5) Matched control: B's item with
+    its own token applies."""
+    import threading
+
     from haloflow.m05.eligibility_staff import CaseToken
 
     inst = _begin(install)
     ref, first = _el_item(inst)
-    ref2, other_item = _el_item(inst)  # a case of ANOTHER appointment
+    ref2, x_item = _el_item(inst)
 
-    async def tokens() -> tuple[Any, Any]:
-        async with e4.staff_runtime(inst) as rt:
-            staff = e4.Staff(inst, rt)
-            return await staff.token(first), await staff.token(other_item)
-
-    token_a, token_other = asyncio.run(tokens())
-
-    async def close_a() -> None:
+    async def close_first() -> None:
         async with e4.staff_runtime(inst) as rt:
             staff = e4.Staff(inst, rt)
             assert (await staff.claim(first)).outcome == "applied"
             res = await staff.resolve(first, 2, "el_verified_active", await staff.token(first))
             assert res.outcome == "applied"
 
-    asyncio.run(close_a())
+    asyncio.run(close_first())
     e3.later(inst, ref, "previsit", "inactive", "coverage_inactive")
     e3.drain(inst)
     (case_b,) = [c for c in e3.cases(inst, ref) if c["state"] == "open"]
-    item_b = uuid.UUID(case_b["item_id"])
-    # A's last case_version equals B's current one (v1r1 T1), so only the case/item binding
-    # can tell them apart.
     (case_a,) = [c for c in e3.cases(inst, ref) if c["state"] == "closed"]
+    (case_x,) = e3.cases(inst, ref2)
+    item_b = uuid.UUID(case_b["item_id"])
     e3.q(inst, "UPDATE {s}.m05_el_cases SET case_version = %s WHERE case_id = %s",
          (int(case_b["case_version"]), case_a["case_id"]))
-    before = e4.side_effects(inst, ref, str(item_b))
-    before_other = e4.side_effects(inst, ref2, str(other_item))
+    vb, vx = int(case_b["case_version"]), int(case_x["case_version"])
 
-    async def act(token: Any) -> list[str]:
+    def tok(case: dict[str, Any], item: uuid.UUID, version: int) -> Any:
+        return CaseToken(case_id=uuid.UUID(case["case_id"]), item_id=item,
+                         case_version=version)
+
+    before = (e4.side_effects(inst, ref, str(item_b)),
+              e4.side_effects(inst, ref2, str(x_item)), e3.cases(inst, ref))
+    assert _bound_act(inst, item_b, tok(case_a, item_b, vb)) == ["case_changed"] * 2   # (1)
+
+    hold = e4.hold_after(monkeypatch, "m05.followup.prepare", "actor-c04")
+    got: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            got["out"] = _bound_act(inst, item_b, tok(case_x, item_b, vx))             # (2)
+        except BaseException as error:  # noqa: BLE001 - asserted below
+            got["error"] = error
+            hold.held.set()
+
+    worker = threading.Thread(target=run, name="actor-c04")
+    worker.start()
+    assert hold.held.wait(60), "the action never reached its prepare statement"
+    assert "error" not in got, got.get("error")
+    probe = (e4.lockable(inst, "m05_el_cases", "case_id", case_x["case_id"]),
+             e4.lockable(inst, "m05_el_appointments", "appointment_ref", ref2),
+             e4.lockable(inst, "m05_el_cases", "case_id", case_b["case_id"]))
+    hold.release.set()
+    worker.join(60)
+    assert not worker.is_alive() and "error" not in got, got.get("error")
+    assert probe == (True, True, False)
+    assert got["out"] == ["case_changed"] * 2
+    monkeypatch.undo()
+
+    assert _bound_act(inst, x_item, tok(case_b, x_item, vb)) == ["case_changed"] * 2   # (3)
+    assert _bound_act(inst, item_b, tok(case_b, x_item, vb)) == ["case_changed"] * 2   # (4)
+    assert (e4.side_effects(inst, ref, str(item_b)),
+            e4.side_effects(inst, ref2, str(x_item)), e3.cases(inst, ref)) == before
+
+    async def matched() -> Any:                                                         # (5)
         async with e4.staff_runtime(inst) as rt:
             staff = e4.Staff(inst, rt)
-            out = []
-            for call in (staff.resolve(item_b, 1, "el_self_pay", token,
-                                       kind="claim_and_resolve"),
-                         staff.contact(item_b, 1, "el_left_message", token)):
-                out.append((await call).outcome)
-            return out
+            return await staff.resolve(item_b, 1, "el_self_pay", await staff.token(item_b),
+                                       kind="claim_and_resolve")
 
-    stale_a = CaseToken(case_id=token_a.case_id, item_id=item_b,
-                        case_version=int(case_b["case_version"]))
-    assert asyncio.run(act(stale_a)) == ["case_changed", "case_changed"]
-    foreign = CaseToken(case_id=token_other.case_id, item_id=item_b,
-                        case_version=token_other.case_version)
-    assert asyncio.run(act(foreign)) == ["case_changed", "case_changed"]
-    assert e4.side_effects(inst, ref, str(item_b)) == before
-    assert e4.side_effects(inst, ref2, str(other_item)) == before_other
-    assert [c["state"] for c in e3.cases(inst, ref) if c["case_id"] == case_b["case_id"]] \
-        == ["open"]
+    assert asyncio.run(matched()).outcome == "applied"
+    assert [c["state"] for c in e3.cases(inst, ref)].count("open") == 0
 
 
 # --- E3b-P15 log_contact actor standing (tranche 2) ---------------------------------------

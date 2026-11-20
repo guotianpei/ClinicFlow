@@ -298,3 +298,60 @@ def side_effects(install: e3.EL3AInstall, ref: str, item_id: str) -> tuple[Any, 
             count(install, "patient_events",
                   "event_type = 'm05_followup_resolution_asserted'"),
             contact_entries(install, item_id))
+
+
+# --- lock evidence seams (Codex tranche-1 review, C04) ------------------------------------
+
+class Hold:
+    """Pause the tenant transaction of the thread named `thread` right AFTER statement `key`
+    returns (its locks still held) until `release` is set."""
+
+    def __init__(self) -> None:
+        import threading
+
+        self.held = threading.Event()
+        self.release = threading.Event()
+
+
+def hold_after(monkeypatch: Any, key: str, thread: str) -> Hold:
+    import threading
+
+    from haloflow.m01.gateway import TenantRepositoryHandle
+
+    hold = Hold()
+    for name in ("execute", "fetch_one", "fetch_all"):
+        original = getattr(TenantRepositoryHandle, name)
+
+        def make(method: Any) -> Any:
+            async def paused(self: Any, statement_key: str, params: Any = None) -> Any:
+                result = await method(self, statement_key, params)
+                if (statement_key == key and threading.current_thread().name == thread
+                        and not hold.held.is_set()):
+                    hold.held.set()
+                    released = await asyncio.get_running_loop().run_in_executor(
+                        None, hold.release.wait, 60)
+                    assert released, "the hold was never released"
+                return result
+
+            return paused
+
+        monkeypatch.setattr(TenantRepositoryHandle, name, make(original))
+    return hold
+
+
+def lockable(install: Any, table: str, column: str, value: str) -> bool:
+    """From a SEPARATE admin connection: can the row be locked right now (FOR UPDATE NOWAIT)?
+    False = another transaction holds it."""
+    import psycopg
+    from psycopg import errors, sql
+
+    with psycopg.connect(install.ids.admin) as conn:
+        try:
+            conn.execute(sql.SQL("SELECT 1 FROM {}.{} WHERE {} = %s FOR UPDATE NOWAIT").format(
+                sql.Identifier(install.schema), sql.Identifier(table),
+                sql.Identifier(column)), (value,))
+        except errors.LockNotAvailable:
+            conn.rollback()
+            return False
+        conn.rollback()
+        return True
