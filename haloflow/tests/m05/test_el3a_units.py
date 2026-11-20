@@ -23,6 +23,9 @@ Rows:
 - E3a-U06 scheduler: cases and case_contexts both or neither (CASES_INVALID); apply runs
   after expire; without cases, apply is NOT_RUN with zero counts [pins]
 - E3a-U07 no network import in the E3a modules [EL-6]
+- E3a-U08 scheduler apply phase: a case context whose tenant differs from the scheduled
+  tenant is refused before drain (TENANT_MISMATCH, zero counts, DEGRADED); matched control
+  drains [Codex E3a green review 2026-11-20]
 """
 
 from __future__ import annotations
@@ -297,6 +300,64 @@ def test_el3a_u06_tenant_report_has_an_apply_phase() -> None:
     from haloflow.m05.eligibility_scheduler import TenantReport
 
     assert [f.name for f in fields(TenantReport)][-3:] == ["run", "expire", "apply"]
+
+
+# --- E3a-U08 scheduler apply-phase tenant identity (Codex green review, 2026-11-20) -------
+
+def _u08_run(case_tenant: str) -> tuple[Any, list[tuple[str, int]]]:
+    from types import SimpleNamespace
+
+    from haloflow.m05.eligibility import EligibilityService, EligibilityWorker
+    from haloflow.m05.eligibility_cases import EligibilityCaseService
+    from haloflow.m05.eligibility_scheduler import EligibilityScheduler
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    drained: list[tuple[str, int]] = []
+
+    class Service(EligibilityService):
+        async def due(self, ctx: Any, limit: int = 100) -> list[str]:
+            return []
+
+        async def expire(self, ctx: Any, limit: int = 100) -> int:
+            return 0
+
+    class Cases(EligibilityCaseService):
+        async def drain(self, ctx: Any, limit: int = 100) -> dict[str, int]:
+            drained.append((ctx.tenant_id, limit))
+            return {"opened": 1, "noted": 0, "none": 0}
+
+    async def contexts(tenant: str) -> Any:
+        return SimpleNamespace(tenant_id=tenant)
+
+    async def case_contexts(_tenant: str) -> Any:
+        return SimpleNamespace(tenant_id=case_tenant)
+
+    service = Service(_NoIo())
+    worker = EligibilityWorker(service, SimulatedClearinghouse(clock=lambda: datetime.now(UTC)))
+    scheduler = EligibilityScheduler(contexts=contexts, service=service, worker=worker,
+                                     tenants=("tenant-one",), cases=Cases(_NoIo()),
+                                     case_contexts=case_contexts)
+    (report,) = asyncio.run(scheduler.tick()).tenants
+    return report, drained
+
+
+def test_el3a_u08_apply_refuses_a_case_context_for_another_tenant() -> None:
+    """A valid context for tenant B returned while scheduling tenant A is refused before
+    drain: nothing is drained, A reports zero apply counts, TENANT_MISMATCH, DEGRADED."""
+    report, drained = _u08_run("tenant-two")
+    assert drained == []
+    assert report.tenant == "tenant-one"
+    assert report.apply.status == "TENANT_MISMATCH"
+    assert report.apply.counts == {"opened": 0, "noted": 0, "none": 0}
+    assert report.code == "DEGRADED"
+
+
+def test_el3a_u08_control_matched_case_context_drains() -> None:
+    report, drained = _u08_run("tenant-one")
+    assert drained == [("tenant-one", 100)]
+    assert report.apply.status == "ok"
+    assert report.apply.counts == {"opened": 1, "noted": 0, "none": 0}
+    assert report.code == "COMPLETE"
 
 
 # --- E3a-U07 ------------------------------------------------------------------------------

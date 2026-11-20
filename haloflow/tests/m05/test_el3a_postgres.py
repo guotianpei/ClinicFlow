@@ -59,6 +59,9 @@ Rows (stage-3 ids; trace in brackets):
 - E3a-P24 create_item_v3: legacy kinds unchanged; an eligibility source that is not an open
   case's -> SOURCE_NOT_ELIGIBLE; replay returns the same item [v1 section 5]
 - E3a-P25 the scheduler runs run -> expire -> apply when given the case service [R7]
+- E3a-P25b apply phase refuses a valid case context for another tenant before drain: no
+  case, item or evidence for B, zero counts reported under A (TENANT_MISMATCH); matched
+  control opens B's case [Codex E3a green review 2026-11-20]
 
 Mutant killers (wired at green): M05 note-only overwrites the current reason -> P07; M07 the
 view leaks coinsurance / deductible_total / txn_ref -> P14; plus E3a-only mutants declared at
@@ -768,6 +771,56 @@ def test_el3a_p25_scheduler_runs_the_apply_phase_after_expire(install: e3.EL3AIn
 
     asyncio.run(body())
     assert len(e3.el_items(inst)) == 1 and _one_case(inst, ref)["state"] == "open"
+
+
+def test_el3a_p25b_apply_phase_refuses_another_tenants_case_context(
+        install: e3.EL3AInstall, other: e3.EL3AInstall) -> None:
+    """Codex E3a green review (2026-11-20): while scheduling tenant A, the case-context
+    factory returns a valid context for tenant B. The apply phase refuses before drain: B's
+    pending case event stays unapplied (no case, no item, no evidence), A reports zero apply
+    counts under TENANT_MISMATCH. Matched control: B scheduled with B's context opens B's case."""
+    from haloflow.m05.eligibility import EligibilityWorker
+    from haloflow.m05.eligibility_scheduler import EligibilityScheduler
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    a, b = e3.ready(install), e3.ready(other)
+    ref_b, _ = e3.manual(b, _start())
+    events_before = e3.case_events(b, ref_b)
+    assert events_before, "B must have a pending case event"
+
+    async def body() -> None:
+        async with e3.worker_runtime(a) as (service_a, context_a), \
+                e3.case_runtime(b) as (cases_b, case_context_b):
+            port = SimulatedClearinghouse(clock=lambda: datetime.now(UTC))
+            worker = EligibilityWorker(service_a, port, call_timeout_s=5)
+            wrong = EligibilityScheduler(contexts=context_a, service=service_a, worker=worker,
+                                         tenants=(a.tenant_id,), cases=cases_b,
+                                         case_contexts=case_context_b)
+            (report,) = (await wrong.tick()).tenants
+            assert report.tenant == a.tenant_id
+            assert report.apply.status == "TENANT_MISMATCH"
+            assert report.apply.counts == {"opened": 0, "noted": 0, "none": 0}
+            assert report.code == "DEGRADED"
+
+    asyncio.run(body())
+    assert e3.cases(b, ref_b) == [] and e3.el_items(b) == [] and e3.evidence(b, ref_b) == []
+    assert e3.case_events(b, ref_b) == events_before
+    assert e3.el_items(a) == [] and e3.evidence(a) == []
+
+    async def control() -> None:
+        async with e3.worker_runtime(b) as (service_b, context_b), \
+                e3.case_runtime(b) as (cases_b, case_context_b):
+            port = SimulatedClearinghouse(clock=lambda: datetime.now(UTC))
+            worker = EligibilityWorker(service_b, port, call_timeout_s=5)
+            right = EligibilityScheduler(contexts=context_b, service=service_b, worker=worker,
+                                         tenants=(b.tenant_id,), cases=cases_b,
+                                         case_contexts=case_context_b)
+            (report,) = (await right.tick()).tenants
+            assert report.apply.status == "ok"
+            assert report.apply.counts == {"opened": 1, "noted": 0, "none": 0}
+
+    asyncio.run(control())
+    assert _one_case(b, ref_b)["state"] == "open" and len(e3.el_items(b)) == 1
 
 
 _ = (timedelta, threading)
