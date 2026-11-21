@@ -30,7 +30,7 @@ import hashlib
 import json
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from typing import Any, Final
 from uuid import UUID
@@ -287,7 +287,7 @@ def _validate(action: EligibilityResolveAction | LogContactAction) -> str | None
         if type(action.contact_code) is not str:
             raise staff.CommandMalformed("contact_code")
         return None
-    if action.type not in RESOLVE_TYPES:
+    if not _is(action.type, RESOLVE_TYPES):
         raise staff.CommandMalformed("type")
     if type(action.outcome_code) is not str:
         raise staff.CommandMalformed("outcome_code")
@@ -324,7 +324,7 @@ def _evidence(value: Any) -> list[Observation]:
     out: list[Observation] = []
     for entry in value:
         if (type(entry) is not dict or set(entry) != {"case_event_id", "effect", "evidence"}
-                or entry["effect"] not in EFFECTS):
+                or not _is(entry["effect"], EFFECTS)):
             raise staff._invalid()
         try:
             observation = _observation({"case_event_id": entry["case_event_id"],
@@ -351,6 +351,12 @@ SUMMARY_KEYS: Final = frozenset({"payer_name", "plan", "copay", "deductible_rema
                                  "referral_required", "auth_required", "checked_at"})
 
 
+def _is(value: Any, options: Collection[str]) -> bool:
+    """Enum membership with a string type guard first: an unhashable or non-string value (a
+    malformed array / object) is a plain mismatch, never a TypeError (Codex v1r1 review)."""
+    return type(value) is str and value in options
+
+
 def _scalar(value: Any) -> bool:
     return type(value) in (str, int, float, bool)
 
@@ -358,8 +364,8 @@ def _scalar(value: Any) -> bool:
 def _valid_note(note: Any) -> bool:
     return (type(note) is dict and set(note) == NOTE_KEYS
             and type(note["seq"]) is int and note["seq"] >= 1
-            and note["kind"] in NOTE_KINDS
-            and (note["class"] is None or note["class"] in NOTE_CLASSES)
+            and _is(note["kind"], NOTE_KINDS)
+            and (note["class"] is None or _is(note["class"], NOTE_CLASSES))
             and type(note["reason"]) is str and m01staff.valid_timestamp(note["at"]))
 
 
@@ -370,10 +376,10 @@ def valid_case_view(view: Any, item_id: UUID) -> dict[str, Any]:
     notes_ = view.get("notes") if type(view) is dict else None
     if not (type(view) is dict and set(view) == CASE_VIEW_KEYS
             and type(view["schema_version"]) is int and view["schema_version"] == 1
-            and view["item_id"] == str(item_id) and view["item_kind"] in EL_KINDS
+            and view["item_id"] == str(item_id) and _is(view["item_kind"], EL_KINDS)
             and m01staff.uuid_text(view["case_id"])
             and type(view["case_version"]) is int and view["case_version"] >= 1
-            and view["case_state"] in ("open", "closed") and view["class"] in UNRESOLVED
+            and _is(view["case_state"], ("open", "closed")) and _is(view["class"], UNRESOLVED)
             and type(view["reason"]) is str
             and (summary is None or (type(summary) is dict and summary
                                      and set(summary) <= SUMMARY_KEYS
@@ -396,7 +402,7 @@ def _el_decision(rows: list[Any], action: EligibilityResolveAction | LogContactA
     decision = value.get("decision")
     contact = type(action) is LogContactAction
     if (decision == "REFUSED" and set(value) == {"schema_version", "decision", "code"}
-            and value["code"] in staff.ACTION_REFUSALS):
+            and _is(value["code"], staff.ACTION_REFUSALS)):
         raise staff.ActionRefused(value["code"])
     if decision == "REPLAY" and set(value) == {"schema_version", "decision", "snapshot"}:
         return "REPLAY", _bound_snapshot(value["snapshot"], action, actor)
@@ -418,7 +424,7 @@ def _el_decision(rows: list[Any], action: EligibilityResolveAction | LogContactA
         item = value["item"]
         if (type(item) is dict
                 and set(item) == {"item_id", "item_kind", "patient_id", "source_event_id"}
-                and item["item_id"] == str(action.item_id) and item["item_kind"] in EL_KINDS
+                and item["item_id"] == str(action.item_id) and _is(item["item_kind"], EL_KINDS)
                 and m01staff.uuid_text(item["patient_id"])
                 and m01staff.uuid_text(item["source_event_id"])):
             return "NEW", {"item": item, "evidence": _evidence(value["evidence"])}
@@ -436,7 +442,7 @@ def _bound_snapshot(snap: Any, action: EligibilityResolveAction | LogContactActi
         ok = (set(snap) == CONTACT_SNAPSHOT_KEYS and snap["action"] == "log_contact"
               and snap["version"] == action.expected_version
               and snap["contact_code"] == action.contact_code
-              and snap["state"] in ("open", "in_progress") and snap["outcome_code"] is None)
+              and _is(snap["state"], ("open", "in_progress")) and snap["outcome_code"] is None)
     else:
         assignee = snap.get("assignee_id")
         ok = (set(snap) == staff.SNAPSHOT_KEYS and snap["action"] == action.type

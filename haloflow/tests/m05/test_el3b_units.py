@@ -269,3 +269,98 @@ def test_el3b_u07_case_changed_returns_exactly_the_canonical_view() -> None:
     assert decision == "CASE_CHANGED" and detail["evidence"] == []
     assert detail["case"] == view and set(detail["case"]) == CASE_VIEW_KEYS
     assert detail["case"] is not view  # rebuilt, not forwarded
+
+
+# --- E3b-U08 malformed arrays / objects map to the contracted errors (Codex v1r1 review) ---
+
+def _malformed(item: uuid.UUID, where: str, value: object) -> dict[str, object]:
+    view = _view(item)
+    notes = [dict(n) for n in view["notes"]]  # type: ignore[attr-defined]
+    if where.startswith("note_"):
+        notes[0][where[5:]] = value
+        view["notes"] = notes
+    else:
+        view[where] = value
+    return view
+
+
+_UNHASHABLE = [[], {}, ["inactive"], {"x": 1}]
+_WHERE = ["item_kind", "case_state", "class", "note_kind", "note_class"]
+
+
+@pytest.mark.parametrize("value", _UNHASHABLE, ids=["list", "dict", "list1", "dict1"])
+@pytest.mark.parametrize("where", _WHERE)
+def test_el3b_u08_case_changed_malformed_enum_is_action_result_invalid(where: str,
+                                                                       value: object) -> None:
+    from haloflow.m05.eligibility_staff import _el_decision
+    from haloflow.m05.service import ActionFailed
+
+    item = uuid.uuid4()
+    with pytest.raises(ActionFailed) as failed:
+        _el_decision(_changed(item, _malformed(item, where, value)), _contact_action(item),
+                     str(uuid.uuid4()), second=False)  # type: ignore[arg-type]
+    assert failed.value.reason_code == "ACTION_RESULT_INVALID"
+
+
+@pytest.mark.parametrize("value", _UNHASHABLE, ids=["list", "dict", "list1", "dict1"])
+@pytest.mark.parametrize("where", _WHERE)
+def test_el3b_u08_case_read_malformed_enum_is_read_result_invalid(
+        where: str, value: object, monkeypatch: pytest.MonkeyPatch) -> None:
+    import asyncio
+
+    from haloflow.m01.staff.service import ReadFailed
+    from haloflow.m05 import eligibility_staff as es
+
+    item = uuid.uuid4()
+    bad = _malformed(item, where, value)
+
+    async def fake_view(foundation: object, context: object, item_id: uuid.UUID) -> object:
+        return bad
+
+    monkeypatch.setattr(es, "case_view", fake_view)
+    service = es.StaffServiceV4(object(), foundation=object(), keys=None)
+    with pytest.raises(ReadFailed) as failed:
+        asyncio.run(service.case(object(), item))
+    assert failed.value.reason_code == "READ_RESULT_INVALID"
+
+
+@pytest.mark.parametrize("field", ["code", "effect", "item_kind"])
+@pytest.mark.parametrize("value", _UNHASHABLE, ids=["list", "dict", "list1", "dict1"])
+def test_el3b_u08_decision_malformed_enum_is_action_result_invalid(field: str,
+                                                                   value: object) -> None:
+    from haloflow.m05.eligibility_staff import EligibilityResolveAction, _el_decision
+    from haloflow.m05.service import ActionFailed
+
+    item = uuid.uuid4()
+    action = EligibilityResolveAction(item_id=item, client_action_id=uuid.uuid4(),
+                                      expected_version=1, type="resolve",
+                                      outcome_code="el_self_pay", note=None, token=None)
+    if field == "code":
+        row: dict[str, object] = {"schema_version": 1, "decision": "REFUSED", "code": value}
+    elif field == "effect":
+        row = {"schema_version": 1, "decision": "CASE_CHANGED", "case": _view(item),
+               "evidence": [{"case_event_id": str(uuid.uuid4()), "effect": value,
+                             "evidence": {}}]}
+    else:
+        row = {"schema_version": 1, "decision": "NEW", "evidence": [],
+               "item": {"item_id": str(item), "item_kind": value,
+                        "patient_id": str(uuid.uuid4()),
+                        "source_event_id": str(uuid.uuid4())}}
+    with pytest.raises(ActionFailed) as failed:
+        _el_decision([(row,)], action, str(uuid.uuid4()), second=False)
+    assert failed.value.reason_code == "ACTION_RESULT_INVALID"
+
+
+def test_el3b_u08_action_type_malformed_is_command_malformed() -> None:
+    import asyncio
+
+    from haloflow.m01.staff.service import CommandMalformed
+    from haloflow.m05 import eligibility_staff as es
+
+    item = uuid.uuid4()
+    action = es.EligibilityResolveAction(item_id=item, client_action_id=uuid.uuid4(),
+                                         expected_version=1, type=["resolve"],  # type: ignore[arg-type]
+                                         outcome_code="el_self_pay", note=None, token=None)
+    service = es.StaffServiceV4(object(), foundation=object(), keys=None)
+    with pytest.raises(CommandMalformed):
+        asyncio.run(service.act(object(), action))
