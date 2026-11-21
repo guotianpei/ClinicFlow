@@ -76,9 +76,9 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     # -- the synthetic composition ------------------------------------------------------
     ("B1-M7", "compose: the S-I ACL amendments are dropped", COMPOSE,
      "        acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,\n"
-     "                        *SI_ACL_AMENDMENTS, *el1_amendments),\n",
+     "                        *SI_ACL_AMENDMENTS, *el1_amendments, *el3b_amendments),\n",
      "        acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS,\n"
-     "                        *SH2_ACL_AMENDMENTS, *el1_amendments),\n"),
+     "                        *SH2_ACL_AMENDMENTS, *el1_amendments, *el3b_amendments),\n"),
     ("B1-M8", "compose: the S-I intake rows are marked active in production", COMPOSE,
      "'{ITEM_KIND_CHECK}', '{W_DISPATCH}', false)\"\n",
      "'{ITEM_KIND_CHECK}', '{W_DISPATCH}', true)\"\n"),
