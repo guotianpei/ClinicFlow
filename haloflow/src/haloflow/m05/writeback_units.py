@@ -837,12 +837,16 @@ _CREATE_V2_BODY: Final = _replace_once(
     "    END IF;\n" + _CREATE_CREATED_RETURN)
 
 _PREPARE_V3_BODY: Final = _PREPARE_V2_BODY
+# The v3 resolution-contract predicate. Named so that derived bodies (the E3b v4 legacy
+# path, eligibility_staff_units._E4_*) wrap it instead of restating it.
+_V3_CONTRACT_OK: Final = (
+    "((v_env OPERATOR(pg_catalog.->) 'contract_version') = '2'::jsonb\n"
+    "                OR ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '1'::jsonb\n"
+    "                    AND v_row.item_kind <> '" + ITEM_KIND + "'))")
 _APPLY_V3_BODY: Final = _replace_once(
     _APPLY_V2_BODY,
     "(v_env OPERATOR(pg_catalog.->) 'contract_version') IS DISTINCT FROM '1'::jsonb",
-    "NOT ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '2'::jsonb\n"
-    "                OR ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '1'::jsonb\n"
-    "                    AND v_row.item_kind <> '" + ITEM_KIND + "'))")
+    "NOT " + _V3_CONTRACT_OK)
 
 _REASON_BODY: Final = r"""
 DECLARE

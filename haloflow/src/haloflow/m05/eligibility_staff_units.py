@@ -204,6 +204,7 @@ from haloflow.m05.gateways import _REFUSE_APPLY, _REFUSE_PREPARE  # noqa: E402
 from haloflow.m05.writeback_units import (  # noqa: E402
     _APPLY_V3_BODY,
     _PREPARE_V3_BODY,
+    _V3_CONTRACT_OK,
     _replace_once,
 )
 
@@ -252,16 +253,14 @@ def _e3(mode: str) -> tuple[str, str]:
     return old, new
 
 
-_E4_OLD: Final = (
-    "NOT ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '2'::jsonb\n"
-    "                OR ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '1'::jsonb\n"
-    "                    AND v_row.item_kind <> 'ehr_confirmation_check'))")
+# E4 wraps the v3 predicate (writeback_units._V3_CONTRACT_OK) rather than restating it, so a
+# change to v3 flows into the legacy branch instead of breaking this anchor (si V7, CI
+# 44850997105). The ELSE branch is the v3 predicate re-indented by six spaces.
+_E4_OLD: Final = "NOT " + _V3_CONTRACT_OK
 _E4_NEW: Final = (
     "NOT (CASE WHEN v_row.item_kind IN (" + _EL_KINDS_SQL + ")\n"
     "                THEN (v_env OPERATOR(pg_catalog.->) 'contract_version') = '3'::jsonb\n"
-    "                ELSE ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '2'::jsonb\n"
-    "                      OR ((v_env OPERATOR(pg_catalog.->) 'contract_version') = '1'::jsonb\n"
-    "                          AND v_row.item_kind <> 'ehr_confirmation_check')) END)")
+    "                ELSE " + _V3_CONTRACT_OK.replace("\n", "\n      ") + " END)")
 
 
 def _legacy_v4(body: str, mode: str) -> str:
