@@ -1,0 +1,41 @@
+{
+ "M01": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_p02_legacy_item_with_an_el_code_is_malformed_at_both_layers[el_other-False]"
+ ],
+ "M02": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_p02_eligibility_item_with_a_w1_code_is_malformed",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p02_legacy_item_with_an_el_code_is_malformed_at_both_layers[el_other-False]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p02_legacy_item_with_an_el_code_is_malformed_at_both_layers[el_self_pay-False]"
+ ],
+ "M03": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-claim_and_resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_pending_work",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p13_log_contact_token_missing_stale_matching"
+ ],
+ "M03w": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-claim_and_resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w17_applied_unseen-claim_and_resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w17_applied_unseen-resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c04_exact_binding_and_no_lock_on_a_named_foreign_case",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c05a_applier_holds_the_appointment_staff_close_waits_then_is_case_changed",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_pending_work",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p09_replay_of_the_close_after_a_later_case_creates_nothing",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p10_close_sets_watermark_and_a_later_finding_opens_one_new_case"
+ ],
+ "M04": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-claim_and_resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w16_unapplied-resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w17_applied_unseen-claim_and_resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c01_c03_stale_close_is_case_changed_then_a_refreshed_close_succeeds_once[w17_applied_unseen-resolve]",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c04_exact_binding_and_no_lock_on_a_named_foreign_case",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c05a_applier_holds_the_appointment_staff_close_waits_then_is_case_changed",
+  "tests/m05/test_el3b_postgres.py::test_el3b_c05b_staff_close_holds_the_appointment_applier_skips_pending_work",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p13_log_contact_token_missing_stale_matching",
+  "tests/m05/test_el3b_postgres.py::test_el3b_p17_cross_tenant_ids_and_tokens"
+ ],
+ "M06": [
+  "tests/m05/test_el3b_postgres.py::test_el3b_p12_log_contact_refusals[legacy_item]"
+ ]
+}

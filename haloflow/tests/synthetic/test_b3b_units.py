@@ -179,8 +179,9 @@ def test_b3b_r7u_route_inventory_is_closed() -> None:
     # ob5_support.B5_ROUTES.
     import ob5_support as b5
 
+    # Eligibility E3b (Codex Q-T2b): plus exactly the two staff routes in bb.E3B_ROUTES.
     want = {(m, p) for m, p in (*bb.ROUTES.values(), *b4.UI_ROUTES.values(),
-                                *b5.B5_ROUTES.values())}
+                                *b5.B5_ROUTES.values(), *bb.E3B_ROUTES.values())}
     assert served == want, f"route inventory differs: missing {sorted(want - served)}," \
         f" extra {sorted(served - want)}"
     assert (app.docs_url, app.redoc_url, app.openapi_url) == (None, None, None)

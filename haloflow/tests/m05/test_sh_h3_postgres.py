@@ -814,3 +814,24 @@ def test_h3_p11e_tenant_isolation_and_gateway_key(shape: sh3.SH3Install,
             assert later["ops"] == raw_a[1:]
 
     asyncio.run(body())
+
+
+@pytest.fixture(autouse=True)
+def _haloflow_loggers_enabled() -> Iterator[None]:
+    """The B3b 5a57ced fixture (as tests/m05/test_sb_cancellation_postgres.py): re-enable
+    `haloflow.*` loggers that an earlier in-process alembic `fileConfig` disabled
+    (disable_existing_loggers=True), so these log rows do not depend on which module first
+    imported the logger. Added with eligibility E3b (green correction G-7, CI 44840241953):
+    the E3b routed rows import `haloflow.synthetic` (and the m05 service loggers) earlier in
+    the run than before. Restored on exit."""
+    manager = logging.Logger.manager
+    names = [n for n, lg in list(manager.loggerDict.items())
+             if (n == "haloflow" or n.startswith("haloflow."))
+             and isinstance(lg, logging.Logger) and lg.disabled]
+    for n in names:
+        logging.getLogger(n).disabled = False
+    try:
+        yield
+    finally:
+        for n in names:
+            logging.getLogger(n).disabled = True

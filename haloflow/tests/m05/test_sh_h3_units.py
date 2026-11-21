@@ -36,7 +36,7 @@ import contextlib
 import logging
 import math
 import pathlib
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from typing import Any
 
 import pytest
@@ -996,3 +996,24 @@ async def test_h3_u24_one_summary_line_per_tick(caplog: pytest.LogCaptureFixture
         assert part in line + " ", (part, line)
     with contextlib.suppress(Exception):
         await _drain(s)
+
+
+@pytest.fixture(autouse=True)
+def _haloflow_loggers_enabled() -> Iterator[None]:
+    """The B3b 5a57ced fixture (as tests/m05/test_sb_cancellation_postgres.py): re-enable
+    `haloflow.*` loggers that an earlier in-process alembic `fileConfig` disabled
+    (disable_existing_loggers=True), so these log rows do not depend on which module first
+    imported the logger. Added with eligibility E3b (green correction G-7, CI 44840241953):
+    the E3b routed rows import `haloflow.synthetic` (and the m05 service loggers) earlier in
+    the run than before. Restored on exit."""
+    manager = logging.Logger.manager
+    names = [n for n, lg in list(manager.loggerDict.items())
+             if (n == "haloflow" or n.startswith("haloflow."))
+             and isinstance(lg, logging.Logger) and lg.disabled]
+    for n in names:
+        logging.getLogger(n).disabled = False
+    try:
+        yield
+    finally:
+        for n in names:
+            logging.getLogger(n).disabled = True
