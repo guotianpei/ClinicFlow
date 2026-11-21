@@ -190,3 +190,82 @@ def test_el3b_u06_contact_resolve_requirement_admits_exactly_the_act_route_actor
     # non-vacuous: exactly the active members with read AND act are admitted (4 role sets)
     assert {(s, a) for s, a, _r in admitted} == {("active", frozenset({"read", "act"}))}
     assert len(admitted) == 4
+
+
+# --- E3b-U07 the CASE_CHANGED case view is the canonical t121 shape (Codex green v1 review) --
+
+def _view(item: uuid.UUID) -> dict[str, object]:
+    return {"schema_version": 1, "item_id": str(item), "item_kind": "eligibility_inactive",
+            "case_id": str(uuid.uuid4()), "case_version": 2, "case_state": "open",
+            "class": "inactive", "reason": "coverage_inactive",
+            "summary": {"payer_name": "Synthetic Payer", "copay": 25,
+                        "checked_at": "2026-11-20T12:00:00.000000Z"},
+            "notes": [{"seq": 1, "kind": "open_or_note", "class": "inactive",
+                       "reason": "coverage_inactive", "at": "2026-11-20T12:00:00.000000Z"},
+                      {"seq": 2, "kind": "note_only", "class": None,
+                       "reason": "appointment_cancelled", "at": "2026-11-20T12:01:00.000000Z"}]}
+
+
+def _changed(item: uuid.UUID, case: object) -> list[tuple[object]]:
+    return [({"schema_version": 1, "decision": "CASE_CHANGED", "case": case,
+              "evidence": []},)]
+
+
+def _contact_action(item: uuid.UUID) -> object:
+    from haloflow.m05.eligibility_staff import LogContactAction
+
+    return LogContactAction(item_id=item, client_action_id=uuid.uuid4(), expected_version=1,
+                            contact_code="el_left_message", token=None)
+
+
+def _mutate(view: dict[str, object], how: str) -> dict[str, object]:
+    bad = {**view}
+    notes = [dict(n) for n in view["notes"]]  # type: ignore[attr-defined]
+    if how == "extra_key":
+        bad["coinsurance"] = 20
+    elif how == "missing_key":
+        del bad["reason"]
+    elif how == "other_item":
+        bad["item_id"] = str(uuid.uuid4())
+    elif how == "summary_forbidden_field":
+        bad["summary"] = {**view["summary"], "coinsurance": 20}  # type: ignore[dict-item]
+    elif how == "summary_nested":
+        bad["summary"] = {"plan": {"raw": "response"}}
+    elif how == "note_extra_key":
+        notes[0]["raw"] = "x"
+        bad["notes"] = notes
+    elif how == "note_bad_time":
+        notes[1]["at"] = "yesterday"
+        bad["notes"] = notes
+    elif how == "bad_state":
+        bad["case_state"] = "deleted"
+    elif how == "version_text":
+        bad["case_version"] = "2"
+    return bad
+
+
+@pytest.mark.parametrize("how", ["extra_key", "missing_key", "other_item",
+                                 "summary_forbidden_field", "summary_nested",
+                                 "note_extra_key", "note_bad_time", "bad_state",
+                                 "version_text"])
+def test_el3b_u07_case_changed_refuses_a_malformed_case_view(how: str) -> None:
+    from haloflow.m05.eligibility_staff import _el_decision
+    from haloflow.m05.service import ActionFailed
+
+    item = uuid.uuid4()
+    with pytest.raises(ActionFailed) as failed:
+        _el_decision(_changed(item, _mutate(_view(item), how)), _contact_action(item),
+                     str(uuid.uuid4()), second=False)  # type: ignore[arg-type]
+    assert failed.value.reason_code == "ACTION_RESULT_INVALID"
+
+
+def test_el3b_u07_case_changed_returns_exactly_the_canonical_view() -> None:
+    from haloflow.m05.eligibility_staff import CASE_VIEW_KEYS, _el_decision
+
+    item = uuid.uuid4()
+    view = _view(item)
+    decision, detail = _el_decision(_changed(item, view), _contact_action(item),
+                                    str(uuid.uuid4()), second=False)  # type: ignore[arg-type]
+    assert decision == "CASE_CHANGED" and detail["evidence"] == []
+    assert detail["case"] == view and set(detail["case"]) == CASE_VIEW_KEYS
+    assert detail["case"] is not view  # rebuilt, not forwarded

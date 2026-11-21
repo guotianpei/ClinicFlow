@@ -6,8 +6,9 @@ Pins: E3b interface pins v1 section 4 + v1r1 (Codex ALIGN 74643295); red packet 
 - `CaseToken`, `EligibilityResolveAction`, `LogContactAction` (frozen).
 - `StaffServiceV4(gateway, *, foundation, keys)` extends `StaffServiceV3`: the existing
   actions run unchanged through the re-bound `m05.followup.prepare` / `apply` keys (v4); a
-  token-less `ResolveAction` on an eligibility item keeps the E3a refusal
-  (ActionFailed ACTION_RESULT_INVALID); `case(context, item_id)` is the t121 case view.
+  token-less `ResolveAction` on an eligibility item is refused ActionRefused COMMAND_MALFORMED
+  by the v4 (kind, code) check under the item lock (green correction G-5; row G07);
+  `case(context, item_id)` is the t121 case view, validated against its canonical shape.
 
 Eligibility actions (Codex D-1 option A, B1-b, B2): ONE gateway transaction - prepare v4 (locks
 membership -> appointment key -> the item's own case -> item; replay before projection; the
@@ -100,9 +101,12 @@ class StaffServiceV4(StaffServiceV3):
         if self._foundation is None:
             raise m01staff.ReadFailed("READ_UNAVAILABLE")
         view = await case_view(self._foundation, context, item_id)
-        if view.get("error") == "ITEM_NOT_FOUND":
+        if view == {"schema_version": 1, "error": "ITEM_NOT_FOUND"}:
             raise m01staff.ReadFailed("ITEM_NOT_FOUND")
-        return view
+        try:
+            return valid_case_view(view, item_id)
+        except staff.ActionFailed:
+            raise m01staff.ReadFailed("READ_RESULT_INVALID") from None
 
     async def act(self, context: Any, action: Any) -> staff.ActionResult:
         if type(action) in (EligibilityResolveAction, LogContactAction):
@@ -334,12 +338,51 @@ def _evidence(value: Any) -> list[Observation]:
     return out
 
 
-def _case_view_bound(view: Any, action: EligibilityResolveAction | LogContactAction) -> bool:
-    return (type(view) is dict and view.get("schema_version") == 1
-            and view.get("item_id") == str(action.item_id)
-            and m01staff.uuid_text(view.get("case_id"))
-            and type(view.get("case_version")) is int and view["case_version"] >= 1
-            and view.get("item_kind") in EL_KINDS)
+# The canonical t121 output shape (`m05_el_case_view`): closed keys at every level, OD-EL4
+# summary fields only. Everything a caller receives is rebuilt from these keys (allow-list).
+CASE_VIEW_KEYS: Final = frozenset({"schema_version", "item_id", "item_kind", "case_id",
+                                   "case_version", "case_state", "class", "reason",
+                                   "summary", "notes"})
+UNRESOLVED: Final = frozenset({"inactive", "inconclusive", "manual_required"})
+NOTE_CLASSES: Final = UNRESOLVED | {"active"}
+NOTE_KEYS: Final = frozenset({"seq", "kind", "class", "reason", "at"})
+NOTE_KINDS: Final = frozenset({"open_or_note", "note_only"})
+SUMMARY_KEYS: Final = frozenset({"payer_name", "plan", "copay", "deductible_remaining",
+                                 "referral_required", "auth_required", "checked_at"})
+
+
+def _scalar(value: Any) -> bool:
+    return type(value) in (str, int, float, bool)
+
+
+def _valid_note(note: Any) -> bool:
+    return (type(note) is dict and set(note) == NOTE_KEYS
+            and type(note["seq"]) is int and note["seq"] >= 1
+            and note["kind"] in NOTE_KINDS
+            and (note["class"] is None or note["class"] in NOTE_CLASSES)
+            and type(note["reason"]) is str and m01staff.valid_timestamp(note["at"]))
+
+
+def valid_case_view(view: Any, item_id: UUID) -> dict[str, Any]:
+    """The t121 case view, bound to `item_id`, or ActionFailed ACTION_RESULT_INVALID. Returns a
+    rebuilt copy holding exactly the canonical keys."""
+    summary = view.get("summary") if type(view) is dict else None
+    notes_ = view.get("notes") if type(view) is dict else None
+    if not (type(view) is dict and set(view) == CASE_VIEW_KEYS
+            and type(view["schema_version"]) is int and view["schema_version"] == 1
+            and view["item_id"] == str(item_id) and view["item_kind"] in EL_KINDS
+            and m01staff.uuid_text(view["case_id"])
+            and type(view["case_version"]) is int and view["case_version"] >= 1
+            and view["case_state"] in ("open", "closed") and view["class"] in UNRESOLVED
+            and type(view["reason"]) is str
+            and (summary is None or (type(summary) is dict and summary
+                                     and set(summary) <= SUMMARY_KEYS
+                                     and all(_scalar(v) for v in summary.values())))
+            and type(notes_) is list and all(_valid_note(n) for n in notes_)):
+        raise staff._invalid()
+    return {**{k: view[k] for k in CASE_VIEW_KEYS if k not in ("summary", "notes")},
+            "summary": None if summary is None else dict(summary),
+            "notes": [dict(n) for n in notes_]}
 
 
 def _el_decision(rows: list[Any], action: EligibilityResolveAction | LogContactAction,
@@ -364,9 +407,9 @@ def _el_decision(rows: list[Any], action: EligibilityResolveAction | LogContactA
             and type(value["hmac_key_version"]) is int):
         return "REPLAY_CHALLENGE", value["hmac_key_version"]
     if (decision == "CASE_CHANGED"
-            and set(value) == {"schema_version", "decision", "case", "evidence"}
-            and _case_view_bound(value["case"], action)):
-        return "CASE_CHANGED", {"case": value["case"], "evidence": _evidence(value["evidence"])}
+            and set(value) == {"schema_version", "decision", "case", "evidence"}):
+        return "CASE_CHANGED", {"case": valid_case_view(value["case"], action.item_id),
+                                "evidence": _evidence(value["evidence"])}
     if decision == "NEW" and contact and set(value) == {"schema_version", "decision",
                                                         "evidence"}:
         return "NEW", {"evidence": _evidence(value["evidence"])}
