@@ -141,6 +141,7 @@ class SyntheticRuntime:
         self.pool: TenantPool | None = None
         self.dependencies: TenantRuntimeDependencies | None = None
         self.tenant_runtime: TenantRuntime | None = None
+        self.catalog: Any = None
 
     # -- the steps (driven one by one by the lifecycle) ------------------------------------
 
@@ -222,9 +223,10 @@ class SyntheticRuntime:
         self.dependencies = TenantRuntimeDependencies(
             pool=self.pool, control_store=PsycopgControlStore(self.pool),
             migrator_connect=_refusing_factory(), provisioner_connect=_refusing_factory())
+        self.catalog = profiles.catalog(self.profile)     # E4: the composed catalogue (views)
         self.tenant_runtime = compose_tenant_runtime(
             self.dependencies, registry=profiles.registry(self.profile),
-            catalog=profiles.catalog(self.profile),
+            catalog=self.catalog,
             supported_schema_versions=frozenset({profiles.TARGETS[self.profile]}),
             activation_policy=ActivationPolicy.ENFORCE)
         return self.tenant_runtime

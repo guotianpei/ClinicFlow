@@ -471,8 +471,14 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         display = await _read(lifecycle, "get",
                               lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
         case: Mapping[str, Any] | None = None
+        contacts: Mapping[Any, Any] = {}
         if item.get("item_kind") in EL_KINDS:                       # E4 (D-E4-5)
+            from haloflow.synthetic import el_ui
+
             case = await _read(lifecycle, "case", lambda m05, ctx: m05.case(ctx, item_id))
+            contacts = await _read(                                  # OD-EL12 (t127)
+                lifecycle, "get",
+                lambda _m05, ctx: el_ui.contact_history(lifecycle, ctx, item_id))
     except _Failed as failure:
         return _error_page(failure.status)
     parts = []
@@ -501,7 +507,11 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         when = _when(entry.get("created_at"))
         raw_after = entry.get("after")
         after: Mapping[str, Any] = raw_after if isinstance(raw_after, Mapping) else {}
-        if entry.get("assertion_kind") == "staff" and case is not None:
+        if case is not None and entry.get("action") == "log_contact":
+            from haloflow.synthetic import el_ui
+
+            text = el_ui.contact_line(contacts.get(entry.get("seq")), actor, when)
+        elif entry.get("assertion_kind") == "staff" and case is not None:
             from haloflow.synthetic import el_ui
 
             text = (f"Staff reported: {el_ui.outcome_text(after.get('outcome_code'))} — by"

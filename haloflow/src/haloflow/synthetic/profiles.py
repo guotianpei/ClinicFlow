@@ -2,7 +2,8 @@
 
 A synthetic install is either the `default` profile (the B1-B5 registry, target 97, every
 B-series pin unchanged) or the `eligibility` profile (the same registry plus eligibility
-E1..E3b, target 126). The profile is chosen at `init`, recorded in `state.json` under the
+E1..E3b and the OD-EL12 t127 read, target 127). The profile is chosen at `init`,
+recorded in `state.json` under the
 top-level key `install_profile` (only for the eligibility profile, so a default install keeps
 the pre-E4 key set exactly; `seal.profile` is a different thing, the installed-state digest
 id), and must match the startup request; a mismatch is refused before any pool opens.
@@ -19,7 +20,8 @@ DEFAULT: Final = "default"
 ELIGIBILITY: Final = "eligibility"
 PROFILES: Final = (DEFAULT, ELIGIBILITY)
 STATE_FIELD: Final = "install_profile"
-TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 126}
+# OD-EL12 (Rachel 2026-11-22): the eligibility profile adds the t127 contact-history read.
+TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 127}
 B5_SCHEDULERS: Final = ("due", "reminder", "writeback")
 _SCHEDULERS: Final = {DEFAULT: B5_SCHEDULERS, ELIGIBILITY: (*B5_SCHEDULERS, "eligibility")}
 
@@ -74,7 +76,7 @@ def registry(profile: str) -> Any:
     if valid(profile) == DEFAULT:
         return build_synthetic_registry()
     return build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
-                                    include_el3b=True)
+                                    include_el3b=True, include_el4=True)
 
 
 def catalog(profile: str) -> Any:
@@ -83,7 +85,7 @@ def catalog(profile: str) -> Any:
     if valid(profile) == DEFAULT:
         return build_synthetic_catalog()
     return build_synthetic_catalog(include_el1=True, include_el2=True, include_el3a=True,
-                                   include_el3b=True)
+                                   include_el3b=True, include_el4=True)
 
 
 def schedulers(profile: str) -> tuple[str, ...]:

@@ -115,6 +115,30 @@ def section(lifecycle: Any, item: Mapping[str, Any], case: Mapping[str, Any]) ->
     return parts
 
 
+async def contact_history(lifecycle: Any, context: Any, item_id: Any) -> dict[int, str]:
+    """OD-EL12: the t127 read (staff READ under the item read's resolution): {history seq:
+    contact_code} of this eligibility item. Anything malformed or ITEM_NOT_FOUND -> {}."""
+    from haloflow.synthetic.el4_statements import CONTACT_HISTORY_KEY
+
+    async def run(handle: Any) -> Any:
+        return await handle.fetch_all(CONTACT_HISTORY_KEY, {"item_id": str(item_id)})
+
+    rows = await lifecycle.services.gateway.with_tenant_transaction(context, run)
+    value = rows[0][0] if rows and rows[0] else None
+    out: dict[int, str] = {}
+    if isinstance(value, Mapping) and isinstance(value.get("entries"), list):
+        for entry in value["entries"]:
+            if isinstance(entry, Mapping) and type(entry.get("seq")) is int \
+                    and type(entry.get("contact_code")) is str:
+                out[entry["seq"]] = entry["contact_code"]
+    return out
+
+
+def contact_line(code: object, actor: str, when: str) -> str:
+    """A contact history line: the OD-EL7 label (unknown -> "Unrecognized")."""
+    return f"{ui.label(CONTACT_LABELS, code)} — {ui.esc(actor)}, {ui.esc(when)}"
+
+
 def outcome_text(code: object) -> str:
     """A closed eligibility item's history line label (OD-EL6)."""
     return ui.label(OUTCOME_LABELS, code)

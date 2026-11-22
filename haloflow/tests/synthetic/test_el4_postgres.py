@@ -113,7 +113,8 @@ def test_el4_p01a_init_eligibility_profile(pg: s.PgCluster, tmp_path: Path) -> N
 def test_el4_p01a_cli_profile_flag(pg: s.PgCluster, tmp_path: Path) -> None:
     """A. `python -m haloflow.synthetic init --profile eligibility` (exit 0, phase ready)."""
     st_dir = s.state_dir(tmp_path)
-    env = {**os.environ, **s.environ_for(pg, st_dir)}
+    # T5: the isolated B2 CLI environment (test_b2_init_postgres.cli): PATH + environ_for.
+    env = {"PATH": os.environ.get("PATH", ""), **s.environ_for(pg, st_dir)}
     import subprocess
     import sys
 
@@ -127,25 +128,60 @@ def test_el4_p01a_cli_profile_flag(pg: s.PgCluster, tmp_path: Path) -> None:
 
 
 def test_el4_p01c_activation_enforced(pg: s.PgCluster, tmp_path: Path, test_zones: None) -> None:
-    """A. Eligibility startup runs with activation ENFORCE: the E1 flow settles (every
-    eligibility key resolved); after a revoke the next eligibility tick is refused for the
-    tenant (run phase ACTIVATION_REFUSED), with no new attempt."""
+    """A (T2, Codex codex_e4-t127-and-test-rulings.md). Positive: under activation ENFORCE
+    every registered eligibility key is in the running runtime's catalogue and resolves for a
+    context of its capability. Refusal: eligibility keys are not gateway-activation-protected;
+    E2 enforces activation at dispatch. E1 loaded, then a revoke, then a tick -> the worker
+    outcome activation_off, zero attempts, zero clearinghouse submits."""
     inst = el_install(pg, tmp_path)
     spies, factory = e4.spy_factory()
 
     async def body() -> None:
-        async with e4.running(inst, clearinghouse_factory=factory) as (_lc, app):
+        async with e4.running(inst, clearinghouse_factory=factory) as (lc, app):
+            await _every_eligibility_key_resolves(lc)
             tok = await e4.token(app)
             await e4.member(app, tok, "SYN-E1-001", "active")
             ref = await booked(inst, app, tok, "E1")
-            assert e4.tick_counts(await e4.tick(app, tok))["run.settled"] == 1
             _activation_change(inst, "revoke")
-            e4.make_due(inst, ref, "previsit", -1.0)
             counts = e4.tick_counts(await e4.tick(app, tok))
-            assert counts.get("run.status.ACTIVATION_REFUSED") == 1, counts
-            assert len(spies[0].submits) == 1
+            assert counts.get("run.activation_off") == 1, counts
+            (vid, *_rest), = e4.verifications(inst, ref)
+            assert e4.attempts(inst, vid) == [] and spies[0].submits == []
 
     run(body())
+
+
+async def _every_eligibility_key_resolves(lc: Any) -> None:
+    """Each eligibility statement key (the eligibility catalogue minus the default one) is
+    registered in the catalogue the RUNNING runtime composed and a context holding exactly its
+    capability resolves under ENFORCE for this tenant."""
+    import uuid
+
+    from haloflow.m01.context import (
+        CorrelationSource,
+        Principal,
+        PrincipalKind,
+        TrustedSource,
+    )
+
+    profiles = e4.mod("profiles")
+    base = set(profiles.catalog(e4.DEFAULT).catalog.keys())
+    running = lc.runtime.catalog.catalog
+    statements = [st for st in running.statements() if st.key not in base]
+    assert statements, "no eligibility keys composed"
+    tenant = lc.services.tenant_id
+    for st in statements:
+        assert running.resolve(st.key).required_capability == st.required_capability
+        caps = frozenset({st.required_capability})
+        ctx = await lc.services.resolver.resolve(
+            principal=Principal(kind=PrincipalKind.WORKLOAD, id=e4.mod("composition").W_TIMER,
+                                auth_method="el4_test", authorized_tenant_ids=frozenset({tenant}),
+                                capabilities=caps),
+            tenant_hint=tenant, purpose="operations", capabilities=caps,
+            source=TrustedSource.WORKER, execution_id=uuid.uuid4(),
+            correlation_id=uuid.uuid4(),
+            correlation_source=CorrelationSource.TRUSTED_INFRASTRUCTURE)
+        assert ctx.capabilities == caps, st.key
 
 
 def _activation_change(inst: b3.Install, kind: str) -> None:
@@ -386,7 +422,12 @@ def test_el4_p04a_positive_verification(pg: s.PgCluster, tmp_path: Path,
             assert (req.get("appointment_ref"), req.get("member_id")) == (ref, "SYN-E1-001"), req
             assert req.get("tenant_id") == str(inst.state["tenant_id"]), req
             assert e4.triggers(inst, ref)["booking"][0] == "satisfied"
-            assert e4.case_events(inst, ref) == [] and e4.el_items(inst) == []
+            # T1 (Codex codex_e4-t127-and-test-rulings.md): E2 records one case event for
+            # every settled verification; for `active` it opens nothing (no case, no item).
+            assert [r[1:] for r in e4.case_events(inst, ref)] == [
+                ("open_or_note", "active", "coverage_active")]
+            assert e4.q(inst, "SELECT count(*) FROM {s}.m05_el_cases") == [(0,)]
+            assert e4.el_items(inst) == []
             assert e4.outbox_count(inst) == 0
 
     run(body())
@@ -446,8 +487,9 @@ def test_el4_p04c_pending_until_boundary(pg: s.PgCluster, tmp_path: Path,
     ("malformed", "eligibility_inconclusive", "response_unreadable")])
 def test_el4_p04d_single_attempt_outcomes(pg: s.PgCluster, tmp_path: Path, test_zones: None,
                                           setup: str, kind: str, reason: str) -> None:
-    """A. member inactive -> eligibility_inactive / coverage_inactive; malformed_next 1 ->
-    eligibility_inconclusive / response_unreadable. One attempt each, no retry (E2-P17)."""
+    """A. member inactive -> eligibility_inactive / coverage_inactive; a CORRELATED malformed
+    answer (correct echo, unreadable payload; T3 Codex ruling) -> eligibility_inconclusive /
+    response_unreadable. One attempt each, no retry (E2-P17)."""
     inst = el_install(pg, tmp_path)
     spies, factory = e4.spy_factory()
 
@@ -458,8 +500,7 @@ def test_el4_p04d_single_attempt_outcomes(pg: s.PgCluster, tmp_path: Path, test_
                 await e4.member(app, tok, "SYN-E1-001", "inactive")
             else:
                 await e4.member(app, tok, "SYN-E1-001", "active")
-                r = await e4.control(app, tok, {"malformed_next": 1})
-                assert r.status == 200, r.raw[:200]
+                spies[0].correlated_malformed = 1
             ref = await booked(inst, app, tok, "E1")
             e4.tick_counts(await e4.tick(app, tok))
             e4.tick_counts(await e4.tick(app, tok))
@@ -467,6 +508,30 @@ def test_el4_p04d_single_attempt_outcomes(pg: s.PgCluster, tmp_path: Path, test_
             assert len(e4.attempts(inst, vid)) == 1 and len(spies[0].submits) == 1
             item = one_item(inst, kind)
             assert e4.case_row(inst, item)[3] == reason
+
+    run(body())
+
+
+def test_el4_p04d_missing_echo_leaves_unsettled(pg: s.PgCluster, tmp_path: Path,
+                                                 test_zones: None) -> None:
+    """A (T3, Codex ruling). The simulator control malformed_next 1 answers WITHOUT an echo:
+    E2 does not record the answer, so the verification stays unsettled (no settled class),
+    exactly one attempt and one submit, no case event and no item (no wrong settlement)."""
+    inst = el_install(pg, tmp_path)
+    spies, factory = e4.spy_factory()
+
+    async def body() -> None:
+        async with e4.running(inst, clearinghouse_factory=factory) as (_lc, app):
+            tok = await e4.token(app)
+            await e4.member(app, tok, "SYN-E1-001", "active")
+            r = await e4.control(app, tok, {"malformed_next": 1})
+            assert r.status == 200, r.raw[:200]
+            ref = await booked(inst, app, tok, "E1")
+            e4.tick_counts(await e4.tick(app, tok))
+            (vid, _o, state, cls, _r), = e4.verifications(inst, ref)
+            assert state != "settled" and cls is None, (state, cls)
+            assert len(e4.attempts(inst, vid)) == 1 and len(spies[0].submits) == 1
+            assert e4.case_events(inst, ref) == [] and e4.el_items(inst) == []
 
     run(body())
 
@@ -599,18 +664,17 @@ async def _make_kind(inst: b3.Install, app: Any, tok: str, kind: str) -> str:
     if kind == "eligibility_manual":
         await booked(inst, app, tok, "E2")
     else:
-        await e4.member(app, tok, "SYN-E1-001",
-                        "inactive" if kind == "eligibility_inactive" else "active")
-        if kind == "eligibility_inconclusive":
-            r = await e4.control(app, tok, {"malformed_next": 1})
-            assert r.status == 200, r.raw[:200]
+        if kind == "eligibility_inconclusive":       # T3: the generic helper (Codex ruling)
+            await e4.member(app, tok, "SYN-E1-001", "error", "service_type_unsupported")
+        else:
+            await e4.member(app, tok, "SYN-E1-001", "inactive")
         await booked(inst, app, tok, "E1")
     e4.tick_counts(await e4.tick(app, tok))
     return one_item(inst, kind)
 
 
 KIND_REASON = {"eligibility_inactive": "coverage_inactive",
-               "eligibility_inconclusive": "response_unreadable",
+               "eligibility_inconclusive": "service_type_unsupported",
                "eligibility_manual": "no_coverage"}
 
 
@@ -935,6 +999,7 @@ def test_el4_p08b_stop_timeout_keeps_durable_attempt(pg: s.PgCluster, tmp_path: 
         spy.hold = asyncio.Event()
         held_tick = asyncio.ensure_future(e4.tick(app, tok))
         await asyncio.wait_for(spy.held.wait(), 30)
+        spy.resist = True          # T4: the held submit resists cancellation (a stuck port)
         lc.request_stop("TEST")
         await lc.wait_stopped()
         assert len(calls) == 1 and calls[0][0] == 3 and "RUNTIME_STOP_FAILED" in calls[0] \
@@ -944,9 +1009,154 @@ def test_el4_p08b_stop_timeout_keeps_durable_attempt(pg: s.PgCluster, tmp_path: 
         (attempt, n, a_state), = e4.attempts(inst, vid)
         assert (attempt, n, a_state) == (spy.submits[0], 1, "dispatched")
         assert e4.case_events(inst, ref) == []
+        spy.resist = False         # T4 cleanup: release the spy
         spy.hold.set()
         held_tick.cancel()
         with contextlib.suppress(BaseException):
             await held_tick
+
+    run(body())
+
+
+# =========================================================================== P09 t127 (OD-EL12)
+
+def _contact(app: Any, item: str, code: str) -> Any:
+    async def go() -> Any:
+        _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+        f = b4.form_of(pg_, f"{e4.UI_PREFIX}/{item}/contact")
+        return await e4.post_form(app, f.action, b4.submit_fields(f, contact_code=code))
+    return go()
+
+
+def test_el4_p09a_contact_history_ordered_and_reopened(pg: s.PgCluster, tmp_path: Path,
+                                                       test_zones: None) -> None:
+    """A (OD-EL12, Codex t127 ALIGN). Two contacts on one eligibility item: the reopened
+    screen shows both OD-EL7 labels in history order, durably (a fresh GET, and again after
+    an app restart on the same install)."""
+    inst = el_install(pg, tmp_path)
+    first, second = "el_called_no_answer", "el_left_message"
+
+    async def body() -> str:
+        async with e4.running(inst) as (_lc, app):
+            tok = await e4.token(app)
+            item = await _make_kind(inst, app, tok, "eligibility_manual")
+            for code in (first, second):
+                r = await _contact(app, item, code)
+                assert r.status == 303, (r.status, r.raw[:200])
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            text = pg_.text
+            a, b = text.find(e4.EL_CONTACTS[first]), text.find(e4.EL_CONTACTS[second])
+            assert 0 <= a < b, (a, b)
+            return item
+
+    item = run(body())
+
+    async def reopened() -> None:
+        async with e4.running(inst, app_name="el4-reopen") as (_lc, app):
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            a = pg_.text.find(e4.EL_CONTACTS[first])
+            b = pg_.text.find(e4.EL_CONTACTS[second])
+            assert 0 <= a < b, (a, b)
+
+    run(reopened())
+    assert e4.contact_codes(inst, item) == [first, second]
+
+
+def _history_call(inst: b3.Install, item: str, tenant: str | None = None) -> Any:
+    """The t127 read as the runtime role would call it (admin connection, SET ROLE)."""
+    with inst.c.connect(s.TARGET_DB) as conn, conn.transaction():
+        conn.execute("SET LOCAL ROLE haloflow_runtime")
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)",
+                     (str(inst.state["tenant_id"]) if tenant is None else tenant,))
+        (value,), = conn.execute(f"SELECT {inst.schema}.m05_el_contact_history(%s::uuid)",
+                                 (item,)).fetchall()
+        return value
+
+
+def test_el4_p09b_contact_history_item_and_tenant_isolation(pg: s.PgCluster, tmp_path: Path,
+                                                            test_zones: None) -> None:
+    """A. A second eligibility item of the same tenant reads only its own entries; an unknown
+    item reads ITEM_NOT_FOUND; a missing / invalid tenant context is refused by the standard
+    tenant check. (Another tenant's data lives in another schema: cross-tenant isolation is the
+    gateway's tenant-to-schema binding, as for every M05 read; the UI layer is P05f.)"""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> tuple[str, str]:
+        async with e4.running(inst) as (_lc, app):
+            tok = await e4.token(app)
+            await booked(inst, app, tok, "E2")
+            await booked(inst, app, tok, "E5")
+            e4.tick_counts(await e4.tick(app, tok))
+            items = [i for i, k, _st in e4.el_items(inst) if k == "eligibility_manual"]
+            assert len(items) == 2, items
+            r = await _contact(app, items[0], "el_spoke_followup")
+            assert r.status == 303, r.raw[:200]
+            return items[0], items[1]
+
+    one, two = run(body())
+    got = _history_call(inst, one)
+    assert [e["contact_code"] for e in got["entries"]] == ["el_spoke_followup"], got
+    assert _history_call(inst, two) == {"schema_version": 1, "entries": []}
+    assert _history_call(inst, "0b8e7f3c-1d2a-4c5b-8e9f-0a1b2c3d4e5f") == {
+        "schema_version": 1, "error": "ITEM_NOT_FOUND"}
+    import psycopg
+
+    for bad in ("", "Not A Tenant"):
+        with pytest.raises(psycopg.Error):
+            _history_call(inst, one, tenant=bad)
+
+
+def test_el4_p09c_grants_unchanged_execute_only(pg: s.PgCluster, tmp_path: Path) -> None:
+    """C/A. The runtime role still has no SELECT on m05_contact_entries (E3b grant kept);
+    t127 is EXECUTE for the runtime role only (PUBLIC has none)."""
+    inst = e4.install(pg, tmp_path, e4.ELIGIBILITY)
+    rel = f"{inst.schema}.m05_contact_entries"
+    fn = f"{inst.schema}.m05_el_contact_history(uuid)"
+    got = e4.q(inst, "SELECT has_table_privilege('haloflow_runtime', %s, 'SELECT'),"
+               " has_function_privilege('haloflow_runtime', %s, 'EXECUTE'),"
+               " has_function_privilege('public', %s, 'EXECUTE')", (rel, fn, fn))
+    assert got == [(False, True, False)], got
+
+
+# =========================================================================== F1 / D-E4-9
+
+def test_el4_p04h_concurrent_loads_sharing_s1_lock(pg: s.PgCluster, tmp_path: Path,
+                                                   test_zones: None) -> None:
+    """A (Codex F1 ALIGN: verify at green). E1 and S1 share the t096 lock key "S1": loaded
+    concurrently, both succeed (serialised by the lock), each with its own refs present."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (_lc, app):
+            tok = await e4.token(app)
+            r_e1, r_s1 = await asyncio.gather(e4.load(app, tok, "E1"), e4.load(app, tok, "S1"))
+            loaded(r_e1, "E1")
+            loaded(r_s1, "S1")
+            ref_e1 = e4.scenario_ref(inst, "E1", e4.EL_ROW_KEY)
+            assert e4.q(inst, "SELECT count(*) FROM {s}.m05_el_appointments"
+                        " WHERE appointment_ref = %s::uuid", (ref_e1,)) == [(1,)]
+            s1_refs = [str(e4.mod("scenarios").ids(str(inst.state["tenant_id"]), "S1", r.key)[1])
+                       for r in e4.mod("scenarios").fixtures()["S1"].rows]
+            got = e4.q(inst, "SELECT count(*) FROM {s}.m05_appointments"
+                       " WHERE appointment_ref = ANY(%s::uuid[])", (s1_refs,))
+            assert got == [(len(s1_refs),)], got
+
+    run(body())
+
+
+def test_el4_p04i_same_e_replay_refused(pg: s.PgCluster, tmp_path: Path,
+                                        test_zones: None) -> None:
+    """A (Codex F1 ALIGN). Loading E1 again: the claim's present count is over E1's own refs
+    -> 409 SCENARIO_PRESENT, nothing written twice."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (_lc, app):
+            tok = await e4.token(app)
+            loaded(await e4.load(app, tok, "E1"), "E1")
+            before = e4.q(inst, "SELECT count(*) FROM {s}.m05_el_appointments")
+            r = await e4.load(app, tok, "E1")
+            assert (r.status, r.json.get("code")) == (409, "SCENARIO_PRESENT"), r.raw[:200]
+            assert e4.q(inst, "SELECT count(*) FROM {s}.m05_el_appointments") == before
 
     run(body())

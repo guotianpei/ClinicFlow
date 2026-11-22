@@ -26,14 +26,20 @@ haloflow.synthetic.profiles (new module):
   DEFAULT = "default"; ELIGIBILITY = "eligibility"; PROFILES = (DEFAULT, ELIGIBILITY)
   STATE_FIELD = "install_profile"   (top-level state.json key; NOT `seal.profile`, which is
                                      the installed-state digest id)
-  TARGETS = {"default": 97, "eligibility": 126}
+  TARGETS = {"default": 97, "eligibility": 127}   (OD-EL12: + t127; E3b alone stays 126)
   read_profile(raw: bytes) -> str   the state file bytes; field absent -> "default";
       present -> its value when in PROFILES; unknown value, non-string, or the field given
       twice in the JSON object -> SyntheticRefused("PROFILE_INVALID")
   check_request(installed: str, requested: str) -> None
       equal -> None; different -> SyntheticRefused("PROFILE_MISMATCH")
   registry(profile) / catalog(profile): default -> build_synthetic_registry() /
-      build_synthetic_catalog(); eligibility -> include_el1..include_el3b=True (target 126)
+      build_synthetic_catalog(); eligibility -> include_el1..include_el3b=True plus
+      include_el4=True (t127 and its statement key; target 127)
+t127 (OD-EL12): haloflow.synthetic.el4_units EL4_TENANT_MIGRATIONS {CONTACT_HISTORY_ID},
+  function m05_el_contact_history(p_item_id uuid) RETURNS jsonb STABLE SECURITY DEFINER,
+  runtime EXECUTE only; {"schema_version":1,"entries":[{"seq","contact_code","actor_id","at"}]}
+  for an eligibility item of this tenant, else {"schema_version":1,"error":"ITEM_NOT_FOUND"};
+  statement CONTACT_HISTORY_KEY (READ, the B4 READ capability) in el4_statements.
   schedulers(profile) -> tuple[str, ...]
       default -> ("due", "reminder", "writeback"); eligibility -> + ("eligibility",)
 provision.init(environ, *, attest_flag, profile="default"): records STATE_FIELD only for
@@ -99,7 +105,12 @@ DEFAULT: Final = "default"
 ELIGIBILITY: Final = "eligibility"
 STATE_FIELD: Final = "install_profile"
 DEFAULT_TARGET: Final = 97
-ELIGIBILITY_TARGET: Final = 126
+# OD-EL12 (Rachel 2026-11-22) + Codex t127 ALIGN: the eligibility profile adds the synthetic
+# contact-history read t127, so its target is 127 (E3b's own registry stays 126).
+ELIGIBILITY_TARGET: Final = 127
+E3B_TARGET: Final = 126
+CONTACT_HISTORY_KEY: Final = "m05.synthetic.el_contact_history"
+CONTACT_HISTORY_ID: Final = "t127_m05_el_contact_history"
 B5_SCHEDULERS: Final = ("due", "reminder", "writeback")
 EL_SCHEDULERS: Final = (*B5_SCHEDULERS, "eligibility")
 
@@ -480,6 +491,12 @@ class SpyClearinghouse:
         self.requests: list[dict[str, Any]] = []
         self.hold: asyncio.Event | None = None
         self.held = asyncio.Event()
+        # T4: while True, a cancellation of the held submit is absorbed (the B3a "resist"
+        # pattern: a stuck port); cleared at cleanup.
+        self.resist = False
+        # T3: the next n submits answer a CORRELATED malformed payload (correct echo, an
+        # unreadable status), which reaches E2's response_unreadable mapping end to end.
+        self.correlated_malformed = 0
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self.inner, name)
@@ -489,8 +506,17 @@ class SpyClearinghouse:
         self.requests.append(dict(request))
         if self.hold is not None:
             self.held.set()
-            await self.hold.wait()
+            while True:
+                try:
+                    await self.hold.wait()
+                    break
+                except asyncio.CancelledError:
+                    if not self.resist:
+                        raise
         result: dict[str, Any] = await self.inner.submit(attempt_id, request)
+        if self.correlated_malformed > 0 and isinstance(result.get("echo"), dict):
+            self.correlated_malformed -= 1
+            return {"attempt_id": attempt_id, "echo": result["echo"], "status": "???"}
         return result
 
 

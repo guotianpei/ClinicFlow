@@ -94,9 +94,10 @@ def test_el4_u01_registry_targets() -> None:
     assert profiles.registry(e4.DEFAULT).target_version == e4.DEFAULT_TARGET
     assert profiles.registry(e4.ELIGIBILITY).target_version == e4.ELIGIBILITY_TARGET
     assert comp.build_synthetic_registry().target_version == e4.DEFAULT_TARGET
+    # OD-EL12 (Codex t127 ALIGN): the eligibility registry is E3b's (126) plus t127.
     full = comp.build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
-                                         include_el3b=True)
-    assert profiles.registry(e4.ELIGIBILITY).target_version == full.target_version
+                                         include_el3b=True, include_el4=True)
+    assert profiles.registry(e4.ELIGIBILITY).target_version == full.target_version == 127
 
 
 def test_el4_u01_baseline_registries_control() -> None:
@@ -105,7 +106,7 @@ def test_el4_u01_baseline_registries_control() -> None:
     assert comp.build_synthetic_registry().target_version == e4.DEFAULT_TARGET
     assert comp.build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
                                          include_el3b=True).target_version \
-        == e4.ELIGIBILITY_TARGET
+        == e4.E3B_TARGET
 
 
 # ---------------------------------------------------------------------------- U02 schedulers
@@ -357,3 +358,44 @@ def test_el4_p07_outstanding_ehr_documentation_row() -> None:
     "simulated EHR documentation — not built (OD-EL5)"."""
     tracker = e4.REPO / "documentation" / "HaloFlow_Module_Delivery_Tracker.md"
     assert e4.OUTSTANDING_EHR_ROW in tracker.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------- U10 t127 (OD-EL12)
+
+def test_el4_u10_contact_history_statement_pin() -> None:
+    """A (OD-EL12, Codex t127 ALIGN). The statement is a READ under the B4 READ capability,
+    calling exactly m05_el_contact_history(item_id); composed only in the eligibility
+    catalogue, never the default one."""
+    from haloflow.m01.statements import StatementMode
+    from haloflow.m05.writeback_statements import READ_CAPABILITY
+
+    st = e4.mod("el4_statements").EL4_STATEMENTS
+    assert set(st) == {e4.CONTACT_HISTORY_KEY}
+    mode, cap, query = st[e4.CONTACT_HISTORY_KEY]
+    assert (mode, cap) == (StatementMode.READ, READ_CAPABILITY)
+    assert query == "SELECT m05_el_contact_history(%(item_id)s::uuid)"
+    profiles = e4.mod("profiles")
+    el_keys = profiles.catalog(e4.ELIGIBILITY).catalog.keys()
+    default_keys = profiles.catalog(e4.DEFAULT).catalog.keys()
+    assert e4.CONTACT_HISTORY_KEY in el_keys and e4.CONTACT_HISTORY_KEY not in default_keys
+
+
+def test_el4_u10_contact_history_unit_pin() -> None:
+    """A. One unit t127: a SECURITY DEFINER STABLE function owned by the M05 owner, EXECUTE
+    for the runtime role only, reading m05_contact_entries / m05_followup_history and writing
+    nothing; composed only in the eligibility registry."""
+    units = e4.mod("el4_units")
+    assert set(units.EL4_TENANT_MIGRATIONS) == {e4.CONTACT_HISTORY_ID}
+    unit = units.EL4_TENANT_MIGRATIONS[e4.CONTACT_HISTORY_ID]
+    (fn,) = unit.policy["functions"]
+    assert (fn["name"], fn["security_definer"], fn["volatility"]) == (
+        "m05_el_contact_history", True, "stable")
+    assert fn["acl"] == [{"grantee": "haloflow_runtime", "privileges": ["EXECUTE"]}]
+    body = unit.policy_verification["functions"][0]["body"]
+    assert "m05_contact_entries" in body and "m05_followup_history" in body
+    for verb in ("INSERT", "UPDATE", "DELETE", "GRANT"):
+        assert verb not in body.upper().replace("UPDATED", ""), verb
+    profiles = e4.mod("profiles")
+    el_ids = profiles.registry(e4.ELIGIBILITY).migration_ids
+    assert el_ids[-1] == e4.CONTACT_HISTORY_ID and len(el_ids) == e4.ELIGIBILITY_TARGET
+    assert e4.CONTACT_HISTORY_ID not in profiles.registry(e4.DEFAULT).migration_ids
