@@ -131,11 +131,14 @@ def test_el4_p01a_cli_profile_flag(pg: s.PgCluster, tmp_path: Path) -> None:
 
 
 def test_el4_p01c_activation_enforced(pg: s.PgCluster, tmp_path: Path, test_zones: None) -> None:
-    """A (T2, Codex codex_e4-t127-and-test-rulings.md). Positive: under activation ENFORCE
-    every registered eligibility key is in the running runtime's catalogue and resolves for a
-    context of its capability. Refusal: eligibility keys are not gateway-activation-protected;
-    E2 enforces activation at dispatch. E1 loaded, then a revoke, then a tick -> the worker
-    outcome activation_off, zero attempts, zero clearinghouse submits."""
+    """A (T2; Codex codex_e4-t127-and-test-rulings.md, P01c ruling codex_e4-p01c-ruling.md).
+    Positive: under activation ENFORCE every registered eligibility key is in the running
+    runtime's catalogue and resolves for a context of its capability. Refusal: E2's activation
+    is m05_el_settings.enabled; m05_el_due lists no verification while it is off, so a tick
+    dispatches nothing. The due verification is established through the runtime role, then
+    eligibility is switched off, then a tick: zero dispatches, zero attempts, zero clearinghouse
+    submits, and the same verification is still due. (Dispatch-level activation_off is proven
+    at E2 P09[activation] and E3a P22.)"""
     inst = el_install(pg, tmp_path)
     spies, factory = e4.spy_factory()
 
@@ -145,10 +148,14 @@ def test_el4_p01c_activation_enforced(pg: s.PgCluster, tmp_path: Path, test_zone
             tok = await e4.token(app)
             await e4.member(app, tok, "SYN-E1-001", "active")
             ref = await booked(inst, app, tok, "E1")
-            _activation_change(inst, "revoke")
+            listed = _runtime_due(inst)
+            (vid, _trigger, state, *_rest), = e4.verifications(inst, ref)
+            assert state == "due" and listed == [vid], (state, listed)
+            _el_enabled(inst, False)
             counts = e4.tick_counts(await e4.tick(app, tok))
-            assert counts.get("run.activation_off") == 1, counts
-            (vid, *_rest), = e4.verifications(inst, ref)
+            run_counts = {k: v for k, v in counts.items() if k.startswith("run.")}
+            assert run_counts and all(v == 0 for v in run_counts.values()), counts
+            assert [(v, st) for v, _t, st, *_r in e4.verifications(inst, ref)] == [(vid, "due")]
             assert e4.attempts(inst, vid) == [] and spies[0].submits == []
 
     run(body())
@@ -187,18 +194,30 @@ async def _every_eligibility_key_resolves(lc: Any) -> None:
         assert ctx.capabilities == caps, st.key
 
 
-def _activation_change(inst: b3.Install, kind: str) -> None:
-    """FIXTURE: append a grant/revoke through t042 as the M05 owner (sc_support pattern)."""
+def _runtime_due(inst: b3.Install) -> list[str]:
+    """FIXTURE: one m05_el_due as the runtime role with the timer workload's attribution (the
+    call the scheduler's due phase makes); returns the listed verification ids."""
     import uuid
 
     from psycopg.types.json import Jsonb
 
-    command = {"schema_version": 1, "change": kind, "actor_id": str(uuid.uuid4()),
-               "ticket_reference": "EL4-TEST", "reason": "synthetic E4 row"}
+    command = {"schema_version": 1, "limit": 100, "attribution": {
+        "principal_kind": "workload", "principal_id": e4.mod("composition").W_TIMER,
+        "auth_method": "el4_test", "execution_id": str(uuid.uuid4()), "request_id": None,
+        "purpose_code": "operations"}}
     with inst.c.connect(s.TARGET_DB) as conn, conn.transaction():
-        conn.execute("SET LOCAL ROLE haloflow_m05_owner")
+        conn.execute("SET LOCAL ROLE haloflow_runtime")
         conn.execute("SELECT set_config('app.tenant_id', %s, true)", (inst.state["tenant_id"],))
-        conn.execute(f"SELECT {inst.schema}.m05_activation_change(%s)", (Jsonb(command),))
+        (value,), = conn.execute(f"SELECT {inst.schema}.m05_el_due(%s)",
+                                 (Jsonb(command),)).fetchall()
+    assert value.get("outcome") == "applied", value
+    return list(value["verifications"])
+
+
+def _el_enabled(inst: b3.Install, enabled: bool) -> None:
+    """FIXTURE: the support-path eligibility settings write (owner/admin), as el1 el_settings."""
+    e4.q(inst, "UPDATE {s}.m05_el_settings SET enabled = %s,"
+         " settings_version = settings_version + 1, updated_at = clock_timestamp()", (enabled,))
 
 
 def _shape(value: Any) -> Any:
