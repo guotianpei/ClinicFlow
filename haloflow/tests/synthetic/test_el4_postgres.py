@@ -139,6 +139,9 @@ def test_el4_p01c_activation_enforced(pg: s.PgCluster, tmp_path: Path, test_zone
     eligibility is switched off, then a tick: zero dispatches, zero attempts, zero clearinghouse
     submits, and the same verification is still due. (Dispatch-level activation_off is proven
     at E2 P09[activation] and E3a P22.)"""
+    from haloflow.m05.eligibility_scheduler import OK as RUN_OK
+    from haloflow.m05.eligibility_scheduler import RUN_KEYS
+
     inst = el_install(pg, tmp_path)
     spies, factory = e4.spy_factory()
 
@@ -153,8 +156,9 @@ def test_el4_p01c_activation_enforced(pg: s.PgCluster, tmp_path: Path, test_zone
             assert state == "due" and listed == [vid], (state, listed)
             _el_enabled(inst, False)
             counts = e4.tick_counts(await e4.tick(app, tok))
-            run_counts = {k: v for k, v in counts.items() if k.startswith("run.")}
-            assert run_counts and all(v == 0 for v in run_counts.values()), counts
+            # The run phase ran (status OK) and dispatched nothing: every worker outcome 0.
+            assert counts.get(f"run.status.{RUN_OK}") == 1, counts
+            assert all(counts.get(f"run.{k}") == 0 for k in RUN_KEYS), counts
             assert [(v, st) for v, _t, st, *_r in e4.verifications(inst, ref)] == [(vid, "due")]
             assert e4.attempts(inst, vid) == [] and spies[0].submits == []
 
