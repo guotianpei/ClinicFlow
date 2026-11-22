@@ -36,7 +36,7 @@ from haloflow.synthetic.attest import admin_connect  # noqa: E402
 TARGETS = {"default": HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile.py",
            "eligibility": HALOFLOW / "src" / "haloflow" / "synthetic"
            / "installed_profile_eligibility.py"}
-REGISTRY_TARGET = {"default": 97, "eligibility": 126}
+from haloflow.synthetic.profiles import TARGETS as REGISTRY_TARGET  # noqa: E402
 PROFILE = ["default"]
 COMPLETION_POINTS = {
     "intent": "reserve.after_commit", "stamped": "phase.stamped.after_commit",
