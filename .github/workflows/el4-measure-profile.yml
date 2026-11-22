@@ -40,7 +40,13 @@ jobs:
         run: $VENV/bin/python scripts/b2_measure_profile.py --check
       - name: Measure the eligibility profile
         if: always()
-        run: $VENV/bin/python scripts/b2_measure_profile.py --profile eligibility
+        run: |
+          $VENV/bin/python scripts/b2_measure_profile.py --profile eligibility
+          sha256sum src/haloflow/synthetic/installed_profile_eligibility.py
+          echo "EL4PROFILE-BEGIN"
+          base64 -w0 src/haloflow/synthetic/installed_profile_eligibility.py
+          echo
+          echo "EL4PROFILE-END"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
