@@ -27,12 +27,25 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from psycopg.types.json import Jsonb
+
 from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
-from haloflow.m02.observation import EventFoundation
+from haloflow.m02.observation import EventFoundation, TransactionBinding
 from haloflow.m05.due_scheduler import DueWindowScheduler, SchedulerState
 from haloflow.m05.due_statements import DUE_KEY
 from haloflow.m05.due_windows import DueWindowRunner
-from haloflow.m05.intake import IntakeService
+from haloflow.m05.eligibility import CAPABILITIES as EL_WORKER_CAPABILITIES
+from haloflow.m05.eligibility import EligibilityService, EligibilityWorker
+from haloflow.m05.eligibility_cases import CASE_CAPABILITIES, EligibilityCaseService
+from haloflow.m05.eligibility_scheduler import (
+    APPLY_KEYS,
+    RUN_KEYS,
+    EligibilityScheduler,
+    EligibilitySchedulerStopFailed,
+    TickResult,
+)
+from haloflow.m05.eligibility_statements import TICK_CAPABILITY, TICK_KEY
+from haloflow.m05.intake import IntakeService, _attribution
 from haloflow.m05.intake_statements import CLOSE_KEY
 from haloflow.m05.notes import KeyUnavailable
 from haloflow.m05.outbound import OutboundWorker
@@ -55,7 +68,9 @@ from haloflow.synthetic.hooks import fire
 PRODUCER: Final = "m05_intake"
 PRODUCERS: Final = ("writeback", "reminder", "due")      # stop order (start order reversed)
 TIMER_CAPS: Final = frozenset({DUE_KEY, CLOSE_KEY, APPEND_CAPABILITY, CREATE_KEY})
-INTERVALS: Final = {"due": 300, "reminder": 300, "writeback": 60}
+INTERVALS: Final = {"due": 300, "reminder": 300, "writeback": 60, "eligibility": 300}
+EL_CALL_TIMEOUT_S: Final = 10.0
+E1_KEYS: Final = ("raised", "replanned", "deferred_no_zone")
 WRITE_TIMEOUT_S: Final = 10
 Gate = Callable[[], "str | None"]
 
@@ -241,6 +256,96 @@ class ManagedWritebackScheduler(_Managed, WritebackScheduler):
         return WritebackSchedulerStopFailed()
 
 
+class E1TickService:
+    """The E1 not-received / zone re-plan tick (`m05.eligibility.tick`, t100) through the
+    gateway as the timer workload (D-E4-8: nothing in src called it before E4)."""
+
+    def __init__(self, foundation: EventFoundation) -> None:
+        self._foundation = foundation
+
+    async def tick(self, context: Any) -> dict[str, int]:
+        async def body(binding: TransactionBinding) -> dict[str, int]:
+            payload = {"schema_version": 1, "attribution": _attribution(context)}
+            rows = await binding.handle.fetch_all(TICK_KEY, {"command": Jsonb(payload)})
+            if len(rows) != 1 or not isinstance(rows[0][0], Mapping) \
+                    or rows[0][0].get("outcome") != "applied":
+                raise RuntimeError("RESULT_INVALID")
+            row = rows[0][0]
+            out = {k: row.get(k) for k in E1_KEYS}
+            if not all(type(v) is int and v >= 0 for v in out.values()):
+                raise RuntimeError("RESULT_INVALID")
+            return {k: int(v) for k, v in out.items() if v is not None}
+
+        result: dict[str, int] = await self._foundation.run_in_transaction(context, body)
+        return result
+
+
+@dataclass(frozen=True)
+class EligibilityTick:
+    """One managed eligibility tick: the scheduler's result plus the flattened counts the
+    simulator tick body reports (el4_support pin): tenant codes, `run.<k>`,
+    `expire.expired`, `apply.<k>`, `e1.<k>` and `<phase>.status.<STATUS>` per tenant."""
+
+    result: TickResult
+    e1: Mapping[str, int]
+    e1_status: str
+
+    @property
+    def codes(self) -> Mapping[str, int]:
+        return self.result.codes
+
+    @property
+    def flat_counts(self) -> dict[str, int]:
+        out: dict[str, int] = dict(self.result.codes)
+        tenants = self.result.tenants
+        for key in RUN_KEYS:
+            out[f"run.{key}"] = sum(t.run.counts.get(key, 0) for t in tenants)
+        out["expire.expired"] = sum(t.expire.counts.get("expired", 0) for t in tenants)
+        for key in APPLY_KEYS:
+            out[f"apply.{key}"] = sum(t.apply.counts.get(key, 0) for t in tenants)
+        for key in E1_KEYS:
+            out[f"e1.{key}"] = int(self.e1.get(key, 0))
+        statuses: dict[str, int] = {}
+        for report in tenants:
+            for phase in ("run", "expire", "apply"):
+                name = f"{phase}.status.{getattr(report, phase).status}"
+                statuses[name] = statuses.get(name, 0) + 1
+        statuses[f"e1.status.{self.e1_status}"] = 1
+        out.update(statuses)
+        return out
+
+
+class ManagedEligibilityScheduler(_Managed, EligibilityScheduler):
+    """The E2/E3a eligibility scheduler under the B3a lifecycle rules, with the E1 tick run
+    first in every tick (D-E4-8)."""
+
+    _e1: E1TickService
+    _e1_contexts: Callable[[str], Awaitable[Any]]
+
+    def _b3_stop_failed(self) -> Exception:
+        return EligibilitySchedulerStopFailed()
+
+    def _log(self, result: Any, *, skipped: int) -> None:
+        inner = result.result if isinstance(result, EligibilityTick) else result
+        EligibilityScheduler._log(self, inner, skipped=skipped)
+
+    async def _run_tick(self, *args: Any, **kwargs: Any) -> Any:
+        async with self._b3_lock:
+            e1: dict[str, int] = {}
+            status = "ok"
+            for tenant in self._tenants:
+                try:
+                    got = await self._e1.tick(await self._e1_contexts(tenant))
+                except Exception as error:  # noqa: BLE001 - class name only, reported below
+                    status = type(error).__name__ if isinstance(error, SyntheticRefused) \
+                        else "FAILED"
+                    continue
+                for key, value in got.items():
+                    e1[key] = e1.get(key, 0) + value
+            result = await EligibilityScheduler._run_tick(self, *args, **kwargs)
+            return EligibilityTick(result, e1, status)
+
+
 # ---------------------------------------------------------------------------- build
 
 def _context_for(rt: Any, tenant_id: str, principal_id: str,
@@ -266,6 +371,30 @@ class Wiring:
     sender: Any
     port: SimulatedEhrPort
     schedulers: dict[str, Any]
+
+
+def build_eligibility(rt: Any, tenant_id: str, *, clearinghouse: Any, stop_timeout: float,
+                      gate: Gate) -> ManagedEligibilityScheduler:
+    """The eligibility profile's fourth managed scheduler (D-E4-3): E2 worker over the
+    SYNTHETIC clearinghouse port, the E3a case applier, and the E1 tick (D-E4-8)."""
+
+    foundation = EventFoundation(rt.gateway, producer_service=PRODUCER)
+    service = EligibilityService(foundation)
+    cases = EligibilityCaseService(EventFoundation(rt.gateway, producer_service=PRODUCER))
+    worker = EligibilityWorker(service, clearinghouse, call_timeout_s=EL_CALL_TIMEOUT_S)
+    cls = ManagedEligibilityScheduler
+    scheduler = cls.__new__(cls)
+    scheduler._b3_init(gate, float(stop_timeout), INTERVALS["eligibility"])
+    cls.__init__(scheduler, contexts=_context_for(rt, tenant_id, W_TIMER,
+                                                  frozenset(EL_WORKER_CAPABILITIES)),
+                 service=service, worker=worker, tenants=(tenant_id,),
+                 interval_s=INTERVALS["eligibility"], stop_timeout_s=float(stop_timeout) / 2,
+                 clock=time.monotonic, sleep=scheduler._b3_sleep, cases=cases,
+                 case_contexts=_context_for(rt, tenant_id, W_TIMER,
+                                            frozenset(CASE_CAPABILITIES)))
+    scheduler._e1 = E1TickService(EventFoundation(rt.gateway, producer_service=PRODUCER))
+    scheduler._e1_contexts = _context_for(rt, tenant_id, W_TIMER, frozenset({TICK_CAPABILITY}))
+    return scheduler
 
 
 def build(rt: Any, tenant_id: str, *, sender: Any, ehr: Any,
@@ -329,12 +458,17 @@ class SyntheticServices:
     staff_id: str
 
 
-def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any]) -> SyntheticServices:
+def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any], *,
+                   profile: str = "default") -> SyntheticServices:
     from haloflow.m01.staff.service import StaffService
+    from haloflow.m05.eligibility_staff import StaffServiceV4
     from haloflow.m05.writeback import StaffServiceV3
 
-    m05 = StaffServiceV3(rt.gateway, keys=note_keys,
-                         foundation=EventFoundation(rt.gateway, producer_service=M05_PRODUCER))
+    # E4: the eligibility profile serves the E3b v4 staff service (case view, contact,
+    # per-kind outcomes); the default profile keeps StaffServiceV3.
+    cls = StaffServiceV4 if profile == "eligibility" else StaffServiceV3
+    m05 = cls(rt.gateway, keys=note_keys,
+              foundation=EventFoundation(rt.gateway, producer_service=M05_PRODUCER))
     return SyntheticServices(resolver=rt.resolver, staff=StaffService(rt.gateway), m05=m05,
                              gateway=rt.gateway, tenant_id=str(state["tenant_id"]),
                              staff_id=str(state["staff_id"]))

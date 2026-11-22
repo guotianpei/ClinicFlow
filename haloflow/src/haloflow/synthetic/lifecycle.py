@@ -90,6 +90,9 @@ class LifecycleConfig:
     t_quiesce: float = 2
     t_lease: float = 5
     t_http: float = 2           # B3b (v1r1 §1): the HTTP drain step, bound [1, 10]
+    # E4 (D-E4-3, v1r1 R4): the eligibility profile's fourth producer. Counted into the drain
+    # deadline ONLY when that producer runs, so the default profile's t_total is unchanged.
+    eligibility_stop_timeout_s: float = 4
 
     def __post_init__(self) -> None:
         lease = self.lease_check_s
@@ -104,6 +107,11 @@ class LifecycleConfig:
                 raise SyntheticRefused("BUDGET_INVALID")
         if not _positive(self.t_http) or not 1 <= self.t_http <= 10:
             raise SyntheticRefused("BUDGET_INVALID")
+        if not _positive(self.eligibility_stop_timeout_s) \
+                or self.eligibility_stop_timeout_s > 10:
+            raise SyntheticRefused("BUDGET_INVALID")
+        if self.t_total + 2 * self.eligibility_stop_timeout_s > MAX_TOTAL_S:
+            raise SyntheticRefused("BUDGET_TOTAL_EXCEEDED")
         if self.t_total > MAX_TOTAL_S:
             raise SyntheticRefused("BUDGET_TOTAL_EXCEEDED")
 
@@ -115,6 +123,8 @@ class LifecycleConfig:
                 + self.t_pool + self.t_quiesce + self.t_lease)
 
     def stop_timeout(self, producer: str) -> float:
+        if producer == "eligibility":
+            return float(self.eligibility_stop_timeout_s)
         return float(self.stop_timeout_s[PRODUCERS.index(producer)])
 
 
@@ -184,8 +194,10 @@ class DrainCoordinator:
                  gate: TerminalGate, config: LifecycleConfig,
                  cleanup: Callable[[], str | None] = lambda: None,
                  on_request: Callable[[str], None] | None = None,
-                 on_done: Callable[[LifecycleResult], None] | None = None) -> None:
+                 on_done: Callable[[LifecycleResult], None] | None = None,
+                 extra_total: Callable[[], float] = lambda: 0.0) -> None:
         self._steps = steps
+        self._extra_total = extra_total
         self._producers = producers
         self._gate = gate
         self.config = config
@@ -237,7 +249,9 @@ class DrainCoordinator:
         if self._drain is not None:
             return None
         deadline = time.monotonic() + self.config.t_total
-        watchdog = threading.Timer(self.config.t_total + 1.0, self._gate.terminal,
+        extra = float(self._extra_total())        # E4: the eligibility producer's budget
+        deadline += extra
+        watchdog = threading.Timer(self.config.t_total + extra + 1.0, self._gate.terminal,
                                    args=("DRAIN_DEADLINE", "watchdog"))
         watchdog.daemon = True
         loop = asyncio.get_running_loop()
@@ -409,7 +423,9 @@ class SyntheticLifecycle:
         self._stopped = asyncio.Event()
         self._coordinator = DrainCoordinator(
             steps=self._drain_steps, producers=self._drain_producers, gate=self._gate,
-            config=self.config, cleanup=lambda: self._cleanup, on_done=self._done)
+            config=self.config, cleanup=lambda: self._cleanup, on_done=self._done,
+            extra_total=lambda: (2 * self.config.eligibility_stop_timeout_s
+                                 if "eligibility" in self._started else 0.0))
 
     # -- views ---------------------------------------------------------------------------
 
@@ -513,7 +529,13 @@ class SyntheticLifecycle:
                              gate=self._tick_gate)
         self.port = built.port
         self.schedulers = built.schedulers
-        self.services = wiring.build_services(rt, self.note_keys, state)
+        if installed == profiles.ELIGIBILITY:              # E4 (D-E4-3): fourth scheduler
+            self.clearinghouse = self._clearinghouse_factory() \
+                if self._clearinghouse_factory is not None else _simulated_clearinghouse()
+            self.schedulers["eligibility"] = wiring.build_eligibility(
+                rt, state["tenant_id"], clearinghouse=self.clearinghouse,
+                stop_timeout=self.config.stop_timeout("eligibility"), gate=self._tick_gate)
+        self.services = wiring.build_services(rt, self.note_keys, state, profile=installed)
         self.csrf_token = secrets.token_urlsafe(32)
         self.ingress_secret = secrets.token_urlsafe(48)
         fire("b3.start.wiring", {})
@@ -523,6 +545,9 @@ class SyntheticLifecycle:
         fire("b3.start.schedulers", {})
         self.schedulers["writeback"].start()
         self._started.append("writeback")
+        if "eligibility" in self.schedulers:                 # E4: eligibility profile only
+            self.schedulers["eligibility"].start()
+            self._started.append("eligibility")
         self._watcher_task = asyncio.get_running_loop().create_task(self._watch())
         fire("b3.start.watcher", {})
 
@@ -703,7 +728,7 @@ class SyntheticLifecycle:
 
     def _drain_producers(self) -> list[tuple[str, Callable[[], Awaitable[Any]], float]]:
         out: list[tuple[str, Callable[[], Awaitable[Any]], float]] = []
-        for name in PRODUCERS:
+        for name in ("eligibility", *PRODUCERS):           # E4: eligibility stops first
             if name in self._started:
                 scheduler = self.schedulers[name]
 
@@ -786,3 +811,12 @@ def _simulated_ehr() -> Any:
     from haloflow.m05.simulated_ehr import SimulatedEhr
 
     return SimulatedEhr(clock=lambda: datetime.now(UTC))
+
+
+def _simulated_clearinghouse() -> Any:
+    """E4: the SYNTHETIC clearinghouse port (in-memory; never a vendor client)."""
+    from datetime import UTC, datetime
+
+    from haloflow.m05.simulated_clearinghouse import SimulatedClearinghouse
+
+    return SimulatedClearinghouse(clock=lambda: datetime.now(UTC))

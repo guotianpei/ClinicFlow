@@ -50,8 +50,10 @@ CSS_PATH: Final = "/synthetic/ui/static/app.css"
 # accepts the form media type only on a full match of this union.
 UI_FORM_ROUTE: Final = re.compile(
     r"/synthetic/ui/items/(?P<item_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
-    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve)"
-    r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr)")
+    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve|contact|close)"
+    r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr|clearinghouse)")
+# E4: contact / close are served for eligibility items, and the clearinghouse simulator form,
+# only on an eligibility-profile app (elsewhere those paths are not routed: 404).
 UI_FORM_MEDIA: Final = "application/x-www-form-urlencoded"
 UI_FORM_MAX_BYTES: Final = 8192
 UI_FORM_MAX_FIELDS: Final = 6
@@ -70,7 +72,13 @@ KIND_LABELS: dict[str, str] = {
     "cancel_request": "Cancel requested — staff to cancel in EHR",
     "unclear_reply": "Reply not understood. Review and contact the patient if needed.",
     "ehr_confirmation_check": "EHR confirmation needs checking",
+    # OD-EL11 (Rachel 2026-11-21), exact.
+    "eligibility_inactive": "Insurance not active — review coverage",
+    "eligibility_inconclusive": "Insurance check inconclusive — review",
+    "eligibility_manual": "Insurance needs manual check",
 }
+EL_KINDS: Final = frozenset({"eligibility_inactive", "eligibility_inconclusive",
+                             "eligibility_manual"})
 REASON_LABELS: dict[str, str] = {
     "status_changed": "status changed",
     "declined_or_unknown": "declined or unknown",
@@ -123,7 +131,31 @@ SECURITY_HEADERS: Final = {
     "Cache-Control": "no-store",
 }
 _SERVICE_MESSAGES: Final = {"STALE_VERSION": "conflict", "ITEM_RESOLVED": "resolved",
-                            "NOTE_REQUIRED": "note"}
+                            "NOTE_REQUIRED": "note",
+                            # E4: the E3b view token went stale -> the OD-B4-2 reload message
+                            "CASE_CHANGED": "conflict"}
+_UUID: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+TOKEN_FIELDS: Final = ("case_id", "item_id", "case_version")
+
+
+def case_token_fields(case_id: str, item_id: str, case_version: int) -> list[tuple[str, str]]:
+    """E4 (D-E4-5): the E3b view token as the hidden fields of an eligibility form."""
+    return [("case_id", str(case_id)), ("item_id", str(item_id)),
+            ("case_version", str(case_version))]
+
+
+def parse_case_token(fields: Mapping[str, str]) -> tuple[str, str, int]:
+    """(case_id, item_id, case_version) from a form's hidden fields; ValueError on any missing
+    or malformed part (refused before any service call)."""
+    try:
+        case_id, item_id, version = (fields[k] for k in TOKEN_FIELDS)
+    except KeyError:
+        raise ValueError("case_token") from None
+    if not (type(case_id) is str and _UUID.fullmatch(case_id) and type(item_id) is str
+            and _UUID.fullmatch(item_id) and type(version) is str
+            and _VERSION.fullmatch(version)):
+        raise ValueError("case_token")
+    return case_id, item_id, int(version)
 _VERSION: Final = re.compile(r"[1-9][0-9]{0,9}")
 _RAW_BYTES: Final = re.compile(rb"[A-Za-z0-9*\-._+%=&]*")
 _BAD_PERCENT: Final = re.compile(rb"%(?![0-9A-Fa-f]{2})")
@@ -438,6 +470,9 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
                                  lambda m05, ctx: m05.reason(ctx, item_id))
         display = await _read(lifecycle, "get",
                               lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
+        case: Mapping[str, Any] | None = None
+        if item.get("item_kind") in EL_KINDS:                       # E4 (D-E4-5)
+            case = await _read(lifecycle, "case", lambda m05, ctx: m05.case(ctx, item_id))
     except _Failed as failure:
         return _error_page(failure.status)
     parts = []
@@ -454,6 +489,10 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
                  for line in display_lines(display, clinic_tz=str(SETTINGS["clinic_tz"])))
     if reason is not None:
         parts.append(f"<p>Reason: {label(REASON_LABELS, reason.get('reason'))}</p>")
+    if case is not None:
+        from haloflow.synthetic import el_ui
+
+        parts.extend(el_ui.section(lifecycle, item, case))
     rows = []
     for entry in history.get("entries", []):
         if not isinstance(entry, Mapping):
@@ -462,7 +501,12 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         when = _when(entry.get("created_at"))
         raw_after = entry.get("after")
         after: Mapping[str, Any] = raw_after if isinstance(raw_after, Mapping) else {}
-        if entry.get("assertion_kind") == "staff":
+        if entry.get("assertion_kind") == "staff" and case is not None:
+            from haloflow.synthetic import el_ui
+
+            text = (f"Staff reported: {el_ui.outcome_text(after.get('outcome_code'))} — by"
+                    f" {esc(actor)}, {esc(when)} (not verified in EHR)")
+        elif entry.get("assertion_kind") == "staff":
             text = staff_reported(after.get("outcome_code"), actor, when)
         else:
             text = f"{esc(entry.get('action'))} — {esc(actor)}, {esc(when)}"
@@ -472,7 +516,7 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
     state = item.get("state")
     services = lifecycle.services
     principal = str(services.staff_id) if services is not None else None
-    if state in ("open", "in_progress"):
+    if state in ("open", "in_progress") and case is None:
         if assignee is None:
             parts.append(_form(lifecycle, item, "claim", "claim"))
             parts.append(_form(lifecycle, item, "resolve", "claim_and_resolve"))
@@ -571,3 +615,16 @@ def install_ui(app: FastAPI, lifecycle: Any) -> None:
             (UI_PREFIX + "/{item_id}/resolve", resolve, "POST"), (CSS_PATH, css, "GET")):
         app.add_api_route(path, handler, methods=[method], response_class=Response,
                           include_in_schema=False)
+    if getattr(lifecycle, "profile", "default") == "eligibility":     # E4 (D-E4-5)
+        from haloflow.synthetic import el_ui
+
+        async def contact(request: Request) -> Response:
+            return await el_ui.action(lifecycle, "contact", request)
+
+        async def close(request: Request) -> Response:
+            return await el_ui.action(lifecycle, "close", request)
+
+        for path, handler in ((UI_PREFIX + "/{item_id}/contact", contact),
+                              (UI_PREFIX + "/{item_id}/close", close)):
+            app.add_api_route(path, handler, methods=["POST"], response_class=Response,
+                              include_in_schema=False)

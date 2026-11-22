@@ -258,3 +258,38 @@ def install_sim_ui(app: FastAPI, lifecycle: Any) -> None:
     for name, path in FORM_ROUTES.items():
         app.add_api_route(path, endpoint_for(name), methods=["POST"], response_class=Response,
                           include_in_schema=False)
+    if getattr(lifecycle, "profile", "default") == "eligibility":         # E4 (D-E4-4)
+        async def clearinghouse_endpoint(request: Request) -> Response:
+            return await clearinghouse_form(lifecycle, request)
+
+        app.add_api_route(CLEARINGHOUSE_FORM, clearinghouse_endpoint, methods=["POST"],
+                          response_class=Response, include_in_schema=False)
+
+
+# ---------------------------------------------------------------------------- E4 clearinghouse
+
+CLEARINGHOUSE_FORM: Final = f"{PAGE_ROUTE}/ui/clearinghouse"
+CLEARINGHOUSE_FIELDS: Final = frozenset({"csrf", "op", "member_id", "status", "error", "n"})
+
+
+async def clearinghouse_form(lifecycle: Any, request: Request) -> Response:
+    """The form twin of `POST /synthetic/simulator/clearinghouse` (eligibility profile only):
+    op=member (member_id, status, optional error) | op=fail_next / malformed_next (n)."""
+    try:
+        raw = await _bounded_body(request)
+        fields = parse_form(raw, allowed=CLEARINGHOUSE_FIELDS,
+                            max_fields=len(CLEARINGHOUSE_FIELDS))
+    except FormRefused as refused:
+        return _error_page(refused.status)
+    if "csrf" not in fields or not _csrf_ok(fields["csrf"], lifecycle.csrf_token):
+        return _error_page(403)
+    op = fields.get("op")
+    value: object
+    if op == "member":
+        member = {k: fields[k] for k in ("member_id", "status", "error") if k in fields}
+        value = {"member": member}
+    elif op in ("fail_next", "malformed_next") and _DIGITS.fullmatch(fields.get("n", "")):
+        value = {op: int(fields["n"])}
+    else:
+        value = None
+    return _mapped(sim_actions.clearinghouse(lifecycle, value), None)
