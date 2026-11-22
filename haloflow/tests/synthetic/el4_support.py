@@ -232,7 +232,7 @@ def rewrite_state(inst: b3.Install, **changes: Any) -> None:
 
 
 def installed_target(inst: b3.Install) -> int:
-    rows = inst.admin("SELECT schema_version FROM shared.tenants WHERE tenant_id = %s::uuid",
+    rows = inst.admin("SELECT schema_version FROM shared.tenants WHERE tenant_id = %s",
                       (str(inst.state["tenant_id"]),))
     return int(rows[0][0])
 

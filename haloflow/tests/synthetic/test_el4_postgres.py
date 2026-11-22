@@ -250,9 +250,9 @@ def test_el4_p03a_no_network(pg: s.PgCluster, tmp_path: Path, test_zones: None,
     """A. Eligibility app start -> every scenario loaded and ticked -> stop: no non-AF_UNIX
     socket, no httpx Client/AsyncClient, no StediEligibilityClient constructed."""
     import socket
+    import sys
 
-    from haloflow.integrations import stedi
-
+    stedi_loaded_before = "haloflow.integrations.stedi" in sys.modules
     inst = el_install(pg, tmp_path)
     real = socket.socket.__init__
     calls: list[Any] = []
@@ -266,8 +266,13 @@ def test_el4_p03a_no_network(pg: s.PgCluster, tmp_path: Path, test_zones: None,
     async def body() -> None:
         async with e4.running(inst) as (_lc, app):
             monkeypatch.setattr(socket.socket, "__init__", guarded)
-            monkeypatch.setattr(stedi.StediEligibilityClient, "__init__",
-                                lambda *a, **k: calls.append("stedi"))
+            # Importing the Stedi client loads app Settings, so it is never imported here:
+            # if already loaded its constructor is counted; otherwise the proof is that the
+            # flow never loaded it (the B1-C3s spy rule).
+            if stedi_loaded_before:
+                monkeypatch.setattr(sys.modules["haloflow.integrations.stedi"]
+                                    .StediEligibilityClient, "__init__",
+                                    lambda *a, **k: calls.append("stedi"))
             for mod_name, attr in (("httpx", "Client"), ("httpx", "AsyncClient")):
                 with contextlib.suppress(ImportError):
                     m = __import__(mod_name)
@@ -282,6 +287,7 @@ def test_el4_p03a_no_network(pg: s.PgCluster, tmp_path: Path, test_zones: None,
 
     run(body())
     assert calls == []
+    assert stedi_loaded_before or "haloflow.integrations.stedi" not in sys.modules
 
 
 # =========================================================================== P04 simulator
