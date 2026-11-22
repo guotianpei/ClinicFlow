@@ -61,6 +61,7 @@ NONDETERMINISTIC: Final = frozenset({
     ("shared.tenants", "created_at"),
     ("shared.tenants", "updated_at"),
     ("{tenant}.m05_reminder_settings", "updated_at"),
+    ("{tenant}.m05_el_settings", "updated_at"),        # E4: eligibility profile only
     ("{tenant}.m05_activation_records", "created_at"),
     ("{tenant}.m05_activation_records", "record_id"),
     ("{tenant}.m01_staff", "status_changed_at"),

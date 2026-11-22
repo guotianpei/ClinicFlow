@@ -169,10 +169,11 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "    _check_staff_digests(ctx, cap, conn)\n",
      ""),
     ("B2-M24", "provision: status takes over the reservation (a write)", PROVISION,
-     "        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n",
-     '        begin_run(endpoint, state["phase"], state["nonce"], new_epoch())\n'
-     '        current = read_reservation(endpoint) or ""\n'
-     "        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n"),
+     # E4: status's body moved into _status (one indent level less)
+     "    ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n",
+     '    begin_run(endpoint, state["phase"], state["nonce"], new_epoch())\n'
+     '    current = read_reservation(endpoint) or ""\n'
+     "    ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)\n"),
     ("B2-M26", "provision: a crossed phase may change ANY sealed row of its tables (not "
      "row-exact)", PROVISION,
      "            if table in approved and _sealed_row_may_change(table, key, values, seal, cap,"

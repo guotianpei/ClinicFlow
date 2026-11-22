@@ -281,7 +281,7 @@ async def clearinghouse_form(lifecycle: Any, request: Request) -> Response:
                             max_fields=len(CLEARINGHOUSE_FIELDS))
     except FormRefused as refused:
         return _error_page(refused.status)
-    if "csrf" not in fields or not _csrf_ok(fields["csrf"], lifecycle.csrf_token):
+    if not _csrf_ok(fields.get("csrf"), lifecycle.csrf_token):
         return _error_page(403)
     op = fields.get("op")
     value: object

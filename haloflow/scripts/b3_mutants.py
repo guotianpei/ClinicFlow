@@ -286,7 +286,8 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            "        return ipaddress.ip_address(host).is_loopback\n", "        return True\n",
            (f"{U}test_b3a_f4u_serve_refuses_non_loopback_before_binding[0.0.0.0]",)),
     Mutant("B3-M27", "provision: the inventory equality is dropped in reduced mode", PROVISION,
-           "    if live != INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES:\n"
+           # E4: the inventory is the recorded profile's (default: the same union).
+           "    if live != inventory(_ACTIVE.get()):\n"
            '        raise _diverged("inventory")\n', "",
            (f"{P}test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check[{{schema}}]",
             f"{P}test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check[shared]")),
@@ -553,9 +554,9 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            (f"{B5P}test_b5_p_csrf_form_token_checked_first[missing]",
             f"{B5P}test_b5_p_csrf_form_token_checked_first[wrong]")),
     Mutant("M-B5-5", "load: a non-allowlisted spelling is normalised and accepted", SIMA,
-           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           "    if type(scenario) is not str or scenario not in fixtures \\\n",
            "    scenario = scenario.upper() if type(scenario) is str else scenario\n"
-           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           "    if type(scenario) is not str or scenario not in fixtures \\\n",
            (f"{B5P}test_b5_p_ld6_malformed_load_writes_nothing[lower-body1-422-UNKNOWN_SCENARIO]",
             )),
     Mutant("M-B5-6", "tick: the tick path writes (it loads S1 before ticking)", SIMA,
