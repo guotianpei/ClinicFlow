@@ -447,6 +447,15 @@ jobs:
           $VENV/bin/python -I scripts/el3b_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/el3b-mutation"
+      # Eligibility E4 mutation controls M-E4-1..5, M-E4-7, M-E4-8 (profiles, drain, staff
+      # screen, clearinghouse control, labels): the declared-rows rule of b3_mutants.py over
+      # the E4 units / PostgreSQL rows; M06 is equivalent at E4 (killed at E3a M07).
+      - run: $VENV/bin/pytest scripts/test_el4_mutants.py -q -p no:cacheprovider
+      - run: $VENV/bin/python -I scripts/el4_mutants.py --check
+      - run: >-
+          $VENV/bin/python -I scripts/el4_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/el4-mutation"
       # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
       # statements against the PostgreSQL module, the worker against the unit module),
       # kill sets in scripts/sh_h1_mutant_kills.json.
