@@ -93,7 +93,9 @@ STATE_KEYS = {"schema_version", "phase", "cluster_sysid", "target", "target_oid"
               "tenant_id", "schema_key", "staff_id", "activation_actor_id", "ticket_reference",
               "logins", "note_keys", "support", "seal"}
 STATUS_KEYS = {"phase", "tenant_id", "schema_key", "tenant_count", "staff_count", "open_items",
-               "attested", "sealed", "pending_effect"}
+               "attested", "sealed", "pending_effect",
+               # Eligibility E4 (el4_support pins; declared pin move): two keys added.
+               "install_profile", "target_version"}
 SETTINGS = {"lead_days": 2, "send_time": "10:00:00", "window_start": "09:00:00",
             "window_end": "19:00:00", "clinic_tz": "America/New_York",
             "clinic_display_name": "HaloVox Demo Clinic"}

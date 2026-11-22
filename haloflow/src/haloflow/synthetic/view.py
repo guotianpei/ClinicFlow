@@ -41,7 +41,11 @@ from psycopg import sql
 from haloflow.synthetic.attest import admin_connect
 from haloflow.synthetic.dsn import AdminEndpoint
 from haloflow.synthetic.guard import K_X, RES_SQL
-from haloflow.synthetic.seal_scope import RUNTIME_MUTABLE_TABLES, generic_table
+from haloflow.synthetic.seal_scope import (
+    EL_RUNTIME_MUTABLE_TABLES,
+    RUNTIME_MUTABLE_TABLES,
+    generic_table,
+)
 
 
 def generic_owner(table: str, schema: str) -> str:
@@ -405,7 +409,8 @@ def capture(conn: psycopg.Connection[Any], state: Mapping[str, Any],
         # reduced seal drops it with that table's rows and the full seal still binds it).
         for entry in view["sequences"]:
             owner = entry[5]
-            if owner and generic_owner(owner, schema) in RUNTIME_MUTABLE_TABLES:
+            if owner and (generic_owner(owner, schema) in RUNTIME_MUTABLE_TABLES
+                          or generic_owner(owner, schema) in EL_RUNTIME_MUTABLE_TABLES):
                 value = entry[2]
                 entry[2] = RUNTIME_SEQUENCE_VALUE
                 nondet.setdefault(_norm(owner, subs, boot), {})[

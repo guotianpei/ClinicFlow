@@ -8,7 +8,9 @@ committed, each phase / staff sub-step `after_commit`, and `ready`) the owned-st
 captured with `haloflow.synthetic.view.capture` and its normalised `profile_digest` recorded.
 Run twice by default; the two traces must be identical (determinism), else nothing is written.
 
-    python scripts/b2_measure_profile.py [--check]   # --check: compare with the pinned module
+    python scripts/b2_measure_profile.py [--check] [--profile eligibility]
+        # --check: compare with the pinned module; --profile (E4): the eligibility install
+        # profile (target 126) generates installed_profile_eligibility.py
 
 Requires HALOFLOW_SYNTHETIC_PG_BIN (PostgreSQL 17 binaries).
 """
@@ -31,7 +33,11 @@ import b2_support as s  # noqa: E402
 from haloflow.synthetic import guard, hooks, provision, seal_scope, view  # noqa: E402
 from haloflow.synthetic.attest import admin_connect  # noqa: E402
 
-TARGET = HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile.py"
+TARGETS = {"default": HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile.py",
+           "eligibility": HALOFLOW / "src" / "haloflow" / "synthetic"
+           / "installed_profile_eligibility.py"}
+REGISTRY_TARGET = {"default": 97, "eligibility": 126}
+PROFILE = ["default"]
 COMPLETION_POINTS = {
     "intent": "reserve.after_commit", "stamped": "phase.stamped.after_commit",
     "migrated": "phase.migrated.after_commit", "logins": "phase.logins.after_commit",
@@ -102,7 +108,7 @@ def trace(tmp: Path) -> list[tuple[str, str, dict[str, frozenset[str]]]]:
         hooks.FAULT = hook
         _measurement_mode()
         try:
-            assert provision.init(env, attest_flag=True).phase == "ready"
+            assert provision.init(env, attest_flag=True, profile=PROFILE[0]).phase == "ready"
         finally:
             hooks.FAULT = None
         snap("ready")
@@ -134,7 +140,7 @@ def render(points: list[tuple[str, str, dict[str, frozenset[str]]]], sealed: str
         "The approved installed-state profile of a synthetic install (Option B B2 S1/S2): the",
         "normalised owned-state digest (`view.capture(...).profile_digest`) of EVERY legitimate",
         "committed state of one install, in order, and the index of each phase's completion",
-        "point. Pinned to PostgreSQL 17, the synthetic registry (target 97) and Alembic head 009;",
+        f"point. Pinned to PostgreSQL 17, the synthetic registry (target {REGISTRY_TARGET[PROFILE[0]]}) and Alembic head 009;",
         "control B2-P1 re-measures and must equal this module.",
         "",
         "SEALED_READY_DIGEST (Option B B3a, v1r1 D1.2a): `seal_scope.sealed_digest` of the ready",
@@ -166,7 +172,10 @@ def render(points: list[tuple[str, str, dict[str, frozenset[str]]]], sealed: str
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--profile", choices=sorted(TARGETS), default="default")
     args = parser.parse_args()
+    PROFILE[0] = args.profile
+    target = TARGETS[args.profile]
     tmp_a = Path(tempfile.mkdtemp(prefix="b2prof-a-"))
     tmp_b = Path(tempfile.mkdtemp(prefix="b2prof-b-"))
     first = trace(tmp_a)
@@ -185,11 +194,11 @@ def main() -> int:
         return 1
     text = render(first, SEALED[str(tmp_a)])
     if args.check:
-        current = TARGET.read_text() if TARGET.exists() else ""
+        current = target.read_text() if target.exists() else ""
         print("profile pin", "MATCHES" if current == text else "DIFFERS")
         return 0 if current == text else 1
-    TARGET.write_text(text)
-    print(f"wrote {TARGET} ({len(first)} points)")
+    target.write_text(text)
+    print(f"wrote {target} ({len(first)} points)")
     return 0
 
 

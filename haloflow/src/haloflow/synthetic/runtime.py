@@ -33,12 +33,8 @@ from haloflow.m01.runtime import (
     TenantRuntimeDependencies,
     compose_tenant_runtime,
 )
+from haloflow.synthetic import profiles
 from haloflow.synthetic.attest import admin_connect
-from haloflow.synthetic.composition import (
-    SYNTHETIC_TARGET,
-    build_synthetic_catalog,
-    build_synthetic_registry,
-)
 from haloflow.synthetic.dsn import AdminEndpoint
 from haloflow.synthetic.errors import SyntheticRefused
 from haloflow.synthetic.guard import (
@@ -121,11 +117,21 @@ def _refusing_factory() -> Callable[[], Any]:
     return connect
 
 
+def installed_target(endpoint: AdminEndpoint, state: Mapping[str, Any]) -> int | None:
+    """The installed registry target of the recorded tenant (read-only admin read; E4)."""
+    with admin_connect(endpoint, endpoint.target) as conn:
+        row = conn.execute("SELECT schema_version FROM shared.tenants WHERE tenant_id = %s",
+                           (state["tenant_id"],)).fetchone()
+    return None if row is None else int(row[0])
+
+
 class SyntheticRuntime:
     def __init__(self, endpoint: AdminEndpoint, state: Mapping[str, Any], *,
                  application_name: str, state_dir: str | None = None,
-                 on_refused: Callable[[str], None] | None = None) -> None:
+                 on_refused: Callable[[str], None] | None = None,
+                 profile: str = "default") -> None:
         self.endpoint = endpoint
+        self.profile = profile
         self.state: dict[str, Any] = dict(state)
         self.application_name = application_name
         self._state_dir = state_dir
@@ -213,9 +219,9 @@ class SyntheticRuntime:
             pool=self.pool, control_store=PsycopgControlStore(self.pool),
             migrator_connect=_refusing_factory(), provisioner_connect=_refusing_factory())
         self.tenant_runtime = compose_tenant_runtime(
-            self.dependencies, registry=build_synthetic_registry(),
-            catalog=build_synthetic_catalog(),
-            supported_schema_versions=frozenset({SYNTHETIC_TARGET}),
+            self.dependencies, registry=profiles.registry(self.profile),
+            catalog=profiles.catalog(self.profile),
+            supported_schema_versions=frozenset({profiles.TARGETS[self.profile]}),
             activation_policy=ActivationPolicy.ENFORCE)
         return self.tenant_runtime
 

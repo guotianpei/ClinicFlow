@@ -1,0 +1,49 @@
+# TEMPORARY (eligibility E4): measures the eligibility installed-state profile on PostgreSQL 17
+# and re-checks the default profile pin. Removed from the branch before review.
+name: el4-measure-profile
+on:
+  push:
+    branches: [feat/eligibility-e4-red]
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: haloflow
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: haloflow/locks/linux-x86_64-cp312*.txt
+      - run: >-
+          scripts/verified-install.sh
+          --python python3.12
+          --target linux-x86_64-cp312
+          --project .
+          --locks locks
+          --evidence "$RUNNER_TEMP/verify-evidence"
+          --envdir "$RUNNER_TEMP/verify-env"
+          --source-revision "$GITHUB_SHA"
+      - run: echo "VENV=$(cat "$RUNNER_TEMP/verify-evidence/envdir.txt")" >> "$GITHUB_ENV"
+      - name: PostgreSQL 17 binaries
+        working-directory: .
+        run: |
+          sudo install -d /etc/postgresql-common
+          echo "create_main_cluster = false" | sudo tee /etc/postgresql-common/createcluster.conf
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-17
+          echo "HALOFLOW_SYNTHETIC_PG_BIN=/usr/lib/postgresql/17/bin" >> "$GITHUB_ENV"
+      - name: Default profile pin unchanged
+        run: $VENV/bin/python scripts/b2_measure_profile.py --check
+      - name: Measure the eligibility profile
+        if: always()
+        run: $VENV/bin/python scripts/b2_measure_profile.py --profile eligibility
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-profile-eligibility
+          path: haloflow/src/haloflow/synthetic/installed_profile_eligibility.py
+          if-no-files-found: warn

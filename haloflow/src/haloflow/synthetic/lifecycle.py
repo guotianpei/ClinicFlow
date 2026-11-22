@@ -362,8 +362,16 @@ class SyntheticLifecycle:
                  sender_factory: Callable[[], Any] | None = None,
                  ehr_factory: Callable[[], Any] | None = None,
                  fatal_exit: FatalExit | None = None,
-                 application_name: str | None = None) -> None:
+                 application_name: str | None = None,
+                 profile: str = "default",
+                 clearinghouse_factory: Callable[[], Any] | None = None) -> None:
         self._environ = dict(environ)
+        # Eligibility E4: the startup REQUEST's install profile (checked against the state
+        # before any pool opens) and the synthetic clearinghouse port factory (tests spy).
+        self.profile = profile
+        self.install_profile: str | None = None
+        self._clearinghouse_factory = clearinghouse_factory
+        self.clearinghouse: Any = None
         self.config = config or LifecycleConfig()
         self._sender_factory = sender_factory
         self._ehr_factory = ehr_factory
@@ -447,9 +455,9 @@ class SyntheticLifecycle:
             self.request_stop(self._stop_pending)
 
     async def _start(self) -> None:
-        from haloflow.synthetic import wiring
-        from haloflow.synthetic.provision import check_state
-        from haloflow.synthetic.runtime import SyntheticRuntime
+        from haloflow.synthetic import profiles, wiring
+        from haloflow.synthetic.provision import check_state, recorded_profile
+        from haloflow.synthetic.runtime import SyntheticRuntime, installed_target
 
         env = self._environ
         check_a0(env, attest_flag=True)                                    # A0: no I/O
@@ -462,12 +470,21 @@ class SyntheticLifecycle:
         check_state(state)
         if state["phase"] != "ready":
             raise SyntheticRefused("STATE_CORRUPT", ("phase_not_ready",))
+        # E4 (D-E4-1): the request must name the recorded profile, and the installed registry
+        # target must be that profile's, BEFORE the lease, any pool or the marker.
+        installed = recorded_profile(state)
+        profiles.check_request(installed, self.profile)
+        if await asyncio.to_thread(installed_target, endpoint, state) \
+                != profiles.TARGETS[installed]:
+            raise SyntheticRefused("PROFILE_TARGET_MISMATCH")
+        self.install_profile = installed
         self._endpoint = endpoint
         self.note_keys = wiring.StateNoteKeys(state["note_keys"])
         self.note_keys_names = tuple(sorted(state["note_keys"]))
         fire("b3.start.a0", {})
         runtime = SyntheticRuntime(endpoint, state, application_name=self.application_name,
-                                   state_dir=state_dir, on_refused=self._on_guard_refused)
+                                   state_dir=state_dir, on_refused=self._on_guard_refused,
+                                   profile=installed)
         self.runtime = runtime
         # The lease acquisition runs in its own thread and is OWNED until its outcome is known
         # (Codex review 85d836a): cancelling `start` never abandons an in-flight acquisition;

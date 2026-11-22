@@ -60,6 +60,10 @@ B3B_CODES = frozenset({"HTTP_NOT_DRAINED", "HOST_REFUSED", "CROSS_SITE_REFUSED",
                        "ORIGIN_REFUSED", "CSRF_REFUSED"})
 
 
+# Eligibility E4 (install profiles, el4_support pins; declared pin move): three codes added.
+E4_CODES = frozenset({"PROFILE_INVALID", "PROFILE_MISMATCH", "PROFILE_TARGET_MISMATCH"})
+
+
 def test_b2_u_c1_closed_code_set() -> None:
     errors = s.mod("errors")
     assert frozenset({
@@ -70,7 +74,7 @@ def test_b2_u_c1_closed_code_set() -> None:
         "STATE_LOCK_REPLACED", "SERVER_VERSION_UNSUPPORTED", "CLUSTER_NOT_FRESH",
         "CLUSTER_MISMATCH", "TARGET_MISMATCH", "NOT_RESERVED", "RESERVED_BY_OTHER",
         "EPOCH_SUPERSEDED", "ISOLATION_NOT_READ_COMMITTED", "STATE_DIVERGED", "INSTALL_LOCKED",
-        "INSTALL_LOCK_LOST"}) | B3A_CODES | B3B_CODES == errors.CODES
+        "INSTALL_LOCK_LOST"}) | B3A_CODES | B3B_CODES | E4_CODES == errors.CODES
     e = errors.SyntheticRefused("CLUSTER_NOT_FRESH", ("role",))
     assert (e.code, e.detail) == ("CLUSTER_NOT_FRESH", ("role",))
     with pytest.raises(ValueError):
