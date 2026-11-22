@@ -92,9 +92,17 @@ def _form(action: str, csrf: str, inner: str, button: str) -> str:
             f'{inner}<button type="submit">{esc(button)}</button></form>')
 
 
-def _all_refs(tenant: str) -> dict[str, list[str]]:
+def _listed(lifecycle: Any) -> dict[str, Any]:
+    """The scenarios this app lists: S1..S4, plus E1..E5 on an eligibility-profile app (E4)."""
+    eligibility = (getattr(lifecycle, "install_profile", None)
+                   or getattr(lifecycle, "profile", "default")) == "eligibility"
+    return {name: spec for name, spec in scenarios.fixtures().items()
+            if eligibility or name not in scenarios.EL_NAMES}
+
+
+def _all_refs(tenant: str, lifecycle: Any = None) -> dict[str, list[str]]:
     return {name: [str(scenarios.ids(tenant, name, row.key)[1]) for row in spec.rows]
-            for name, spec in scenarios.fixtures().items()}
+            for name, spec in _listed(lifecycle).items()}
 
 
 async def _present(lifecycle: Any, refs: list[str]) -> Response | frozenset[str]:
@@ -123,7 +131,7 @@ def _scenario_rows(lifecycle: Any, csrf: str, refs: dict[str, list[str]],
                    present: frozenset[str], ehr: frozenset[str]) -> str:
     tenant = str(lifecycle.services.tenant_id)
     rows = []
-    for name, spec in scenarios.fixtures().items():
+    for name, spec in _listed(lifecycle).items():
         backed = frozenset(str(scenarios.ids(tenant, name, r.key)[1]) for r in spec.rows if r.ehr)
         state = scenarios.scenario_state(present, ehr, frozenset(refs[name]), backed)
         if state == "loaded":
@@ -143,7 +151,7 @@ async def page(lifecycle: Any, request: Request) -> Response:
         return _error_page(503)
     csrf = str(lifecycle.csrf_token)
     tenant = str(lifecycle.services.tenant_id)
-    refs = _all_refs(tenant)
+    refs = _all_refs(tenant, lifecycle)
     present = await _present(lifecycle, [r for name in refs for r in refs[name]])
     if isinstance(present, Response):
         return _error_page(present.status_code if 400 <= present.status_code < 600 else 500)

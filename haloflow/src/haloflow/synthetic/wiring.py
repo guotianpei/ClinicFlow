@@ -458,15 +458,84 @@ class SyntheticServices:
     staff_id: str
 
 
+def _synthetic_staff_v4() -> type:
+    """E4: StaffServiceV4 whose item, list and history reads also accept the three
+    eligibility kinds and the E3b `log_contact` history entry (the V3 shadow technique: the
+    accepted validators run on a copy with the kind / action replaced by an accepted one).
+    Synthetic only; src/haloflow/m05 is unchanged."""
+    from typing import cast as _cast
+    from uuid import UUID
+
+    from haloflow.m01.staff import service as m01s
+    from haloflow.m05 import service as staff
+    from haloflow.m05.eligibility_staff import EL_KINDS, StaffServiceV4
+    from haloflow.m05.writeback import ITEM_KINDS_V3, _bind_item_v3, _bind_list_v3
+
+    kinds = frozenset(ITEM_KINDS_V3) | frozenset(EL_KINDS)
+    shadow_kind = next(iter(sorted(ITEM_KINDS_V3)))
+
+    def shadow(view: Any) -> Any:
+        if type(view) is dict and view.get("item_kind") in kinds:
+            return {**view, "item_kind": shadow_kind}
+        return view
+
+    def bind_item(rows: list[Any], item_id: UUID) -> dict[str, Any]:
+        from haloflow.m01.staff import service as m01staff
+
+        view = m01staff.single_json(rows)
+        _bind_item_v3([(shadow(view),)], item_id)
+        return _cast("dict[str, Any]", view)
+
+    def bind_list(rows: list[Any], query: Any) -> dict[str, Any]:
+        from haloflow.m01.staff import service as m01staff
+
+        value = m01staff.single_json(rows)
+        if type(value) is dict and type(value.get("items")) is list:
+            _bind_list_v3([({**value, "items": [shadow(v) for v in value["items"]]},)], query)
+            return _cast("dict[str, Any]", value)
+        raise staff._read_invalid()
+
+    def bind_history(rows: list[Any], item_id: UUID) -> dict[str, Any]:
+        from haloflow.m01.staff import service as m01staff
+
+        value = m01staff.single_json(rows)
+        if type(value) is dict and type(value.get("entries")) is list:
+            entries = [{**e, "action": "start_progress"} if type(e) is dict
+                       and e.get("action") == "log_contact" else e for e in value["entries"]]
+            staff._bind_history([({**value, "entries": entries},)], item_id)
+            return _cast("dict[str, Any]", value)
+        raise staff._read_invalid()
+
+    class SyntheticStaffServiceV4(StaffServiceV4):
+        async def get(self, context: Any, item_id: UUID) -> Mapping[str, Any]:
+            if not m01s.is_uuid(item_id):
+                raise staff.CommandMalformed("item_id")
+            return await self._read(context, staff.K_GET, {"item_id": item_id},
+                                    lambda rows: bind_item(rows, item_id))
+
+        async def list_items(self, context: Any, query: Any) -> Mapping[str, Any]:
+            if type(query) is not staff.ListQuery:
+                raise staff.CommandMalformed("query")
+            return await self._read(context, staff.K_LIST, {"query": Jsonb(query.render())},
+                                    lambda rows: bind_list(rows, query))
+
+        async def history(self, context: Any, item_id: UUID) -> Mapping[str, Any]:
+            if not m01s.is_uuid(item_id):
+                raise staff.CommandMalformed("item_id")
+            return await self._read(context, staff.K_HISTORY, {"item_id": item_id},
+                                    lambda rows: bind_history(rows, item_id))
+
+    return SyntheticStaffServiceV4
+
+
 def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any], *,
                    profile: str = "default") -> SyntheticServices:
     from haloflow.m01.staff.service import StaffService
-    from haloflow.m05.eligibility_staff import StaffServiceV4
     from haloflow.m05.writeback import StaffServiceV3
 
     # E4: the eligibility profile serves the E3b v4 staff service (case view, contact,
     # per-kind outcomes); the default profile keeps StaffServiceV3.
-    cls = StaffServiceV4 if profile == "eligibility" else StaffServiceV3
+    cls = _synthetic_staff_v4() if profile == "eligibility" else StaffServiceV3
     m05 = cls(rt.gateway, keys=note_keys,
               foundation=EventFoundation(rt.gateway, producer_service=M05_PRODUCER))
     return SyntheticServices(resolver=rt.resolver, staff=StaffService(rt.gateway), m05=m05,

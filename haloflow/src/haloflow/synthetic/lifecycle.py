@@ -473,7 +473,7 @@ class SyntheticLifecycle:
     async def _start(self) -> None:
         from haloflow.synthetic import profiles, wiring
         from haloflow.synthetic.provision import check_state, recorded_profile
-        from haloflow.synthetic.runtime import SyntheticRuntime, installed_target
+        from haloflow.synthetic.runtime import SyntheticRuntime
 
         env = self._environ
         check_a0(env, attest_flag=True)                                    # A0: no I/O
@@ -490,9 +490,6 @@ class SyntheticLifecycle:
         # target must be that profile's, BEFORE the lease, any pool or the marker.
         installed = recorded_profile(state)
         profiles.check_request(installed, self.profile)
-        if await asyncio.to_thread(installed_target, endpoint, state) \
-                != profiles.TARGETS[installed]:
-            raise SyntheticRefused("PROFILE_TARGET_MISMATCH")
         self.install_profile = installed
         self._endpoint = endpoint
         self.note_keys = wiring.StateNoteKeys(state["note_keys"])

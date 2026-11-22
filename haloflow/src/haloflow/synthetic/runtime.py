@@ -152,6 +152,10 @@ class SyntheticRuntime:
             raise SyntheticRefused("CLUSTER_MISMATCH")
         if self.state["target"] != self.endpoint.target or self.state["target_oid"] != oid:
             raise SyntheticRefused("TARGET_MISMATCH")
+        # E4: after the cluster / target identity, before the lease, any pool or the marker:
+        # the installed registry target must be the recorded install profile's.
+        if installed_target(self.endpoint, self.state) != profiles.TARGETS[self.profile]:
+            raise SyntheticRefused("PROFILE_TARGET_MISMATCH")
         current = read_reservation(self.endpoint)
         parsed = None if current is None else parse_reservation(current)
         if current is None or parsed is None:

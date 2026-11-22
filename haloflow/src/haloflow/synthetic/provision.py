@@ -757,6 +757,11 @@ def _check_seal_shape(state: Mapping[str, Any]) -> None:
     if not isinstance(seal, dict) or set(seal) != {"profile", "point", "nondet", "identities",
                                                     "ledger"}:
         raise _corrupt("seal_shape")
+    if seal["profile"] != installed_profile.PROFILE_ID and seal["profile"] in {
+            profile_module(p).PROFILE_ID for p in profiles.PROFILES if p != _ACTIVE.get()}:
+        # E4: sealed under ANOTHER install profile's installed-state profile: the recorded
+        # install_profile does not match what was installed.
+        raise SyntheticRefused("PROFILE_TARGET_MISMATCH")
     if seal["profile"] != installed_profile.PROFILE_ID:
         # A state sealed under another installed-state profile identity (for example the
         # accepted-B2 e05bc51 profile before the F-R1 amendment) is refused, never adopted;
