@@ -144,6 +144,12 @@ def outcome_text(code: object) -> str:
     return ui.label(OUTCOME_LABELS, code)
 
 
+def _case_changed(item_id: Any) -> Response:
+    """CASE_CHANGED: 409 with the OD-B4-2 reload message; nothing was changed."""
+    return ui._page(f"<p class=\"message\">{ui.esc(ui.MESSAGES['conflict'])}</p>"
+                    f"<p><a href=\"{ui.UI_PREFIX}/{item_id}\">Reload</a></p>", 409)
+
+
 async def action(lifecycle: Any, endpoint: str, request: Request) -> Response:
     """contact | close: refusals before any principal resolution or service call."""
     try:
@@ -193,13 +199,16 @@ async def action(lifecycle: Any, endpoint: str, request: Request) -> Response:
 
     outcome = await execute(lifecycle, "contact" if endpoint == "contact" else "resolve", act)
     if not isinstance(outcome, Response):
+        # StaffServiceV4 answers a stale view token with the committed business result
+        # `case_changed` (prepare decision CASE_CHANGED), not a refusal: same reload page.
+        if isinstance(outcome, Mapping) and outcome.get("outcome") == "case_changed":
+            return _case_changed(item_id)
         return ui._redirect(item_id)
     code = ui._code(outcome)
     if code in ("NOT_FOUND", "ITEM_NOT_FOUND"):
         return ui._error_page(404)
     if code == "CASE_CHANGED":
-        return ui._page(f"<p class=\"message\">{ui.esc(ui.MESSAGES['conflict'])}</p>"
-                        f"<p><a href=\"{ui.UI_PREFIX}/{item_id}\">Reload</a></p>", 409)
+        return _case_changed(item_id)
     if outcome.status_code == 409 and code in ui._SERVICE_MESSAGES:
         return ui._redirect(item_id, ui._SERVICE_MESSAGES[code])
     if outcome.status_code in (409, 403):

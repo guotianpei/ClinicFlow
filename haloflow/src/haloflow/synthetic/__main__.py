@@ -43,7 +43,7 @@ def _parser() -> argparse.ArgumentParser:
     init.add_argument("--i-attest-disposable-cluster", dest="attest", action="store_true",
                       help="attest that the target cluster is dedicated and disposable")
     init.add_argument("--profile", choices=("default", "eligibility"), default="default",
-                      help="install profile (E4): default (target 97) or eligibility (126)")
+                      help="install profile (E4): default (target 97) or eligibility (127)")
     commands.add_parser("status", help="read-only status of the synthetic install")
     serve = commands.add_parser("serve", help="run the synthetic app (loopback only)")
     serve.add_argument("--host", default=DEFAULT_HOST)

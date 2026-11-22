@@ -100,27 +100,30 @@ def run_total(counts: dict[str, Any]) -> int:
 # =========================================================================== P01 registration
 
 def test_el4_p01a_init_eligibility_profile(pg: s.PgCluster, tmp_path: Path) -> None:
-    """A. `init` with profile eligibility installs to target 126 and records the profile;
+    """A. `init` with profile eligibility installs to target 127 (OD-EL12) and records the profile;
     status reports install_profile and target_version."""
     inst = e4.install(pg, tmp_path, e4.ELIGIBILITY)
     assert e4.installed_target(inst) == e4.ELIGIBILITY_TARGET
     assert inst.state.get(e4.STATE_FIELD) == e4.ELIGIBILITY
     st = e4.mod("provision").status(inst.env)
-    assert st["install_profile"] == e4.ELIGIBILITY and st["target_version"] == 126, st
+    assert (st["install_profile"], st["target_version"]) == (e4.ELIGIBILITY,
+                                                          e4.ELIGIBILITY_TARGET), st
     assert st["attested"] is True and st["sealed"] is True, st
 
 
 def test_el4_p01a_cli_profile_flag(pg: s.PgCluster, tmp_path: Path) -> None:
     """A. `python -m haloflow.synthetic init --profile eligibility` (exit 0, phase ready)."""
     st_dir = s.state_dir(tmp_path)
-    # T5: the isolated B2 CLI environment (test_b2_init_postgres.cli): PATH + environ_for.
+    # T5: the isolated B2 CLI environment (test_b2_init_postgres.cli): PATH + environ_for,
+    # run from tmp_path like B2 (cwd haloflow/ would put its alembic/ scripts directory ahead
+    # of the alembic library on sys.path).
     env = {"PATH": os.environ.get("PATH", ""), **s.environ_for(pg, st_dir)}
     import subprocess
     import sys
 
     done = subprocess.run([sys.executable, "-m", "haloflow.synthetic", "init",
                            "--i-attest-disposable-cluster", "--profile", "eligibility"],
-                          cwd=s.HALOFLOW, env=env, capture_output=True, text=True,
+                          cwd=tmp_path, env=env, capture_output=True, text=True,
                           timeout=600, check=False)
     assert done.returncode == 0, (done.returncode, done.stderr[-500:])
     assert json.loads(done.stdout) == {"phase": "ready"}
@@ -297,7 +300,7 @@ def test_el4_p01d2_pre_e4_state_eligibility_request_refused(
 
 def test_el4_p01d3_eligibility_file_default_request_refused(
         pg: s.PgCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A. The reverse: an eligibility state file (target 126) + a default startup request ->
+    """A. The reverse: an eligibility state file (target 127) + a default startup request ->
     PROFILE_MISMATCH, zero pool constructions."""
     inst = e4.install(pg, tmp_path, e4.ELIGIBILITY)
     _refused_before_pool(inst, e4.DEFAULT, "PROFILE_MISMATCH", monkeypatch)
@@ -335,7 +338,7 @@ def test_el4_p01e_default_install_target_control(pg: s.PgCluster, tmp_path: Path
 def test_el4_p01f_eligibility_profile_pin_equals_measurement() -> None:
     """C (added at green, Codex codex_e4-profile-control-review.md; the B2-P1 pattern): the
     committed eligibility installed-state profile (installed_profile_eligibility.py, target
-    126) equals a fresh measurement (two independent eligibility installs, identical traces).
+    127) equals a fresh measurement (two independent eligibility installs, identical traces).
     A unit, migration, profile-SQL, settings or view change without a re-pin fails here."""
     import subprocess
     import sys
@@ -831,14 +834,18 @@ def test_el4_p05f_cross_tenant_ui(pg: s.PgCluster, tmp_path: Path, test_zones: N
             tok = await e4.token(app)
             item = await _make_kind(inst, app, tok, "eligibility_manual")
             _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
-            f = b4.form_of(pg_, f"{e4.UI_PREFIX}/{item}/contact")
+            forms = {"contact": (b4.form_of(pg_, f"{e4.UI_PREFIX}/{item}/contact"),
+                                 {"contact_code": "el_left_message"}),
+                     "close": (b4.form_of(pg_, f"{e4.UI_PREFIX}/{item}/close"),
+                               {"outcome_code": "el_self_pay"})}
             foreign = "0b8e7f3c-1d2a-4c5b-8e9f-0a1b2c3d4e5f"
             r, _ = await e4.page(app, f"{e4.UI_PREFIX}/{foreign}")
             assert r.status == 404, r.status
-            for action in ("contact", "close"):
+            for action, (f, choice) in forms.items():
+                # Each action posts its OWN rendered form (a well-formed submission), with the
+                # path and the token's item_id moved to the foreign id.
                 fields = [(k, foreign if k == "item_id" else v)
-                          for k, v in b4.submit_fields(f, contact_code="el_left_message",
-                                                       outcome_code="el_self_pay")]
+                          for k, v in b4.submit_fields(f, **choice)]
                 r = await e4.post_form(app, f"{e4.UI_PREFIX}/{foreign}/{action}", fields)
                 assert r.status in (303, 404, 409, 422) and r.status != 200, r.status
             assert e4.contact_codes(inst, item) == []
@@ -1028,6 +1035,15 @@ def _contact(app: Any, item: str, code: str) -> Any:
     return go()
 
 
+def _history_positions(text: str, first: str, second: str) -> tuple[int, int]:
+    """Positions of the two OD-EL7 labels INSIDE the History section (the Log contact form's
+    radio labels, rendered above it, carry the same texts in catalogue order)."""
+    start = text.rfind("History")
+    assert start >= 0, "no History section"
+    history = text[start:]
+    return history.find(e4.EL_CONTACTS[first]), history.find(e4.EL_CONTACTS[second])
+
+
 def test_el4_p09a_contact_history_ordered_and_reopened(pg: s.PgCluster, tmp_path: Path,
                                                        test_zones: None) -> None:
     """A (OD-EL12, Codex t127 ALIGN). Two contacts on one eligibility item: the reopened
@@ -1044,8 +1060,7 @@ def test_el4_p09a_contact_history_ordered_and_reopened(pg: s.PgCluster, tmp_path
                 r = await _contact(app, item, code)
                 assert r.status == 303, (r.status, r.raw[:200])
             _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
-            text = pg_.text
-            a, b = text.find(e4.EL_CONTACTS[first]), text.find(e4.EL_CONTACTS[second])
+            a, b = _history_positions(pg_.text, first, second)
             assert 0 <= a < b, (a, b)
             return item
 
@@ -1054,8 +1069,7 @@ def test_el4_p09a_contact_history_ordered_and_reopened(pg: s.PgCluster, tmp_path
     async def reopened() -> None:
         async with e4.running(inst, app_name="el4-reopen") as (_lc, app):
             _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
-            a = pg_.text.find(e4.EL_CONTACTS[first])
-            b = pg_.text.find(e4.EL_CONTACTS[second])
+            a, b = _history_positions(pg_.text, first, second)
             assert 0 <= a < b, (a, b)
 
     run(reopened())
