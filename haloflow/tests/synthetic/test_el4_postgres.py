@@ -296,6 +296,22 @@ def test_el4_p01e_default_install_target_control(pg: s.PgCluster, tmp_path: Path
     assert e4.installed_target(inst) == e4.DEFAULT_TARGET
 
 
+def test_el4_p01f_eligibility_profile_pin_equals_measurement() -> None:
+    """C (added at green, Codex codex_e4-profile-control-review.md; the B2-P1 pattern): the
+    committed eligibility installed-state profile (installed_profile_eligibility.py, target
+    126) equals a fresh measurement (two independent eligibility installs, identical traces).
+    A unit, migration, profile-SQL, settings or view change without a re-pin fails here."""
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, str(s.HALOFLOW / "scripts" / "b2_measure_profile.py"),
+                        "--check", "--profile", "eligibility"], capture_output=True, text=True,
+                       timeout=1500, env={"PATH": os.environ.get("PATH", ""),
+                                          "HALOFLOW_SYNTHETIC_PG_BIN": str(s.pg_bin())})
+    assert (r.returncode, r.stdout.strip().splitlines()[-1:]) == (0, ["profile pin MATCHES"]), \
+        r.stdout[-2000:] + r.stderr[-2000:]
+
+
 # =========================================================================== P03 no network
 
 def test_el4_p03a_no_network(pg: s.PgCluster, tmp_path: Path, test_zones: None,
