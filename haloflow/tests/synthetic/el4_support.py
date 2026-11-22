@@ -185,6 +185,11 @@ CANARY: Final[dict[str, str]] = {
 RETRY_DELAY_S: Final = 120.0
 
 FIXTURES: Final = Path(__file__).parent / "fixtures"
+# Codex codex_e4-red-v1-review.md finding 1: the GENUINE pre-E4 writer (3a8b884 synthetic
+# package, frozen and blob-verified by the child), run in a fresh process.
+PRE_E4_ZIP: Final = FIXTURES / "el4_3a8b884_synthetic.zip"
+PRE_E4_ZIP_SHA256: Final = "5cfe225cfa5d29efc1f3e18e3a486b22fb7690d311d7118bce88ce9d19345e21"
+PRE_E4_CHILD: Final = Path(__file__).parent / "el4_legacy_child.py"
 PRE_E4_STATE: Final = FIXTURES / "el4_pre_e4_state.json"
 REPO: Final = s.HALOFLOW.parent
 SCENARIO_DIR: Final = s.SRC / "haloflow" / "synthetic" / "scenarios"
@@ -207,6 +212,59 @@ def install(c: s.PgCluster, tmp_path: Path, profile: str | None) -> b3.Install:
         else init(env, attest_flag=True, profile=profile)
     assert r.phase == "ready", r
     return b3.Install(c, st_dir, tmp_path)
+
+
+def pre_e4_run(env: dict[str, str], tmp: Path, action: str) -> dict[str, Any]:
+    """Run the frozen 3a8b884 installer (`init` | `status`) in a fresh isolated process."""
+    import hashlib
+    import os
+    import subprocess
+    import sys
+
+    assert hashlib.sha256(PRE_E4_ZIP.read_bytes()).hexdigest() == PRE_E4_ZIP_SHA256
+    payload = json.dumps({"zip": str(PRE_E4_ZIP), "extract_to": str(tmp / f"pre-e4-{action}"),
+                          "alembic": str(s.HALOFLOW / "alembic"), "environ": env,
+                          "action": action})
+    p = subprocess.run([sys.executable, "-I", str(PRE_E4_CHILD), payload], capture_output=True,
+                       text=True, timeout=900, env={"PATH": os.environ.get("PATH", "")},
+                       check=False)
+    lines = [ln for ln in p.stdout.splitlines() if ln.startswith("EL4LEGACY ")]
+    assert lines, p.stdout[-2000:] + p.stderr[-2000:]
+    return dict(json.loads(lines[-1][len("EL4LEGACY "):]))
+
+
+def pre_e4_install(c: s.PgCluster, tmp_path: Path) -> b3.Install:
+    """A ready install whose state file and database were written by the frozen PRE-E4
+    writer (nested seal, logins, support and note-key formats as 3a8b884 wrote them)."""
+    st_dir = s.state_dir(tmp_path)
+    out = pre_e4_run(s.environ_for(c, st_dir), tmp_path, "init")
+    assert out == {"ok": True, "phase": "ready"}, out
+    return b3.Install(c, st_dir, tmp_path)
+
+
+class PoolCounter:
+    """Codex finding 2: counts every runtime pool construction (TenantPool.__init__ as bound in
+    `haloflow.synthetic.runtime`, and SyntheticRuntime.open_pool) without changing behaviour."""
+
+    def __init__(self, monkeypatch: Any) -> None:
+        runtime = mod("runtime")
+        self.constructed = 0
+        self.opened = 0
+        real_pool = runtime.TenantPool
+        real_open = runtime.SyntheticRuntime.open_pool
+        counter = self
+
+        class CountingPool(real_pool):  # type: ignore[misc, valid-type]
+            def __init__(self, *a: Any, **k: Any) -> None:
+                counter.constructed += 1
+                super().__init__(*a, **k)
+
+        async def open_pool(rt: Any) -> None:
+            counter.opened += 1
+            await real_open(rt)
+
+        monkeypatch.setattr(runtime, "TenantPool", CountingPool)
+        monkeypatch.setattr(runtime.SyntheticRuntime, "open_pool", open_pool)
 
 
 def state_path(inst: b3.Install) -> Path:

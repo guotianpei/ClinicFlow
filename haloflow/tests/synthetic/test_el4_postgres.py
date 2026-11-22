@@ -162,29 +162,47 @@ def _activation_change(inst: b3.Install, kind: str) -> None:
         conn.execute(f"SELECT {inst.schema}.m05_activation_change(%s)", (Jsonb(command),))
 
 
-def test_el4_p01d0_baseline_state_file_matches_fixture(pg: s.PgCluster, tmp_path: Path) -> None:
-    """C (binds the committed pre-E4 fixture). A baseline `init` (no profile keyword) writes
-    a state file with exactly the fixture's key set and no profile field, of the same
-    top-level value types."""
-    inst = e4.install(pg, tmp_path, None)
+def _shape(value: Any) -> Any:
+    """The nested key/type structure of a JSON value (leaf values dropped)."""
+    if isinstance(value, dict):
+        return {k: _shape(v) for k, v in sorted(value.items())}
+    if isinstance(value, list):
+        return ["list"]
+    return type(value).__name__
+
+
+def test_el4_p01d0_pre_e4_writer_state_shape(pg: s.PgCluster, tmp_path: Path) -> None:
+    """C (binds the committed fixture to the GENUINE pre-E4 writer). The frozen 3a8b884
+    installer writes a state file with no profile field, the fixture's top-level key set, and
+    the fixture's nested structure for logins, note_keys and support."""
+    inst = e4.pre_e4_install(pg, tmp_path)
     real = json.loads(e4.state_path(inst).read_bytes())
     fixture = json.loads(e4.PRE_E4_STATE.read_bytes())
     assert set(real) == set(fixture), sorted(set(real) ^ set(fixture))
     assert e4.STATE_FIELD not in real
-    assert {k: type(v).__name__ for k, v in real.items()} \
-        == {k: type(v).__name__ for k, v in fixture.items()}
+    for key in ("logins", "note_keys", "support"):
+        assert _shape(real[key]) == _shape(fixture[key]), key
+    assert set(real["seal"]) == {"profile", "point", "nondet", "identities", "ledger"}
 
 
-def test_el4_p01d1_fieldless_default_startup(pg: s.PgCluster, tmp_path: Path) -> None:
-    """A. A default-profile install's state file has no profile field (pre-E4 shape); a
-    default startup on it succeeds unchanged: target 97, the B-series schedulers, no
-    eligibility scheduler, eligibility routes 404."""
-    inst = e4.install(pg, tmp_path, e4.DEFAULT)
+def test_el4_p01d1_pre_e4_state_default_startup(pg: s.PgCluster, tmp_path: Path,
+                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (Codex finding 1). State and database written by the frozen PRE-E4 writer: the E4
+    reader's `status` attests it, and a default startup on it succeeds unchanged (one pool
+    constructed and opened - the counter is not vacuous), target 97, the B-series schedulers
+    only, eligibility routes 404 / UNKNOWN_SCHEDULER; the state file is not rewritten
+    except by the existing runtime marker."""
+    inst = e4.pre_e4_install(pg, tmp_path)
     assert e4.STATE_FIELD not in inst.state
-    assert e4.installed_target(inst) == e4.DEFAULT_TARGET
+    st = e4.mod("provision").status(inst.env)
+    assert st["install_profile"] == e4.DEFAULT and st["target_version"] == e4.DEFAULT_TARGET, st
+    assert st["attested"] is True and st["sealed"] is True, st
+    before = json.loads(e4.state_path(inst).read_bytes())
+    pools = e4.PoolCounter(monkeypatch)
 
     async def body() -> None:
         async with e4.running(inst, profile=e4.DEFAULT) as (lc, app):
+            assert (pools.constructed, pools.opened) == (1, 1)
             assert tuple(sorted(lc.schedulers)) == tuple(sorted(e4.B5_SCHEDULERS))
             tok = await e4.token(app)
             r = await e4.control(app, tok, {"fail_next": 1})
@@ -193,48 +211,83 @@ def test_el4_p01d1_fieldless_default_startup(pg: s.PgCluster, tmp_path: Path) ->
             assert (r.status, r.json.get("code")) == (422, "UNKNOWN_SCHEDULER"), r.raw[:200]
 
     run(body())
+    after = json.loads(e4.state_path(inst).read_bytes())
+    assert {k: v for k, v in after.items() if k != "runtime"} == before
+    assert e4.STATE_FIELD not in after
 
 
-def _refused_before_pool(inst: b3.Install, profile: str, code: str) -> None:
+def test_el4_p01d1c_current_default_install_startup(pg: s.PgCluster, tmp_path: Path) -> None:
+    """A. A default-profile install by the E4 writer keeps the pre-E4 key set (no profile
+    field) and starts with the B-series schedulers only."""
+    inst = e4.install(pg, tmp_path, e4.DEFAULT)
+    assert e4.STATE_FIELD not in inst.state
+    assert e4.installed_target(inst) == e4.DEFAULT_TARGET
+
+    async def body() -> None:
+        async with e4.running(inst, profile=e4.DEFAULT) as (lc, _app):
+            assert tuple(sorted(lc.schedulers)) == tuple(sorted(e4.B5_SCHEDULERS))
+
+    run(body())
+
+
+def _refused_before_pool(inst: b3.Install, profile: str, code: str,
+                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """Codex finding 2: the runtime pool construction point is instrumented; a refusal must
+    construct and open NO pool (not merely clean one up), write no marker, and leave the
+    state file's bytes and mtime unchanged."""
     before = e4.state_stat(inst)
     app_name = f"el4-refuse-{profile}"
+    pools = e4.PoolCounter(monkeypatch)
 
     async def body() -> None:
         lc = e4.lifecycle(inst, profile=profile, app_name=app_name)
         with pytest.raises(e4.mod("errors").SyntheticRefused) as err:
             await lc.start()
         assert err.value.code == code, err.value.code
-        assert lc.runtime is None or getattr(lc.runtime, "pool", None) is None
 
     run(body())
+    assert (pools.constructed, pools.opened) == (0, 0)
     assert e4.pool_backends(inst, app_name) == 0
-    assert e4.state_stat(inst) == before            # bytes and mtime: no marker written
+    assert e4.state_stat(inst) == before
 
 
-def test_el4_p01d2_fieldless_file_eligibility_request_refused(pg: s.PgCluster,
-                                                              tmp_path: Path) -> None:
-    """A. A pre-E4 (field-less) state file + an eligibility startup request -> refused
-    PROFILE_MISMATCH before any pool opens or marker is written."""
-    inst = e4.install(pg, tmp_path, None)
-    assert e4.STATE_FIELD not in inst.state
-    _refused_before_pool(inst, e4.ELIGIBILITY, "PROFILE_MISMATCH")
+def test_el4_p01d2_pre_e4_state_eligibility_request_refused(
+        pg: s.PgCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A. Pre-E4 writer state + an eligibility startup request -> PROFILE_MISMATCH, zero pool
+    constructions."""
+    inst = e4.pre_e4_install(pg, tmp_path)
+    _refused_before_pool(inst, e4.ELIGIBILITY, "PROFILE_MISMATCH", monkeypatch)
 
 
-def test_el4_p01d3_eligibility_file_default_request_refused(pg: s.PgCluster,
-                                                            tmp_path: Path) -> None:
-    """A. The reverse: an eligibility state file (target 126) + a default startup request
-    -> refused PROFILE_MISMATCH the same way."""
+def test_el4_p01d3_eligibility_file_default_request_refused(
+        pg: s.PgCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A. The reverse: an eligibility state file (target 126) + a default startup request ->
+    PROFILE_MISMATCH, zero pool constructions."""
     inst = e4.install(pg, tmp_path, e4.ELIGIBILITY)
-    _refused_before_pool(inst, e4.DEFAULT, "PROFILE_MISMATCH")
+    _refused_before_pool(inst, e4.DEFAULT, "PROFILE_MISMATCH", monkeypatch)
 
 
-def test_el4_p01d4_eligibility_file_wrong_target_refused(pg: s.PgCluster,
-                                                         tmp_path: Path) -> None:
-    """A. An eligibility state file whose installed target is not 126 (a default install
-    whose state file claims eligibility) -> PROFILE_TARGET_MISMATCH before any pool."""
-    inst = e4.install(pg, tmp_path, None)
+def test_el4_p01d4_eligibility_file_wrong_target_refused(
+        pg: s.PgCluster, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A. A pre-E4 writer install (target 97) whose state file claims eligibility ->
+    PROFILE_TARGET_MISMATCH, zero pool constructions."""
+    inst = e4.pre_e4_install(pg, tmp_path)
     e4.rewrite_state(inst, install_profile=e4.ELIGIBILITY)
-    _refused_before_pool(inst, e4.ELIGIBILITY, "PROFILE_TARGET_MISMATCH")
+    _refused_before_pool(inst, e4.ELIGIBILITY, "PROFILE_TARGET_MISMATCH", monkeypatch)
+
+
+def test_el4_p01d5_pool_counter_observes_control(pg: s.PgCluster, tmp_path: Path,
+                                                 monkeypatch: pytest.MonkeyPatch) -> None:
+    """C (proves `PoolCounter` is not vacuous on the baseline): a pre-E4 writer install and a
+    baseline startup (no profile keyword) construct and open exactly one runtime pool."""
+    inst = e4.pre_e4_install(pg, tmp_path)
+    pools = e4.PoolCounter(monkeypatch)
+
+    async def body() -> None:
+        async with bb.running(inst, app_name="el4-pool-control"):
+            assert (pools.constructed, pools.opened) == (1, 1)
+
+    run(body())
 
 
 def test_el4_p01e_default_install_target_control(pg: s.PgCluster, tmp_path: Path) -> None:
