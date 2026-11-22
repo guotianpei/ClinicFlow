@@ -1,0 +1,17 @@
+{
+  "name": "E3",
+  "rows": [
+    {
+      "key": "el",
+      "first_name": "Harper",
+      "phone": "+15555550192",
+      "provider_ref": "prov-syn-1",
+      "department_ref": "dept-syn-1",
+      "lead_days": 10,
+      "ehr": true,
+      "coverage": {
+        "state": "pending"
+      }
+    }
+  ]
+}

@@ -59,6 +59,18 @@ def _measurement_mode() -> None:
     expected index of an uninterrupted install (fake consecutive indices). Never used by src."""
     order = {name: i for i, name in enumerate(_FAKE_ORDER)}
     provision.COMPLETION = order  # type: ignore[misc]
+    if PROFILE[0] == "eligibility":
+        # E4: the eligibility profile module is what this run generates, so a stand-in with the
+        # fake indices answers the seal's profile id / point bounds during the measurement.
+        import types
+
+        stub = types.ModuleType("haloflow.synthetic.installed_profile_eligibility")
+        stub.PROFILE_ID = "measurement"  # type: ignore[attr-defined]
+        stub.POINTS = ("",) * len(order)  # type: ignore[attr-defined]
+        stub.COMPLETION = order  # type: ignore[attr-defined]
+        stub.REPLACED = {}  # type: ignore[attr-defined]
+        stub.SEALED_READY_DIGEST = ""  # type: ignore[attr-defined]
+        sys.modules[stub.__name__] = stub
     calls = [0]
 
     def reconcile(ctx: Any, conn: Any) -> tuple[int, Any]:
