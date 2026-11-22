@@ -67,3 +67,21 @@ EL3A_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
     CASE_VIEW_KEY: (StatementMode.READ, READ_CAPABILITY,
                     "SELECT m05_el_case_view(%(item_id)s)"),
 })
+
+# Eligibility E3b (correction C-1): no new key; the existing staff action keys (capability =
+# key) are re-bound to the v4 gateways, as S-I re-bound them to v3. The synthetic catalogue
+# drops the S-I bindings of these two keys when `include_el3b` is set.
+# (imported under other names: this module's own APPLY_KEY is the E3a case applier key)
+from haloflow.m05.writeback_statements import (  # noqa: E402
+    APPLY_KEY as STAFF_APPLY_KEY,
+)
+from haloflow.m05.writeback_statements import (  # noqa: E402
+    PREPARE_KEY as STAFF_PREPARE_KEY,
+)
+
+EL3B_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
+    STAFF_PREPARE_KEY: (StatementMode.WRITE, STAFF_PREPARE_KEY,
+                        "SELECT m05_prepare_action_v4(%(command)s)"),
+    STAFF_APPLY_KEY: (StatementMode.WRITE, STAFF_APPLY_KEY,
+                      "SELECT m05_apply_action_v4(%(command)s)"),
+})

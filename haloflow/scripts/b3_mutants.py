@@ -401,8 +401,8 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            "        held = frozenset().union(*CAPABILITY_MATRIX.values())\n",
            (f"{BP}test_b3b_i4_capabilities_come_from_the_standing",)),
     Mutant("B3-M49", "staff_routes: an admin route is mounted", STAFF,
-           '    "resolve": ("POST", PREFIX + "/{item_id}/resolve"),\n}\n',
-           '    "resolve": ("POST", PREFIX + "/{item_id}/resolve"),\n'
+           '    "contact": ("POST", PREFIX + "/{item_id}/contact"),\n}\n',
+           '    "contact": ("POST", PREFIX + "/{item_id}/contact"),\n'
            '    "admin": ("POST", "/synthetic/v1/staff/admin"),\n}\n',
            (f"{BU}test_b3b_r7u_route_inventory_is_closed",
             f"{BP}test_b3b_r7_not_served_paths_are_404")),

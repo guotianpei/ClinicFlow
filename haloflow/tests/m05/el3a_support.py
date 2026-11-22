@@ -213,6 +213,16 @@ class EL3AInstall(e2.EL2Install):
     """A synthetic tenant at target 121 (S-I TEST + B5 + E1 + E2 + E3a), provisioned in the
     row, with the S-I and E3a test profiles and the staff resolution activation."""
 
+    # E3b green correction (disclosed): the runtimes below compose the install's OWN registry,
+    # catalogue and target, so a later package's install (E3b, target 125) can reuse them.
+    runtime_target: int = EL3A_TARGET
+
+    def runtime_registry(self) -> Any:
+        return el3a_registry()
+
+    def runtime_catalog(self) -> Any:
+        return el3a_catalog()
+
     def require(self) -> None:
         if not self._attempted:
             self._attempted = True
@@ -412,8 +422,8 @@ async def case_runtime(install: EL3AInstall, *, caps: frozenset[str] = CASE_CAPA
                 pool=pool, control_store=PsycopgControlStore(pool),
                 migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
                 provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"])),
-            registry=el3a_registry(), catalog=el3a_catalog(),
-            supported_schema_versions=frozenset({EL3A_TARGET}),
+            registry=install.runtime_registry(), catalog=install.runtime_catalog(),
+            supported_schema_versions=frozenset({install.runtime_target}),
             activation_policy=ActivationPolicy.ENFORCE)
 
         async def context(_tenant: str = "") -> Any:
@@ -472,8 +482,8 @@ async def staff_runtime(install: EL3AInstall) -> AsyncIterator[Any]:
                 pool=pool, control_store=PsycopgControlStore(pool),
                 migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
                 provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"])),
-            registry=el3a_registry(), catalog=el3a_catalog(),
-            supported_schema_versions=frozenset({EL3A_TARGET}),
+            registry=install.runtime_registry(), catalog=install.runtime_catalog(),
+            supported_schema_versions=frozenset({install.runtime_target}),
             activation_policy=ActivationPolicy.ENFORCE)
     finally:
         await pool.close()
@@ -505,8 +515,8 @@ async def worker_runtime(install: EL3AInstall) -> AsyncIterator[tuple[Any, Any]]
                 pool=pool, control_store=PsycopgControlStore(pool),
                 migrator_connect=sv._factory(install.ids.logins[sa.MIGRATOR]),
                 provisioner_connect=sv._factory(install.ids.logins["haloflow_provisioner"])),
-            registry=el3a_registry(), catalog=el3a_catalog(),
-            supported_schema_versions=frozenset({EL3A_TARGET}),
+            registry=install.runtime_registry(), catalog=install.runtime_catalog(),
+            supported_schema_versions=frozenset({install.runtime_target}),
             activation_policy=ActivationPolicy.ENFORCE)
 
         async def context(_tenant: str = "") -> Any:

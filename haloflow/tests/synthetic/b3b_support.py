@@ -85,6 +85,12 @@ ROUTES: Final[dict[str, tuple[str, str]]] = {
     "sim_ehr": ("POST", "/synthetic/simulator/ehr"),
 }
 STAFF_ROUTES: Final = ("list", "get", "history", "reason", "act", "resolve")
+# Eligibility E3b (pins v1 section 5, Codex tranche-1 review Q-T2b): exactly two staff routes
+# added to the closed inventory; every existing route, exclusion and guard is unchanged.
+E3B_ROUTES: Final[dict[str, tuple[str, str]]] = {
+    "case": ("GET", P + "/{item_id}/case"),
+    "contact": ("POST", P + "/{item_id}/contact"),
+}
 NOT_SERVED: Final = ("/synthetic/v1/followup/notes/" + "0" * 8 + "-0000-4000-8000-" + "0" * 12,
                      "/synthetic/v1/staff/display", "/synthetic/v1/staff/admin",
                      "/v1/synthetic/inbound-sms", "/v1/followup/items")
