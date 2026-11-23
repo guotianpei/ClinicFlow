@@ -56,7 +56,7 @@ def test_el5_u00_chart_module_present() -> None:
     """A. The simulated chart port module exists with the context-bound entry point."""
     chart = e5.m05("simulated_chart")
     assert hasattr(chart.SimulatedChart, "for_tenant")
-    for name in ("APPENDED", "EXISTS", "ALREADY_USED", "PERMIT_CLOSED", "PERMIT_CONFLICT",
+    for name in ("ISSUED", "APPENDED", "EXISTS", "ALREADY_USED", "PERMIT_CLOSED", "PERMIT_CONFLICT",
                  "REFUSED_MISMATCH", "TENANT_MISMATCH", "ABSENT"):
         assert hasattr(chart, name), name
 

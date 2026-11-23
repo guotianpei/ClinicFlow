@@ -37,9 +37,45 @@ haloflow.m05.eligibility_doc (new module):
   selection_sql(schema: str) -> str  the rendered documentable-event predicate (A2)
 haloflow.m05.simulated_chart (new module): SimulatedChart over the synthetic cluster's `sim_chart`
   schema; `for_tenant(ctx)` -> TenantChart with issue_permit / append / close_permit / read
-  (architecture v1r1 A3 + the context-bound clarification). Outcomes: APPENDED, EXISTS,
+  (architecture v1r1 A3 + the context-bound clarification). Outcomes: ISSUED, APPENDED, EXISTS,
   ALREADY_USED, PERMIT_CLOSED, PERMIT_CONFLICT, REFUSED_MISMATCH, TENANT_MISMATCH, ABSENT.
+  `SimulatedChart(conninfo)`; `.conninfo`; TenantChart methods are async:
+  issue_permit(permit_id, event_id, appointment_ref) -> ISSUED | refusal outcome;
+  append(permit_id, body) -> APPENDED | EXISTS | ALREADY_USED | PERMIT_CLOSED | TENANT_MISMATCH;
+  close_permit(permit_id) -> None-equivalent success | ALREADY_USED | TENANT_MISMATCH;
+  read(event_id) -> {"appointment_ref", "permit_id", "body"} | ABSENT.
 haloflow.synthetic.profiles: TARGETS["eligibility"] == 134 (t128..t134); TARGETS["default"] == 97.
+
+Composition (eligibility profile; PostgreSQL rows):
+  lc.chart        the composed SimulatedChart over the install's cluster (schema `sim_chart`);
+                  `lc.chart.for_tenant(lc.tenant_context())` is the worker's port.
+  lc.tenant_context()  the authorized TenantContext the eligibility scheduler uses.
+  lc.doc_service  the DocService; the eligibility scheduler's tick runs phase `document` after
+                  `apply` and reports counts under keys "document.<name>".
+  lc.doc_service.manual(item_id: str, expected_version: int, staff_id: str) -> str
+                  the staff "Recorded in chart manually" action (t134), returning the item
+                  outcome "entry_confirmed" | "manual_documentation"; refusals raise
+                  eligibility_doc.DocRefused(code) with no state change.
+  lc.doc_service.hooks: dict[str, Callable[[], None]]  test seams, keys "after_claim",
+                  "after_mark_sent", "after_manual_phase1"; a hook that raises
+                  eligibility_doc.SimulatedCrash aborts the pass at that point (the process
+                  "crashes"; durable state is whatever committed before it).
+SimulatedChart test controls (synthetic only): fail_next(n) refuse before write;
+  unknown_next(n) commit, then drop the acknowledgement; hold_commits() / release_commits()
+  (a held append blocks before commit; release lets it commit unless its permit was closed,
+  in which case it returns PERMIT_CLOSED and writes nothing); reads_unavailable(n) the next n
+  reads time out; `port_timeout_override` (seconds, None = PORT_TIMEOUT_S) bounds a port call
+  in rows that hold commits; `calls` list of (operation, permit_id or None) in call order.
+Tick counts (document phase) include "document.refused_mismatch" and "document.foreign_permit".
+simulated_chart.context_for(tenant_id: str) -> TenantContext for a second synthetic tenant
+  (store-level isolation rows only; the synthetic install has one tenant).
+Tables: {s}.m05_el_doc_ops (architecture A4: event_id, appointment_ref, state, epoch, permit_id,
+  permit_sent, attempts, reads, confirm_reads, last_failure, lease_until, next_at, item_id,
+  manual_by, created_at);
+  sim_chart.permits(permit_id, tenant, event_id, appointment_ref, state);
+  sim_chart.entries(tenant, event_id, appointment_ref, permit_id, body, committed_at).
+  Doc item kind "eligibility_doc_check", title "Chart entry needs a check" (owner decision 4).
+Schedules are in database time; rows age `next_at` (the E2 make_due pattern).
 """
 
 from __future__ import annotations
@@ -125,3 +161,67 @@ def event(cls: str, reason: str, *, verification: bool) -> dict[str, Any]:
             "class": cls, "reason": reason, "coverage_version": 2,
             "created_at": "2026-11-20T15:04:06Z",
             "verification_id": "00000000-0000-4000-8000-0000000000aa" if verification else None}
+
+
+# ---------------------------------------------------------------------------- database reads
+
+DOC_KIND: Final = "eligibility_doc_check"
+DOC_TITLE: Final = "Chart entry needs a check"
+
+
+def ops(inst: Any) -> list[tuple[Any, ...]]:
+    """[(event_id, state, attempts, reads, confirm_reads, permit_id, permit_sent, item_id)]."""
+    return inst.admin(
+        f"SELECT event_id::text, state, attempts, reads, confirm_reads, permit_id::text,"
+        f" permit_sent, item_id::text FROM {inst.schema}.m05_el_doc_ops ORDER BY created_at")
+
+
+def op(inst: Any, event_id: str) -> dict[str, Any]:
+    (row,) = [r for r in ops(inst) if r[0] == event_id]
+    keys = ("event_id", "state", "attempts", "reads", "confirm_reads", "permit_id",
+            "permit_sent", "item_id")
+    return dict(zip(keys, row, strict=True))
+
+
+def entries(inst: Any, tenant: str | None = None) -> list[tuple[Any, ...]]:
+    """[(tenant, event_id, appointment_ref, permit_id, body)] from the simulated chart."""
+    rows = inst.admin("SELECT tenant, event_id::text, appointment_ref::text, permit_id::text,"
+                      " body FROM sim_chart.entries ORDER BY committed_at")
+    return [r for r in rows if tenant is None or r[0] == tenant]
+
+
+def entry_rows_raw(inst: Any, event_id: str) -> list[tuple[Any, ...]]:
+    """Every column of the entries for one event, for byte-identity checks."""
+    return inst.admin("SELECT tenant, event_id::text, appointment_ref::text, permit_id::text,"
+                      " body::text, committed_at FROM sim_chart.entries WHERE event_id = %s",
+                      (event_id,))
+
+
+def permits(inst: Any, event_id: str) -> list[tuple[Any, ...]]:
+    """[(permit_id, state)] for one event."""
+    return inst.admin("SELECT permit_id::text, state FROM sim_chart.permits"
+                      " WHERE event_id = %s ORDER BY issued_at", (event_id,))
+
+
+def doc_items(inst: Any) -> list[tuple[Any, ...]]:
+    """[(item_id, state, outcome_code, version)] of the doc-check kind."""
+    return inst.admin(f"SELECT item_id::text, state, outcome_code, version FROM"
+                      f" {inst.schema}.m05_followup_items WHERE item_kind = %s"
+                      f" ORDER BY created_at", (DOC_KIND,))
+
+
+def events(inst: Any, ref: str) -> list[tuple[Any, ...]]:
+    """[(event_id, kind, class, reason, verification_id)] for one appointment, by seq."""
+    return inst.admin(f"SELECT event_id::text, kind, class, reason, verification_id::text FROM"
+                      f" {inst.schema}.m05_el_case_events WHERE appointment_ref = %s ORDER BY seq",
+                      (ref,))
+
+
+def age_op(inst: Any, event_id: str, offset_s: float = -1.0) -> None:
+    """FIXTURE: an op's next_at := database now + offset (makes a scheduled step due)."""
+    inst.admin(f"UPDATE {inst.schema}.m05_el_doc_ops SET next_at = clock_timestamp()"
+               f" + make_interval(secs => %s) WHERE event_id = %s", (offset_s, event_id))
+
+
+def calls(chart: Any, operation: str) -> int:
+    return sum(1 for c in chart.calls if c[0] == operation)
