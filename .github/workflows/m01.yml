@@ -447,9 +447,10 @@ jobs:
           $VENV/bin/python -I scripts/el3b_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/el3b-mutation"
-      # Eligibility E4 mutation controls M-E4-1..5, M-E4-7, M-E4-8 (profiles, drain, staff
-      # screen, clearinghouse control, labels): the declared-rows rule of b3_mutants.py over
-      # the E4 units / PostgreSQL rows; M06 is equivalent at E4 (killed at E3a M07).
+      # Eligibility E4 mutation controls M-E4-1..M-E4-9 (profiles, drain, staff screen and its
+      # summary renderer, clearinghouse control, labels, the t127 item scope): the
+      # declared-rows rule of b3_mutants.py over the E4 units / PostgreSQL rows; M-E4-9
+      # re-pins the eligibility installed-state profile before its rows run.
       - run: $VENV/bin/pytest scripts/test_el4_mutants.py -q -p no:cacheprovider
       - run: $VENV/bin/python -I scripts/el4_mutants.py --check
       - run: >-

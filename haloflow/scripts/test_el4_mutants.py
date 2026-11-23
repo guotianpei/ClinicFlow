@@ -1,8 +1,8 @@
 """Static controls for scripts/el4_mutants.py (no database, no pytest runs).
 
 Every mutant replaces exactly one span of its target, changes the text, has a unique id and a
-non-empty declared row set naming collected E4 tests; the ids are exactly the predeclared E4
-mutants run at this layer (M06 is equivalent at E4 and killed at E3a, see the script).
+non-empty declared row set naming collected E4 tests; the ids are exactly M-E4-1..M-E4-9; the
+one SQL mutant (M-E4-9) re-pins the eligibility profile.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def test_mutants_apply_exactly_once_and_change_the_target() -> None:
 def test_ids_are_the_predeclared_e4_set() -> None:
     ids = [m.id for m in _mutants()]
     assert len(set(ids)) == len(ids)
-    assert ids == ["M-E4-1", "M-E4-2", "M-E4-3", "M-E4-4", "M-E4-5", "M-E4-7", "M-E4-8"]
+    assert ids == [f"M-E4-{i}" for i in range(1, 10)]
 
 
 def test_declared_rows_name_e4_test_functions() -> None:
@@ -56,3 +56,8 @@ def test_declared_rows_name_e4_test_functions() -> None:
                 tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
                 names[path] = {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
             assert test.split("[", 1)[0] in names[path], (m.id, row)
+
+
+def test_only_the_sql_mutant_repins_the_eligibility_profile() -> None:
+    repinned = {m.id: (m.repin, m.repin_profile) for m in _mutants() if m.repin}
+    assert repinned == {"M-E4-9": (True, "eligibility")}

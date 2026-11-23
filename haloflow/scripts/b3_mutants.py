@@ -62,6 +62,9 @@ UI: Final = SYN / "ui.py"
 SIMA, SIMUI, DISP, SCEN = (SYN / "sim_actions.py", SYN / "sim_ui.py", SYN / "display_units.py",
                            SYN / "scenarios" / "__init__.py")
 PROFILE: Final = SYN / "installed_profile.py"
+# E4: a re-pinned mutant names the profile whose installed-state module it re-measures.
+PROFILE_FILES: Final = {"default": PROFILE,
+                        "eligibility": SYN / "installed_profile_eligibility.py"}
 B5U: Final = "tests/synthetic/test_b5_units.py::"
 B5P: Final = "tests/synthetic/test_b5_postgres.py::"
 BU: Final = "tests/synthetic/test_b3b_units.py::"
@@ -87,6 +90,7 @@ class Mutant:
     hang: bool = False
     also: tuple[tuple[Path, str, str], ...] = ()
     repin: bool = False
+    repin_profile: str = "default"
 
     def edits(self) -> tuple[tuple[Path, str, str], ...]:
         return ((self.target, self.old, self.new), *self.also)
@@ -689,7 +693,9 @@ def main(argv: list[str] | None = None) -> int:
     evidence = Path(args.evidence or tempfile.mkdtemp(prefix="b3-mutation-"))
     evidence.mkdir(parents=True, exist_ok=True)
     chosen = [m for m in MUTANTS if args.mutant is None or m.id in args.mutant]
-    targets = sorted({t for m in MUTANTS for t, _o, _n in m.edits()} | {PROFILE}, key=str)
+    targets = sorted({t for m in MUTANTS for t, _o, _n in m.edits()}
+                     | {PROFILE_FILES[m.repin_profile] for m in MUTANTS if m.repin} | {PROFILE},
+                     key=str)
     original = {t: sha(t) for t in targets}
     results: dict[str, object] = {"targets": {str(t): h for t, h in original.items()}}
     ok = True
@@ -708,8 +714,8 @@ def main(argv: list[str] | None = None) -> int:
             ok = False
     rows_out = []
     for m in chosen:
-        files = sorted({t for t, _o, _n in m.edits()} | ({PROFILE} if m.repin else set()),
-                       key=str)
+        files = sorted({t for t, _o, _n in m.edits()}
+                       | ({PROFILE_FILES[m.repin_profile]} if m.repin else set()), key=str)
         saved = {t: t.read_text() for t in files}
         repinned = True
         try:
@@ -717,7 +723,9 @@ def main(argv: list[str] | None = None) -> int:
                 target.write_text(target.read_text().replace(old, new, 1))
             if m.repin:
                 repinned = subprocess.run(
-                    [sys.executable, "-I", "scripts/b2_measure_profile.py"],
+                    [sys.executable, "-I", "scripts/b2_measure_profile.py",
+                     *(() if m.repin_profile == "default"
+                       else ("--profile", m.repin_profile))],
                     capture_output=True, text=True, timeout=RUN_TIMEOUT_S, check=False
                 ).returncode == 0
             if repinned:

@@ -286,6 +286,19 @@ def test_el4_u07_case_changed_maps_to_conflict() -> None:
     assert e4.mod("ui")._SERVICE_MESSAGES.get("CASE_CHANGED") == "conflict"
 
 
+def test_el4_u11_summary_renderer_shows_only_od_el4_fields() -> None:
+    """A (Codex codex_e4-m06-review.md; kills M-E4-6). The screen's summary renderer selects the
+    OD-EL4 fields itself: an approved field renders; a coinsurance sentinel handed to it (label
+    and value) never does, whatever the upstream projection returns."""
+    el_ui = e4.mod("el_ui")
+    sentinel = "SYN-COINS-SENTINEL-20"
+    text = "".join(el_ui._summary_lines({"payer_name": "Synthetic Payer A",
+                                         "coinsurance": sentinel}))
+    assert "Payer name: Synthetic Payer A" in text
+    assert sentinel not in text
+    assert "coinsurance" not in text.lower()
+
+
 # ---------------------------------------------------------------------------- U08 routes
 
 def _routes(profile: str | None) -> set[tuple[str, str]]:
