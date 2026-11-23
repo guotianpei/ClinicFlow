@@ -18,7 +18,9 @@ Requires HALOFLOW_SYNTHETIC_PG_BIN (PostgreSQL 17 binaries).
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -190,6 +192,10 @@ def main() -> int:
     target = TARGETS[args.profile]
     tmp_a = Path(tempfile.mkdtemp(prefix="b2prof-a-"))
     tmp_b = Path(tempfile.mkdtemp(prefix="b2prof-b-"))
+    # The two measurement clusters are removed at exit (CI disk: P01f, B2-P1 and every
+    # re-pinned mutant run this script; each stopped cluster otherwise stays on disk).
+    for tmp in (tmp_a, tmp_b):
+        atexit.register(shutil.rmtree, tmp, True)
     first = trace(tmp_a)
     second = trace(tmp_b)
     if SEALED[str(tmp_a)] != SEALED[str(tmp_b)]:

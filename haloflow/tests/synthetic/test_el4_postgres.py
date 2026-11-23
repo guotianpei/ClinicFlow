@@ -55,6 +55,11 @@ def pg(tmp_path: Path) -> Iterator[s.PgCluster]:
     with s.cluster(tmp_path) as c:
         yield c
     s.reap()
+    # CI disk: the stopped cluster's data directory is removed (pytest keeps the temp
+    # directories of the last three sessions, and the reachability job runs four).
+    import shutil
+
+    shutil.rmtree(tmp_path / "pg", ignore_errors=True)
 
 
 @pytest.fixture
