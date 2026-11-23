@@ -212,7 +212,7 @@ def _parts() -> tuple[Any, ...]:
 
 def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = False,
                             include_el2: bool = False, include_el3a: bool = False,
-                            include_el3b: bool = False) -> Any:
+                            include_el3b: bool = False, include_el4: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
@@ -229,6 +229,8 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         raise ValueError("eligibility E3a composes on E2")
     if include_el3b and not include_el3a:
         raise ValueError("eligibility E3b composes on E3a")
+    if include_el4 and not include_el3b:
+        raise ValueError("eligibility E4 composes on E3b")
     extra = (B5_STATEMENTS,) if include_b5 else ()
     rebound = SI_REBOUND
     if include_el1:
@@ -243,13 +245,17 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         rebound = MappingProxyType({k: v for k, v in rebound.items()
                                     if k not in EL3B_STATEMENTS})
         extra = (*extra, EL3B_STATEMENTS)
+    if include_el4:                       # E4 / OD-EL12: the t127 contact-history read
+        from haloflow.synthetic.el4_statements import EL4_STATEMENTS
+
+        extra = (*extra, EL4_STATEMENTS)
     return build_statement_catalog(*_parts(), rebound, SI_STATEMENTS, *extra,
                                    activation_protected=_protected())
 
 
 def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = False,
                              include_el2: bool = False, include_el3a: bool = False,
-                             include_el3b: bool = False) -> Any:
+                             include_el3b: bool = False, include_el4: bool = False) -> Any:
     """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
     B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
     target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
@@ -263,6 +269,12 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
         raise ValueError("eligibility E3a composes on E2")
     if include_el3b and not include_el3a:
         raise ValueError("eligibility E3b composes on E3a")
+    if include_el4 and not include_el3b:
+        raise ValueError("eligibility E4 composes on E3b")
+    from haloflow.synthetic.el4_units import EL4_INSTALLED_STATE_PROFILES, EL4_TENANT_MIGRATIONS
+
+    el4_units = (EL4_TENANT_MIGRATIONS,) if include_el4 else ()
+    el4_profiles = dict(EL4_INSTALLED_STATE_PROFILES) if include_el4 else {}
     b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
     b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     el1_units = (EL1_TENANT_MIGRATIONS,) if include_el1 else ()
@@ -282,7 +294,7 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
         cast("UnitDefinitions", SB_TENANT_MIGRATIONS),
         cast("UnitDefinitions", SC_TENANT_MIGRATIONS), SH_TENANT_MIGRATIONS, SH2_TENANT_MIGRATIONS,
         SH3_TENANT_MIGRATIONS, SI_TENANT_MIGRATIONS, *b5_units, *el1_units, *el2_units, *el3a_units,
-        *el3b_units,
+        *el3b_units, *el4_units,
         approved_execution_roles=APPROVED_EXECUTION_ROLES,
         installed_state_profiles={**APPROVED_INSTALLED_STATE_PROFILES,
                                   **SA_INSTALLED_STATE_PROFILES,
@@ -293,7 +305,7 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
                                   **SH3_INSTALLED_STATE_PROFILES,
                                   **SI_INSTALLED_STATE_PROFILES,
                                   **b5_profiles, **el1_profiles, **el2_profiles,
-                                  **el3a_profiles, **el3b_profiles},
+                                  **el3a_profiles, **el3b_profiles, **el4_profiles},
         acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,
                         *SI_ACL_AMENDMENTS, *el1_amendments, *el3b_amendments),
     )

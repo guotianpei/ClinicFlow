@@ -21,10 +21,11 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from importlib import resources
+from types import MappingProxyType
 from typing import Any, Final
 from zoneinfo import ZoneInfo
 
@@ -35,7 +36,10 @@ LOAD_END: Final = time(16, 0)
 START_HOUR: Final = 18
 SEND_LEAD_DAYS: Final = 2
 FAR_LEAD_DAYS: Final = 10
-NAMES: Final = ("S1", "S2", "S3", "S4")
+NAMES: Final = ("S1", "S2", "S3", "S4", "E1", "E2", "E3", "E4", "E5")
+# Eligibility E4 (v1 D-E4-4): the E scenarios carry a coverage block and load only on an
+# eligibility-profile install; the S scenarios are unchanged.
+EL_NAMES: Final = ("E1", "E2", "E3", "E4", "E5")
 
 FIRST_NAMES: Final[tuple[str, ...]] = ("Avery", "Blake", "Casey", "Devon", "Emery", "Finley",
                                        "Harper")
@@ -49,6 +53,12 @@ _KEY: Final = re.compile(r"[a-z][a-z_]{0,31}")
 _ROW_FIELDS: Final = frozenset({"key", "first_name", "phone", "provider_ref", "department_ref",
                                 "lead_days", "ehr"})
 _LEADS: Final = frozenset({SEND_LEAD_DAYS, FAR_LEAD_DAYS})
+_MEMBER_ID: Final = re.compile(r"SYN-[A-Z0-9]{1,12}(?:-[A-Z0-9]{1,8})?")
+_PAYER_ID: Final = re.compile(r"SYN-PAYER-[A-Z0-9]{1,8}")
+_DOB: Final = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+_COVERAGE_PRESENT: Final = frozenset({
+    "state", "payer_id", "member_id", "relationship", "patient_name", "patient_dob",
+    "subscriber_name", "subscriber_dob", "subscriber_member_id"})
 
 
 class ScenarioInvalid(ValueError):
@@ -72,6 +82,7 @@ class Row:
     department_ref: str
     lead_days: int
     ehr: bool
+    coverage: Mapping[str, Any] | None = None     # E4: E scenarios only (the E1 block shape)
 
 
 @dataclass(frozen=True)
@@ -96,9 +107,10 @@ def validate(raw: object) -> Scenario:
     for item in rows_raw:
         if type(item) is not dict:
             raise ScenarioInvalid("row")
-        if set(item) != _ROW_FIELDS:
-            raise ScenarioInvalid("row" if set(item) - _ROW_FIELDS else
-                                  sorted(_ROW_FIELDS - set(item))[0])
+        fields = _ROW_FIELDS | {"coverage"} if name in EL_NAMES else _ROW_FIELDS
+        if set(item) != fields:
+            raise ScenarioInvalid("row" if set(item) - fields else
+                                  sorted(fields - set(item))[0])
         key = item["key"]
         if type(key) is not str or not _KEY.fullmatch(key):
             raise ScenarioInvalid("key")
@@ -117,11 +129,38 @@ def validate(raw: object) -> Scenario:
         rows.append(Row(key=key, first_name=item["first_name"], phone=item["phone"],
                         provider_ref=item["provider_ref"],
                         department_ref=item["department_ref"],
-                        lead_days=item["lead_days"], ehr=item["ehr"]))
+                        lead_days=item["lead_days"], ehr=item["ehr"],
+                        coverage=_coverage(item["coverage"]) if name in EL_NAMES else None))
     keys = [r.key for r in rows]
     if len(set(keys)) != len(keys):
         raise ScenarioInvalid("key")
     return Scenario(name=name, rows=tuple(rows))
+
+
+def _coverage(raw: object) -> Mapping[str, Any]:
+    """The E1 coverage block, synthetic values only (E4): pending | none | present (all nine
+    keys; strings or null, <= 64 chars; dobs YYYY-MM-DD or null; a synthetic member id and a
+    synthetic payer id). Anything else -> ScenarioInvalid("coverage")."""
+    if type(raw) is not dict or raw.get("state") not in ("pending", "none", "present"):
+        raise ScenarioInvalid("coverage")
+    if raw["state"] != "present":
+        if set(raw) != {"state"}:
+            raise ScenarioInvalid("coverage")
+        return MappingProxyType(dict(raw))
+    if set(raw) != _COVERAGE_PRESENT:
+        raise ScenarioInvalid("coverage")
+    for value in raw.values():
+        if value is not None and (type(value) is not str or not 1 <= len(value) <= 64):
+            raise ScenarioInvalid("coverage")
+    for key in ("patient_dob", "subscriber_dob"):
+        if raw[key] is not None and not _DOB.fullmatch(raw[key]):
+            raise ScenarioInvalid("coverage")
+    for key in ("member_id", "subscriber_member_id"):
+        if raw[key] is not None and not _MEMBER_ID.fullmatch(raw[key]):
+            raise ScenarioInvalid("coverage")
+    if raw["payer_id"] is None or not _PAYER_ID.fullmatch(raw["payer_id"]):
+        raise ScenarioInvalid("coverage")
+    return MappingProxyType(dict(raw))
 
 
 _FIXTURES: dict[str, Scenario] | None = None

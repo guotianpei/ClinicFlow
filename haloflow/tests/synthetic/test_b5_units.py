@@ -316,7 +316,8 @@ def test_b5_u_zn0_product_zone_is_eastern_only() -> None:
     hours = (time(11, 0), time(16, 0))
     assert hours == (sc.LOAD_START, sc.LOAD_END)
     assert (sc.START_HOUR, sc.SEND_LEAD_DAYS, sc.FAR_LEAD_DAYS) == (18, 2, 10)
-    assert sc.NAMES == ("S1", "S2", "S3", "S4")
+    # Eligibility E4 (el4_support pins; declared pin move): E1..E5 follow the four B5 names.
+    assert sc.NAMES[:4] == ("S1", "S2", "S3", "S4")
 
 
 def test_b5_u_zn0s_source_scan_no_zone_override() -> None:
@@ -432,7 +433,7 @@ def test_b5_u_f1_fixture_shape() -> None:
     EHR-backed flags (S1/S3 EHR-backed; S4 +10 days)."""
     sc = b5.mod("scenarios")
     fx = sc.fixtures()
-    assert tuple(fx) == b5.NAMES
+    assert tuple(fx)[:4] == b5.NAMES      # E4 (declared pin move): E1..E5 follow
     for name, (keys, leads, flags) in b5.FIXTURE_SHAPE.items():
         scenario = fx[name]
         assert scenario.name == name

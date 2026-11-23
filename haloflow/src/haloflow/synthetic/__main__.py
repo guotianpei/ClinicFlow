@@ -42,6 +42,8 @@ def _parser() -> argparse.ArgumentParser:
     init = commands.add_parser("init", help="provision the synthetic clinic (resumable)")
     init.add_argument("--i-attest-disposable-cluster", dest="attest", action="store_true",
                       help="attest that the target cluster is dedicated and disposable")
+    init.add_argument("--profile", choices=("default", "eligibility"), default="default",
+                      help="install profile (E4): default (target 97) or eligibility (127)")
     commands.add_parser("status", help="read-only status of the synthetic install")
     serve = commands.add_parser("serve", help="run the synthetic app (loopback only)")
     serve.add_argument("--host", default=DEFAULT_HOST)
@@ -83,7 +85,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     environ = dict(os.environ)
     try:
         if args.command == "init":
-            result: object = {"phase": provision.init(environ, attest_flag=args.attest).phase}
+            result: object = {"phase": provision.init(environ, attest_flag=args.attest,
+                                                      profile=args.profile).phase}
         else:
             result = provision.status(environ)
     except Exception as error:   # noqa: BLE001 - every outcome maps to a fixed, safe line

@@ -21,14 +21,17 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import importlib
 import json
 import secrets
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Final, cast
+from types import ModuleType
+from typing import Any, Final, cast, overload
 
 import psycopg
 from psycopg import sql
@@ -45,13 +48,13 @@ from haloflow.m01.provisioning import (
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.staff.l1w_units import BOOTSTRAP_CAPABILITY, SUPPORT_ROLE
 from haloflow.m02.roles import M05_OWNER_ROLE
-from haloflow.synthetic import installed_profile, view
+from haloflow.synthetic import profiles, view
 from haloflow.synthetic.attest import _DB_CHECKS, PUBLIC_ACL, admin_connect, check_a0
 from haloflow.synthetic.composition import (
+    EL3A_TEST_PROFILE_SQL,
     RESOLUTION_PROFILE_SQL,
     SA_TEST_PROFILE_SQL,
     SI_TEST_PROFILE_SQL,
-    build_synthetic_registry,
 )
 from haloflow.synthetic.dsn import AdminEndpoint, parse_admin_dsn
 from haloflow.synthetic.errors import SyntheticRefused, refused_from
@@ -68,13 +71,9 @@ from haloflow.synthetic.guard import (
     reservation_value,
 )
 from haloflow.synthetic.hooks import fire
-from haloflow.synthetic.installed_profile import (
-    COMPLETION,
-    POINTS,
-    PROFILE_ID,
-    REPLACED,
-)
 from haloflow.synthetic.seal_scope import (
+    EL_INSTALL_SEALED_TABLES,
+    EL_RUNTIME_MUTABLE_TABLES,
     INSTALL_SEALED_TABLES,
     RUNTIME_MUTABLE_TABLES,
     generic_table,
@@ -85,6 +84,88 @@ from haloflow.synthetic.seal_scope import (
 from haloflow.synthetic.state import PHASES, LockedState, StateDir
 
 STATE_SCHEMA: Final = 1
+
+# ---------------------------------------------------------------------------- install profile
+#
+# Eligibility E4 (D-E4-1): every reconciliation of one install reads the installed-state
+# profile of ITS install profile (default: `installed_profile`, target 97; eligibility:
+# `installed_profile_eligibility`, target 126). The active profile is a context variable set
+# from the recorded state (or the `init` request) at every entry point; the names below
+# delegate to it, so the reconciliation code reads exactly as before.
+_ACTIVE: ContextVar[str] = ContextVar("haloflow_synthetic_install_profile",
+                                      default=profiles.DEFAULT)
+
+
+def profile_module(profile: str) -> ModuleType:
+    try:
+        if profiles.valid(profile) == profiles.ELIGIBILITY:
+            return importlib.import_module("haloflow.synthetic.installed_profile_eligibility")
+        return importlib.import_module("haloflow.synthetic.installed_profile")
+    except ModuleNotFoundError:
+        raise SyntheticRefused("STATE_DIVERGED", ("profile",)) from None
+
+
+class _ActiveProfile:
+    """The installed-state profile module of the active install profile."""
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(profile_module(_ACTIVE.get()), name)
+
+
+class _ActiveMap(Mapping[Any, Any]):
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def _m(self) -> Mapping[Any, Any]:
+        return cast("Mapping[Any, Any]", getattr(installed_profile, self._name))
+
+    def __getitem__(self, key: Any) -> Any:
+        return self._m()[key]
+
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._m())
+
+    def __len__(self) -> int:
+        return len(self._m())
+
+
+class _ActivePoints(Sequence[str]):
+    def _s(self) -> Sequence[str]:
+        return cast("Sequence[str]", installed_profile.POINTS)
+
+    @overload
+    def __getitem__(self, index: int) -> str: ...
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[str]: ...
+
+    def __getitem__(self, index: int | slice) -> str | Sequence[str]:
+        return self._s()[index]
+
+    def __len__(self) -> int:
+        return len(self._s())
+
+
+installed_profile: Any = _ActiveProfile()
+COMPLETION: Mapping[str, int] = _ActiveMap("COMPLETION")
+REPLACED: Mapping[int, tuple[str, ...]] = _ActiveMap("REPLACED")
+POINTS: Sequence[str] = _ActivePoints()
+
+
+@contextmanager
+def active_profile(profile: str) -> Iterator[None]:
+    token = _ACTIVE.set(profiles.valid(profile))
+    try:
+        yield
+    finally:
+        _ACTIVE.reset(token)
+
+
+def inventory(profile: str) -> frozenset[str]:
+    """The owned-table inventory of a ready install of `profile` (D-E4-1)."""
+    if profiles.valid(profile) == profiles.ELIGIBILITY:
+        return (INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES | EL_INSTALL_SEALED_TABLES
+                | EL_RUNTIME_MUTABLE_TABLES)
+    return INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES
 LOGIN_GROUPS: Final = {"runtime": RUNTIME_ROLE, "migrator": MIGRATOR_ROLE,
                        "provisioner": PROVISIONER_ROLE, "audit_projector": AUDIT_PROJECTOR_ROLE,
                        "support": SUPPORT_ROLE}
@@ -101,6 +182,9 @@ SETTINGS: Final = {"lead_days": 2, "send_time": "10:00:00", "window_start": "09:
                    "window_end": "19:00:00", "clinic_tz": "America/New_York",
                    "clinic_display_name": "HaloVox Demo Clinic"}
 STAFF_NAME: Final = "Demo Clinic Admin"
+# Eligibility profile settings (D-E4-7): enabled, OD-EL9 defaults, synthetic payer ids only.
+EL_SETTINGS: Final = {"lead_days": 3, "not_received_days": 1}
+EL_PRIORITY_PAYERS: Final = ("SYN-PAYER-A",)
 ACTIVATION_REASON: Final = "synthetic install"
 STATE_KEYS: Final = frozenset({
     "schema_version", "phase", "cluster_sysid", "target", "target_oid", "nonce", "tenant_id",
@@ -272,7 +356,7 @@ def _run_logins(ctx: _Ctx) -> None:
 
 
 def _run_tenant(ctx: _Ctx) -> None:
-    registry = build_synthetic_registry()
+    registry = profiles.registry(_ACTIVE.get())
     runner = TenantMigrationRunner(
         guarded_factory(ctx.login_conninfo("migrator"), ctx.expected), registry)
     provisioner = TenantProvisioner(
@@ -297,6 +381,8 @@ def _run_profile(ctx: _Ctx) -> None:
         c.execute(SA_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(SI_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(RESOLUTION_PROFILE_SQL.format(schema=ctx.schema).encode())   # F-R1
+        if _ACTIVE.get() == profiles.ELIGIBILITY:                              # D-E4-2
+            c.execute(EL3A_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
 
 
 def _run_activated(ctx: _Ctx) -> None:
@@ -322,6 +408,18 @@ def _run_settings(ctx: _Ctx) -> None:
             tuple(SETTINGS.values()))
         if cur.rowcount != 1:
             raise _diverged("settings")
+        if _ACTIVE.get() == profiles.ELIGIBILITY:                              # D-E4-7
+            cur = c.execute(sql.SQL(
+                "UPDATE {}.m05_el_settings SET enabled = true, lead_days = %s,"
+                " not_received_days = %s, settings_version = settings_version + 1,"
+                " updated_at = clock_timestamp() WHERE settings_version = 1").format(
+                sql.Identifier(ctx.schema)),
+                (EL_SETTINGS["lead_days"], EL_SETTINGS["not_received_days"]))
+            if cur.rowcount != 1:
+                raise _diverged("settings")
+            for payer in EL_PRIORITY_PAYERS:
+                c.execute(sql.SQL("INSERT INTO {}.m05_el_priority_payers (payer_id)"
+                                  " VALUES (%s)").format(sql.Identifier(ctx.schema)), (payer,))
 
 
 # ---------------------------------------------------------------------------- reconciliation
@@ -346,7 +444,7 @@ STAFF_STEPS: Final = ("staff.t1", "staff.t2", "staff.t3a", "staff.t3b")
 # `_sealed_row_may_change`); every other sealed row keeps its nondeterministic values exactly.
 APPROVED_UPDATES: Final = {
     "tenant": frozenset({"shared.tenants", "shared.schema_migrations"}),
-    "settings": frozenset({"<SCHEMA>.m05_reminder_settings"}),
+    "settings": frozenset({"<SCHEMA>.m05_reminder_settings", "<SCHEMA>.m05_el_settings"}),
 }
 LEDGER_TABLE: Final = "shared.schema_migrations"
 _CLOCKS: Final = frozenset({"started_at", "completed_at", "occurred_at", "created_at",
@@ -460,6 +558,8 @@ def _sealed_row_may_change(table: str, key: str, values: Mapping[str, Any],
             and rows[0].get("created_at") == values.get("created_at") \
             and rows[0].get("lifecycle_state") == "active"
     if table == "<SCHEMA>.m05_reminder_settings":
+        return bool(det.get("settings_version") == 1)
+    if table == "<SCHEMA>.m05_el_settings":                     # eligibility profile (D-E4-7)
         return bool(det.get("settings_version") == 1)
     return False
 
@@ -600,7 +700,7 @@ def _check_reduced(ctx: _Ctx, cap: view.Capture, conn: psycopg.Connection[Any]) 
 
     live = {generic_table(table, ctx.schema) for table in cap.rows
             if table.partition(".")[0] in ("shared", ctx.schema)}
-    if live != INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES:
+    if live != inventory(_ACTIVE.get()):
         raise _diverged("inventory")
     if sealed_digest(cap) != installed_profile.SEALED_READY_DIGEST:   # the pin, read now
         raise _diverged("profile")
@@ -624,16 +724,17 @@ def attest_ready(endpoint: AdminEndpoint, state: Mapping[str, Any], expected: st
 
     ctx = _Ctx(endpoint, cast("LockedState", None), cast("InstallLock", None),
                dict(state), expected)
-    _namespace_check(ctx)
-    with view.capture_lock(endpoint) as conn:
-        j, _cap = _reconcile(ctx, conn)
-    if j != _completion("ready"):
-        raise _diverged("profile")
-    return j
+    with active_profile(recorded_profile(state)):
+        _namespace_check(ctx)
+        with view.capture_lock(endpoint) as conn:
+            j, _cap = _reconcile(ctx, conn)
+        if j != _completion("ready"):
+            raise _diverged("profile")
+        return j
 
 
 def _new_seal(j: int, cap: view.Capture) -> dict[str, Any]:
-    return {"profile": PROFILE_ID, "point": j, "nondet": cap.nondet,
+    return {"profile": installed_profile.PROFILE_ID, "point": j, "nondet": cap.nondet,
             "identities": cap.identities, "ledger": cap.ledger}
 
 
@@ -656,7 +757,12 @@ def _check_seal_shape(state: Mapping[str, Any]) -> None:
     if not isinstance(seal, dict) or set(seal) != {"profile", "point", "nondet", "identities",
                                                     "ledger"}:
         raise _corrupt("seal_shape")
-    if seal["profile"] != PROFILE_ID:
+    if seal["profile"] != installed_profile.PROFILE_ID and seal["profile"] in {
+            profile_module(p).PROFILE_ID for p in profiles.PROFILES if p != _ACTIVE.get()}:
+        # E4: sealed under ANOTHER install profile's installed-state profile: the recorded
+        # install_profile does not match what was installed.
+        raise SyntheticRefused("PROFILE_TARGET_MISMATCH")
+    if seal["profile"] != installed_profile.PROFILE_ID:
         # A state sealed under another installed-state profile identity (for example the
         # accepted-B2 e05bc51 profile before the F-R1 amendment) is refused, never adopted;
         # the remedy is a fresh disposable install.
@@ -730,7 +836,9 @@ def _steps(phase: str) -> tuple[str, ...]:
 
 # ---------------------------------------------------------------------------- entry points
 
-def init(environ: Mapping[str, str], *, attest_flag: bool) -> InitResult:
+def init(environ: Mapping[str, str], *, attest_flag: bool,
+         profile: str = profiles.DEFAULT) -> InitResult:
+    profiles.valid(profile)                     # a closed refusal before anything else
     check_a0(environ, attest_flag=attest_flag)
     endpoint = parse_admin_dsn(environ["HALOFLOW_SYNTHETIC_ADMIN_DSN"], environ)
     with StateDir(environ["HALOFLOW_SYNTHETIC_STATE"]).locked() as st:
@@ -738,7 +846,8 @@ def init(environ: Mapping[str, str], *, attest_flag: bool) -> InitResult:
         lock.acquire()
         token = INSTALL_LOCK_PID.set(lock.pid)
         try:
-            return _run(endpoint, st, lock)
+            with active_profile(profile):
+                return _run(endpoint, st, lock)
         except Exception as error:
             refused = refused_from(error)
             if refused is not None and refused is not error:
@@ -750,9 +859,13 @@ def init(environ: Mapping[str, str], *, attest_flag: bool) -> InitResult:
 
 
 def _check_state(state: Mapping[str, Any]) -> None:
-    keys = set(state)
+    keys = set(state) - {profiles.STATE_FIELD}          # E4: the optional install profile
     if keys != STATE_KEYS and keys != STATE_KEYS | {RUNTIME_KEY}:
         raise _corrupt("state_keys")
+    try:
+        profiles.from_state(dict(state))
+    except SyntheticRefused:
+        raise _corrupt("install_profile") from None
     if state.get("schema_version") != STATE_SCHEMA:
         raise _corrupt("schema_version")
     if state.get("phase") not in PHASES:
@@ -764,7 +877,20 @@ def _check_state(state: Mapping[str, Any]) -> None:
 
 def check_state(state: Mapping[str, Any]) -> None:
     """The installer's state-shape rules (STATE_CORRUPT), for the runtime's A0 (B3a)."""
-    _check_state(state)
+    _check_state_as_recorded(state)
+
+
+def recorded_profile(state: Mapping[str, Any]) -> str:
+    """The install profile a state records (absent -> default); STATE_CORRUPT if invalid."""
+    try:
+        return profiles.from_state(dict(state))
+    except SyntheticRefused:
+        raise _corrupt("install_profile") from None
+
+
+def _check_state_as_recorded(state: Mapping[str, Any]) -> None:
+    with active_profile(recorded_profile(state)):
+        _check_state(state)
 
 
 _EPOCH_CHARS: Final = frozenset("0123456789abcdef")
@@ -794,8 +920,11 @@ def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitRes
             raise SyntheticRefused("CLUSTER_NOT_FRESH", bad)
         sysid, oid = cluster_identity(endpoint)
         state = _new_intent(endpoint.target, sysid, oid)
+        if _ACTIVE.get() == profiles.ELIGIBILITY:
+            state[profiles.STATE_FIELD] = profiles.ELIGIBILITY   # default: pre-E4 key set
         st.write(state)
     else:
+        profiles.check_request(recorded_profile(state), _ACTIVE.get())
         _check_state(state)
         sysid, oid = cluster_identity(endpoint)
         if state["cluster_sysid"] != sysid:
@@ -848,41 +977,48 @@ def status(environ: Mapping[str, str]) -> dict[str, Any]:
         state = st.read()
         if state is None:
             raise SyntheticRefused("STATE_MISSING")
-        _check_state(state)
-        sysid, oid = cluster_identity(endpoint)
-        if state["cluster_sysid"] != sysid:
-            raise SyntheticRefused("CLUSTER_MISMATCH")
-        if state["target"] != endpoint.target or state["target_oid"] != oid:
-            raise SyntheticRefused("TARGET_MISMATCH")
-        expected_prefix = reservation_value(state["nonce"], sysid, oid, "")
-        current = read_reservation(endpoint) or ""
-        ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)
-        sealed, pending = False, None
+        profile = recorded_profile(state)
+        with active_profile(profile):
+            out = _status(endpoint, st, state)
+    return {**out, "install_profile": profile, "target_version": profiles.TARGETS[profile]}
+
+
+def _status(endpoint: AdminEndpoint, st: LockedState, state: dict[str, Any]) -> dict[str, Any]:
+    _check_state(state)
+    sysid, oid = cluster_identity(endpoint)
+    if state["cluster_sysid"] != sysid:
+        raise SyntheticRefused("CLUSTER_MISMATCH")
+    if state["target"] != endpoint.target or state["target_oid"] != oid:
+        raise SyntheticRefused("TARGET_MISMATCH")
+    expected_prefix = reservation_value(state["nonce"], sysid, oid, "")
+    current = read_reservation(endpoint) or ""
+    ctx = _Ctx(endpoint, st, InstallLock(endpoint), state, current)
+    sealed, pending = False, None
+    try:
+        _namespace_check(ctx)
+        namespace_ok = True
+    except SyntheticRefused:
+        namespace_ok = False
+    with view.capture_lock(endpoint) as conn:
         try:
-            _namespace_check(ctx)
-            namespace_ok = True
+            j, _cap = _reconcile(ctx, conn)
+            seal_point = _completion(str(state["phase"])) if state.get("seal") is None \
+                else int(state["seal"]["point"])
+            sealed = j == seal_point == _completion(str(state["phase"]))
+            if j > _completion(str(state["phase"])):
+                nxt = SEGMENT_PHASES[SEGMENT_PHASES.index(str(state["phase"])) + 1]
+                pending = nxt
         except SyntheticRefused:
-            namespace_ok = False
-        with view.capture_lock(endpoint) as conn:
-            try:
-                j, _cap = _reconcile(ctx, conn)
-                seal_point = _completion(str(state["phase"])) if state.get("seal") is None \
-                    else int(state["seal"]["point"])
-                sealed = j == seal_point == _completion(str(state["phase"]))
-                if j > _completion(str(state["phase"])):
-                    nxt = SEGMENT_PHASES[SEGMENT_PHASES.index(str(state["phase"])) + 1]
-                    pending = nxt
-            except SyntheticRefused:
-                sealed = False
-        attested = bool(current.startswith(expected_prefix) and sealed and namespace_ok)
-        s = sql.Identifier(state["schema_key"])
-        with admin_connect(endpoint, endpoint.target) as t:
-            tenants = _one(t, "SELECT count(*) FROM shared.tenants") \
-                if _exists(t, "shared.tenants") else 0
-            staff = _one(t, sql.SQL("SELECT count(*) FROM {}.m01_staff").format(s)) \
-                if _exists(t, f"{state['schema_key']}.m01_staff") else 0
-            items = _one(t, sql.SQL("SELECT count(*) FROM {}.m05_followup_items").format(s)) \
-                if _exists(t, f"{state['schema_key']}.m05_followup_items") else 0
+            sealed = False
+    attested = bool(current.startswith(expected_prefix) and sealed and namespace_ok)
+    s = sql.Identifier(state["schema_key"])
+    with admin_connect(endpoint, endpoint.target) as t:
+        tenants = _one(t, "SELECT count(*) FROM shared.tenants") \
+            if _exists(t, "shared.tenants") else 0
+        staff = _one(t, sql.SQL("SELECT count(*) FROM {}.m01_staff").format(s)) \
+            if _exists(t, f"{state['schema_key']}.m01_staff") else 0
+        items = _one(t, sql.SQL("SELECT count(*) FROM {}.m05_followup_items").format(s)) \
+            if _exists(t, f"{state['schema_key']}.m05_followup_items") else 0
     return {"phase": state["phase"], "tenant_id": state["tenant_id"],
             "schema_key": state["schema_key"], "tenant_count": int(tenants),
             "staff_count": int(staff), "open_items": int(items), "attested": attested,

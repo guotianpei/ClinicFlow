@@ -62,6 +62,9 @@ UI: Final = SYN / "ui.py"
 SIMA, SIMUI, DISP, SCEN = (SYN / "sim_actions.py", SYN / "sim_ui.py", SYN / "display_units.py",
                            SYN / "scenarios" / "__init__.py")
 PROFILE: Final = SYN / "installed_profile.py"
+# E4: a re-pinned mutant names the profile whose installed-state module it re-measures.
+PROFILE_FILES: Final = {"default": PROFILE,
+                        "eligibility": SYN / "installed_profile_eligibility.py"}
 B5U: Final = "tests/synthetic/test_b5_units.py::"
 B5P: Final = "tests/synthetic/test_b5_postgres.py::"
 BU: Final = "tests/synthetic/test_b3b_units.py::"
@@ -87,6 +90,7 @@ class Mutant:
     hang: bool = False
     also: tuple[tuple[Path, str, str], ...] = ()
     repin: bool = False
+    repin_profile: str = "default"
 
     def edits(self) -> tuple[tuple[Path, str, str], ...]:
         return ((self.target, self.old, self.new), *self.also)
@@ -286,7 +290,8 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            "        return ipaddress.ip_address(host).is_loopback\n", "        return True\n",
            (f"{U}test_b3a_f4u_serve_refuses_non_loopback_before_binding[0.0.0.0]",)),
     Mutant("B3-M27", "provision: the inventory equality is dropped in reduced mode", PROVISION,
-           "    if live != INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES:\n"
+           # E4: the inventory is the recorded profile's (default: the same union).
+           "    if live != inventory(_ACTIVE.get()):\n"
            '        raise _diverged("inventory")\n', "",
            (f"{P}test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check[{{schema}}]",
             f"{P}test_b3a_sc2b_post_extra_table_refused_by_the_inventory_check[shared]")),
@@ -553,9 +558,9 @@ MUTANTS: Final[tuple[Mutant, ...]] = (
            (f"{B5P}test_b5_p_csrf_form_token_checked_first[missing]",
             f"{B5P}test_b5_p_csrf_form_token_checked_first[wrong]")),
     Mutant("M-B5-5", "load: a non-allowlisted spelling is normalised and accepted", SIMA,
-           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           "    if type(scenario) is not str or scenario not in fixtures \\\n",
            "    scenario = scenario.upper() if type(scenario) is str else scenario\n"
-           "    if type(scenario) is not str or scenario not in fixtures:\n",
+           "    if type(scenario) is not str or scenario not in fixtures \\\n",
            (f"{B5P}test_b5_p_ld6_malformed_load_writes_nothing[lower-body1-422-UNKNOWN_SCENARIO]",
             )),
     Mutant("M-B5-6", "tick: the tick path writes (it loads S1 before ticking)", SIMA,
@@ -688,7 +693,9 @@ def main(argv: list[str] | None = None) -> int:
     evidence = Path(args.evidence or tempfile.mkdtemp(prefix="b3-mutation-"))
     evidence.mkdir(parents=True, exist_ok=True)
     chosen = [m for m in MUTANTS if args.mutant is None or m.id in args.mutant]
-    targets = sorted({t for m in MUTANTS for t, _o, _n in m.edits()} | {PROFILE}, key=str)
+    targets = sorted({t for m in MUTANTS for t, _o, _n in m.edits()}
+                     | {PROFILE_FILES[m.repin_profile] for m in MUTANTS if m.repin} | {PROFILE},
+                     key=str)
     original = {t: sha(t) for t in targets}
     results: dict[str, object] = {"targets": {str(t): h for t, h in original.items()}}
     ok = True
@@ -707,8 +714,8 @@ def main(argv: list[str] | None = None) -> int:
             ok = False
     rows_out = []
     for m in chosen:
-        files = sorted({t for t, _o, _n in m.edits()} | ({PROFILE} if m.repin else set()),
-                       key=str)
+        files = sorted({t for t, _o, _n in m.edits()}
+                       | ({PROFILE_FILES[m.repin_profile]} if m.repin else set()), key=str)
         saved = {t: t.read_text() for t in files}
         repinned = True
         try:
@@ -716,7 +723,9 @@ def main(argv: list[str] | None = None) -> int:
                 target.write_text(target.read_text().replace(old, new, 1))
             if m.repin:
                 repinned = subprocess.run(
-                    [sys.executable, "-I", "scripts/b2_measure_profile.py"],
+                    [sys.executable, "-I", "scripts/b2_measure_profile.py",
+                     *(() if m.repin_profile == "default"
+                       else ("--profile", m.repin_profile))],
                     capture_output=True, text=True, timeout=RUN_TIMEOUT_S, check=False
                 ).returncode == 0
             if repinned:

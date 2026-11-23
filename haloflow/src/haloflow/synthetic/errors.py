@@ -26,6 +26,8 @@ CODES: Final = frozenset({
     "BUDGET_TOTAL_EXCEEDED", "RUNTIME_NOT_STARTABLE", "BIND_NOT_LOOPBACK",
     # Option B B3b (local exposure gate, HTTP drain):
     "HTTP_NOT_DRAINED", "HOST_REFUSED", "CROSS_SITE_REFUSED", "ORIGIN_REFUSED", "CSRF_REFUSED",
+    # Eligibility E4 (install profiles):
+    "PROFILE_INVALID", "PROFILE_MISMATCH", "PROFILE_TARGET_MISMATCH",
 })
 
 

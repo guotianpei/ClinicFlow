@@ -44,7 +44,7 @@ from starlette.responses import Response
 from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
 from haloflow.m05.intake_statements import DIRECTORY_KEY
 from haloflow.m05.simulated_ehr import EhrRead
-from haloflow.synthetic import scenarios, wiring
+from haloflow.synthetic import profiles, scenarios, sim_clearinghouse, wiring
 from haloflow.synthetic.composition import W_DIRECTORY
 from haloflow.synthetic.display_statements import CLAIM_KEY
 from haloflow.synthetic.errors import SyntheticRefused
@@ -55,9 +55,14 @@ LOGGER: Final = logging.getLogger("haloflow.synthetic")
 LOAD_ROUTE: Final = "/synthetic/simulator/load-scenario"
 TICK_ROUTE: Final = "/synthetic/simulator/tick"
 OUTBOX_ROUTE: Final = "/synthetic/simulator/outbox"
+CLEARINGHOUSE_ROUTE: Final = "/synthetic/simulator/clearinghouse"     # E4, eligibility only
 SCHEDULERS: Final = ("due", "reminder", "writeback")
 OUTBOX_CAP: Final = 50
 LOAD_CAPABILITIES: Final = frozenset({DIRECTORY_KEY, CLAIM_KEY})
+# E4 (D-E4-9): the installed t096 claim accepts only S1..S4 and E4 adds no migration unit, so an
+# E scenario takes the claim's per-scenario LOCK under a fixed S name; the claim's present
+# count is still over the E scenario's own refs (the lock only serialises loads).
+CLAIM_LOCK: Final = {"E1": "S1", "E2": "S2", "E3": "S3", "E4": "S4", "E5": "S1"}
 MAX_BODY: Final = 1024
 
 
@@ -138,7 +143,8 @@ async def _directory(binding: Any, context: Any, op: str, fields: Mapping[str, A
 async def load(lifecycle: Any, scenario: str) -> Result:
     """Load one packaged scenario (module docstring). Never retries."""
     fixtures = scenarios.fixtures()
-    if type(scenario) is not str or scenario not in fixtures:
+    if type(scenario) is not str or scenario not in fixtures \
+            or (scenario in scenarios.EL_NAMES and _profile(lifecycle) != profiles.ELIGIBILITY):
         return _audit_load(_refusal(422, "UNKNOWN_SCENARIO"), None)
     stopping = _stopping(lifecycle)
     if stopping is not None:
@@ -153,7 +159,7 @@ async def load(lifecycle: Any, scenario: str) -> Result:
     async def body(binding: Any) -> None:
         nonlocal complete
         claim = _single(await binding.handle.fetch_all(
-            CLAIM_KEY, {"scenario": scenario, "refs": Jsonb(refs)}))
+            CLAIM_KEY, {"scenario": CLAIM_LOCK.get(scenario, scenario), "refs": Jsonb(refs)}))
         now = datetime.fromisoformat(str(claim["now"]).replace("Z", "+00:00"))
         fire("b5.load.clock", {"now": _iso_z(now)})
         if claim["present"] != 0:
@@ -181,7 +187,8 @@ async def load(lifecycle: Any, scenario: str) -> Result:
                 "start_at": _iso_z(starts[row.key]), "status": "booked",
                 "first_name": row.first_name, "confirmation": "not_confirmed",
                 "department_tz": zone, "source_status": "booked",
-                "provider_ref": row.provider_ref, "department_ref": row.department_ref},
+                "provider_ref": row.provider_ref, "department_ref": row.department_ref,
+                **({} if row.coverage is None else {"coverage": dict(row.coverage)})},
                 frozenset({"applied"}))
         await afire("b5.load.before_commit", {})
         complete = True                     # the body's final action
@@ -221,6 +228,9 @@ def _audit_tick(result: Result, scheduler: str | None) -> Result:
 
 
 def _counts(outcome: Any) -> dict[str, int]:
+    flat = getattr(outcome, "flat_counts", None)        # E4: the eligibility tick body
+    if isinstance(flat, Mapping):
+        return {str(k): int(v) for k, v in flat.items() if type(v) is int and v >= 0}
     counts: dict[str, int] = {}
     codes = getattr(outcome, "codes", None)
     if isinstance(codes, Mapping):
@@ -232,9 +242,22 @@ def _counts(outcome: Any) -> dict[str, int]:
     return {k: v for k, v in counts.items() if v >= 0}
 
 
+def _profile(lifecycle: Any) -> str:
+    """The lifecycle's install profile (the recorded one once started, else the request)."""
+    installed = getattr(lifecycle, "install_profile", None)
+    return str(installed or getattr(lifecycle, "profile", profiles.DEFAULT))
+
+
+def _schedulers(lifecycle: Any) -> tuple[str, ...]:
+    """E4: the eligibility profile adds `eligibility`; the default set is SCHEDULERS."""
+    if _profile(lifecycle) == profiles.ELIGIBILITY:
+        return profiles.schedulers(profiles.ELIGIBILITY)
+    return SCHEDULERS
+
+
 async def tick(lifecycle: Any, scheduler: str) -> Result:
     """One manual tick of the named B3a managed scheduler (serialised with its loop)."""
-    if type(scheduler) is not str or scheduler not in SCHEDULERS:
+    if type(scheduler) is not str or scheduler not in _schedulers(lifecycle):
         return _audit_tick(_refusal(422, "UNKNOWN_SCHEDULER"), None)
     stopping = _stopping(lifecycle)
     if stopping is not None:
@@ -321,3 +344,33 @@ def install_sim_actions(app: FastAPI, lifecycle: Any) -> None:
                       include_in_schema=False)
     app.add_api_route(OUTBOX_ROUTE, outbox_endpoint, methods=["GET"], response_class=Response,
                       include_in_schema=False)
+    if getattr(lifecycle, "profile", profiles.DEFAULT) == profiles.ELIGIBILITY:
+        async def clearinghouse_endpoint(request: Request) -> Response:
+            return _response(clearinghouse(lifecycle, await _json(request)))
+
+        app.add_api_route(CLEARINGHOUSE_ROUTE, clearinghouse_endpoint, methods=["POST"],
+                          response_class=Response, include_in_schema=False)
+
+
+# ---------------------------------------------------------------------------- clearinghouse
+
+def _audit_control(result: Result, op: str | None) -> Result:
+    LOGGER.info("SIMULATOR action=clearinghouse status=%d code=%s op=%s", result.status,
+                result.code or "-", op or "-")
+    return result
+
+
+def clearinghouse(lifecycle: Any, value: object) -> Result:
+    """E4 (D-E4-4): one control of the composed SYNTHETIC clearinghouse (eligibility only)."""
+    try:
+        control = sim_clearinghouse.parse(value)
+    except sim_clearinghouse.ControlMalformed:
+        return _audit_control(_refusal(422, "MALFORMED"), None)
+    stopping = _stopping(lifecycle)
+    if stopping is not None:
+        return _audit_control(stopping, control[0])
+    if lifecycle.clearinghouse is None:
+        return _audit_control(_refusal(503, "RUNTIME_STOPPED"), control[0])
+    sim_clearinghouse.apply(lifecycle.clearinghouse, control)
+    return _audit_control(Result(status=200, code=None, body={"outcome": "applied"}),
+                          control[0])

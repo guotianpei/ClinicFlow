@@ -55,6 +55,21 @@ INSTALL_SEALED_TABLES: Final = frozenset({
     "{tenant}.ref_event_levels", "{tenant}.ref_event_statuses",
 })
 
+# Eligibility E4 (eligibility install profile only; a default install has none of these
+# tables). Runtime-mutable: the tables the composed eligibility scheduler and the E3b staff
+# actions write. Sealed: the eligibility settings, the priority payers and the E3b reference
+# tables (no settings or reference write path is composed).
+EL_RUNTIME_MUTABLE_TABLES: Final = frozenset({
+    "{tenant}.m05_el_appointments", "{tenant}.m05_el_attempts", "{tenant}.m05_el_case_events",
+    "{tenant}.m05_el_case_notes", "{tenant}.m05_el_cases", "{tenant}.m05_el_counts",
+    "{tenant}.m05_el_coverage", "{tenant}.m05_el_late_answers", "{tenant}.m05_el_triggers",
+    "{tenant}.m05_el_verifications", "{tenant}.m05_contact_entries",
+})
+EL_INSTALL_SEALED_TABLES: Final = frozenset({
+    "{tenant}.m05_el_settings", "{tenant}.m05_el_priority_payers",
+    "{tenant}.m05_contact_codes", "{tenant}.m05_outcome_kinds",
+})
+
 # The token `view.capture` substitutes for the tenant schema in normalised names.
 SCHEMA_TOKEN: Final = "<SCHEMA>"
 
@@ -69,7 +84,8 @@ def generic_table(name: str, schema: str | None = None) -> str:
 
 
 def is_runtime_mutable(name: str, schema: str | None = None) -> bool:
-    return generic_table(name, schema) in RUNTIME_MUTABLE_TABLES
+    table = generic_table(name, schema)
+    return table in RUNTIME_MUTABLE_TABLES or table in EL_RUNTIME_MUTABLE_TABLES
 
 
 def sealed_view(normalised: Mapping[str, Any]) -> dict[str, Any]:

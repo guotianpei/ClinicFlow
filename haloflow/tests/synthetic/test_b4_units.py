@@ -56,7 +56,10 @@ def test_b4_u_lbl2_module_wording_is_exact() -> None:
     pinned approved text, with closed key sets."""
     ui = b4.ui()
     assert ui.BANNER == b4.BANNER
-    assert ui.KIND_LABELS == b4.KIND_LABELS
+    # Eligibility E4 (el4_support pins; declared pin move): the three OD-EL11 titles are added;
+    # the five B4 labels are unchanged.
+    el4 = {"eligibility_inactive", "eligibility_inconclusive", "eligibility_manual"}
+    assert {k: v for k, v in ui.KIND_LABELS.items() if k not in el4} == b4.KIND_LABELS
     assert ui.REASON_LABELS == b4.REASON_LABELS
     assert ui.OUTCOME_LABELS == b4.OUTCOME_LABELS
     assert frozenset({"other"}) == ui.NOTE_REQUIRED
