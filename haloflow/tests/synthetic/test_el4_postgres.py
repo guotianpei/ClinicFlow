@@ -646,7 +646,10 @@ def test_el4_p04e_every_e4_response_labelled(pg: s.PgCluster, tmp_path: Path,
 @pytest.mark.parametrize("bad", [
     {"member": {"member_id": "SYN-E1-001", "status": "lapsed"}},
     {"member": {"member_id": "M000001", "status": "active"}},
-    {"fail_next": 11}, {"fail_next": 1, "extra": 1}, {}])
+    {"fail_next": 11}, {"fail_next": 1, "extra": 1}, {},
+    # Codex 2026-11-23 REVISE: explicit null error code through the JSON route -> 422, and the
+    # member stays active (the following E1 flow settles active on the first attempt).
+    {"member": {"member_id": "SYN-E1-001", "status": "error", "error": None}}])
 def test_el4_p04f_malformed_controls(pg: s.PgCluster, tmp_path: Path, test_zones: None,
                                      bad: Any) -> None:
     """A. Malformed control bodies -> 422 MALFORMED and no state change (a following E1

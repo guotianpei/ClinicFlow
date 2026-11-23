@@ -53,10 +53,12 @@ def _member(value: object) -> tuple[str, str, str | None]:
         raise ControlMalformed("member_id")
     if type(status) is not str or status not in STATUSES:
         raise ControlMalformed("status")
-    error = value.get("error")
     if (status == "error") != ("error" in value):
         raise ControlMalformed("error")
-    if error is not None and (type(error) is not str or error not in ERRORS):
+    error = value.get("error")
+    # A present "error" key must be a closed E2 code: an explicit JSON null is malformed here,
+    # never passed on to set_member (D-E4-4: 422 MALFORMED before any state change).
+    if "error" in value and (type(error) is not str or error not in ERRORS):
         raise ControlMalformed("error")
     return member_id, status, error
 

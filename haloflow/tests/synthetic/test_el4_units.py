@@ -150,6 +150,10 @@ BAD_CONTROLS: list[Any] = [
     {"member": {"member_id": "SYN-E1-001", "status": "active", "extra": 1}},
     {"member": {"member_id": "SYN-E1-001"}},
     {"member": "SYN-E1-001"},
+    # Codex 2026-11-23 REVISE: an explicit null error code is malformed at parse (appended last:
+    # the M-E4-7 declared rows value12/value13 keep their ids).
+    {"member": {"member_id": "SYN-E1-001", "status": "error", "error": None}},
+    {"member": {"member_id": "SYN-E1-001", "status": "active", "error": None}},
 ]
 
 
