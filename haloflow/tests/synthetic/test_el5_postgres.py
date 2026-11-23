@@ -634,6 +634,9 @@ def test_el5_p03k_held_uncommitted_reads_unavailable(pg: s.PgCluster, tmp_path: 
             e5.age_op(inst, ev)
             await doc_pass(app, tok)
             assert e5.op(inst, ev)["reads"] == 1
+            # Codex 75eab821: the initial worker made exactly one append and one issuance.
+            assert e5.calls(ch, "append") == 1 and e5.calls(ch, "issue_permit") == 1
+            assert len(e5.permits(inst, ev)) == 1
         async with e4.running(inst, app_name="el5-fresh") as (lc2, app2):
             tok2 = await e4.token(app2)
             ch2 = chart_of(lc2)
@@ -644,6 +647,7 @@ def test_el5_p03k_held_uncommitted_reads_unavailable(pg: s.PgCluster, tmp_path: 
                 assert e5.op(inst, ev)["reads"] == n
             assert e5.op(inst, ev)["state"] == "needs_check"
             assert e5.calls(ch2, "issue_permit") == 0 and e5.calls(ch2, "append") == 0
+            assert len(e5.permits(inst, ev)) == 1
             assert len(e5.doc_items(inst)) == 1 and e5.entries(inst) == []
 
     run(body())
@@ -907,7 +911,7 @@ def test_el5_p04e_manual_append_never_committed(pg: s.PgCluster, tmp_path: Path,
             tok = await e4.token(app)
             _ref, ev = await _escalate(inst, lc, app, tok)
             ((item, _st, _o, ver),) = e5.doc_items(inst)
-            out = await lc.doc_service.manual(item, ver, "staff-synthetic-1")
+            out = await lc.doc_service.manual(lc.staff_context("staff-synthetic-1"), item, ver)
             assert out == "manual_documentation"
             assert e5.op(inst, ev)["state"] == "manual_done"
             await doc_pass(app, tok)
@@ -945,11 +949,12 @@ def test_el5_p04fg_manual_vs_delayed_append(pg: s.PgCluster, tmp_path: Path, tes
             if winner == "append":
                 ch.release_commits()
                 await asyncio.sleep(0.2)
-                assert await lc.doc_service.manual(item, ver, "staff-1") == "entry_confirmed"
+                out = await lc.doc_service.manual(lc.staff_context("staff-1"), item, ver)
+                assert out == "entry_confirmed"
                 assert e5.op(inst, ev)["state"] == "appended" and len(e5.entries(inst)) == 1
             else:
-                assert await lc.doc_service.manual(item, ver, "staff-1") == \
-                    "manual_documentation"
+                out = await lc.doc_service.manual(lc.staff_context("staff-1"), item, ver)
+                assert out == "manual_documentation"
                 ch.release_commits()
                 await asyncio.sleep(0.2)
                 assert e5.entries(inst) == []
@@ -976,7 +981,7 @@ def test_el5_p04h_manual_pending_resumed(pg: s.PgCluster, tmp_path: Path,
 
             lc.doc_service.hooks["after_manual_phase1"] = boom
             with pytest.raises(crash):
-                await lc.doc_service.manual(item, ver, "staff-attrib-7")
+                await lc.doc_service.manual(lc.staff_context("staff-attrib-7"), item, ver)
             assert e5.op(inst, ev)["state"] == "manual_pending"
         async with e4.running(inst, app_name="el5-fresh") as (_lc2, app2):
             tok2 = await e4.token(app2)
@@ -991,11 +996,14 @@ def test_el5_p04h_manual_pending_resumed(pg: s.PgCluster, tmp_path: Path,
     run(body())
 
 
-@pytest.mark.parametrize("case", ["closed_item", "stale_version", "op_not_needs_check"])
+@pytest.mark.parametrize("case", ["closed_item", "stale_version", "op_not_needs_check",
+                                  "other_tenant_staff"])
 def test_el5_p04i_manual_refusals(pg: s.PgCluster, tmp_path: Path, test_zones: None,
                                   case: str) -> None:
-    """A. Manual action refused with no state change: a closed item, a stale expected version,
-    an op not in needs_check (another tenant's staff: store-level, P05e)."""
+    """A. Manual action refused with no state change (op, item, permits, entries): a closed item,
+    a stale expected version, an op not in needs_check, and (Codex 75eab821) tenant B's staff
+    against tenant A's open item through the authorized manual entry point, followed by the
+    tenant-A positive control on the same item."""
     inst = el_install(pg, tmp_path)
 
     async def body() -> None:
@@ -1008,13 +1016,22 @@ def test_el5_p04i_manual_refusals(pg: s.PgCluster, tmp_path: Path, test_zones: N
                      " WHERE item_id = %s", (item,))
             elif case == "stale_version":
                 ver = ver - 1
-            else:
+            elif case == "op_not_needs_check":
                 e4.q(inst, "UPDATE {s}.m05_el_doc_ops SET state = 'reconciling'"
                      " WHERE event_id = %s", (ev,))
-            before = (e5.op(inst, ev), e5.doc_items(inst))
-            with pytest.raises(e5.m05("eligibility_doc").DocRefused):
-                await lc.doc_service.manual(item, ver, "staff-1")
-            assert (e5.op(inst, ev), e5.doc_items(inst)) == before
+            doc = e5.m05("eligibility_doc")
+            staff = (doc.staff_context_for("synthetic-tenant-b", "staff-b-1")
+                     if case == "other_tenant_staff" else lc.staff_context("staff-1"))
+            before = (e5.op(inst, ev), e5.doc_items(inst), e5.permits(inst, ev),
+                      e5.entry_rows_raw(inst, ev))
+            with pytest.raises(doc.DocRefused):
+                await lc.doc_service.manual(staff, item, ver)
+            assert (e5.op(inst, ev), e5.doc_items(inst), e5.permits(inst, ev),
+                    e5.entry_rows_raw(inst, ev)) == before
+            if case == "other_tenant_staff":            # tenant-A positive control
+                out = await lc.doc_service.manual(lc.staff_context("staff-a-1"), item, ver)
+                assert out == "manual_documentation"
+                assert e5.doc_items(inst)[0][1] == "resolved"
 
     run(body())
 

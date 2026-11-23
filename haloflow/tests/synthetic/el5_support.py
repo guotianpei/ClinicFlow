@@ -52,10 +52,16 @@ Composition (eligibility profile; PostgreSQL rows):
   lc.tenant_context()  the authorized TenantContext the eligibility scheduler uses.
   lc.doc_service  the DocService; the eligibility scheduler's tick runs phase `document` after
                   `apply` and reports counts under keys "document.<name>".
-  lc.doc_service.manual(item_id: str, expected_version: int, staff_id: str) -> str
-                  the staff "Recorded in chart manually" action (t134), returning the item
-                  outcome "entry_confirmed" | "manual_documentation"; refusals raise
+  lc.doc_service.manual(staff_ctx, item_id: str, expected_version: int) -> str
+                  the staff "Recorded in chart manually" action (t134) — the authorized
+                  entry point: `staff_ctx` is an authorized staff TenantContext; its tenant must
+                  be the item's and its staff id is the recorded attribution. Returns the item
+                  outcome "entry_confirmed" | "manual_documentation"; refusals (closed item,
+                  stale version, op not in needs_check, another tenant's staff) raise
                   eligibility_doc.DocRefused(code) with no state change.
+  lc.staff_context(staff_id: str) -> the authorized staff TenantContext of the install's tenant.
+  eligibility_doc.staff_context_for(tenant_id: str, staff_id: str) -> an authorized-shape staff
+                  context of another (synthetic) tenant, for the cross-tenant refusal row.
   lc.doc_service.hooks: dict[str, Callable[[], None]]  test seams, keys "after_claim",
                   "after_mark_sent", "after_manual_phase1"; a hook that raises
                   eligibility_doc.SimulatedCrash aborts the pass at that point (the process
