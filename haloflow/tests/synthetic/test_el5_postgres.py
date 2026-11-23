@@ -104,6 +104,33 @@ async def make_event(inst: b3.Install, app: Any, tok: str, what: str) -> tuple[s
     return ref, str(evs[0][0])
 
 
+async def new_coverage_version(inst: b3.Install, lc: Any, ref: str, member_id: str) -> None:
+    """FIXTURE (real E1 intake): re-send the E1 appointment through the same directory
+    `appointment_put` the scenario loader uses, with another synthetic member id, so E1 records
+    coverage version + 1 (the E2-P07c `el.put(..., member_id=...)` pattern). Test-only use of
+    the loader's private helpers; no E5 surface."""
+    sa = e4.mod("sim_actions")
+    scen = e4.mod("scenarios")
+    patient, _appt = scen.ids(tenant_id(inst), "E1", e4.EL_ROW_KEY)
+    ((start, zone, dept_tz),) = e4.q(inst, "SELECT start_at, zone, department_tz FROM"
+                                     " {s}.m05_el_appointments WHERE appointment_ref = %s",
+                                     (ref,))
+    row = scen.fixtures()["E1"].rows[0]
+    coverage = dict(row.coverage)
+    coverage["member_id"] = member_id
+    context = await sa._context(lc)
+
+    async def body(binding: Any) -> None:
+        await sa._directory(binding, context, "appointment_put", {
+            "appointment_ref": ref, "patient_id": str(patient), "start_at": sa._iso_z(start),
+            "status": "booked", "first_name": row.first_name, "confirmation": "not_confirmed",
+            "department_tz": dept_tz or zone, "source_status": "booked",
+            "provider_ref": row.provider_ref, "department_ref": row.department_ref,
+            "coverage": coverage}, frozenset({"applied"}))
+
+    await sa.wiring.load_foundation(lc.services.gateway).run_in_transaction(context, body)
+
+
 async def doc_pass(app: Any, tok: str) -> dict[str, Any]:
     """One eligibility tick (phase `document` runs after `apply`); its document counts."""
     counts = e4.tick_counts(await e4.tick(app, tok))
@@ -204,26 +231,28 @@ def test_el5_p01d_note_only_and_coalesced(pg: s.PgCluster, tmp_path: Path,
 
 def test_el5_p01e_two_versions_two_entries(pg: s.PgCluster, tmp_path: Path,
                                            test_zones: None) -> None:
-    """A. v1 settles inactive; coverage changes (v2); v2 settles active -> two entries, each
-    with its own version, class and text."""
+    """A. v1 settles inactive; coverage changes through real E1 intake (v2); v2 settles active
+    -> two entries, each with its own version, class and text."""
     inst = el_install(pg, tmp_path)
 
     async def body() -> None:
-        async with e4.running(inst) as (_lc, app):
+        async with e4.running(inst) as (lc, app):
             tok = await e4.token(app)
             ref, ev1 = await make_event(inst, app, tok, "inactive")
-            await doc_pass(app, tok)
-            await e4.member(app, tok, "SYN-E1-001", "active")
-            e4.q(inst, "UPDATE {s}.m05_el_appointments SET coverage_version ="
-                 " coverage_version + 1 WHERE appointment_ref = %s", (ref,))
+            await e4.member(app, tok, "SYN-E1-002", "active")
+            await new_coverage_version(inst, lc, ref, "SYN-E1-002")
+            ((ver,),) = e4.q(inst, "SELECT coverage_version FROM {s}.m05_el_appointments"
+                             " WHERE appointment_ref = %s", (ref,))
+            assert ver == 2, ver                     # E1 recorded the new version (control)
             e4.make_due(inst, ref, "booking", -1.0)
-            await doc_pass(app, tok)
+            e4.tick_counts(await e4.tick(app, tok))
             payer = [x for x in e5.events(inst, ref) if x[4] is not None]
-            assert len(payer) == 2, payer
+            assert [x[2] for x in payer] == ["inactive", "active"], payer   # E2 control
+            await doc_pass(app, tok)
             got = {r[1]: r[4] for r in e5.entries(inst)}
-            assert set(got) == {payer[0][0], payer[1][0]}
+            assert set(got) == {ev1, payer[1][0]}
             assert got[ev1]["class"] == "inactive" and got[payer[1][0]]["class"] == "active"
-            assert got[ev1]["coverage_version"] < got[payer[1][0]]["coverage_version"]
+            assert (got[ev1]["coverage_version"], got[payer[1][0]]["coverage_version"]) == (1, 2)
 
     run(body())
 
