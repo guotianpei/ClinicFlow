@@ -89,7 +89,7 @@ CREATE TABLE sim_chart.entries (
     tenant text NOT NULL,
     event_id uuid NOT NULL,
     appointment_ref uuid NOT NULL,
-    permit_id uuid NOT NULL,
+    permit_id uuid NOT NULL REFERENCES sim_chart.permits (permit_id),
     body jsonb NOT NULL,
     committed_at timestamptz NOT NULL,
     PRIMARY KEY (tenant, event_id)

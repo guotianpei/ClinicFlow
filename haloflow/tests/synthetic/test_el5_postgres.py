@@ -348,6 +348,12 @@ def test_el5_p02d_after_scrub(pg: s.PgCluster, tmp_path: Path, test_zones: None)
             chart_of(lc).fail_next(3)       # keep the op undelivered across the scrub
             _ref, ev = await make_event(inst, app, tok, "inactive")
             await doc_pass(app, tok)
+            # Codex ruling (codex_e5-frozen-test-ruling.md): consume all three refusals across
+            # eligible passes; the op is escalated before the scrub.
+            for _ in range(2):
+                e5.age_op(inst, ev)
+                await doc_pass(app, tok)
+            assert e5.op(inst, ev)["state"] == "needs_check"
             e4.q(inst, "UPDATE {s}.m05_el_attempts SET answer = jsonb_build_object("
                  "'class', answer->'class', 'reason', answer->'reason', 'observed_at',"
                  " answer->'observed_at') WHERE answer IS NOT NULL")
@@ -601,16 +607,29 @@ def test_el5_p03j_release_between_read_and_close(pg: s.PgCluster, tmp_path: Path
             _ref, ev = await make_event(inst, app, tok, "inactive")
             await doc_pass(app, tok)
             assert e5.op(inst, ev)["state"] == "reconciling"
+            assert e5.entries(inst) == []
+
+            # Codex ruling (codex_e5-frozen-test-ruling.md): the one-shot seam on the empty
+            # read releases the held append and waits (bounded, failing on timeout) until its
+            # commit is observable, so the release lands between the empty read and the close.
+            async def release() -> None:
+                lc.doc_service.hooks.pop("after_reconcile_read", None)
+                assert e5.entries(inst) == []            # the read that just ran was empty
+                ch.release_commits()
+                for _ in range(100):
+                    if e5.entry_rows_raw(inst, ev):
+                        return
+                    await asyncio.sleep(0.05)
+                raise AssertionError("held append did not commit within 5 s")
+
+            lc.doc_service.hooks["after_reconcile_read"] = release
             e5.age_op(inst, ev)
-            await doc_pass(app, tok)                 # read 1: empty, still held
-            assert e5.op(inst, ev)["state"] == "reconciling" and e5.entries(inst) == []
-            ch.release_commits()
-            await asyncio.sleep(0.2)
-            e5.age_op(inst, ev)
-            await doc_pass(app, tok)
+            await doc_pass(app, tok)       # read empty -> commit lands -> close already_used
+            assert "after_reconcile_read" not in lc.doc_service.hooks
             o = e5.op(inst, ev)
             assert o["state"] == "appended" and len(e5.entries(inst)) == 1
             assert e5.calls(ch, "issue_permit") == 1 and e5.calls(ch, "append") == 1
+            assert len(e5.permits(inst, ev)) == 1
 
     run(body())
 
@@ -836,8 +855,9 @@ def test_el5_p04b_item_survives_case_closure(pg: s.PgCluster, tmp_path: Path,
             await _escalate(inst, lc, app, tok)
             (el_item,) = [i for i, k, st in e4.el_items(inst) if k == "eligibility_inactive"]
             # FIXTURE: the case closed (E3b closure is covered by E3b rows; only its effect here).
-            e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved' WHERE item_id = %s",
-                 (el_item,))
+            # Codex ruling: the merged resolved-outcome constraint needs an OD-EL6 code.
+            e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved',"
+                 " outcome_code = 'el_confirmed_inactive' WHERE item_id = %s", (el_item,))
             e4.q(inst, "UPDATE {s}.m05_el_cases SET state = 'closed' WHERE item_id = %s",
                  (el_item,))
             await doc_pass(app, tok)
@@ -1012,8 +1032,9 @@ def test_el5_p04i_manual_refusals(pg: s.PgCluster, tmp_path: Path, test_zones: N
             _ref, ev = await _escalate(inst, lc, app, tok)
             ((item, _st, _o, ver),) = e5.doc_items(inst)
             if case == "closed_item":
-                e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved'"
-                     " WHERE item_id = %s", (item,))
+                # Codex ruling: the merged resolved-outcome constraint needs a code.
+                e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved',"
+                     " outcome_code = 'manual_documentation' WHERE item_id = %s", (item,))
             elif case == "stale_version":
                 ver = ver - 1
             elif case == "op_not_needs_check":
@@ -1167,8 +1188,19 @@ def test_el5_p05f_foreign_permit_never_settles(pg: s.PgCluster, tmp_path: Path,
             chart_of(lc).unknown_next(1)
             ref, ev = await make_event(inst, app, tok, "inactive")
             await doc_pass(app, tok)
-            inst.admin("UPDATE sim_chart.entries SET permit_id = gen_random_uuid()"
-                       " WHERE event_id = %s", (ev,))
+            # Codex ruling: a VALID used permit (FK kept) that this op never issued, same tenant,
+            # event and appointment as the entry.
+            foreign = "00000000-0000-4000-8000-0000000000f5"
+            inst.admin("INSERT INTO sim_chart.permits (permit_id, tenant, event_id,"
+                       " appointment_ref, state, issued_at) VALUES (%s, %s, %s, %s, 'used',"
+                       " clock_timestamp())", (foreign, tenant_id(inst), ev, ref))
+            inst.admin("UPDATE sim_chart.entries SET permit_id = %s WHERE event_id = %s",
+                       (foreign, ev))
+            (premise,) = e4.q(inst, "SELECT %s::uuid = ANY (issued_permits) FROM"
+                              " {s}.m05_el_doc_ops WHERE event_id = %s", (foreign, ev))
+            assert premise[0] is False                   # never issued by this op
+            assert [(r[0], r[1], r[2], r[3]) for r in e5.entries(inst)] == [
+                (tenant_id(inst), ev, ref, foreign)]     # same tenant / event / appointment
             e5.age_op(inst, ev)
             counts = await doc_pass(app, tok)
             assert counts.get("document.foreign_permit", 0) == 1, counts
