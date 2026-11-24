@@ -48,6 +48,8 @@ from haloflow.m01.provisioning import (
 from haloflow.m01.provisioning.roles import AUDIT_PROJECTOR_ROLE, RUNTIME_ROLE
 from haloflow.m01.staff.l1w_units import BOOTSTRAP_CAPABILITY, SUPPORT_ROLE
 from haloflow.m02.roles import M05_OWNER_ROLE
+from haloflow.m05.simulated_chart import SCHEMA as SIM_CHART_SCHEMA
+from haloflow.m05.simulated_chart import SIM_CHART_SQL
 from haloflow.synthetic import profiles, view
 from haloflow.synthetic.attest import _DB_CHECKS, PUBLIC_ACL, admin_connect, check_a0
 from haloflow.synthetic.composition import (
@@ -319,7 +321,10 @@ def _namespace_check(ctx: _Ctx) -> None:
         schemas = {r[0] for r in t.execute(
             "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname NOT LIKE 'pg\\_%'"
             " AND nspname <> 'information_schema'").fetchall()}
-        if schemas - {"public", "shared", ctx.schema}:
+        allowed = {"public", "shared", ctx.schema}
+        if _ACTIVE.get() == profiles.ELIGIBILITY:          # E5: the simulated chart store
+            allowed.add(SIM_CHART_SCHEMA)
+        if schemas - allowed:
             raise _diverged("schema")
 
 
@@ -383,6 +388,7 @@ def _run_profile(ctx: _Ctx) -> None:
         c.execute(RESOLUTION_PROFILE_SQL.format(schema=ctx.schema).encode())   # F-R1
         if _ACTIVE.get() == profiles.ELIGIBILITY:                              # D-E4-2
             c.execute(EL3A_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
+            c.execute(SIM_CHART_SQL.encode())          # E5: the SIMULATED chart store
 
 
 def _run_activated(ctx: _Ctx) -> None:

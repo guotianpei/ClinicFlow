@@ -457,6 +457,17 @@ jobs:
           $VENV/bin/python -I scripts/el4_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/el4-mutation"
+      # Eligibility E5 mutation controls M-E5-1..M-E5-16 (simulated chart documentation:
+      # selection, wording, content source, store uniqueness and isolation, delivery and
+      # reconciliation, failure item, confirmation and manual closure): the declared-rows rule
+      # of b3_mutants.py over the E5 PostgreSQL rows; the SQL mutants re-pin the eligibility
+      # installed-state profile before their rows run.
+      - run: $VENV/bin/pytest scripts/test_el5_mutants.py -q -p no:cacheprovider
+      - run: $VENV/bin/python -I scripts/el5_mutants.py --check
+      - run: >-
+          $VENV/bin/python -I scripts/el5_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/el5-mutation"
       # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
       # statements against the PostgreSQL module, the worker against the unit module),
       # kill sets in scripts/sh_h1_mutant_kills.json.

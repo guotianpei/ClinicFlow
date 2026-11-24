@@ -37,11 +37,15 @@ from haloflow.m05.due_windows import DueWindowRunner
 from haloflow.m05.eligibility import CAPABILITIES as EL_WORKER_CAPABILITIES
 from haloflow.m05.eligibility import EligibilityService, EligibilityWorker
 from haloflow.m05.eligibility_cases import CASE_CAPABILITIES, EligibilityCaseService
+from haloflow.m05.eligibility_doc import COUNT_KEYS as DOC_KEYS
+from haloflow.m05.eligibility_doc import DOC_CAPABILITIES, DocService
 from haloflow.m05.eligibility_scheduler import (
     APPLY_KEYS,
+    NOT_RUN,
     RUN_KEYS,
     EligibilityScheduler,
     EligibilitySchedulerStopFailed,
+    PhaseReport,
     TickResult,
 )
 from haloflow.m05.eligibility_statements import TICK_CAPABILITY, TICK_KEY
@@ -289,6 +293,7 @@ class EligibilityTick:
     result: TickResult
     e1: Mapping[str, int]
     e1_status: str
+    documented: bool = False
 
     @property
     def codes(self) -> Mapping[str, int]:
@@ -305,14 +310,28 @@ class EligibilityTick:
             out[f"apply.{key}"] = sum(t.apply.counts.get(key, 0) for t in tenants)
         for key in E1_KEYS:
             out[f"e1.{key}"] = int(self.e1.get(key, 0))
+        if self.documented:                   # E5: the document phase (eligibility profile)
+            for key in DOC_KEYS:
+                out[f"document.{key}"] = sum(_document(t).counts.get(key, 0) for t in tenants)
         statuses: dict[str, int] = {}
+        phases = ("run", "expire", "apply", "document") if self.documented \
+            else ("run", "expire", "apply")
         for report in tenants:
-            for phase in ("run", "expire", "apply"):
-                name = f"{phase}.status.{getattr(report, phase).status}"
+            for phase in phases:
+                part = _document(report) if phase == "document" else getattr(report, phase)
+                name = f"{phase}.status.{part.status}"
                 statuses[name] = statuses.get(name, 0) + 1
         statuses[f"e1.status.{self.e1_status}"] = 1
         out.update(statuses)
         return out
+
+
+def _document(report: Any) -> Any:
+    """E5: the document phase of a tenant report (NOT_RUN when the tenant never reached it)."""
+    return getattr(report, "document", None) or _DOC_NOT_RUN
+
+
+_DOC_NOT_RUN: Final = PhaseReport(NOT_RUN, dict.fromkeys(DOC_KEYS, 0))
 
 
 class ManagedEligibilityScheduler(_Managed, EligibilityScheduler):
@@ -343,7 +362,7 @@ class ManagedEligibilityScheduler(_Managed, EligibilityScheduler):
                 for key, value in got.items():
                     e1[key] = e1.get(key, 0) + value
             result = await EligibilityScheduler._run_tick(self, *args, **kwargs)
-            return EligibilityTick(result, e1, status)
+            return EligibilityTick(result, e1, status, self._doc is not None)
 
 
 # ---------------------------------------------------------------------------- build
@@ -373,10 +392,22 @@ class Wiring:
     schedulers: dict[str, Any]
 
 
+def build_doc_service(rt: Any, tenant_id: str, chart: Any) -> DocService:
+    """E5: the doc service over the SIMULATED chart for the install's one tenant."""
+    return DocService(EventFoundation(rt.gateway, producer_service=PRODUCER), chart,
+                      (tenant_id,))
+
+
+def doc_contexts(rt: Any, tenant_id: str) -> Callable[[str], Awaitable[Any]]:
+    """E5: the doc service's timer-workload context (capability exactly DOC_CAPABILITIES)."""
+    return _context_for(rt, tenant_id, W_TIMER, frozenset(DOC_CAPABILITIES))
+
+
 def build_eligibility(rt: Any, tenant_id: str, *, clearinghouse: Any, stop_timeout: float,
-                      gate: Gate) -> ManagedEligibilityScheduler:
+                      gate: Gate, doc: DocService | None = None) -> ManagedEligibilityScheduler:
     """The eligibility profile's fourth managed scheduler (D-E4-3): E2 worker over the
-    SYNTHETIC clearinghouse port, the E3a case applier, and the E1 tick (D-E4-8)."""
+    SYNTHETIC clearinghouse port, the E3a case applier, the E1 tick (D-E4-8) and (E5, when
+    `doc` is given) the document phase over the SIMULATED chart."""
 
     foundation = EventFoundation(rt.gateway, producer_service=PRODUCER)
     service = EligibilityService(foundation)
@@ -391,7 +422,8 @@ def build_eligibility(rt: Any, tenant_id: str, *, clearinghouse: Any, stop_timeo
                  interval_s=INTERVALS["eligibility"], stop_timeout_s=float(stop_timeout) / 2,
                  clock=time.monotonic, sleep=scheduler._b3_sleep, cases=cases,
                  case_contexts=_context_for(rt, tenant_id, W_TIMER,
-                                            frozenset(CASE_CAPABILITIES)))
+                                            frozenset(CASE_CAPABILITIES)),
+                 doc=doc, doc_contexts=None if doc is None else doc_contexts(rt, tenant_id))
     scheduler._e1 = E1TickService(EventFoundation(rt.gateway, producer_service=PRODUCER))
     scheduler._e1_contexts = _context_for(rt, tenant_id, W_TIMER, frozenset({TICK_CAPABILITY}))
     return scheduler

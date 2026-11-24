@@ -386,6 +386,10 @@ class SyntheticLifecycle:
         self.install_profile: str | None = None
         self._clearinghouse_factory = clearinghouse_factory
         self.clearinghouse: Any = None
+        # Eligibility E5: the SIMULATED chart store and the doc service (eligibility only).
+        self.chart: Any = None
+        self.doc_service: Any = None
+        self._context_resolver: Any = None
         self.config = config or LifecycleConfig()
         self._sender_factory = sender_factory
         self._ehr_factory = ehr_factory
@@ -445,6 +449,22 @@ class SyntheticLifecycle:
             return None
         return self._guard_code or self.stop_code
 
+    # -- E5 contexts (eligibility profile) -----------------------------------------------
+
+    def tenant_context(self) -> Any:
+        """The authorized TenantContext the eligibility scheduler's document phase uses (the
+        timer workload with exactly the doc capability), freshly issued."""
+        if self._context_resolver is None:
+            raise SyntheticRefused("NOT_ELIGIBILITY")
+        return self._context_resolver.doc()
+
+    def staff_context(self, staff_id: str) -> Any:
+        """The authorized staff TenantContext (actor `staff_id`, the manual-documentation
+        capability) of the install's tenant, freshly issued."""
+        if self._context_resolver is None:
+            raise SyntheticRefused("NOT_ELIGIBILITY")
+        return self._context_resolver.staff(staff_id)
+
     # -- start ---------------------------------------------------------------------------
 
     async def start(self) -> None:
@@ -471,6 +491,7 @@ class SyntheticLifecycle:
             self.request_stop(self._stop_pending)
 
     async def _start(self) -> None:
+        from haloflow.synthetic import el5_wiring as el5
         from haloflow.synthetic import profiles, wiring
         from haloflow.synthetic.provision import check_state, recorded_profile
         from haloflow.synthetic.runtime import SyntheticRuntime
@@ -529,9 +550,15 @@ class SyntheticLifecycle:
         if installed == profiles.ELIGIBILITY:              # E4 (D-E4-3): fourth scheduler
             self.clearinghouse = self._clearinghouse_factory() \
                 if self._clearinghouse_factory is not None else _simulated_clearinghouse()
+            # E5: the simulated chart over the install's own database (schema sim_chart),
+            # on the runtime login under its own application name (never the pool's).
+            self.chart = el5.build_chart(runtime, self.application_name)
+            self.doc_service = wiring.build_doc_service(rt, state["tenant_id"], self.chart)
+            self._context_resolver = await el5.context_resolver(runtime, state["tenant_id"])
             self.schedulers["eligibility"] = wiring.build_eligibility(
                 rt, state["tenant_id"], clearinghouse=self.clearinghouse,
-                stop_timeout=self.config.stop_timeout("eligibility"), gate=self._tick_gate)
+                stop_timeout=self.config.stop_timeout("eligibility"), gate=self._tick_gate,
+                doc=self.doc_service)
         self.services = wiring.build_services(rt, self.note_keys, state, profile=installed)
         self.csrf_token = secrets.token_urlsafe(32)
         self.ingress_secret = secrets.token_urlsafe(48)
@@ -699,6 +726,8 @@ class SyntheticLifecycle:
                 self.port.close()
 
         async def pool() -> None:
+            if self.chart is not None:                # E5: a never-released held append
+                await self.chart.aclose()
             if self.runtime is not None and self.runtime.pool is not None:
                 await self.runtime.pool.close()
 

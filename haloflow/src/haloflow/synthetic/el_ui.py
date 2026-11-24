@@ -144,6 +144,39 @@ def outcome_text(code: object) -> str:
     return ui.label(OUTCOME_LABELS, code)
 
 
+CHART_PREFIX: Final = "/synthetic/ui/chart"
+CHART_TITLE: Final = "Simulated chart"
+CHART_NOTICE: Final = "Simulated chart entries (synthetic; not a real EHR). Read only."
+
+
+async def chart_page(lifecycle: Any, request: Request) -> Response:
+    """E5 (R9.1): the SIMULATED chart entries of one appointment, read only (no write control),
+    through the context-bound port of the install's authorized staff context. Each line shows
+    the entry text (owner decision 2 / OD-EL13) and its event time; nothing else of the body."""
+    try:
+        ref = _path_uuid(request.path_params["appointment_ref"], "appointment_ref")
+    except _Malformed:
+        return ui._error_page(404)
+    services = lifecycle.services
+    if services is None or lifecycle.chart is None:
+        return ui._error_page(503)
+    try:
+        port = lifecycle.chart.for_tenant(lifecycle.staff_context(str(services.staff_id)))
+        rows = await port.entries_for(str(ref))
+    except Exception:  # noqa: BLE001 - closed refusal; nothing is echoed
+        return ui._error_page(503)
+    lines = []
+    for row in rows:
+        body = row.get("body")
+        text = body.get("text") if isinstance(body, Mapping) else None
+        when = body.get("event_at") if isinstance(body, Mapping) else None
+        lines.append(f"<li>{ui.esc(text if type(text) is str else ui.UNRECOGNIZED)}"
+                     f" — {ui.esc(ui._when(when))}</li>")
+    listing = f"<ul>{''.join(lines)}</ul>" if lines else "<p>No chart entries.</p>"
+    return ui._page(f"<h1>{ui.esc(CHART_TITLE)}</h1><p>{ui.esc(CHART_NOTICE)}</p>{listing}"
+                    f"<p><a href=\"{ui.UI_PREFIX}\">All items</a></p>")
+
+
 def _case_changed(item_id: Any) -> Response:
     """CASE_CHANGED: 409 with the OD-B4-2 reload message; nothing was changed."""
     return ui._page(f"<p class=\"message\">{ui.esc(ui.MESSAGES['conflict'])}</p>"

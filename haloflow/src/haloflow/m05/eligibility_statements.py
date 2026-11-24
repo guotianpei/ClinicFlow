@@ -85,3 +85,32 @@ EL3B_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
     STAFF_APPLY_KEY: (StatementMode.WRITE, STAFF_APPLY_KEY,
                       "SELECT m05_apply_action_v4(%(command)s)"),
 })
+
+# --- E5 (synthetic; composed behind `include_el5`) ---------------------------------------
+# The documentation worker gateways (t129..t132, t134 resumption) under one capability held
+# only by the doc service's timer-workload context; the staff "Recorded in chart manually"
+# action (t134) under its own capability held only by an authorized staff context. Not
+# activation-protected (architecture v1r1 A7: settled events are documented after a
+# switch-off).
+
+DOC_CAPABILITY: Final = "m05.eligibility.doc"
+DOC_MANUAL_CAPABILITY: Final = "m05.eligibility.doc_manual"
+DOC_ENQUEUE_KEY: Final = "m05.eligibility.doc_enqueue"
+DOC_ENTRY_KEY: Final = "m05.eligibility.doc_entry"
+DOC_CLAIM_KEY: Final = "m05.eligibility.doc_claim"
+DOC_SETTLE_KEY: Final = "m05.eligibility.doc_settle"
+DOC_RESUME_KEY: Final = "m05.eligibility.doc_manual_resume"
+DOC_MANUAL_KEY: Final = "m05.eligibility.doc_manual"
+
+EL5_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
+    DOC_ENQUEUE_KEY: (StatementMode.WRITE, DOC_CAPABILITY,
+                      "SELECT m05_el_doc_enqueue(%(command)s)"),
+    DOC_ENTRY_KEY: (StatementMode.READ, DOC_CAPABILITY, "SELECT m05_el_doc_entry(%(command)s)"),
+    DOC_CLAIM_KEY: (StatementMode.WRITE, DOC_CAPABILITY, "SELECT m05_el_doc_claim(%(command)s)"),
+    DOC_SETTLE_KEY: (StatementMode.WRITE, DOC_CAPABILITY,
+                     "SELECT m05_el_doc_settle(%(command)s)"),
+    DOC_RESUME_KEY: (StatementMode.WRITE, DOC_CAPABILITY,
+                     "SELECT m05_el_doc_manual(%(command)s)"),
+    DOC_MANUAL_KEY: (StatementMode.WRITE, DOC_MANUAL_CAPABILITY,
+                     "SELECT m05_el_doc_manual(%(command)s)"),
+})

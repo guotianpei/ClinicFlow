@@ -638,3 +638,9 @@ def install_ui(app: FastAPI, lifecycle: Any) -> None:
                               (UI_PREFIX + "/{item_id}/close", close)):
             app.add_api_route(path, handler, methods=["POST"], response_class=Response,
                               include_in_schema=False)
+
+        async def chart(request: Request) -> Response:      # E5 (R9.1): read only
+            return await el_ui.chart_page(lifecycle, request)
+
+        app.add_api_route(el_ui.CHART_PREFIX + "/{appointment_ref}", chart, methods=["GET"],
+                          response_class=Response, include_in_schema=False)
