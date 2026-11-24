@@ -27,6 +27,11 @@ owner decisions Q1-Q5 (2026-11-22) and OD-EL13 (2026-11-23).
 - t133 `m05_el_doc_raise` (owner only): at most one `eligibility_doc_check` item per event.
 - t134 `m05_el_doc_manual`: the staff "Recorded in chart manually" action, phase 1 on the OPEN
   item at its expected version with the op in needs_check; phase 2 fenced on that epoch.
+- t135 `m05_el_doc_item_state` (STABLE, staff READ; REVISE 2026-11-24, Codex D2 ruling (b)):
+  the display state of ONE doc item for the staff view — `actionable` (item open, op
+  needs_check), `pending` (op manual_pending: "Being confirmed", A6.3 / OD-EL15), `closed`,
+  `other`, or `none` (no doc item of that id). Reads only; no attribution, no capability of
+  its own beyond the view capability of its statement.
 """
 
 from __future__ import annotations
@@ -62,6 +67,7 @@ CLAIM_ID: Final = "t131_m05_el_doc_claim"
 SETTLE_ID: Final = "t132_m05_el_doc_settle"
 RAISE_ID: Final = "t133_m05_el_doc_raise"
 MANUAL_ID: Final = "t134_m05_el_doc_manual"
+STATE_ID: Final = "t135_m05_el_doc_item_state"
 EL5_TARGET: Final = 134
 
 OP_STATES: Final = ("ready", "claimed", "retry_wait", "reconciling", "appended", "needs_check",
@@ -650,6 +656,50 @@ BEGIN
 END;
 """
 
+# --- t135 display state (staff READ) -------------------------------------------------------
+
+_STATE_BODY: Final = r"""
+DECLARE
+    c_uuid constant text := '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+    v_setting text;
+    v_keys text[];
+    v_item_id uuid;
+    v_item_state text;
+    v_op_state text;
+BEGIN
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    IF v_setting IS NULL OR v_setting = ''
+       OR v_setting OPERATOR(pg_catalog.!~) '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$' THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+    IF pg_catalog.jsonb_typeof(p_command) IS DISTINCT FROM 'object'
+       OR (p_command OPERATOR(pg_catalog.->>) 'schema_version') IS DISTINCT FROM '1' THEN
+        """ + _MALFORMED + r"""
+    END IF;
+    SELECT pg_catalog.array_agg(k ORDER BY k) INTO v_keys
+      FROM pg_catalog.jsonb_object_keys(p_command) AS k;
+    IF v_keys IS DISTINCT FROM ARRAY['item_id', 'schema_version']::text[]
+       OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'item_id')
+          IS DISTINCT FROM 'string'
+       OR (p_command OPERATOR(pg_catalog.->>) 'item_id') OPERATOR(pg_catalog.!~) c_uuid THEN
+        """ + _MALFORMED + r"""
+    END IF;
+    v_item_id := (p_command OPERATOR(pg_catalog.->>) 'item_id')::uuid;
+    SELECT i.state INTO v_item_state FROM {schema}.m05_followup_items AS i
+     WHERE i.item_id = v_item_id AND i.item_kind = '""" + DOC_KIND + r"""';
+    IF NOT FOUND THEN
+        RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'display', 'none');
+    END IF;
+    SELECT o.state INTO v_op_state FROM {schema}.m05_el_doc_ops AS o
+     WHERE o.item_id = v_item_id;
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'display',
+        CASE WHEN v_item_state = 'resolved' THEN 'closed'
+             WHEN v_op_state = 'manual_pending' THEN 'pending'
+             WHEN v_op_state = 'needs_check' THEN 'actionable'
+             ELSE 'other' END);
+END;
+"""
+
 # --- unit construction ---------------------------------------------------------------------
 
 # (migration id, function, volatility, body, EXECUTE grantee or None for owner only)
@@ -660,6 +710,7 @@ _FUNCTIONS: Final[tuple[tuple[str, str, str, str, str | None], ...]] = (
     (SETTLE_ID, "m05_el_doc_settle", "volatile", _SETTLE_BODY, RUNTIME_ROLE),
     (RAISE_ID, "m05_el_doc_raise", "volatile", _RAISE_BODY, None),
     (MANUAL_ID, "m05_el_doc_manual", "volatile", _MANUAL_BODY, RUNTIME_ROLE),
+    (STATE_ID, "m05_el_doc_item_state", "stable", _STATE_BODY, RUNTIME_ROLE),
 )
 
 _ALL: Final[dict[str, str | UnitDefinition]] = {TABLES_ID: T128_SQL,

@@ -101,6 +101,9 @@ DOC_CLAIM_KEY: Final = "m05.eligibility.doc_claim"
 DOC_SETTLE_KEY: Final = "m05.eligibility.doc_settle"
 DOC_RESUME_KEY: Final = "m05.eligibility.doc_manual_resume"
 DOC_MANUAL_KEY: Final = "m05.eligibility.doc_manual"
+# E5 REVISE 2026-11-24 (Codex D2 ruling (b)): the doc item display-state read (t135), a staff
+# READ under the existing view capability; it needs no doc / manual capability.
+DOC_ITEM_STATE_KEY: Final = "m05.eligibility.doc_item_state"
 
 EL5_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
     DOC_ENQUEUE_KEY: (StatementMode.WRITE, DOC_CAPABILITY,
@@ -113,4 +116,6 @@ EL5_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
                      "SELECT m05_el_doc_manual(%(command)s)"),
     DOC_MANUAL_KEY: (StatementMode.WRITE, DOC_MANUAL_CAPABILITY,
                      "SELECT m05_el_doc_manual(%(command)s)"),
+    DOC_ITEM_STATE_KEY: (StatementMode.READ, READ_CAPABILITY,
+                         "SELECT m05_el_doc_item_state(%(command)s)"),
 })

@@ -1,4 +1,4 @@
-"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-20). SYNTHETIC ONLY.
+"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-22). SYNTHETIC ONLY.
 
 Targets and killing rows predeclared in the E5 test cases v1r1 "Mutation controls" table
 (Codex ALIGN 9e6974f2; architecture v1r1 A9 + A11):
@@ -19,11 +19,13 @@ M-E5-13 a fourth append attempt allowed                                         
 M-E5-14 append without a successful current-epoch mark-sent                            P03l
 M-E5-15 settle accepts an entry under a permit the op did not issue                    P05f
 M-E5-16 the reconciliation read counter is not durable (reset on re-claim)             P03k
-Staff route (REVISE 2026-11-24; Codex ALIGN codex_e5-manual-route-ruling.md + D2 correction):
+Staff route (REVISE 2026-11-24; Codex ALIGN codex_e5-manual-route-ruling.md + D2 ruling (b)):
 M-E5-17 the chart-recorded route skips the CSRF check                                  P11e
 M-E5-18 attribution from a fixed fallback identity, not the resolved principal         P11b P11c
 M-E5-19 chart_recorded needs only the `get` route capability (read-only staff may act) P11f
-M-E5-20 the action is rendered on a closed doc item                                    P11g P11b
+M-E5-20 the view offers the action while the op is manual_pending (pending = actionable) P11l
+M-E5-21 t135 reports a closed doc item (op still needs_check) as actionable (SQL)       P11g
+M-E5-22 t135 reports a manual_pending op as actionable (SQL; re-pinned)                P11l
 
 Every mutant that edits SQL composed into the eligibility registry (rules selection, t129..t134
 bodies) is RE-PINNED: the harness re-measures the ELIGIBILITY installed-state profile on the
@@ -231,12 +233,22 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           "                             \"chart_recorded\": \"resolve\"}\n",
           "                             \"chart_recorded\": \"get\"}\n",
           _p("p11f_unauthorized_staff[read_only]")),
-        m("M-E5-20", "the action is rendered on a closed doc item", EL_UI,
-          "    if item.get(\"state\") not in (\"open\", \"in_progress\"):\n"
-          "        return False\n",
-          "    if False:\n"
-          "        return False\n",
-          _p("p11g_not_eligible[closed_item]", "p11b_manual_closure_through_the_route")),
+        m("M-E5-20", "the view offers the action while the op is manual_pending", EL_UI,
+          "    if display == \"pending\" and item.get(\"state\") != \"resolved\":\n"
+          "        return [f\"<p>{ui.esc(PENDING_LABEL)}</p>\"]\n"
+          "    if not _may_record(lifecycle, item, display):\n",
+          "    if not _may_record(lifecycle, item,"
+          " \"actionable\" if display == \"pending\" else display):\n",
+          _p("p11l_pending_shows_being_confirmed")),
+        m("M-E5-21", "t135 reports a closed doc item as actionable", UNITS,
+          "        CASE WHEN v_item_state = 'resolved' THEN 'closed'\n"
+          "             WHEN v_op_state = 'manual_pending' THEN 'pending'\n",
+          "        CASE WHEN v_op_state = 'manual_pending' THEN 'pending'\n",
+          _p("p11g_not_eligible[closed_item]"), **el),
+        m("M-E5-22", "t135 reports a manual_pending op as actionable", UNITS,
+          "             WHEN v_op_state = 'manual_pending' THEN 'pending'\n",
+          "             WHEN v_op_state = 'manual_pending' THEN 'actionable'\n",
+          _p("p11l_pending_shows_being_confirmed"), **el),
     )
 
 

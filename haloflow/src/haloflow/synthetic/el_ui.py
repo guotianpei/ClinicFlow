@@ -43,6 +43,7 @@ CLOSE_TYPES: Final = frozenset({"resolve", "claim_and_resolve"})
 MAX_FIELDS: Final = 9
 # E5 REVISE 2026-11-24: the staff action on the open "Chart entry needs a check" item.
 CHART_RECORDED_LABEL: Final = "Recorded in chart manually"     # OD-EL14 (Rachel 2026-11-24)
+PENDING_LABEL: Final = "Being confirmed"                        # OD-EL15 (Rachel 2026-11-24)
 RECORDED_FIELDS: Final = frozenset({"csrf", "expected_version"})
 
 
@@ -256,10 +257,11 @@ async def action(lifecycle: Any, endpoint: str, request: Request) -> Response:
 
 # ---------------------------------------------------------------------------- E5 manual action
 
-def _may_record(lifecycle: Any, item: Mapping[str, Any]) -> bool:
-    """The action is offered on an open doc item (or one in progress by the viewer). The op
-    state is decided by t134 on submission (a non-needs_check op is refused, no change)."""
-    if item.get("state") not in ("open", "in_progress"):
+def _may_record(lifecycle: Any, item: Mapping[str, Any], display: object) -> bool:
+    """The action is offered only when t135 reports the item `actionable` (not resolved, op
+    needs_check; t135 is the one source of the item's display state) and it is not in progress
+    by someone else. t134 re-checks every condition on submission (refusals change nothing)."""
+    if display != "actionable":
         return False
     services = lifecycle.services
     principal = str(services.staff_id) if services is not None else None
@@ -267,9 +269,34 @@ def _may_record(lifecycle: Any, item: Mapping[str, Any]) -> bool:
     return assignee is None or str(assignee) == principal
 
 
-def doc_section(lifecycle: Any, item: Mapping[str, Any]) -> list[str]:
-    """The doc item's action: one form, hidden csrf + expected_version, one button."""
-    if not _may_record(lifecycle, item):
+async def doc_display(lifecycle: Any, context: Any,
+                      item_id: uuid.UUID) -> dict[str, str | None]:
+    """t135 through the staff READ statement (view capability), tenant-bound by the resolved
+    context: {"display": state}, state None when the read gave no usable answer (fail
+    closed)."""
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m05.eligibility_statements import DOC_ITEM_STATE_KEY
+
+    async def run(handle: Any) -> Any:
+        return await handle.fetch_all(DOC_ITEM_STATE_KEY, {"command": Jsonb(
+            {"schema_version": 1, "item_id": str(item_id)})})
+
+    rows = await lifecycle.services.gateway.with_tenant_transaction(context, run)
+    value = rows[0][0] if rows and rows[0] else None
+    display = value.get("display") if isinstance(value, Mapping) else None
+    return {"display": display if display in DISPLAY_STATES else None}
+
+
+DISPLAY_STATES: Final = frozenset({"actionable", "pending", "closed", "other", "none"})
+
+
+def doc_section(lifecycle: Any, item: Mapping[str, Any], display: object) -> list[str]:
+    """Pending (op manual_pending): the OD-EL15 line, no action. Actionable: one form, hidden
+    csrf + expected_version, one button (OD-EL14). Anything else: nothing."""
+    if display == "pending" and item.get("state") != "resolved":
+        return [f"<p>{ui.esc(PENDING_LABEL)}</p>"]
+    if not _may_record(lifecycle, item, display):
         return []
     base = (_hidden("csrf", lifecycle.csrf_token or "")
             + _hidden("expected_version", str(item.get("version"))))

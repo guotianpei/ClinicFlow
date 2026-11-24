@@ -22,7 +22,7 @@ PROFILES: Final = (DEFAULT, ELIGIBILITY)
 STATE_FIELD: Final = "install_profile"
 # OD-EL12 (Rachel 2026-11-22): the eligibility profile adds the t127 contact-history read;
 # E5 (EL-12) adds t128..t134, the simulated chart documentation units.
-TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 134}
+TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 135}    # E5: t128..t135
 B5_SCHEDULERS: Final = ("due", "reminder", "writeback")
 _SCHEDULERS: Final = {DEFAULT: B5_SCHEDULERS, ELIGIBILITY: (*B5_SCHEDULERS, "eligibility")}
 

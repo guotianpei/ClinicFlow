@@ -44,7 +44,7 @@ haloflow.m05.simulated_chart (new module): SimulatedChart over the synthetic clu
   append(permit_id, body) -> APPENDED | EXISTS | ALREADY_USED | PERMIT_CLOSED | TENANT_MISMATCH;
   close_permit(permit_id) -> None-equivalent success | ALREADY_USED | TENANT_MISMATCH;
   read(event_id) -> {"appointment_ref", "permit_id", "body"} | ABSENT.
-haloflow.synthetic.profiles: TARGETS["eligibility"] == 134 (t128..t134); TARGETS["default"] == 97.
+haloflow.synthetic.profiles: TARGETS["eligibility"] == 135 (t128..t135); TARGETS["default"] == 97.
 
 Composition (eligibility profile; PostgreSQL rows):
   lc.chart        the composed SimulatedChart over the install's cluster (schema `sim_chart`);
@@ -93,7 +93,7 @@ from typing import Any, Final
 
 DEFAULT_TARGET: Final = 97
 E4_ELIGIBILITY_TARGET: Final = 127
-ELIGIBILITY_TARGET: Final = 134
+ELIGIBILITY_TARGET: Final = 135          # t128..t135 (t135: REVISE 2026-11-24, Codex D2 (b))
 
 # E1 routing reasons (eligibility_units.py L437-445 on 3ed2433), independent copy (oracle).
 MANUAL_REASONS: Final = ("nonpriority", "no_coverage", "incomplete")

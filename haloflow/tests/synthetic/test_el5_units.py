@@ -213,7 +213,7 @@ def test_el5_u05_schedule_pins() -> None:
 
 
 def test_el5_u06_eligibility_profile_target() -> None:
-    """B. The eligibility profile target moves 127 -> 134 (t128..t134). Baseline: 127."""
+    """B. The eligibility profile target moves 127 -> 135 (t128..t135). Baseline: 127."""
     assert e5.synthetic("profiles").TARGETS["eligibility"] == e5.ELIGIBILITY_TARGET
 
 
@@ -235,3 +235,18 @@ def test_el5_u07_action_label() -> None:
 def test_el5_u07_route_requirement() -> None:
     """A. Recording manual documentation requires the existing `resolve` route capability."""
     assert e5.synthetic("staff_routes")._ROUTE_REQUIREMENT["chart_recorded"] == "resolve"
+
+
+def test_el5_u07_pending_label() -> None:
+    """A. The pending display text is OD-EL15's, exact."""
+    assert e5.synthetic("el_ui").PENDING_LABEL == "Being confirmed"
+
+
+def test_el5_u07_state_read_statement() -> None:
+    """A (Codex D2 ruling (b)): the doc item display-state read is a READ under the existing
+    staff view capability (never the doc / manual capability)."""
+    st = e5.m05("eligibility_statements")
+    mode, capability, sql = st.EL5_STATEMENTS[st.DOC_ITEM_STATE_KEY]
+    assert mode.name == "READ"
+    assert capability == e5.m05("writeback_statements").READ_CAPABILITY == "m05.followup.read"
+    assert sql == "SELECT m05_el_doc_item_state(%(command)s)"

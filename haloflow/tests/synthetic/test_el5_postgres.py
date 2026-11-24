@@ -1315,7 +1315,7 @@ def test_el5_p09a_entries_persist(pg: s.PgCluster, tmp_path: Path, test_zones: N
 
 
 def test_el5_p10a_eligibility_target(pg: s.PgCluster, tmp_path: Path) -> None:
-    """B. The eligibility install's target is 134 (t128..t134). Baseline: 127."""
+    """B. The eligibility install's target is 135 (t128..t135). Baseline: 127."""
     inst = e4.install(pg, tmp_path, e4.ELIGIBILITY)
     assert e4.installed_target(inst) == e5.ELIGIBILITY_TARGET
 
@@ -1689,5 +1689,64 @@ def test_el5_p11k_list_shows_the_doc_item(pg: s.PgCluster, tmp_path: Path,
             r, pg_ = await e4.page(app, e4.UI_PREFIX)
             assert r.status == 200, (r.status, r.raw[:300])
             assert e5.DOC_TITLE in pg_.text
+
+    run(body())
+
+
+PENDING_TEXT: Final = "Being confirmed"                     # OD-EL15 (Rachel 2026-11-24), exact
+
+
+def test_el5_p11l_pending_shows_being_confirmed(pg: s.PgCluster, tmp_path: Path,
+                                                test_zones: None,
+                                                monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (Codex D2 ruling (b), A6.3): an open doc item whose op is manual_pending (FIXTURE: the
+    state t134 phase 1 leaves until phase 2 commits) is shown as "Being confirmed" with NO
+    action; a POST of the form rendered while it was actionable is refused (t134), with op,
+    item, permits, entries and attribution unchanged."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            assert PENDING_TEXT not in pg_.raw
+            e4.q(inst, "UPDATE {s}.m05_el_doc_ops SET state = 'manual_pending'"
+                 " WHERE event_id = %s", (ev,))
+            r, pg2 = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            assert r.status == 200, (r.status, r.raw[:300])
+            assert f"<p>{PENDING_TEXT}</p>" in pg2.raw
+            assert _recorded_action(item) not in [x.action for x in pg2.forms]
+            assert CHART_RECORDED not in pg2.raw
+            seen = _spy_manual(lc, monkeypatch)
+            before = _snapshot(inst, ev)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            assert "refused" in " ".join(r.header("location"))
+            assert len(seen) == 1                    # refused by t134, server-side
+            assert _snapshot(inst, ev) == before
+
+    run(body())
+
+
+def test_el5_p11m_view_only_staff_sees_the_state(pg: s.PgCluster, tmp_path: Path,
+                                                 test_zones: None) -> None:
+    """A (Codex D2 ruling (b)): staff with view access only (no resolve) still open the doc
+    item: 200, its title, and its display state (the bounded state read needs the view
+    capability only, never the manual/write capability)."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            bb.standing_override(inst, access=("read",))
+            e4.q(inst, "UPDATE {s}.m05_el_doc_ops SET state = 'manual_pending'"
+                 " WHERE event_id = %s", (ev,))
+            r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            assert r.status == 200, (r.status, r.raw[:300])
+            assert f"<h1>{e5.DOC_TITLE}</h1>" in pg_.raw
+            assert f"<p>{PENDING_TEXT}</p>" in pg_.raw
 
     run(body())

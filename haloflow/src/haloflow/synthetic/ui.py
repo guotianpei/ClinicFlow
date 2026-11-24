@@ -473,6 +473,16 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
                                  lambda m05, ctx: m05.reason(ctx, item_id))
         display = await _read(lifecycle, "get",
                               lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
+        doc_display: object = None
+        if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
+            from haloflow.synthetic import el_ui as _el  # E5 (t135, D2 (b))
+
+            try:
+                doc_display = (await _read(
+                    lifecycle, "get",
+                    lambda _m05, ctx: _el.doc_display(lifecycle, ctx, item_id))).get("display")
+            except _Failed:
+                doc_display = None                      # fail closed: no action, no state
         case: Mapping[str, Any] | None = None
         contacts: Mapping[Any, Any] = {}
         if item.get("item_kind") in EL_KINDS:                       # E4 (D-E4-5)
@@ -503,9 +513,9 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
 
         parts.extend(el_ui.section(lifecycle, item, case))
     if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
-        from haloflow.synthetic import el_ui                          # E5 (R6.3b, OD-EL14)
+        from haloflow.synthetic import el_ui  # E5 (R6.3b, OD-EL14)
 
-        parts.extend(el_ui.doc_section(lifecycle, item))
+        parts.extend(el_ui.doc_section(lifecycle, item, doc_display))
     rows = []
     for entry in history.get("entries", []):
         if not isinstance(entry, Mapping):
