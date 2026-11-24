@@ -215,3 +215,23 @@ def test_el5_u05_schedule_pins() -> None:
 def test_el5_u06_eligibility_profile_target() -> None:
     """B. The eligibility profile target moves 127 -> 134 (t128..t134). Baseline: 127."""
     assert e5.synthetic("profiles").TARGETS["eligibility"] == e5.ELIGIBILITY_TARGET
+
+
+# ---------------------------------------------------------------------------- staff route (A)
+# REVISE 2026-11-24 (codex_e5-green-review.md); design Codex-aligned
+# (codex_e5-manual-route-ruling.md); wording owner decision 4 + OD-EL14 (Rachel 2026-11-24).
+
+
+def test_el5_u07_doc_item_title() -> None:
+    """A. The doc item kind has the owner-decision-4 title on the staff screen, exact."""
+    assert e5.synthetic("ui").KIND_LABELS[e5.DOC_KIND] == e5.DOC_TITLE
+
+
+def test_el5_u07_action_label() -> None:
+    """A. The staff action label is OD-EL14's, exact."""
+    assert e5.synthetic("el_ui").CHART_RECORDED_LABEL == "Recorded in chart manually"
+
+
+def test_el5_u07_route_requirement() -> None:
+    """A. Recording manual documentation requires the existing `resolve` route capability."""
+    assert e5.synthetic("staff_routes")._ROUTE_REQUIREMENT["chart_recorded"] == "resolve"

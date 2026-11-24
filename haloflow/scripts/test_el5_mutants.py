@@ -41,7 +41,8 @@ def test_mutants_apply_exactly_once_and_change_the_target() -> None:
 def test_ids_are_the_predeclared_e4_set() -> None:
     ids = [m.id for m in _mutants()]
     assert len(set(ids)) == len(ids)
-    assert ids == [f"M-E5-{i}" for i in range(1, 17)]
+    # M-E5-17..20: the staff route (REVISE 2026-11-24, Codex-aligned).
+    assert ids == [f"M-E5-{i}" for i in range(1, 21)]
 
 
 def test_declared_rows_name_e4_test_functions() -> None:

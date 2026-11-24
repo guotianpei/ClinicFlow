@@ -503,7 +503,11 @@ def _synthetic_staff_v4() -> type:
     from haloflow.m05.eligibility_staff import EL_KINDS, StaffServiceV4
     from haloflow.m05.writeback import ITEM_KINDS_V3, _bind_item_v3, _bind_list_v3
 
-    kinds = frozenset(ITEM_KINDS_V3) | frozenset(EL_KINDS)
+    from haloflow.m05.eligibility_doc import DOC_KIND
+
+    # E5: the "Chart entry needs a check" item kind (owner decision 4) is read like the
+    # eligibility kinds; without it the item view and the whole list refused (503).
+    kinds = frozenset(ITEM_KINDS_V3) | frozenset(EL_KINDS) | frozenset({DOC_KIND})
     shadow_kind = next(iter(sorted(ITEM_KINDS_V3)))
 
     def shadow(view: Any) -> Any:

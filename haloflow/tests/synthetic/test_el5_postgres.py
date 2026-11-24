@@ -19,11 +19,12 @@ import logging
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import b2_support as s
 import b3a_support as b3
 import b3b_support as bb
+import b4_support as b4
 import el4_support as e4
 import el5_support as e5
 import ob5_support as b5
@@ -1332,3 +1333,361 @@ def test_el5_p10c_production_set_unchanged() -> None:
     comp = importlib.import_module("haloflow.composition")
     assert frozenset({36}) == comp.APPROVED_SUPPORTED_SCHEMA_VERSIONS
 
+
+
+
+# ===================================================================== D11 staff route (R6.3b)
+# REVISE of 2026-11-24 (codex_e5-green-review.md): the staff action "Recorded in chart
+# manually" (OD-EL14, Rachel 2026-11-24) on the open "Chart entry needs a check" item (owner
+# decision 4), exercised ONLY through HTTP. Design:
+# claude_e5-manual-route-proposal-v1-2026-11-24.md + its D2 correction (Codex ALIGN
+# codex_e5-manual-route-ruling.md, riders adopted). Class A unless stated.
+
+CHART_RECORDED: Final = "Recorded in chart manually"          # OD-EL14, exact
+FALLBACK_STAFF: Final = "staff-1"     # the fixed fallback identity M-E5-18 substitutes
+
+
+def _recorded_action(item: str) -> str:
+    return f"{e4.UI_PREFIX}/{item}/chart-recorded"
+
+
+def _attribution(inst: b3.Install, ev: str) -> tuple[Any, Any]:
+    ((by, at),) = e4.q(inst, "SELECT manual_by, manual_at FROM {s}.m05_el_doc_ops"
+                       " WHERE event_id = %s", (ev,))
+    return by, at
+
+
+def _snapshot(inst: b3.Install, ev: str) -> tuple[Any, ...]:
+    return (e5.op(inst, ev), e5.doc_items(inst), e5.permits(inst, ev),
+            e5.entry_rows_raw(inst, ev), _attribution(inst, ev))
+
+
+def _spy_manual(lc: Any, monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
+    """Counts DocService.manual calls (the route must refuse BEFORE any doc call)."""
+    seen: list[tuple[Any, ...]] = []
+    cls = type(lc.doc_service)
+    original = cls.manual
+
+    async def spy(self: Any, staff_ctx: Any, item_id: str, expected_version: int) -> str:
+        seen.append((getattr(staff_ctx, "tenant_id", None),
+                     str(getattr(getattr(staff_ctx, "principal", None), "id", None)),
+                     item_id, expected_version))
+        return await original(self, staff_ctx, item_id, expected_version)
+
+    monkeypatch.setattr(cls, "manual", spy)
+    return seen
+
+
+async def _open_doc_item(inst: b3.Install, lc: Any, app: Any,
+                         tok: str) -> tuple[str, str, str, int]:
+    ref, ev = await _escalate(inst, lc, app, tok)
+    ((item, st, _o, ver),) = e5.doc_items(inst)
+    assert st == "open"
+    return ref, ev, item, ver
+
+
+def _the_form(pg_: Any, item: str) -> Any:
+    f = b4.form_of(pg_, _recorded_action(item))
+    assert f.method.lower() == "post"
+    return f
+
+
+def test_el5_p11a_view_shows_the_action(pg: s.PgCluster, tmp_path: Path,
+                                        test_zones: None) -> None:
+    """A. The open doc item's view: title "Chart entry needs a check" (owner decision 4) and
+    exactly one form posting to .../chart-recorded, hidden fields exactly csrf and
+    expected_version (the item version), button text exactly "Recorded in chart manually"."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, _ev, item, ver = await _open_doc_item(inst, lc, app, tok)
+            r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            assert r.status == 200, (r.status, r.raw[:300])
+            assert f"<h1>{e5.DOC_TITLE}</h1>" in pg_.raw
+            f = _the_form(pg_, item)
+            assert set(f.fields) == {"csrf", "expected_version"}, f.fields
+            assert f.hidden("expected_version") == str(ver)
+            assert f.radios == {}
+            assert pg_.raw.count(CHART_RECORDED) == 1
+            assert f"<button type=\"submit\">{CHART_RECORDED}</button>" in pg_.raw
+
+    run(body())
+
+
+def test_el5_p11b_manual_closure_through_the_route(pg: s.PgCluster, tmp_path: Path,
+                                                   test_zones: None) -> None:
+    """A. POST the rendered form (entry absent) -> 303 to the item; item resolved once with
+    manual_documentation; the persisted manual_by is the RESOLVED principal (the install's
+    staff id, asserted distinct from the fixed fallback identity), manual_at set; the permit is
+    closed; later passes and a fresh worker append nothing (R6.4); the view then shows no
+    action."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            principal = str(lc.services.staff_id)
+            assert principal != FALLBACK_STAFF                  # premise (Codex rider)
+            assert _attribution(inst, ev) == (None, None)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            ((_i, st, outcome, _v),) = e5.doc_items(inst)
+            assert (st, outcome) == ("resolved", "manual_documentation")
+            by, at = _attribution(inst, ev)
+            assert str(by) == principal and at is not None
+            assert e5.op(inst, ev)["state"] == "manual_done"
+            assert all(state != "open" for _p, state in e5.permits(inst, ev))
+            appends = e5.calls(chart_of(lc), "append")
+            for _ in range(2):
+                e5.age_op(inst, ev)
+                await doc_pass(app, tok)
+            assert e5.calls(chart_of(lc), "append") == appends
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            assert _recorded_action(item) not in [x.action for x in pg_.forms]
+            assert CHART_RECORDED not in pg_.raw
+        async with e4.running(inst, app_name="el5-fresh") as (lc2, app2):
+            tok2 = await e4.token(app2)
+            await doc_pass(app2, tok2)
+            assert e5.calls(chart_of(lc2), "append") == 0 and e5.entries(inst) == []
+
+    run(body())
+
+
+def test_el5_p11c_entry_present_confirmed(pg: s.PgCluster, tmp_path: Path,
+                                          test_zones: None) -> None:
+    """A. The entry landed late (P04c fixture) and staff record before the confirmation read:
+    the route's manual action reads it -> outcome entry_confirmed, one entry, item resolved
+    once, attribution recorded."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            p = e5.op(inst, ev)["permit_id"]
+            inst.admin("UPDATE sim_chart.permits SET state = 'used' WHERE permit_id = %s", (p,))
+            inst.admin("INSERT INTO sim_chart.entries (tenant, event_id, appointment_ref,"
+                       " permit_id, body, committed_at) VALUES (%s, %s, %s, %s, '{}'::jsonb,"
+                       " clock_timestamp())", (tenant_id(inst), ev, ref, p))
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            ((_i, st, outcome, _v),) = e5.doc_items(inst)
+            assert (st, outcome) == ("resolved", "entry_confirmed")
+            assert len(e5.entries(inst)) == 1
+            assert str(_attribution(inst, ev)[0]) == str(lc.services.staff_id)
+
+    run(body())
+
+
+def test_el5_p11d_stale_version(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                                monkeypatch: pytest.MonkeyPatch) -> None:
+    """A. The form is rendered at version v; the item then changes underneath (FIXTURE: its
+    version -> v + 1, a concurrent change), and the rendered form is posted unchanged: v is a
+    syntactically valid PRIOR version, so the post reaches concurrency validation -> 409 with
+    the OD-B4-2 reload message; op, item (beyond the fixture), permits, entries and attribution
+    unchanged."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, ver = await _open_doc_item(inst, lc, app, tok)
+            seen = _spy_manual(lc, monkeypatch)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            assert f.hidden("expected_version") == str(ver)
+            e4.q(inst, "UPDATE {s}.m05_followup_items SET version = version + 1"
+                 " WHERE item_id = %s", (item,))
+            prior = ver
+            before = _snapshot(inst, ev)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 409, (r.status, r.raw[:300])
+            assert e4.mod("ui").MESSAGES["conflict"] in r.raw.decode()
+            assert len(seen) == 1 and seen[0][3] == prior   # it reached the doc service
+            assert _snapshot(inst, ev) == before
+
+    run(body())
+
+
+@pytest.mark.parametrize("csrf", ["missing", "wrong"])
+def test_el5_p11e_csrf(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                       monkeypatch: pytest.MonkeyPatch, csrf: str) -> None:
+    """A. A missing or wrong CSRF token -> 403 before any doc call; nothing changes."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            seen = _spy_manual(lc, monkeypatch)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            before = _snapshot(inst, ev)
+            value = None if csrf == "missing" else "x" * len(f.hidden("csrf"))
+            r = await e4.post_form(app, f.action, b4.submit_fields(f, csrf=value))
+            assert r.status == 403, (r.status, r.raw[:300])
+            assert seen == []
+            assert _snapshot(inst, ev) == before
+
+    run(body())
+
+
+@pytest.mark.parametrize("standing", ["read_only", "inactive"])
+def test_el5_p11f_unauthorized_staff(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                                     monkeypatch: pytest.MonkeyPatch, standing: str) -> None:
+    """A. The staff member may not resolve items (read-only access, or inactive) -> refused by
+    the existing two-step resolution; DocService.manual is never called; nothing changes,
+    manual_by stays null."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            seen = _spy_manual(lc, monkeypatch)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            before = _snapshot(inst, ev)
+            if standing == "read_only":
+                bb.standing_override(inst, access=("read",))
+            else:
+                bb.standing_override(inst, status="inactive")
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status in (303, 403), (r.status, r.raw[:300])
+            if r.status == 303:
+                assert "refused" in " ".join(r.header("location"))
+            assert seen == []
+            assert _snapshot(inst, ev) == before
+            assert _attribution(inst, ev) == (None, None)
+
+    run(body())
+
+
+@pytest.mark.parametrize("case", ["closed_item", "op_not_needs_check"])
+def test_el5_p11g_not_eligible(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                               case: str) -> None:
+    """A. A closed doc item: the view shows NO action (asserted by GET before posting) and a
+    POST of the earlier rendered form is refused. An open item whose op is not needs_check: the
+    POST is refused by t134. Nothing changes in either case."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            if case == "closed_item":
+                e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved',"
+                     " outcome_code = 'manual_documentation' WHERE item_id = %s", (item,))
+                _r, pg2 = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+                assert _recorded_action(item) not in [x.action for x in pg2.forms]
+                assert CHART_RECORDED not in pg2.raw
+            else:
+                e4.q(inst, "UPDATE {s}.m05_el_doc_ops SET state = 'manual_pending'"
+                     " WHERE event_id = %s", (ev,))
+            before = _snapshot(inst, ev)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            assert "refused" in " ".join(r.header("location"))
+            assert _snapshot(inst, ev) == before
+
+    run(body())
+
+
+def test_el5_p11h_wrong_kind(pg: s.PgCluster, tmp_path: Path, test_zones: None) -> None:
+    """A. chart-recorded on an E4 eligibility item (not the doc kind) -> 404; the item is
+    unchanged."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            await make_event(inst, app, tok, "manual:no_coverage")
+            ((el_item, _k, _st),) = [x for x in e4.el_items(inst)]
+            before = e4.item_state(inst, el_item)
+            ((ver,),) = e4.q(inst, "SELECT version FROM {s}.m05_followup_items"
+                             " WHERE item_id = %s", (el_item,))
+            r = await e4.post_form(app, _recorded_action(el_item), [
+                ("csrf", lc.csrf_token), ("expected_version", str(ver))])
+            assert r.status == 404, (r.status, r.raw[:300])
+            assert e4.item_state(inst, el_item) == before
+
+    run(body())
+
+
+@pytest.mark.parametrize("shape", ["extra_field", "duplicate_field", "non_integer_version",
+                                   "missing_version"])
+def test_el5_p11i_form_shape(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                             monkeypatch: pytest.MonkeyPatch, shape: str) -> None:
+    """A. Field set exactly {csrf, expected_version}: an extra or duplicate field, a
+    non-canonical version, or a missing version -> 400 before any doc call; unchanged."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, ver = await _open_doc_item(inst, lc, app, tok)
+            seen = _spy_manual(lc, monkeypatch)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            fields = b4.submit_fields(f)
+            if shape == "extra_field":
+                fields.append(("staff_id", FALLBACK_STAFF))
+            elif shape == "duplicate_field":
+                fields.append(("expected_version", str(ver)))
+            elif shape == "non_integer_version":
+                fields = b4.submit_fields(f, expected_version="01")
+            else:
+                fields = b4.submit_fields(f, expected_version=None)
+            before = _snapshot(inst, ev)
+            r = await e4.post_form(app, f.action, fields)
+            assert r.status == 400, (shape, r.status, r.raw[:300])
+            assert seen == []
+            assert _snapshot(inst, ev) == before
+
+    run(body())
+
+
+def test_el5_p11j_chart_page_read_only(pg: s.PgCluster, tmp_path: Path,
+                                       test_zones: None) -> None:
+    """C. The chart page stays read-only: no form on it, and POST to it is not served."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            ref, _ev = await make_event(inst, app, tok, "inactive")
+            await doc_pass(app, tok)
+            r, pg_ = await e4.page(app, f"/synthetic/ui/chart/{ref}")
+            assert r.status == 200 and pg_.forms == [] and "<form" not in pg_.raw
+            r = await e4.post_form(app, f"/synthetic/ui/chart/{ref}",
+                                   [("csrf", lc.csrf_token)])
+            # 415: the B3b gate refuses a form body on a path with no form handler (pre-routing).
+            assert r.status in (404, 405, 415), (r.status, r.raw[:200])
+
+    run(body())
+
+
+def test_el5_p11k_list_shows_the_doc_item(pg: s.PgCluster, tmp_path: Path,
+                                          test_zones: None) -> None:
+    """A. With an open doc item present, the staff item list still renders (200) and lists it
+    under its owner-decision-4 title (the synthetic read validators accept the doc kind)."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            await _open_doc_item(inst, lc, app, tok)
+            r, pg_ = await e4.page(app, e4.UI_PREFIX)
+            assert r.status == 200, (r.status, r.raw[:300])
+            assert e5.DOC_TITLE in pg_.text
+
+    run(body())

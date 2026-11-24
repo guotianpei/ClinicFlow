@@ -41,6 +41,9 @@ CLOSE_REQUIRED: Final = frozenset({"csrf", "type", "client_action_id", "expected
                                    "outcome_code", *ui.TOKEN_FIELDS})
 CLOSE_TYPES: Final = frozenset({"resolve", "claim_and_resolve"})
 MAX_FIELDS: Final = 9
+# E5 REVISE 2026-11-24: the staff action on the open "Chart entry needs a check" item.
+CHART_RECORDED_LABEL: Final = "Recorded in chart manually"     # OD-EL14 (Rachel 2026-11-24)
+RECORDED_FIELDS: Final = frozenset({"csrf", "expected_version"})
 
 
 def _hidden(name: str, value: object) -> str:
@@ -248,4 +251,89 @@ async def action(lifecycle: Any, endpoint: str, request: Request) -> Response:
         return ui._redirect(item_id, "refused")
     if code == "MALFORMED":
         return ui._error_page(400)
+    return ui._redirect(item_id, "unavailable")
+
+
+# ---------------------------------------------------------------------------- E5 manual action
+
+def _may_record(lifecycle: Any, item: Mapping[str, Any]) -> bool:
+    """The action is offered on an open doc item (or one in progress by the viewer). The op
+    state is decided by t134 on submission (a non-needs_check op is refused, no change)."""
+    if item.get("state") not in ("open", "in_progress"):
+        return False
+    services = lifecycle.services
+    principal = str(services.staff_id) if services is not None else None
+    assignee = item.get("assignee_id")
+    return assignee is None or str(assignee) == principal
+
+
+def doc_section(lifecycle: Any, item: Mapping[str, Any]) -> list[str]:
+    """The doc item's action: one form, hidden csrf + expected_version, one button."""
+    if not _may_record(lifecycle, item):
+        return []
+    base = (_hidden("csrf", lifecycle.csrf_token or "")
+            + _hidden("expected_version", str(item.get("version"))))
+    action = f"{ui.UI_PREFIX}/{ui.esc(item.get('item_id'))}/chart-recorded"
+    return [f"<form method=\"post\" action=\"{action}\">{base}"
+            f"<button type=\"submit\">{ui.esc(CHART_RECORDED_LABEL)}</button></form>"]
+
+
+_DOC_REFUSED_403: Final = frozenset({"TENANT_MISMATCH", "CAPABILITY_REFUSED", "CONTEXT_INVALID"})
+
+
+async def chart_recorded(lifecycle: Any, request: Request) -> Response:
+    """POST .../chart-recorded: every refusal before any principal resolution or doc call
+    (path, byte cap, raw form rules with exactly {csrf, expected_version}, CSRF, canonical
+    version); then the existing two-step staff resolution (route `chart_recorded` requires
+    `resolve`), and DocService.manual with the install's authorized staff context for the
+    RESOLVED principal (the attribution), bound to the resolved context's tenant."""
+    from haloflow.m05.eligibility_doc import DocRefused
+
+    try:
+        item_id = _path_uuid(request.path_params["item_id"], "item_id")
+    except _Malformed:
+        return ui._error_page(404)
+    try:
+        raw = await ui._bounded_body(request)
+        fields = ui.parse_form(raw, allowed=RECORDED_FIELDS, max_fields=len(RECORDED_FIELDS))
+    except ui.FormRefused as refused:
+        return ui._error_page(refused.status)
+    if "csrf" not in fields or not ui._csrf_ok(fields["csrf"], lifecycle.csrf_token):
+        return ui._error_page(403)
+    version = fields.get("expected_version")
+    if version is None or not ui._VERSION.fullmatch(version):
+        return ui._error_page(400)
+    expected = int(version)
+    if lifecycle.doc_service is None:
+        return ui._error_page(503)
+
+    async def call(_m05: Any, context: Any) -> dict[str, Any]:
+        staff_ctx = lifecycle.staff_context(str(context.principal.id))
+        if staff_ctx.tenant_id != context.tenant_id:      # authorized tenant binding
+            return {"refused": "TENANT_MISMATCH"}
+        try:
+            return {"outcome": await lifecycle.doc_service.manual(
+                staff_ctx, str(item_id), expected)}
+        except DocRefused as refused:
+            return {"refused": refused.code}
+
+    value = await execute(lifecycle, "chart_recorded", call)
+    if isinstance(value, Mapping) and "outcome" in value:
+        return ui._redirect(item_id)
+    if isinstance(value, Mapping):
+        code = value.get("refused")
+        if code == "VERSION_STALE":
+            return _case_changed(item_id)
+        if code == "ITEM_NOT_FOUND":
+            return ui._error_page(404)
+        if code in _DOC_REFUSED_403:
+            return ui._error_page(403)
+        if code == "COMMAND_MALFORMED":
+            return ui._error_page(400)
+        return ui._redirect(item_id, "refused")
+    if isinstance(value, Response):
+        if value.status_code in (403, 409):
+            return ui._redirect(item_id, "refused")
+        if ui._code(value) in ("NOT_FOUND", "ITEM_NOT_FOUND"):
+            return ui._error_page(404)
     return ui._redirect(item_id, "unavailable")

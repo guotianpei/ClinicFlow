@@ -1,4 +1,4 @@
-"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-16). SYNTHETIC ONLY.
+"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-20). SYNTHETIC ONLY.
 
 Targets and killing rows predeclared in the E5 test cases v1r1 "Mutation controls" table
 (Codex ALIGN 9e6974f2; architecture v1r1 A9 + A11):
@@ -19,6 +19,11 @@ M-E5-13 a fourth append attempt allowed                                         
 M-E5-14 append without a successful current-epoch mark-sent                            P03l
 M-E5-15 settle accepts an entry under a permit the op did not issue                    P05f
 M-E5-16 the reconciliation read counter is not durable (reset on re-claim)             P03k
+Staff route (REVISE 2026-11-24; Codex ALIGN codex_e5-manual-route-ruling.md + D2 correction):
+M-E5-17 the chart-recorded route skips the CSRF check                                  P11e
+M-E5-18 attribution from a fixed fallback identity, not the resolved principal         P11b P11c
+M-E5-19 chart_recorded needs only the `get` route capability (read-only staff may act) P11f
+M-E5-20 the action is rendered on a closed doc item                                    P11g P11b
 
 Every mutant that edits SQL composed into the eligibility registry (rules selection, t129..t134
 bodies) is RE-PINNED: the harness re-measures the ELIGIBILITY installed-state profile on the
@@ -44,6 +49,8 @@ HERE = Path(__file__).resolve().parent
 M05: Final = Path("src/haloflow/m05")
 RULES, UNITS, DOC, CHART = (M05 / "eligibility_doc_rules.py", M05 / "eligibility_doc_units.py",
                             M05 / "eligibility_doc.py", M05 / "simulated_chart.py")
+SYN: Final = Path("src/haloflow/synthetic")
+EL_UI, ROUTES = SYN / "el_ui.py", SYN / "staff_routes.py"
 EP: Final = "tests/synthetic/test_el5_postgres.py::"
 
 
@@ -208,6 +215,28 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           "        UPDATE {schema}.m05_el_doc_ops SET epoch = epoch + 1, reads = 0,"
           " lease_until = \"\"\" + _LEASE + r\"\"\",\n",
           _p("p03k_held_uncommitted_reads_unavailable"), **el),
+        m("M-E5-17", "the chart-recorded route skips the CSRF check", EL_UI,
+          "    if \"csrf\" not in fields or not ui._csrf_ok(fields[\"csrf\"],"
+          " lifecycle.csrf_token):\n"
+          "        return ui._error_page(403)\n"
+          "    version = fields.get(\"expected_version\")\n",
+          "    version = fields.get(\"expected_version\")\n",
+          _p("p11e_csrf[missing]", "p11e_csrf[wrong]")),
+        m("M-E5-18", "the attribution is a fixed fallback identity, not the resolved principal",
+          EL_UI,
+          "        staff_ctx = lifecycle.staff_context(str(context.principal.id))\n",
+          "        staff_ctx = lifecycle.staff_context(\"staff-1\")\n",
+          _p("p11b_manual_closure_through_the_route", "p11c_entry_present_confirmed")),
+        m("M-E5-19", "chart_recorded needs only the get route capability", ROUTES,
+          "                             \"chart_recorded\": \"resolve\"}\n",
+          "                             \"chart_recorded\": \"get\"}\n",
+          _p("p11f_unauthorized_staff[read_only]")),
+        m("M-E5-20", "the action is rendered on a closed doc item", EL_UI,
+          "    if item.get(\"state\") not in (\"open\", \"in_progress\"):\n"
+          "        return False\n",
+          "    if False:\n"
+          "        return False\n",
+          _p("p11g_not_eligible[closed_item]", "p11b_manual_closure_through_the_route")),
     )
 
 

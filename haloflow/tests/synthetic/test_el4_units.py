@@ -238,7 +238,9 @@ def test_el4_u05_kind_titles() -> None:
     ui = e4.mod("ui")
     for kind, title in e4.EL_TITLES.items():
         assert ui.KIND_LABELS.get(kind) == title, (kind, ui.KIND_LABELS.get(kind))
-    assert len(ui.KIND_LABELS) == 8
+    # Eligibility E5 (declared pin move, 2026-11-24): + owner decision 4's doc-check title.
+    assert len(ui.KIND_LABELS) == 9
+    assert ui.KIND_LABELS["eligibility_doc_check"] == "Chart entry needs a check"
 
 
 def test_el4_u05_eligibility_label_tables_control() -> None:
@@ -324,9 +326,12 @@ def _routes(profile: str | None) -> set[tuple[str, str]]:
 EL4_ROUTES = {("POST", e4.CLEARINGHOUSE_ROUTE), ("POST", e4.CLEARINGHOUSE_FORM),
               ("POST", e4.UI_PREFIX + "/{item_id}/contact"),
               ("POST", e4.UI_PREFIX + "/{item_id}/close")}
-# Eligibility E5 (EL-12; declared pin move): the read-only simulated chart page (R9.1) is the
-# one route E5 adds, eligibility profile only.
-EL5_ROUTES = {("GET", "/synthetic/ui/chart/{appointment_ref}")}
+# Eligibility E5 (EL-12; declared pin moves): the read-only simulated chart page (R9.1) and the
+# staff action route are the routes E5 adds, eligibility profile only.
+EL5_ROUTES = {("GET", "/synthetic/ui/chart/{appointment_ref}"),
+              # E5 REVISE 2026-11-24 (declared pin move, Codex-aligned): the staff action
+              # "Recorded in chart manually" on the open doc item.
+              ("POST", e4.UI_PREFIX + "/{item_id}/chart-recorded")}
 
 
 def test_el4_u08_default_inventory_control() -> None:
