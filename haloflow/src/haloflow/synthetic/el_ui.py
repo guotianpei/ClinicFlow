@@ -16,6 +16,7 @@ token) before any service call, then executed through `staff_routes.execute`. A 
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Mapping
 from typing import Any, Final
@@ -272,8 +273,8 @@ def _may_record(lifecycle: Any, item: Mapping[str, Any], display: object) -> boo
 async def doc_display(lifecycle: Any, context: Any,
                       item_id: uuid.UUID) -> dict[str, str | None]:
     """t135 through the staff READ statement (view capability), tenant-bound by the resolved
-    context: {"display": state}, state None when the read gave no usable answer (fail
-    closed)."""
+    context: {"display": state, "appointment_ref": ref}; either is None when the read gave no
+    usable answer (fail closed: no action, no state line, no link)."""
     from psycopg.types.json import Jsonb
 
     from haloflow.m05.eligibility_statements import DOC_ITEM_STATE_KEY
@@ -285,23 +286,35 @@ async def doc_display(lifecycle: Any, context: Any,
     rows = await lifecycle.services.gateway.with_tenant_transaction(context, run)
     value = rows[0][0] if rows and rows[0] else None
     display = value.get("display") if isinstance(value, Mapping) else None
-    return {"display": display if display in DISPLAY_STATES else None}
+    ref = value.get("appointment_ref") if isinstance(value, Mapping) else None
+    return {"display": display if display in DISPLAY_STATES else None,
+            "appointment_ref": ref if type(ref) is str and _UUID_TEXT.fullmatch(ref) else None}
+
+
+_UUID_TEXT: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
 DISPLAY_STATES: Final = frozenset({"actionable", "pending", "closed", "other", "none"})
 
 
-def doc_section(lifecycle: Any, item: Mapping[str, Any], display: object) -> list[str]:
-    """Pending (op manual_pending): the OD-EL15 line, no action. Actionable: one form, hidden
-    csrf + expected_version, one button (OD-EL14). Anything else: nothing."""
+def doc_section(lifecycle: Any, item: Mapping[str, Any], display: object,
+                appointment_ref: object = None) -> list[str]:
+    """The read-only chart link of the item's appointment (from its case event row, t135; the
+    existing "Simulated chart" title as its text), then: pending (op manual_pending) the
+    OD-EL15 line, no action; actionable one form, hidden csrf + expected_version, one button
+    (OD-EL14); anything else nothing more."""
+    parts: list[str] = []
+    if type(appointment_ref) is str and _UUID_TEXT.fullmatch(appointment_ref):
+        parts.append(f"<p><a href=\"{CHART_PREFIX}/{appointment_ref}\">"
+                     f"{ui.esc(CHART_TITLE)}</a></p>")
     if display == "pending" and item.get("state") != "resolved":
-        return [f"<p>{ui.esc(PENDING_LABEL)}</p>"]
+        return [*parts, f"<p>{ui.esc(PENDING_LABEL)}</p>"]
     if not _may_record(lifecycle, item, display):
-        return []
+        return parts
     base = (_hidden("csrf", lifecycle.csrf_token or "")
             + _hidden("expected_version", str(item.get("version"))))
     action = f"{ui.UI_PREFIX}/{ui.esc(item.get('item_id'))}/chart-recorded"
-    return [f"<form method=\"post\" action=\"{action}\">{base}"
+    return [*parts, f"<form method=\"post\" action=\"{action}\">{base}"
             f"<button type=\"submit\">{ui.esc(CHART_RECORDED_LABEL)}</button></form>"]
 
 

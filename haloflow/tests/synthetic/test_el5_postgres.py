@@ -1345,6 +1345,8 @@ def test_el5_p10c_production_set_unchanged() -> None:
 
 CHART_RECORDED: Final = "Recorded in chart manually"          # OD-EL14, exact
 FALLBACK_STAFF: Final = "staff-1"     # the fixed fallback identity M-E5-18 substitutes
+CHART_TITLE: Final = "Simulated chart"                     # the existing chart page title
+OTHER_STAFF: Final = "5b0c2f3e-8d41-4c7a-9e2b-1f6a0d9c4e77"  # another staff member (fixture)
 
 
 def _recorded_action(item: str) -> str:
@@ -1402,7 +1404,7 @@ def test_el5_p11a_view_shows_the_action(pg: s.PgCluster, tmp_path: Path,
     async def body() -> None:
         async with e4.running(inst) as (lc, app):
             tok = await e4.token(app)
-            _ref, _ev, item, ver = await _open_doc_item(inst, lc, app, tok)
+            ref, _ev, item, ver = await _open_doc_item(inst, lc, app, tok)
             r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
             assert r.status == 200, (r.status, r.raw[:300])
             assert f"<h1>{e5.DOC_TITLE}</h1>" in pg_.raw
@@ -1412,6 +1414,13 @@ def test_el5_p11a_view_shows_the_action(pg: s.PgCluster, tmp_path: Path,
             assert f.radios == {}
             assert pg_.raw.count(CHART_RECORDED) == 1
             assert f"<button type=\"submit\">{CHART_RECORDED}</button>" in pg_.raw
+            # The read-only chart link of the item's own appointment (Codex 67f14f8 review;
+            # t135 reads it from the item's case event row; existing title as its text).
+            link = f"/synthetic/ui/chart/{ref}"
+            assert f"<a href=\"{link}\">{CHART_TITLE}</a>" in pg_.raw
+            assert link in pg_.links
+            r2, chart = await e4.page(app, link)
+            assert r2.status == 200 and f"<h1>{CHART_TITLE}</h1>" in chart.raw
 
     run(body())
 
@@ -1748,5 +1757,71 @@ def test_el5_p11m_view_only_staff_sees_the_state(pg: s.PgCluster, tmp_path: Path
             assert r.status == 200, (r.status, r.raw[:300])
             assert f"<h1>{e5.DOC_TITLE}</h1>" in pg_.raw
             assert f"<p>{PENDING_TEXT}</p>" in pg_.raw
+
+    run(body())
+
+
+def _assign(inst: b3.Install, item: str, staff: str) -> None:
+    """FIXTURE: the item is in progress with `staff` (as a claim leaves it; version unchanged,
+    so the rendered form stays at the CURRENT version)."""
+    e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'in_progress', assignee_id = %s"
+         " WHERE item_id = %s", (staff, item))
+
+
+def test_el5_p11n_other_assignee_refused(pg: s.PgCluster, tmp_path: Path, test_zones: None,
+                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    """A (Codex 67f14f8 review): the doc item is in progress with ANOTHER staff member. The view
+    offers no action (the chart link stays); a POST by an authorized resolver at the CURRENT
+    version reaches t134 and is refused on the locked row (NOT_ASSIGNEE) -> "refused"; item,
+    op, permits, chart entries and attribution unchanged."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            ref, ev, item, ver = await _open_doc_item(inst, lc, app, tok)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            assert str(lc.services.staff_id) != OTHER_STAFF
+            _assign(inst, item, OTHER_STAFF)
+            _r, pg2 = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            assert _recorded_action(item) not in [x.action for x in pg2.forms]
+            assert f"/synthetic/ui/chart/{ref}" in pg2.links
+            ((cur,),) = e4.q(inst, "SELECT version FROM {s}.m05_followup_items"
+                             " WHERE item_id = %s", (item,))
+            assert f.hidden("expected_version") == str(cur) == str(ver)   # CURRENT version
+            seen = _spy_manual(lc, monkeypatch)
+            before = _snapshot(inst, ev)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            assert "refused" in " ".join(r.header("location"))
+            assert len(seen) == 1                    # authorized resolver; refused in t134
+            assert _snapshot(inst, ev) == before
+            assert e5.entries(inst) == []
+
+    run(body())
+
+
+def test_el5_p11o_self_assignee_records(pg: s.PgCluster, tmp_path: Path,
+                                        test_zones: None) -> None:
+    """A (Codex 67f14f8 review, positive control): the doc item is in progress with the viewer
+    themself -> the action is offered and the POST records: item resolved
+    (manual_documentation), manual_by = the resolved principal."""
+    inst = el_install(pg, tmp_path)
+
+    async def body() -> None:
+        async with e4.running(inst) as (lc, app):
+            tok = await e4.token(app)
+            _ref, ev, item, _ver = await _open_doc_item(inst, lc, app, tok)
+            principal = str(lc.services.staff_id)
+            _assign(inst, item, principal)
+            _r, pg_ = await e4.page(app, f"{e4.UI_PREFIX}/{item}")
+            f = _the_form(pg_, item)
+            r = await e4.post_form(app, f.action, b4.submit_fields(f))
+            assert r.status == 303, (r.status, r.raw[:300])
+            assert "refused" not in " ".join(r.header("location"))
+            ((_i, st, outcome, _v),) = e5.doc_items(inst)
+            assert (st, outcome) == ("resolved", "manual_documentation")
+            assert str(_attribution(inst, ev)[0]) == principal
 
     run(body())

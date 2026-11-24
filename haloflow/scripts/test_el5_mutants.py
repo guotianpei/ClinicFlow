@@ -41,8 +41,9 @@ def test_mutants_apply_exactly_once_and_change_the_target() -> None:
 def test_ids_are_the_predeclared_e4_set() -> None:
     ids = [m.id for m in _mutants()]
     assert len(set(ids)) == len(ids)
-    # M-E5-17..22: the staff route and the t135 display read (REVISE 2026-11-24, Codex-aligned).
-    assert ids == [f"M-E5-{i}" for i in range(1, 23)]
+    # M-E5-17..23: the staff route, the t135 display read and the t134 ownership check
+    # (REVISE 2026-11-24, Codex-aligned).
+    assert ids == [f"M-E5-{i}" for i in range(1, 24)]
 
 
 def test_declared_rows_name_e4_test_functions() -> None:
@@ -60,7 +61,7 @@ def test_declared_rows_name_e4_test_functions() -> None:
 
 
 SQL_MUTANTS = ("M-E5-1", "M-E5-3", "M-E5-6", "M-E5-9", "M-E5-10", "M-E5-13", "M-E5-15",
-               "M-E5-16", "M-E5-21", "M-E5-22")
+               "M-E5-16", "M-E5-21", "M-E5-22", "M-E5-23")
 
 
 def test_exactly_the_sql_mutants_repin_the_eligibility_profile() -> None:

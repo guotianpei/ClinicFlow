@@ -26,12 +26,14 @@ owner decisions Q1-Q5 (2026-11-22) and OD-EL13 (2026-11-23).
   in SQL by the A3 settlement rule (event appointment AND a permit this op issued).
 - t133 `m05_el_doc_raise` (owner only): at most one `eligibility_doc_check` item per event.
 - t134 `m05_el_doc_manual`: the staff "Recorded in chart manually" action, phase 1 on the OPEN
-  item at its expected version with the op in needs_check; phase 2 fenced on that epoch.
+  item at its expected version, not in progress with another staff member (NOT_ASSIGNEE),
+  with the op in needs_check; phase 2 fenced on that epoch.
 - t135 `m05_el_doc_item_state` (STABLE, staff READ; REVISE 2026-11-24, Codex D2 ruling (b)):
   the display state of ONE doc item for the staff view — `actionable` (item open, op
   needs_check), `pending` (op manual_pending: "Being confirmed", A6.3 / OD-EL15), `closed`,
-  `other`, or `none` (no doc item of that id). Reads only; no attribution, no capability of
-  its own beyond the view capability of its statement.
+  `other`, or `none` (no doc item of that id); plus the item's appointment_ref, read from its
+  own case event row, for the read-only chart link. Reads only; no attribution, no capability
+  of its own beyond the view capability of its statement.
 """
 
 from __future__ import annotations
@@ -591,7 +593,8 @@ BEGIN
         v_item_id := (p_command OPERATOR(pg_catalog.->>) 'item_id')::uuid;
         v_version := (p_command OPERATOR(pg_catalog.->>) 'expected_version')::integer;
         v_staff := p_command OPERATOR(pg_catalog.->>) 'staff_id';
-        SELECT i.item_id, i.state, i.version INTO v_item FROM {schema}.m05_followup_items AS i
+        SELECT i.item_id, i.state, i.version, i.assignee_id INTO v_item
+          FROM {schema}.m05_followup_items AS i
          WHERE i.item_id = v_item_id AND i.item_kind = '""" + DOC_KIND + r"""'
            FOR UPDATE;
         IF NOT FOUND THEN
@@ -602,6 +605,11 @@ BEGIN
         END IF;
         IF v_item.version <> v_version THEN
             """ + _raise("VERSION_STALE") + r"""
+        END IF;
+        -- Ownership (Codex 67f14f8 review): an item in progress with another staff member is
+        -- theirs; checked on the LOCKED row, before any attribution is recorded.
+        IF v_item.assignee_id IS NOT NULL AND v_item.assignee_id::text <> v_staff THEN
+            """ + _raise("NOT_ASSIGNEE") + r"""
         END IF;
         SELECT o.* INTO v_op FROM {schema}.m05_el_doc_ops AS o
          WHERE o.item_id = v_item_id FOR UPDATE;
@@ -665,7 +673,9 @@ DECLARE
     v_keys text[];
     v_item_id uuid;
     v_item_state text;
+    v_source uuid;
     v_op_state text;
+    v_ref uuid;
 BEGIN
     v_setting := pg_catalog.current_setting('app.tenant_id', true);
     IF v_setting IS NULL OR v_setting = ''
@@ -685,14 +695,19 @@ BEGIN
         """ + _MALFORMED + r"""
     END IF;
     v_item_id := (p_command OPERATOR(pg_catalog.->>) 'item_id')::uuid;
-    SELECT i.state INTO v_item_state FROM {schema}.m05_followup_items AS i
+    SELECT i.state, i.source_event_id INTO v_item_state, v_source
+      FROM {schema}.m05_followup_items AS i
      WHERE i.item_id = v_item_id AND i.item_kind = '""" + DOC_KIND + r"""';
     IF NOT FOUND THEN
         RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'display', 'none');
     END IF;
     SELECT o.state INTO v_op_state FROM {schema}.m05_el_doc_ops AS o
      WHERE o.item_id = v_item_id;
-    RETURN pg_catalog.jsonb_build_object('schema_version', 1, 'display',
+    -- The appointment comes from the item's own case event row (the trusted binding, A3).
+    SELECT e.appointment_ref INTO v_ref FROM {schema}.m05_el_case_events AS e
+     WHERE e.event_id = v_source;
+    RETURN pg_catalog.jsonb_build_object('schema_version', 1,
+        'appointment_ref', v_ref::text, 'display',
         CASE WHEN v_item_state = 'resolved' THEN 'closed'
              WHEN v_op_state = 'manual_pending' THEN 'pending'
              WHEN v_op_state = 'needs_check' THEN 'actionable'

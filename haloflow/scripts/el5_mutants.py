@@ -1,4 +1,4 @@
-"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-22). SYNTHETIC ONLY.
+"""Eligibility E5 mutation controls, group ``el5`` (M-E5-1..M-E5-23). SYNTHETIC ONLY.
 
 Targets and killing rows predeclared in the E5 test cases v1r1 "Mutation controls" table
 (Codex ALIGN 9e6974f2; architecture v1r1 A9 + A11):
@@ -26,6 +26,7 @@ M-E5-19 chart_recorded needs only the `get` route capability (read-only staff ma
 M-E5-20 the view offers the action while the op is manual_pending (pending = actionable) P11l
 M-E5-21 t135 reports a closed doc item (op still needs_check) as actionable (SQL)       P11g
 M-E5-22 t135 reports a manual_pending op as actionable (SQL; re-pinned)                P11l
+M-E5-23 t134 phase 1 skips the assignee check (another staff member's item; SQL)     P11n
 
 Every mutant that edits SQL composed into the eligibility registry (rules selection, t129..t134
 bodies) is RE-PINNED: the harness re-measures the ELIGIBILITY installed-state profile on the
@@ -235,7 +236,7 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           _p("p11f_unauthorized_staff[read_only]")),
         m("M-E5-20", "the view offers the action while the op is manual_pending", EL_UI,
           "    if display == \"pending\" and item.get(\"state\") != \"resolved\":\n"
-          "        return [f\"<p>{ui.esc(PENDING_LABEL)}</p>\"]\n"
+          "        return [*parts, f\"<p>{ui.esc(PENDING_LABEL)}</p>\"]\n"
           "    if not _may_record(lifecycle, item, display):\n",
           "    if not _may_record(lifecycle, item,"
           " \"actionable\" if display == \"pending\" else display):\n",
@@ -249,6 +250,11 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           "             WHEN v_op_state = 'manual_pending' THEN 'pending'\n",
           "             WHEN v_op_state = 'manual_pending' THEN 'actionable'\n",
           _p("p11l_pending_shows_being_confirmed"), **el),
+        m("M-E5-23", "t134 phase 1 skips the assignee (ownership) check", UNITS,
+          "        IF v_item.assignee_id IS NOT NULL"
+          " AND v_item.assignee_id::text <> v_staff THEN\n",
+          "        IF false THEN\n",
+          _p("p11n_other_assignee_refused"), **el),
     )
 
 

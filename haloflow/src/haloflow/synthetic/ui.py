@@ -474,15 +474,16 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         display = await _read(lifecycle, "get",
                               lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
         doc_display: object = None
+        doc_ref: object = None
         if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
             from haloflow.synthetic import el_ui as _el  # E5 (t135, D2 (b))
 
             try:
-                doc_display = (await _read(
-                    lifecycle, "get",
-                    lambda _m05, ctx: _el.doc_display(lifecycle, ctx, item_id))).get("display")
+                doc_state = await _read(
+                    lifecycle, "get", lambda _m05, ctx: _el.doc_display(lifecycle, ctx, item_id))
+                doc_display, doc_ref = doc_state.get("display"), doc_state.get("appointment_ref")
             except _Failed:
-                doc_display = None                      # fail closed: no action, no state
+                doc_display = doc_ref = None          # fail closed: no action, state or link
         case: Mapping[str, Any] | None = None
         contacts: Mapping[Any, Any] = {}
         if item.get("item_kind") in EL_KINDS:                       # E4 (D-E4-5)
@@ -515,7 +516,7 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
     if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
         from haloflow.synthetic import el_ui  # E5 (R6.3b, OD-EL14)
 
-        parts.extend(el_ui.doc_section(lifecycle, item, doc_display))
+        parts.extend(el_ui.doc_section(lifecycle, item, doc_display, doc_ref))
     rows = []
     for entry in history.get("entries", []):
         if not isinstance(entry, Mapping):

@@ -90,7 +90,7 @@ COUNT_KEYS: Final = ("enqueued", "appended", "retry_wait", "reconciling", "needs
                      "entry_confirmed", "manual_documentation", "refused_mismatch",
                      "foreign_permit", "tenant_mismatch", "stale", "failed")
 _REFUSAL_CODES: Final = frozenset({"ITEM_NOT_FOUND", "ITEM_CLOSED", "VERSION_STALE",
-                                   "OP_NOT_NEEDS_CHECK", "COMMAND_MALFORMED"})
+                                   "NOT_ASSIGNEE", "OP_NOT_NEEDS_CHECK", "COMMAND_MALFORMED"})
 
 
 class SimulatedCrash(Exception):  # noqa: N818 - the pinned name
