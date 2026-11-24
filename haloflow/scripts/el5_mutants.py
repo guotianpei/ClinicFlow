@@ -96,7 +96,7 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           CHART,
           "                        if entry is None:\n",
           "                        if True:\n",
-          _p("p03q_destination_duplicate"),
+          _p("p03q_destination_duplicate[False]", "p03q_destination_duplicate[True]"),
           also=((CHART,
                  "                                \" (%s, %s, %s, %s, %s,"
                  " pg_catalog.clock_timestamp())\",\n",
@@ -140,7 +140,7 @@ def mutants(b3: Any) -> tuple[Any, ...]:
           "        closed = None\n"
           "        if closed not in (None, sc.ALREADY_USED):\n"
           "            raise DocFailed(\"CLOSE_UNKNOWN\")\n",
-          _p("p04fg_manual_vs_delayed_append")),
+          _p("p04fg_manual_vs_delayed_append[manual]")),
         m("M-E5-9", "the reconciliation read budget is unbounded", UNITS,
           "    ELSIF v_result = 'read_unavailable' THEN\n"
           "        IF v_op.reads >= \"\"\" + str(len(READ_DELAYS_S)) + r\"\"\" THEN\n",

@@ -858,8 +858,9 @@ def test_el5_p04b_item_survives_case_closure(pg: s.PgCluster, tmp_path: Path,
             # Codex ruling: the merged resolved-outcome constraint needs an OD-EL6 code.
             e4.q(inst, "UPDATE {s}.m05_followup_items SET state = 'resolved',"
                  " outcome_code = 'el_confirmed_inactive' WHERE item_id = %s", (el_item,))
-            e4.q(inst, "UPDATE {s}.m05_el_cases SET state = 'closed' WHERE item_id = %s",
-                 (el_item,))
+            e4.q(inst, "UPDATE {s}.m05_el_cases SET state = 'closed',"
+                 " closed_at = clock_timestamp(), closure_outcome = 'el_confirmed_inactive'"
+                 " WHERE item_id = %s", (el_item,))
             await doc_pass(app, tok)
             assert [st for _i, st, _o, _v in e5.doc_items(inst)] == ["open"]
 
