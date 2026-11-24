@@ -308,8 +308,17 @@ def _refused_before_pool(inst: b3.Install, profile: str, code: str,
 
     async def body() -> None:
         lc = e4.lifecycle(inst, profile=profile, app_name=app_name)
-        with pytest.raises(e4.mod("errors").SyntheticRefused) as err:
-            await lc.start()
+        try:
+            with pytest.raises(e4.mod("errors").SyntheticRefused) as err:
+                await lc.start()
+        finally:
+            # A missed refusal starts the lifecycle: stop it here (as e4.running does), so the
+            # row fails on DID NOT RAISE instead of leaving its schedulers and pool to
+            # asyncio.run's cancellation (CI 45314777411: M-E4-2 hung to the row timeout).
+            if lc.state == "RUNNING":
+                lc.request_stop("TEST")
+            if lc.state == "STOPPING":
+                await lc.wait_stopped()
         assert err.value.code == code, err.value.code
 
     run(body())
