@@ -25,6 +25,17 @@ FX3a install interface pinned here (red packet v1, section 3):
   NOT_NEEDS_SORTING), 422 MALFORMED, missing CSRF as the existing POST routes.
 No route reaches the support settings gateway or the lines snapshot.
 
+v1r2 (Codex 833c7db review, architecture v1r2 §5.4): the simulated PROVIDER retries.
+- `fax_simulator.MAX_ATTEMPTS == 3`. One simulator request builds ONE payload (one provider_fax_id)
+  and delivers that exact payload up to MAX_ATTEMPTS times: it retries when the outcome is unknown
+  (the acknowledgement was lost) or a 5xx; a 2xx or 4xx is final (no retry). Every response
+  carries `"attempts"`. Exhausted -> 502 {"code": "PROVIDER_RETRY_EXHAUSTED", "attempts": 3,
+  "last_status": <int or null>}.
+- TEST-ONLY fault seam: `lc.fax.faults` (a list); each delivery attempt takes the next entry
+  (none -> no fault): "lose_ack" (the ingress runs and commits, the response is lost),
+  "unavailable" (the receive step fails before any transaction -> ingress 503),
+  "refuse" (the receive step is refused LINE_NOT_REGISTERED -> ingress 409).
+
 Rows:
 - FX3-G02 CONTROL: the default and eligibility installs keep targets 97 / 135
 - FX3-G03 a fax install reaches 144, records install_profile "fax", holds SYN_FAX_LINE; starting it
@@ -36,6 +47,12 @@ Rows:
 - FX3-H02 act staff: sort -> 200 routed; a POST without the CSRF token is refused, ZSE
 - FX3-H03 the route table has no settings or lines route
 - FX3-H04 (single tenant) an unknown fax id -> 404 NOT_FOUND on get / history / open / actions, ZSE
+- FX3-R01 lost acknowledgement after commit -> the provider retries the SAME payload -> 200
+          duplicate of the committed fax, attempts 2; one fax, one sorting item, one receipt history
+- FX3-R02 transient 5xx (before commit) -> retry -> 200 needs_sorting, attempts 2; one fax
+- FX3-R03 terminal 409 -> no retry: 409, attempts 1, no fax
+- FX3-R04 exhaustion: 5xx on every attempt -> 502 PROVIDER_RETRY_EXHAUSTED, attempts 3,
+          last_status 503, no fax
 """
 
 from __future__ import annotations
@@ -234,5 +251,82 @@ def test_fx3_h04_unknown_fax(pg: s.PgCluster, tmp_path: Path) -> None:
                                          {"action": "file", "expected_version": 1})):
                 assert response.status == 404
             assert _zse(inst) == before
+
+    asyncio.run(body())
+
+
+# ============================================================== v1r2: provider retry (§5.4)
+
+def _receipts(inst: b3.Install) -> tuple[int, int, int]:
+    return (len(_fx_rows(inst, "m05_fx_faxes")), len(_fx_rows(inst, "m05_fx_sorting")),
+            len([h for h in _fx_rows(inst, "m05_fx_history")
+                 if h["action"].startswith("received_")]))
+
+
+def test_fx3_r01_lost_ack_retried_same_identity(pg: s.PgCluster, tmp_path: Path) -> None:
+    """A (red v1r2)."""
+    from haloflow.synthetic import fax_simulator
+
+    inst = e4.install(pg, tmp_path, FAX)
+
+    async def body() -> None:
+        async with e4.running(inst, profile=FAX, app_name="fx3-r01") as (lc, app):
+            tok = await e4.token(app)
+            lc.fax.faults.append("lose_ack")
+            out = await _deliver(app, tok)
+            assert fax_simulator.MAX_ATTEMPTS == 3
+            assert (out.status, out.json["outcome"], out.json["attempts"]) == (
+                200, "duplicate", 2)
+            assert [f["fax_id"] for f in _fx_rows(inst, "m05_fx_faxes")] == [out.json["fax_id"]]
+            assert _receipts(inst) == (1, 1, 1)
+
+    asyncio.run(body())
+
+
+def test_fx3_r02_transient_5xx_retried(pg: s.PgCluster, tmp_path: Path) -> None:
+    """A (red v1r2)."""
+    inst = e4.install(pg, tmp_path, FAX)
+
+    async def body() -> None:
+        async with e4.running(inst, profile=FAX, app_name="fx3-r02") as (lc, app):
+            tok = await e4.token(app)
+            lc.fax.faults.append("unavailable")
+            out = await _deliver(app, tok)
+            assert (out.status, out.json["outcome"], out.json["attempts"]) == (
+                200, "needs_sorting", 2)
+            assert _receipts(inst) == (1, 1, 1)
+
+    asyncio.run(body())
+
+
+def test_fx3_r03_terminal_not_retried(pg: s.PgCluster, tmp_path: Path) -> None:
+    """A (red v1r2)."""
+    inst = e4.install(pg, tmp_path, FAX)
+
+    async def body() -> None:
+        async with e4.running(inst, profile=FAX, app_name="fx3-r03") as (lc, app):
+            tok = await e4.token(app)
+            lc.fax.faults.extend(["refuse", "unavailable"])
+            out = await _deliver(app, tok)
+            assert (out.status, out.json["code"], out.json["attempts"]) == (
+                409, "LINE_NOT_REGISTERED", 1)
+            assert lc.fax.faults == ["unavailable"]       # the second attempt never happened
+            assert _receipts(inst) == (0, 0, 0)
+
+    asyncio.run(body())
+
+
+def test_fx3_r04_exhausted(pg: s.PgCluster, tmp_path: Path) -> None:
+    """A (red v1r2)."""
+    inst = e4.install(pg, tmp_path, FAX)
+
+    async def body() -> None:
+        async with e4.running(inst, profile=FAX, app_name="fx3-r04") as (lc, app):
+            tok = await e4.token(app)
+            lc.fax.faults.extend(["unavailable"] * 3)
+            out = await _deliver(app, tok)
+            assert (out.status, out.json["code"], out.json["attempts"],
+                    out.json["last_status"]) == (502, "PROVIDER_RETRY_EXHAUSTED", 3, 503)
+            assert _receipts(inst) == (0, 0, 0)
 
     asyncio.run(body())

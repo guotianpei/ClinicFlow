@@ -39,6 +39,13 @@ Rows (test-case ids v1r1 §3; trace in brackets):
           (positive control); A's staff -> 404 NOT_FOUND on get / history / open / actions; A and
           B ZSE; B still reads it [FR-10]
 - FX3-G01 no sender, line, doc_ref or provider id in any log record of an I05 delivery [FR-11]
+v1r2 (Codex 833c7db review; COVERAGE rows over committed code, not red):
+- FX3-I09 the same provider id with different metadata -> 200 duplicate_mismatch with the ORIGINAL
+          fax id; the original row is unchanged; one discrepancy row is durable [FR-7]
+- FX3-P01 the installer's line step (`fax_lines.install_line`, inside the caller's transaction):
+          (a) added then the caller rolls back -> no line; (b) a line another clinic holds ->
+          LINE_DUPLICATE, nothing written; (c) a running app's fence held -> LINE_PROVISION_BUSY,
+          nothing written; (d) an unknown clinic -> TENANT_UNKNOWN
 """
 
 from __future__ import annotations
@@ -510,3 +517,75 @@ def test_fx3_h04_foreign_fax(install: Any, install_b: Any) -> None:
             assert again[0] == 200  # B still reads its own, unchanged
 
     asyncio.run(body())
+
+
+def test_fx3_i09_duplicate_mismatch_keeps_original(install: Any, install_b: Any) -> None:
+    """Coverage (v1r2)."""
+    f3.ready(install, fx.LINE1)
+    f3.ready(install_b, fx.LINE2)
+
+    async def body() -> None:
+        async with f3.runtime(install) as rt, \
+                f3.m("fax_ingress").hold_line_fence(install.ids.logins[sa.RUNTIME]) as fence:
+            app, calls = await _stack(rt, [install, install_b], fence=fence)
+            original = f3.body(provider_fax_id="FX-MISMATCH000001", pages=2)
+            first = await f3.request(app, _jbytes(original))
+            assert (first[0], first[1]["outcome"]) == (200, "needs_sorting")
+            before = fx.fax(install, first[1]["fax_id"])
+            changed = {**original, "pages": 5}
+            second = await f3.request(app, _jbytes(changed))
+            assert (second[0], second[1]["outcome"], second[1]["fax_id"]) == (
+                200, "duplicate_mismatch", first[1]["fax_id"])
+            assert calls.receives == 2
+            assert fx.fax(install, first[1]["fax_id"]) == before
+            assert len(fx.rows(install, "m05_fx_faxes")) == 1
+            assert len(fx.rows(install, "m05_fx_discrepancies")) == 1
+
+    asyncio.run(body())
+
+
+def test_fx3_p01_install_line_entry_point(install: Any, install_b: Any) -> None:
+    """Coverage (v1r2): the installer's line step in the caller's transaction."""
+    from haloflow.synthetic import fax_lines
+
+    install.require()
+    install_b.require()
+    fax_lines.provision_lines(install.ids.admin,
+                              [fax_lines.LineOp("add", install_b.tenant_id, fx.LINE2)])
+
+    def lines() -> list[Any]:
+        return sorted([*fx.rows(install, "m05_fx_lines"), *fx.rows(install_b, "m05_fx_lines")],
+                      key=str)
+
+    baseline = lines()
+    # (a) added, then the caller's transaction rolls back
+    with psycopg.connect(install.ids.admin) as conn:
+        fax_lines.install_line(conn, install.tenant_id, fx.LINE1)
+        conn.rollback()
+    assert lines() == baseline
+    # (b) a line another clinic holds, (d) an unknown clinic
+    for tenant, line, code in ((install.tenant_id, fx.LINE2, "LINE_DUPLICATE"),
+                               ("no-such-tenant", fx.LINE1, "TENANT_UNKNOWN")):
+        with psycopg.connect(install.ids.admin) as conn:
+            with pytest.raises(fax_lines.LineProvisionRefused) as refused:
+                fax_lines.install_line(conn, tenant, line)
+            assert refused.value.code == code
+            conn.rollback()
+        assert lines() == baseline
+
+    # (c) a running app's fence -> busy
+    async def busy() -> None:
+        async with f3.m("fax_ingress").hold_line_fence(install.ids.logins[sa.RUNTIME]):
+            def attempt() -> str:
+                with psycopg.connect(install.ids.admin) as conn:
+                    try:
+                        fax_lines.install_line(conn, install.tenant_id, fx.LINE1)
+                    except fax_lines.LineProvisionRefused as refused:
+                        conn.rollback()
+                        return refused.code
+                    conn.rollback()
+                    return "ADDED"
+            assert await asyncio.to_thread(attempt) == "LINE_PROVISION_BUSY"
+
+    asyncio.run(busy())
+    assert lines() == baseline
