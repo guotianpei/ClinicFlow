@@ -4,8 +4,9 @@ Targets predeclared in the FX1 red packet v1 (test_fx1_postgres docstring; Codex
 level order reversed (rules and SQL); rule rows counted instead of distinct destinations; the
 duplicate key without the provider; the mismatch digest ignoring the sender; the support
 authority accepting any capability; the post-lock authority re-check removed (queue_deactivate
-and rule_put); the inactive-queue filter removed; the receipt's shared line fence removed; the rename re-check removed; a case-sensitive
-rename collision. Kill sets are declared in scripts/fx1_mutant_kills.json before the CI run.
+and rule_put); the inactive-queue filter removed; the receipt's shared line fence removed;
+the rename re-check removed; a case-sensitive rename collision. Kill sets are declared in
+scripts/fx1_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/el1_mutants.py: each group's control run must pass completely; a mutant is KILLED only

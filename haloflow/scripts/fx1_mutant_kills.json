@@ -38,5 +38,11 @@
  "M8": [
   "tests/m05/test_fx1_postgres.py::test_fx1_f01_receipt_waits_for_exclusive_fence",
   "tests/m05/test_fx1_postgres.py::test_fx1_f02_open_receipt_holds_the_fence"
+ ],
+ "M9": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_s04_s05_authority_after_lock[s04-revoked-queue_rename]"
+ ],
+ "M10": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_s10_queue_rename_refusals"
  ]
 }
