@@ -13,7 +13,8 @@ receipt's transaction-level shared lock on K_FX_LINES), owner decisions OD-FX1..
   pattern): the session login is a support operator with an active, in-window grant on THIS
   tenant holding capability `m05.fax.settings`.
 - t138 `m05_fx_settings_put(jsonb)` (EXECUTE to haloflow_support only, OD-FX3): queue_put,
-  queue_deactivate, rule_put, rule_remove. Authority before any lock or write and re-checked
+  queue_rename (same ID; OD-FX1, Codex REVISE 7859c910), queue_deactivate, rule_put,
+  rule_remove. Authority before any lock or write and re-checked
   after the target row lock; one audit row per applied op.
 - t139 `m05_fx_receive(jsonb)` (runtime): one transaction — the K_FX_LINES shared xact lock,
   the tenant-local line re-check, the fax row (or duplicate handling), routing, the sorting row
@@ -145,8 +146,8 @@ CREATE TABLE {schema}.m05_fx_settings_audit (
     audit_id uuid PRIMARY KEY,
     actor_id varchar(128) NOT NULL,
     grant_id uuid NOT NULL,
-    op varchar(24) NOT NULL CHECK (op IN ('queue_put', 'queue_deactivate', 'rule_put',
-                                          'rule_remove')),
+    op varchar(24) NOT NULL CHECK (op IN ('queue_put', 'queue_rename', 'queue_deactivate',
+                                          'rule_put', 'rule_remove')),
     target_id uuid NOT NULL,
     at timestamptz NOT NULL
 );
@@ -261,6 +262,19 @@ BEGIN""" + _TENANT + r"""
               OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,2}$' THEN
             """ + _raise("COMMAND_MALFORMED") + r"""
         END IF;
+    ELSIF v_op = 'queue_rename' THEN
+        IF v_keys IS DISTINCT FROM ARRAY['name', 'op', 'queue_id', 'schema_version']::text[]
+           OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'queue_id')
+              IS DISTINCT FROM 'string'
+           OR (p_command OPERATOR(pg_catalog.->>) 'queue_id') OPERATOR(pg_catalog.!~) c_uuid
+           OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'name')
+              IS DISTINCT FROM 'string'
+           OR pg_catalog.char_length(p_command OPERATOR(pg_catalog.->>) 'name')
+              NOT BETWEEN 1 AND 64
+           OR (p_command OPERATOR(pg_catalog.->>) 'name') <> pg_catalog.btrim(
+              p_command OPERATOR(pg_catalog.->>) 'name') THEN
+            """ + _raise("COMMAND_MALFORMED") + r"""
+        END IF;
     ELSIF v_op = 'queue_deactivate' THEN
         IF v_keys IS DISTINCT FROM ARRAY['op', 'queue_id', 'schema_version']::text[]
            OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'queue_id')
@@ -307,6 +321,25 @@ BEGIN""" + _TENANT + r"""
         v_target := pg_catalog.gen_random_uuid();
         INSERT INTO {schema}.m05_fx_queues (queue_id, name, active, position, created_at)
         VALUES (v_target, v_name, true, v_position, pg_catalog.clock_timestamp());
+        v_queue := v_target;
+    ELSIF v_op = 'queue_rename' THEN
+        -- OD-FX1 rename (Codex REVISE 7859c910): the SAME queue ID keeps its rules and faxes.
+        v_target := (p_command OPERATOR(pg_catalog.->>) 'queue_id')::uuid;
+        v_name := p_command OPERATOR(pg_catalog.->>) 'name';
+        LOCK TABLE {schema}.m05_fx_queues IN SHARE ROW EXCLUSIVE MODE;
+        PERFORM 1 FROM {schema}.m05_fx_queues AS q
+          WHERE q.queue_id = v_target AND q.active FOR UPDATE;
+        v_found := FOUND;
+        -- ... and re-checked after the rename lock.""" + _AUTHORIZE + r"""
+        IF NOT v_found THEN
+            """ + _raise("QUEUE_NOT_FOUND") + r"""
+        END IF;
+        IF EXISTS (SELECT 1 FROM {schema}.m05_fx_queues AS q
+                    WHERE pg_catalog.lower(q.name) = pg_catalog.lower(v_name)
+                      AND q.queue_id <> v_target) THEN
+            """ + _raise("QUEUE_NAME_TAKEN") + r"""
+        END IF;
+        UPDATE {schema}.m05_fx_queues SET name = v_name WHERE queue_id = v_target;
         v_queue := v_target;
     ELSIF v_op = 'queue_deactivate' THEN
         v_target := (p_command OPERATOR(pg_catalog.->>) 'queue_id')::uuid;

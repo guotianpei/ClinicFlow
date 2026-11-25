@@ -1,11 +1,11 @@
-"""Incoming fax routing FX-IN FX1 mutation controls, group family ``fx1`` (M-FX1-1..8).
+"""Incoming fax routing FX-IN FX1 mutation controls, group family ``fx1`` (M-FX1-1..10).
 
 Targets predeclared in the FX1 red packet v1 (test_fx1_postgres docstring; Codex 65d1f9db): the
 level order reversed (rules and SQL); rule rows counted instead of distinct destinations; the
 duplicate key without the provider; the mismatch digest ignoring the sender; the support
 authority accepting any capability; the post-lock authority re-check removed (queue_deactivate
-and rule_put); the inactive-queue filter removed; the receipt's shared line fence removed.
-Kill sets are declared in scripts/fx1_mutant_kills.json before the CI run.
+and rule_put); the inactive-queue filter removed; the receipt's shared line fence removed; the rename re-check removed; a case-sensitive
+rename collision. Kill sets are declared in scripts/fx1_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/el1_mutants.py: each group's control run must pass completely; a mutant is KILLED only
@@ -75,6 +75,14 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M8", "the receipt's shared line fence is removed", UNITS,
      "    PERFORM pg_catalog.pg_advisory_xact_lock_shared(@@KEY@@::bigint);\n",
      "    PERFORM 1;\n"),
+    ("M9", "no authority re-check after the queue_rename lock", UNITS,
+     "        -- ... and re-checked after the rename lock.\"\"\" + _AUTHORIZE + r\"\"\"\n",
+     "        -- ... and re-checked after the rename lock.\"\"\" + r\"\"\"\n"),
+    ("M10", "the rename name collision is case-sensitive", UNITS,
+     "                    WHERE pg_catalog.lower(q.name) = pg_catalog.lower(v_name)\n"
+     "                      AND q.queue_id <> v_target) THEN\n",
+     "                    WHERE q.name = v_name\n"
+     "                      AND q.queue_id <> v_target) THEN\n"),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (
