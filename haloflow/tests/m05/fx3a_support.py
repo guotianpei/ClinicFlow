@@ -63,6 +63,18 @@ FX3a interface pinned here (red packet v1, section 2)
     receive(ctx, InboundFax) -> 200 {"outcome", "fax_id"}; FaxRefused LINE_NOT_REGISTERED -> 409
     {"code": "LINE_NOT_REGISTERED"}. No sender, line, doc_ref or provider id in any response or
     log record.
+`haloflow.synthetic.fax_staff_routes` (new; red v1r1, Codex f56c079 review H04): the staff JSON
+  routes the synthetic app mounts, in the `staff_routes` pattern: PREFIX = "/synthetic/v1/fax";
+  `install_fax_staff_routes(app, lifecycle)` adds GET {PREFIX}/faxes (list, ?queue=), GET
+  {PREFIX}/faxes/{id} (get), GET {PREFIX}/faxes/{id}/history, POST {PREFIX}/faxes/{id}/open (get
+  requirement) and POST {PREFIX}/faxes/{id}/actions (act requirement); every request uses
+  `lifecycle.services` = the clinic's fixed principal (tenant_id, staff_id) with the production
+  two-step resolution (self standing -> capabilities_for -> route_capabilities) and exactly one
+  `services.fax` (FaxService) call; refusals through production's map plus FaxRefused
+  FAX_NOT_FOUND / QUEUE_NOT_FOUND -> 404 NOT_FOUND, state codes -> 409 CONFLICT {"code"};
+  labelled bodies. CSRF stays the app's (install row FX3-H02).
+`haloflow.synthetic.wiring.SyntheticServices` gains `fax: Any = None` (the fax profile's
+  FaxService; other profiles leave it None).
 """
 
 from __future__ import annotations
@@ -85,11 +97,11 @@ ACT_CAPS: Final = READ_CAPS | frozenset({"m05.followup.prepare", "m05.followup.a
                                          "m02.observation.append"})
 
 
-def m(name: str) -> Any:
-    """Lazy `haloflow.m05.<name>` import inside a row body (class-A red rule)."""
+def m(name: str, *, package: str = "haloflow.m05") -> Any:
+    """Lazy `<package>.<name>` import inside a row body (class-A red rule)."""
     import importlib
 
-    return importlib.import_module(f"haloflow.m05.{name}")
+    return importlib.import_module(f"{package}.{name}")
 
 
 def fx3_catalog() -> Any:
@@ -169,8 +181,12 @@ def body(**override: Any) -> dict[str, Any]:
 
 def request(app: Any, payload: bytes, *, line: str | None = fx.LINE1,
             secret: str | None = SECRET, content_type: str = "application/json",
-            content_length: str | None = None) -> Any:
-    """One ASGI POST to the fax ingress route (returns (status, json))."""
+            content_length: str | None = None, lose_ack: bool = False) -> Any:
+    """One ASGI POST to the fax ingress route (returns (status, json)).
+
+    lose_ack=True simulates the provider losing the acknowledgement AFTER the receipt committed:
+    the transport fails when the app sends its response start (the gateway transaction has
+    already committed by then); returns (None, None) and the provider must retry (I07)."""
     import json
 
     route = m("fax_ingress").ROUTE
@@ -182,10 +198,60 @@ def request(app: Any, payload: bytes, *, line: str | None = fx.LINE1,
     headers.append((b"content-length",
                     (content_length or str(len(payload))).encode()))
 
-    async def run() -> tuple[int, Any]:
+    async def run() -> tuple[int | None, Any]:
         scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
                  "method": "POST", "scheme": "http", "path": route,
                  "raw_path": route.encode(), "root_path": "", "query_string": b"",
+                 "headers": headers, "client": ("127.0.0.1", 0), "server": ("127.0.0.1", 0)}
+        sent = False
+
+        async def receive() -> dict[str, Any]:
+            nonlocal sent
+            if not sent:
+                sent = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        messages: list[dict[str, Any]] = []
+
+        class AckLost(ConnectionResetError):
+            pass
+
+        async def send(message: dict[str, Any]) -> None:
+            if lose_ack and message["type"] == "http.response.start":
+                raise AckLost("synthetic provider lost the acknowledgement")
+            messages.append(message)
+
+        try:
+            await app(scope, receive, send)
+        except AckLost:
+            return None, None
+        except BaseExceptionGroup as group:  # anyio task groups may wrap the transport failure
+            if group.subgroup(AckLost) is None:
+                raise
+            return None, None
+        status = next(int(x["status"]) for x in messages if x["type"] == "http.response.start")
+        raw = b"".join(x.get("body", b"") for x in messages if x["type"] == "http.response.body")
+        return status, (json.loads(raw) if raw else {})
+
+    return run()
+
+
+def staff_request(app: Any, method: str, target: str, value: Any = None) -> Any:
+    """One ASGI request to a staff route (returns (status, json)); POSTs carry a JSON body."""
+    import json
+
+    path, _, query = target.partition("?")
+    payload = b"" if value is None else json.dumps(value).encode()
+    headers: list[tuple[bytes, bytes]] = [(b"host", b"127.0.0.1")]
+    if method == "POST":
+        headers += [(b"content-type", b"application/json"),
+                    (b"content-length", str(len(payload)).encode())]
+
+    async def run() -> tuple[int, Any]:
+        scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                 "method": method, "scheme": "http", "path": path,
+                 "raw_path": path.encode(), "root_path": "", "query_string": query.encode(),
                  "headers": headers, "client": ("127.0.0.1", 0), "server": ("127.0.0.1", 0)}
         sent = False
 

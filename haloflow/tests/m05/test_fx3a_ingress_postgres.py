@@ -18,8 +18,10 @@ Rows (test-case ids v1r1 §3; trace in brackets):
           of the needs-sorting faxes shows A's fax (deliver -> staff read) [FR-1, FR-10]
 - FX3-I06 a duplicate line injected (test-only) into A and B -> the directory build refuses
           LINE_DUPLICATE [§3.3]
-- FX3-I07 the same delivery twice (commit-unknown retry) -> 200 needs_sorting, then 200 duplicate;
-          one fax row [§5.4]
+- FX3-I07 (a) control: an observed 200 needs_sorting, then the same delivery -> 200 duplicate;
+          (b) v1r1 (Codex f56c079): the provider LOSES the acknowledgement after commit (transport
+          fails at response start) and retries its original identity -> 200 duplicate of the
+          committed fax; per provider id one fax, one sorting item, one receipt history [§5.4]
 - FX3-I08 IN-FLIGHT (Codex P07): R1 for line1 (owner A) paused by the after_lookup seam; the fence
           connection is terminated; the provisioner reassigns line1 A->B; R1 released -> 409
           LINE_NOT_REGISTERED, NO fax in A or B; the old router refuses the next delivery 503
@@ -27,12 +29,15 @@ Rows (test-case ids v1r1 §3; trace in brackets):
 - FX3-S01 statement authorization with a READ-ONLY staff principal: open applies (history
           `opened`); act (move) -> CapabilityDenied STATEMENT_CAPABILITY_DENIED, ZSE; the same
           move with read+act applies [Codex e9c224a9]
-- FX3-S02 the open key cannot be turned into a mutation: OPEN_KEY called with action "move" and a
-          queue -> `opened` only, the fax unchanged [Codex e9c224a9]
+- FX3-S02 the open key cannot be turned into a mutation: OPEN_KEY called with action "move", a
+          queue and a version -> COMMAND_MALFORMED (the trusted right-hand `open` wins), no change;
+          the same command without those keys -> applied as `opened` only [Codex e9c224a9]
 - FX3-S03 the lines and receive keys refuse staff contexts (CapabilityDenied); FaxService.lines /
           receive refuse a context whose capabilities are not exactly theirs (CAPABILITIES_INVALID)
-- FX3-H04 a REAL B-owned fax: B's staff reads it (positive control); A's staff asking for that id
-          -> FaxRefused FAX_NOT_FOUND; A and B ZSE [FR-10]
+- FX3-H04 v1r1 (Codex f56c079): DISTINCT lines (A line1, B line2); B's fax arrives through the
+          real ingress on line2; through the ACTUAL staff routes (fax_staff_routes) B reads it
+          (positive control); A's staff -> 404 NOT_FOUND on get / history / open / actions; A and
+          B ZSE; B still reads it [FR-10]
 - FX3-G01 no sender, line, doc_ref or provider id in any log record of an I05 delivery [FR-11]
 """
 
@@ -245,21 +250,45 @@ def test_fx3_i06_duplicate_line_refuses_build(install: Any, install_b: Any) -> N
 
 
 def test_fx3_i07_retry_is_duplicate(install: Any, install_b: Any) -> None:
-    """A."""
+    """A (Codex f56c079 review): (a) control - an observed 200 then a replay is a duplicate;
+    (b) the provider LOSES the first acknowledgement after commit and retries with its original
+    identity -> duplicate of the committed fax; one fax, one sorting item, one receipt history
+    entry per provider id."""
     f3.ready(install, fx.LINE1)
     f3.ready(install_b, fx.LINE2)
+
+    def receipt_rows(fid: str) -> tuple[int, int, int]:
+        return (len(fx.rows(install, "m05_fx_faxes", "fax_id = %s::uuid", (fid,))),
+                len(fx.rows(install, "m05_fx_sorting", "fax_id = %s::uuid", (fid,))),
+                len([h for h in fx.rows(install, "m05_fx_history", "fax_id = %s::uuid", (fid,))
+                     if h["action"].startswith("received_")]))
 
     async def body() -> None:
         async with f3.runtime(install) as rt, \
                 f3.m("fax_ingress").hold_line_fence(install.ids.logins[sa.RUNTIME]) as fence:
-            app, _ = await _stack(rt, [install, install_b], fence=fence)
+            app, calls = await _stack(rt, [install, install_b], fence=fence)
+            # (a) control: observed first reply, manual replay
             payload = _jbytes(f3.body())
             first = await f3.request(app, payload)
             second = await f3.request(app, payload)
             assert (first[0], first[1]["outcome"]) == (200, "needs_sorting")
             assert (second[0], second[1]["outcome"], second[1]["fax_id"]) == (
                 200, "duplicate", first[1]["fax_id"])
-            assert len(fx.rows(install, "m05_fx_faxes")) == 1
+            assert receipt_rows(first[1]["fax_id"]) == (1, 1, 1)
+            # (b) acknowledgement lost after commit, provider retries the same identity
+            lost_payload = _jbytes(f3.body(provider_fax_id="FX-LOSTACK0000001"))
+            lost = await f3.request(app, lost_payload, lose_ack=True)
+            assert lost == (None, None)
+            assert calls.receives == 3  # the lost-ack request did reach receive and commit
+            committed = fx.rows(install, "m05_fx_faxes", "provider_fax_id = %s",
+                                ("FX-LOSTACK0000001",))
+            assert len(committed) == 1
+            retry = await f3.request(app, lost_payload)
+            assert (retry[0], retry[1]["outcome"], retry[1]["fax_id"]) == (
+                200, "duplicate", committed[0]["fax_id"])
+            assert receipt_rows(committed[0]["fax_id"]) == (1, 1, 1)
+            assert len(fx.rows(install, "m05_fx_faxes")) == 2
+            assert fx.rows(install_b, "m05_fx_faxes") == []
 
     asyncio.run(body())
 
@@ -419,31 +448,65 @@ def test_fx3_s03_lines_and_receive_restricted(install: Any) -> None:
     asyncio.run(body())
 
 
+def _staff_app(rt: Any, install: Any, staff_id: str) -> Any:
+    """The ACTUAL synthetic fax staff routes (`haloflow.synthetic.fax_staff_routes`) for ONE
+    clinic: the same `install_fax_staff_routes(app, lifecycle)` the synthetic app calls, over a
+    lifecycle whose `services` is that clinic's fixed session principal (tenant + staff member)
+    with the real resolver, the real M01 staff service (production two-step resolution) and the
+    real FaxService. As in the install, no request input selects tenant, principal or capability."""
+    from types import SimpleNamespace
+
+    from fastapi import FastAPI
+
+    from haloflow.m01.staff.service import StaffService
+    from haloflow.synthetic.wiring import SyntheticServices
+
+    routes = f3.m("fax_staff_routes", package="haloflow.synthetic")
+    services = SyntheticServices(resolver=rt.resolver, staff=StaffService(rt.gateway), m05=None,
+                                 gateway=rt.gateway, tenant_id=install.tenant_id,
+                                 staff_id=staff_id, fax=f3.service(rt))
+    app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+    routes.install_fax_staff_routes(app, SimpleNamespace(services=services))
+    return app
+
+
 def test_fx3_h04_foreign_fax(install: Any, install_b: Any) -> None:
-    """A (Codex e9c224a9: a REAL B-owned fax, B positive control)."""
-    f3.ready(install, fx.LINE1, fx.LINE2)
-    f3.ready(install_b, fx.LINE1, fx.LINE2)
+    """A (Codex f56c079 review): two clinics with DISTINCT lines; B's fax arrives through the real
+    ingress on B's line; B's staff reads it through the actual staff routes (positive control);
+    A's staff gets 404 NOT_FOUND on get / history / open / actions for B's id; neither clinic
+    changes. The single-install unknown-id row (tests/synthetic FX3-H04) stays a separate
+    control."""
+    f3.ready(install, fx.LINE1)
+    f3.ready(install_b, fx.LINE2)
     staff_a = f2.seed_staff(install)
     staff_b = f2.seed_staff(install_b)
-    fid_b = f2.routed_fax(install_b)
-    fax = f3.m("fax")
+    sender = "+18045550142"
+    fx.seed_rule(install_b, sender=sender, line=None, queue="Imaging")
+    prefix = f3.m("fax_staff_routes", package="haloflow.synthetic").PREFIX
 
     async def body() -> None:
-        async with f3.runtime(install) as rt:
-            svc = f3.service(rt)
-            got = await svc.get(await f3.ctx(rt, install_b, staff_b, f3.READ_CAPS),
-                                uuid.UUID(fid_b))
-            assert got["fax"]["fax_id"] == fid_b  # B positive control
+        async with f3.runtime(install) as rt, \
+                f3.m("fax_ingress").hold_line_fence(install.ids.logins[sa.RUNTIME]) as fence:
+            ingress, _ = await _stack(rt, [install, install_b], fence=fence)
+            landed = await f3.request(ingress, _jbytes(f3.body(sender=sender)), line=fx.LINE2)
+            assert (landed[0], landed[1]["outcome"]) == (200, "routed")
+            fid_b = landed[1]["fax_id"]
+            assert fx.rows(install, "m05_fx_faxes") == []
+            app_a, app_b = _staff_app(rt, install, staff_a), _staff_app(rt, install_b, staff_b)
+            own = await f3.staff_request(app_b, "GET", f"{prefix}/faxes/{fid_b}")
+            assert (own[0], own[1]["fax"]["fax_id"]) == (200, fid_b)  # B positive control
             before = _zse(install, install_b)
-            ctx_a = await f3.ctx(rt, install, staff_a, f3.ACT_CAPS)
-            for call in (lambda: svc.get(ctx_a, uuid.UUID(fid_b)),
-                         lambda: svc.history(ctx_a, uuid.UUID(fid_b)),
-                         lambda: svc.open(ctx_a, uuid.UUID(fid_b)),
-                         lambda: svc.act(ctx_a, fax.FaxAction("file", uuid.UUID(fid_b), 1,
-                                                              None))):
-                with pytest.raises(fax.FaxRefused) as refused:
-                    await call()
-                assert refused.value.code == "FAX_NOT_FOUND"
+            for method, target, payload in (
+                    ("GET", f"{prefix}/faxes/{fid_b}", None),
+                    ("GET", f"{prefix}/faxes/{fid_b}/history", None),
+                    ("POST", f"{prefix}/faxes/{fid_b}/open", {}),
+                    ("POST", f"{prefix}/faxes/{fid_b}/actions",
+                     {"action": "file", "expected_version": 1})):
+                refused = await f3.staff_request(app_a, method, target, payload)
+                assert (refused[0], refused[1].get("code")) == (404, "NOT_FOUND"), (
+                    method, target, refused)
             assert _zse(install, install_b) == before
+            again = await f3.staff_request(app_b, "GET", f"{prefix}/faxes/{fid_b}/history")
+            assert again[0] == 200  # B still reads its own, unchanged
 
     asyncio.run(body())
