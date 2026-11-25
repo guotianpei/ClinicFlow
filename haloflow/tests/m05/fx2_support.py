@@ -13,14 +13,17 @@ installation failed"; the provisioner rows fail on ModuleNotFoundError for
 FX2 interface pinned here (red packet v1, section 2). DEVIATION from architecture v1r2 §8.2,
 for Codex: the staff gateways need the acting staff member's status and access, which live in the
 staff-owned `m01_staff` / `m01_staff_followup_access` (the M05 owner has no read on them), so FX2
-adds a staff-owned check unit (the t022 / t137 pattern). FX2 is therefore t140..t143, target 143.
+adds a staff-owned check unit (the t022 / t137 pattern). FX2 is therefore t141..t144, target 144
+(renumbered after FX1 gained t140 m05_fx_tenant_bound, Codex 3e5361ff). Every FX2 runtime
+gateway (t142..t144) refuses a session tenant that is not the schema's tenant (22023 'tenant
+context invalid', via t140) before any read or write.
 
 Registry: `build_synthetic_registry(<all EL flags>, include_fx1=True, include_fx2=True)`, ids
-FX1 + t140..t143, target **143**; `include_fx2` without `include_fx1` -> ValueError.
-- `t140_m05_fx_staff_check`  `m05_fx_staff_check(p_staff_id uuid, p_access text) RETURNS boolean`
+FX1 + t141..t144, target **144**; `include_fx2` without `include_fx1` -> ValueError.
+- `t141_m05_fx_staff_check`  `m05_fx_staff_check(p_staff_id uuid, p_access text) RETURNS boolean`
   (staff owner; EXECUTE to the M05 owner only): the m01_staff row FOR SHARE, status active, and
   an access row equal to p_access ('read' | 'act'). False otherwise; never raises for those.
-- `t141_m05_fx_staff_action` `m05_fx_staff_action(jsonb) RETURNS jsonb` (runtime). Command
+- `t142_m05_fx_staff_action` `m05_fx_staff_action(jsonb) RETURNS jsonb` (runtime). Command
   {schema_version 1, action in open|move|file|sort, fax_id, staff_id, attribution (actor;
   principal_id = staff_id), expected_version (move/file/sort), queue_id (move/sort)}. Result
   {schema_version 1, outcome "applied", fax_id, state, queue_id, version}. open: history
@@ -30,12 +33,12 @@ FX1 + t140..t143, target **143**; `include_fx2` without `include_fx1` -> ValueEr
   the fax's sorting item is resolved, NOT_NEEDS_SORTING when it never needed sorting; move/file:
   FAX_FILED when filed, NOT_ROUTED when needs_sorting) -> VERSION_CONFLICT -> QUEUE_NOT_FOUND
   (unknown, inactive or another tenant's queue). Lock order fax -> sorting -> queue (FOR SHARE).
-- `t142_m05_fx_staff_read` `m05_fx_staff_read(jsonb) RETURNS jsonb` (runtime, STABLE). Command
+- `t143_m05_fx_staff_read` `m05_fx_staff_read(jsonb) RETURNS jsonb` (runtime, STABLE). Command
   {schema_version 1, view in list|get|history, staff_id, attribution, queue_id (list; null =
   the needs-sorting list), fax_id (get/history)}. ACTOR_INACTIVE ('read'), FAX_NOT_FOUND,
   QUEUE_NOT_FOUND. Fax summaries carry fax_id, state, queue_id, reason (code), pages,
   received_at, version, sender_last4 — never the full sender, line, doc_ref or provider id.
-- `t143_m05_fx_lines_snapshot` `m05_fx_lines_snapshot(jsonb) RETURNS jsonb` (runtime, STABLE):
+- `t144_m05_fx_lines_snapshot` `m05_fx_lines_snapshot(jsonb) RETURNS jsonb` (runtime, STABLE):
   {schema_version 1, lines: [sorted canonical lines]} of this tenant.
 Provisioner line step (offline; NOT a unit): `haloflow.synthetic.fax_lines`
   `provision_lines(conninfo: str, ops: Sequence[LineOp]) -> None`, `LineOp(op: "add"|"remove",
@@ -58,10 +61,10 @@ import fx1_support as fx
 import m02_support
 import sa_support as sa
 
-FX2_TARGET: Final = 143
+FX2_TARGET: Final = 144
 FX2_SUPPORTED: Final = range(FX2_TARGET, FX2_TARGET + 1)
-FX2_IDS: Final = ("t140_m05_fx_staff_check", "t141_m05_fx_staff_action",
-                  "t142_m05_fx_staff_read", "t143_m05_fx_lines_snapshot")
+FX2_IDS: Final = ("t141_m05_fx_staff_check", "t142_m05_fx_staff_action",
+                  "t143_m05_fx_staff_read", "t144_m05_fx_lines_snapshot")
 CHECK: Final = "m05_fx_staff_check"
 ACTION: Final = "m05_fx_staff_action"
 READ: Final = "m05_fx_staff_read"
@@ -77,7 +80,7 @@ def fx2_registry() -> Any:
 
 
 class FX2Install(fx.FX1Install):
-    """A synthetic tenant at target 143 (FX1 139 + FX2), provisioned in the row body."""
+    """A synthetic tenant at target 144 (FX1 140 + FX2), provisioned in the row body."""
 
     def require(self) -> None:
         if not self._attempted:

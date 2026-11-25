@@ -1,8 +1,8 @@
 """Incoming fax routing FX-IN, package FX2 — composition and provisioner-interface rows (RED BY
 DESIGN). Governing: see `fx2_support`. Classes: C control, A absence-red.
 
-- FX2-C01 CONTROL: the FX1 registry (target 139) is unchanged
-- FX2-U01 include_fx2 registry: target 143; ids = FX1 ids + exactly FX2_IDS in order
+- FX2-C01 CONTROL: the FX1 registry (target 140) is unchanged
+- FX2-U01 include_fx2 registry: target 144; ids = FX1 ids + exactly FX2_IDS in order
 - FX2-U02 include_fx2 without include_fx1 -> ValueError mentioning FX2; the catalogue builds
 - FX2-U03 haloflow.synthetic.fax_lines: LineOp is a frozen record; LineProvisionRefused carries
           `code`; an op outside add/remove or a non-canonical line is refused before any database

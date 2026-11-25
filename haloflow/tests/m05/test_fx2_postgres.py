@@ -1,13 +1,13 @@
 """Incoming fax routing FX-IN, package FX2 — PostgreSQL 17 rows (RED BY DESIGN).
 
 Governing: see `fx2_support` (test cases v1r1 FX2/FX3 revision, Codex ALIGN 19629e35;
-OD-FX6, OD-FX8). Every row provisions its tenant(s) at target 143 in its body (class A:
+OD-FX6, OD-FX8). Every row provisions its tenant(s) at target 144 in its body (class A:
 `include_fx2` -> TypeError, "FX2 test installation failed"); provisioner rows also need
 `haloflow.synthetic.fax_lines`. ZSE as FX1 (`fx1_support.snapshot`). Contention waits are
 bounded (sa.Waiter join 30 s; lock_timeout on blocking sessions).
 
 Rows (test-case ids v1r1; trace in brackets):
-- FX2-T00 install: target 143, FX2 ids in order; ACL (runtime EXECUTE on action/read/snapshot;
+- FX2-T00 install: target 144, FX2 ids in order; ACL (runtime EXECUTE on action/read/snapshot;
           staff check owner-only, EXECUTE to the M05 owner) [arch 5.6]
 - FX2-A01 open: history `opened`, actor = the staff id, version unchanged; read-only staff may open
 - FX2-A02 move: queue changed, version +1, history `moved` (actor, from, to)
@@ -33,6 +33,9 @@ Rows (test-case ids v1r1; trace in brackets):
           ACTOR_INACTIVE on move / file / sort (the platform grants act only with read,
           capabilities_for; the store enforces the same invariant); controls: read+act applies,
           read-only is refused [arch 5.6]
+- FX2-B02 (Codex 3e5361ff) tenant B's context on tenant A's m05_fx_staff_action (each action),
+          m05_fx_staff_read (each view) and m05_fx_lines_snapshot -> 22023 'tenant context
+          invalid', A and B ZSE, nothing returned; own-context controls succeed [FR-10]
 - FX2-A18 tenant-B fax id in tenant A (each action and read) -> FAX_NOT_FOUND, A and B ZSE
 - FX2-A19 malformed: attribution principal differs from staff_id; workload principal; missing
           expected_version -> COMMAND_MALFORMED, ZSE
@@ -64,9 +67,10 @@ Mutant killers (wired at green): M-FX2-1 version check removed -> A03; -2 filed 
 A06/A07; -3 sort-once guard removed -> A10/A11; -4 queue tenant/active check removed -> A04/A14;
 -5 provisioner try-lock made blocking -> P04/P05; -6 uniqueness per tenant only -> P02/P03;
 -7 staff check removed -> A17; -8 receipt fence removed (FX1 M8) -> P07/P08; -9 version checked
-before the state guard -> A11/A12a. (-10, the in-use check removed, is not separately killable:
-the rule FK is a deliberate backstop that also yields LINE_IN_USE atomically; P10 pins the
-behaviour.) Provisioner waits in P04/P05/P07 are bounded (`_bounded`).
+before the state guard -> A11/A12a; -10 act without read -> A20; -11a/r/s binding check removed
+from action / read / snapshot -> B02. (The in-use check removed is not separately killable: the
+rule FK is a deliberate backstop that also yields LINE_IN_USE atomically; P10 pins the behaviour.)
+Provisioner waits in P04/P05/P07 are bounded (`_bounded`).
 """
 
 from __future__ import annotations
@@ -758,3 +762,31 @@ def test_fx2_a20_act_without_read_cannot_mutate(install: f2.FX2Install) -> None:
             fx.refused(install, f2.ACTION, command, "ACTOR_INACTIVE")
     assert f2.act(install, "move", fid, both, expected_version=1,
                   queue_id=general)["outcome"] == "applied"  # authorized control
+
+
+def test_fx2_b02_gateways_refuse_foreign_context(install: f2.FX2Install,
+                                                 install_b: f2.FX2Install) -> None:
+    """A (Codex 3e5361ff; kills M-FX2-11 a/r/s)."""
+    _ready(install)
+    _ready(install_b)
+    staff = f2.seed_staff(install)
+    fid = f2.routed_fax(install)
+    sid = f2.sorting_fax(install)
+    general = fx.queue_id(install, "General")
+    for command in (f2.action_cmd("open", fid, staff),
+                    f2.action_cmd("move", fid, staff, expected_version=1, queue_id=general),
+                    f2.action_cmd("file", fid, staff, expected_version=1),
+                    f2.action_cmd("sort", sid, staff, expected_version=1, queue_id=general)):
+        fx.context_refused(install, install_b, f2.ACTION, command)
+    for command in (f2.read_cmd("list", staff, queue_id=None),
+                    f2.read_cmd("list", staff, queue_id=general),
+                    f2.read_cmd("get", staff, fax_id=fid),
+                    f2.read_cmd("history", staff, fax_id=fid)):
+        fx.context_refused(install, install_b, f2.READ, command)
+    fx.context_refused(install, install_b, f2.SNAPSHOT, {"schema_version": 1})
+    assert fx.call_with_context(install, install, f2.SNAPSHOT, {"schema_version": 1})[
+        "lines"] == sorted([fx.LINE1, fx.LINE2])  # own-context controls
+    assert fx.call_with_context(install, install, f2.READ,
+                                f2.read_cmd("get", staff, fax_id=fid))["fax"]["fax_id"] == fid
+    assert fx.call_with_context(install, install, f2.ACTION,
+                                f2.action_cmd("open", fid, staff))["outcome"] == "applied"
