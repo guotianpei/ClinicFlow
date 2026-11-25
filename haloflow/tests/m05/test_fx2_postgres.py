@@ -29,6 +29,10 @@ Rows (test-case ids v1r1; trace in brackets):
 - FX2-A16 identical redelivery after move / file / sort -> duplicate, ZSE
 - FX2-A17 inactive staff (each action and read) / read-only staff on move/file/sort ->
           ACTOR_INACTIVE, ZSE
+- FX2-A20 (Codex 4eabf042) act WITHOUT read cannot mutate: an act-only staff row is refused
+          ACTOR_INACTIVE on move / file / sort (the platform grants act only with read,
+          capabilities_for; the store enforces the same invariant); controls: read+act applies,
+          read-only is refused [arch 5.6]
 - FX2-A18 tenant-B fax id in tenant A (each action and read) -> FAX_NOT_FOUND, A and B ZSE
 - FX2-A19 malformed: attribution principal differs from staff_id; workload principal; missing
           expected_version -> COMMAND_MALFORMED, ZSE
@@ -731,3 +735,26 @@ def test_fx2_p11_absent_and_unknown(install: f2.FX2Install) -> None:
                               [lines.LineOp(op="add", tenant_id="no-such-tenant",
                                             line=fx.LINE1)])
     assert refused.value.code == "TENANT_UNKNOWN"
+
+
+def test_fx2_a20_act_without_read_cannot_mutate(install: f2.FX2Install) -> None:
+    """A (Codex 4eabf042). Platform policy and the stored invariant agree."""
+    from haloflow.m01.staff.service import Standing
+    from haloflow.platform.capabilities import capabilities_for, route_capabilities
+
+    act_only = Standing(status="active", access=("act",), roles=())
+    assert route_capabilities("act", capabilities_for(act_only)) is None  # platform: 403
+    _ready(install)
+    act_staff = f2.seed_staff(install, access=("act",))
+    reader = f2.seed_staff(install, access=("read",))
+    both = f2.seed_staff(install, access=("read", "act"))
+    fid = f2.routed_fax(install)
+    sid = f2.sorting_fax(install)
+    general = fx.queue_id(install, "General")
+    for staff in (act_staff, reader):
+        for command in (f2.action_cmd("move", fid, staff, expected_version=1, queue_id=general),
+                        f2.action_cmd("file", fid, staff, expected_version=1),
+                        f2.action_cmd("sort", sid, staff, expected_version=1, queue_id=general)):
+            fx.refused(install, f2.ACTION, command, "ACTOR_INACTIVE")
+    assert f2.act(install, "move", fid, both, expected_version=1,
+                  queue_id=general)["outcome"] == "applied"  # authorized control
