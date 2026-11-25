@@ -1,0 +1,39 @@
+{
+ "M1": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a03_stale_version",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a12_move_vs_file[a12b-move-wins]"
+ ],
+ "M2": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a06_a07_filed_is_final[file]",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a06_a07_filed_is_final[move]",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a12_move_vs_file[a12a-file-wins]"
+ ],
+ "M3": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a10_sort_once",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a11_concurrent_sorts"
+ ],
+ "M4": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a04_move_target",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a13_sort_vs_deactivation[a13-deactivated]",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a14_sort_target"
+ ],
+ "M5": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_p04_busy_while_running",
+  "tests/m05/test_fx2_postgres.py::test_fx2_p05_two_provisioners",
+  "tests/m05/test_fx2_postgres.py::test_fx2_p07_receipt_blocks_reassignment"
+ ],
+ "M6": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_p02_p03_duplicates"
+ ],
+ "M7": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a17_staff_check"
+ ],
+ "M8": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_p07_receipt_blocks_reassignment",
+  "tests/m05/test_fx2_postgres.py::test_fx2_p08_provisioner_blocks_receipt"
+ ],
+ "M9": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a11_concurrent_sorts",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a12_move_vs_file[a12a-file-wins]"
+ ]
+}

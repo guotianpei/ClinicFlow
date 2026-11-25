@@ -476,6 +476,14 @@ jobs:
           $VENV/bin/python -I scripts/fx1_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/fx1-mutation"
+      # Incoming fax routing FX-IN FX2 mutation controls M1..M9: three groups (the t140..t143
+      # staff SQL, the offline line provisioner, and the FX1 receipt fence) against the FX2
+      # PostgreSQL module, kill sets in scripts/fx2_mutant_kills.json (measured before the run).
+      - run: $VENV/bin/pytest scripts/test_fx2_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/fx2_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/fx2-mutation"
       # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
       # statements against the PostgreSQL module, the worker against the unit module),
       # kill sets in scripts/sh_h1_mutant_kills.json.
