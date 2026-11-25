@@ -60,7 +60,9 @@ Mutant killers (wired at green): M-FX2-1 version check removed -> A03; -2 filed 
 A06/A07; -3 sort-once guard removed -> A10/A11; -4 queue tenant/active check removed -> A04/A14;
 -5 provisioner try-lock made blocking -> P04/P05; -6 uniqueness per tenant only -> P02/P03;
 -7 staff check removed -> A17; -8 receipt fence removed (FX1 M8) -> P07/P08; -9 version checked
-before the state guard -> A11/A12a; -10 rule reference not checked on remove -> P10.
+before the state guard -> A11/A12a. (-10, the in-use check removed, is not separately killable:
+the rule FK is a deliberate backstop that also yields LINE_IN_USE atomically; P10 pins the
+behaviour.) Provisioner waits in P04/P05/P07 are bounded (`_bounded`).
 """
 
 from __future__ import annotations
@@ -569,27 +571,32 @@ def _shared_session(install: sa.SAInstall) -> psycopg.Connection[Any]:
     return conn
 
 
-def test_fx2_p04_busy_while_running(install: f2.FX2Install) -> None:
-    """A (kills M-FX2-5: a blocking lock would hang; bounded by lock_timeout in the helper's
-    absence, the row fails on its own 20 s thread join)."""
-    install.require()
-    with _shared_session(install):
-        outcome: dict[str, Any] = {}
+def _bounded(body: Any, timeout_s: float = 20.0) -> None:
+    """Run `body` in a thread; a blocking provisioner (M-FX2-5) fails the row, never hangs it."""
+    outcome: dict[str, Any] = {}
 
-        def run() -> None:
-            try:
-                _provision_refused(install, "LINE_PROVISION_BUSY", ("add", install, fx.LINE1))
-                outcome["ok"] = True
-            except BaseException as error:  # noqa: BLE001 - re-raised below
-                outcome["error"] = error
+    def run() -> None:
+        try:
+            body()
+            outcome["ok"] = True
+        except BaseException as error:  # noqa: BLE001 - re-raised below
+            outcome["error"] = error
 
-        thread = threading.Thread(target=run, daemon=True)
-        thread.start()
-        thread.join(timeout=20)
-        assert not thread.is_alive(), "the provisioner blocked instead of refusing BUSY"
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout_s)
+    assert not thread.is_alive(), "the provisioner blocked instead of refusing BUSY"
     if "error" in outcome:
         raise outcome["error"]
     assert outcome == {"ok": True}
+
+
+def test_fx2_p04_busy_while_running(install: f2.FX2Install) -> None:
+    """A (kills M-FX2-5: a blocking lock fails the bounded 20 s thread join)."""
+    install.require()
+    with _shared_session(install):
+        _bounded(lambda: _provision_refused(install, "LINE_PROVISION_BUSY",
+                                            ("add", install, fx.LINE1)))
 
 
 def test_fx2_p05_two_provisioners(install: f2.FX2Install, install_b: f2.FX2Install) -> None:
@@ -604,8 +611,8 @@ def test_fx2_p05_two_provisioners(install: f2.FX2Install, install_b: f2.FX2Insta
                              ).fetchone() == (True,)
         first.execute(sa.q(install, "INSERT INTO {s}.m05_fx_lines (line_e164) VALUES (%s)"),
                       (fx.LINE1,))
-        _provision_refused(install, "LINE_PROVISION_BUSY", ("add", install_b, fx.LINE1),
-                           tenants=(install_b,))
+        _bounded(lambda: _provision_refused(install, "LINE_PROVISION_BUSY",
+                                            ("add", install_b, fx.LINE1), tenants=(install_b,)))
         first.commit()
     assert (_snapshot_lines(install), _snapshot_lines(install_b)) == ([fx.LINE1], [])
 
@@ -645,8 +652,9 @@ def test_fx2_p07_receipt_blocks_reassignment(install: f2.FX2Install,
     install_b.require()
     _provision(install, ("add", install, fx.LINE1))
     with sa.held(install, fx.RECEIVE, fx.fax_cmd()):
-        _provision_refused(install, "LINE_PROVISION_BUSY", ("remove", install, fx.LINE1),
-                           ("add", install_b, fx.LINE1), tenants=(install_b,))
+        _bounded(lambda: _provision_refused(install, "LINE_PROVISION_BUSY",
+                                            ("remove", install, fx.LINE1),
+                                            ("add", install_b, fx.LINE1), tenants=(install_b,)))
     _provision(install, ("remove", install, fx.LINE1), ("add", install_b, fx.LINE1))
     assert (_snapshot_lines(install), _snapshot_lines(install_b)) == ([], [fx.LINE1])
     before_b = fx.snapshot(install_b)
