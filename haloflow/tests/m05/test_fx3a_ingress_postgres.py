@@ -396,7 +396,7 @@ def test_fx3_s02_open_key_cannot_mutate(install: Any) -> None:
     async def body() -> None:
         async with f3.runtime(install) as rt:
             context = await f3.ctx(rt, install, reader, f3.READ_CAPS)
-            foundation = EventFoundation(rt.gateway, producer_service="m05.fax")
+            foundation = EventFoundation(rt.gateway, producer_service="m05_fax")
             command = {"schema_version": 1, "action": "move", "fax_id": fid,
                        "staff_id": reader, "expected_version": 1,
                        "queue_id": fx.queue_id(install, "General"),

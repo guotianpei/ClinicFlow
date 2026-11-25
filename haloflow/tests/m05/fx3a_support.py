@@ -163,7 +163,7 @@ async def ctx(rt: Any, install: sa.SAInstall, principal: str, caps: frozenset[st
 def service(rt: Any) -> Any:
     from haloflow.m02.observation import EventFoundation
 
-    return m("fax").FaxService(EventFoundation(rt.gateway, producer_service="m05.fax"))
+    return m("fax").FaxService(EventFoundation(rt.gateway, producer_service="m05_fax"))
 
 
 async def ingress_ctx(rt: Any, install: sa.SAInstall) -> Any:
