@@ -19,7 +19,10 @@ FX3a interface pinned here (red packet v1, section 2)
                   SELECT m05_fx_lines_snapshot(%(command)s)
   READ_KEY    = "m05.fax.read"     READ   m05.followup.read   SELECT m05_fx_staff_read(%(command)s)
   OPEN_KEY    = "m05.fax.open"     WRITE  m05.followup.read   SELECT m05_fx_staff_action(
-                  %(command)s OPERATOR(pg_catalog.||) '{"action": "open"}'::jsonb)
+                  %(command)s OPERATOR(pg_catalog.||)
+                  pg_catalog.jsonb_build_object('action', 'open'))
+                  -- v1r2 pin correction: the catalogue refuses any statement containing a double
+                  quote (UNSAFE_STATEMENT_DEFINITION), so the constant is built, not a literal
                   -- the operation is FIXED to open on the SQL side; a caller cannot override it
                   (Codex e9c224a9)
   ACT_KEY     = "m05.fax.act"      WRITE  m05.followup.apply

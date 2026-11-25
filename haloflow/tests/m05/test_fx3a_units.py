@@ -52,7 +52,7 @@ def test_fx3_u01_statements() -> None:
     assert defs[st.OPEN_KEY] == (
         StatementMode.WRITE, "m05.followup.read",
         "SELECT m05_fx_staff_action(%(command)s OPERATOR(pg_catalog.||)"
-        " '{\"action\": \"open\"}'::jsonb)")
+        " pg_catalog.jsonb_build_object('action', 'open'))")
     assert defs[st.ACT_KEY] == (StatementMode.WRITE, "m05.followup.apply",
                                 "SELECT m05_fx_staff_action(%(command)s)")
 
