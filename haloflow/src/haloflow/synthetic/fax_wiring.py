@@ -23,13 +23,12 @@ from typing import Any, Final
 from psycopg.conninfo import make_conninfo
 
 from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
-from haloflow.m02.observation import EventFoundation
 from haloflow.m05 import fax_ingress
 from haloflow.m05.fax import INGRESS_CAPABILITIES, LINES_CAPABILITIES, FaxService
+from haloflow.synthetic.wiring import build_fax_service
 
 SYN_FAX_LINE: Final = "+15405550100"
 SYN_FAX_WORKLOAD: Final = "00000000-0000-4000-8000-00000005a0f1"
-FAX_PRODUCER: Final = "m05_fax"
 FAX_WORKLOAD_SQL: Final = (
     "INSERT INTO {schema}.m05_fx_workloads (workload_id) VALUES ('" + SYN_FAX_WORKLOAD + "');")
 SIM_PROVIDER: Final = "simfax"
@@ -37,7 +36,8 @@ PURPOSE: Final = "operations"
 
 
 def build_service(rt: Any) -> FaxService:
-    return FaxService(EventFoundation(rt.gateway, producer_service=FAX_PRODUCER))
+    service: FaxService = build_fax_service(rt)   # constructed in `wiring` (B5-K01)
+    return service
 
 
 async def workload_context(resolver: Any, tenant_id: str, caps: frozenset[str],

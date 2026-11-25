@@ -579,6 +579,17 @@ def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any], *,
                              staff_id=str(state["staff_id"]), fax=fax)
 
 
+def build_fax_service(rt: Any) -> Any:
+    """FX3a (fax profile): the FaxService over the composed runtime. Built here because this
+    module is the synthetic package's one EventFoundation construction site (B5-K01)."""
+    from haloflow.m05.fax import FaxService
+
+    return FaxService(EventFoundation(rt.gateway, producer_service=FAX_PRODUCER))
+
+
+FAX_PRODUCER: Final = "m05_fax"
+
+
 def load_foundation(gateway: Any) -> EventFoundation:
     """The B5 scenario load's transaction foundation (`sim_actions.load`): the S-G1a intake
     producer; the load appends no observation, it only runs its statements in one
