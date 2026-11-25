@@ -213,7 +213,8 @@ def _parts() -> tuple[Any, ...]:
 def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = False,
                             include_el2: bool = False, include_el3a: bool = False,
                             include_el3b: bool = False, include_el4: bool = False,
-                            include_el5: bool = False, include_fx1: bool = False) -> Any:
+                            include_el5: bool = False, include_fx1: bool = False,
+                            include_fx2: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
@@ -236,7 +237,9 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         raise ValueError("eligibility E5 composes on E4")
     if include_fx1 and not include_el5:
         raise ValueError("fax FX1 composes on eligibility E5")
-    # FX1 adds no statement key: its gateways are reached by test rows and, from FX2/FX3, by
+    if include_fx2 and not include_fx1:
+        raise ValueError("fax FX2 composes on FX1")
+    # FX1/FX2 add no statement key: their gateways are reached by test rows and, from FX3, by
     # the fax services (keys added there).
     extra = (B5_STATEMENTS,) if include_b5 else ()
     rebound = SI_REBOUND
@@ -267,7 +270,8 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
 def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = False,
                              include_el2: bool = False, include_el3a: bool = False,
                              include_el3b: bool = False, include_el4: bool = False,
-                             include_el5: bool = False, include_fx1: bool = False) -> Any:
+                             include_el5: bool = False, include_fx1: bool = False,
+                             include_fx2: bool = False) -> Any:
     """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
     B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
     target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
@@ -287,6 +291,8 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
         raise ValueError("eligibility E5 composes on E4")
     if include_fx1 and not include_el5:
         raise ValueError("fax FX1 composes on eligibility E5")
+    if include_fx2 and not include_fx1:
+        raise ValueError("fax FX2 composes on FX1")
     from haloflow.m05.eligibility_doc_units import (
         EL5_INSTALLED_STATE_PROFILES,
         EL5_TENANT_MIGRATIONS,
@@ -304,6 +310,14 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
 
         fx1_units = (FX1_TENANT_MIGRATIONS,)
         fx1_profiles = dict(FX1_INSTALLED_STATE_PROFILES)
+    if include_fx2:  # FX-IN FX2: t141..t144 (target 144)
+        from haloflow.m05.fax_staff_units import (
+            FX2_INSTALLED_STATE_PROFILES,
+            FX2_TENANT_MIGRATIONS,
+        )
+
+        fx1_units = (*fx1_units, FX2_TENANT_MIGRATIONS)
+        fx1_profiles.update(FX2_INSTALLED_STATE_PROFILES)
     b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
     b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     el1_units = (EL1_TENANT_MIGRATIONS,) if include_el1 else ()
