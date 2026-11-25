@@ -40,7 +40,7 @@ Rows (test-case ids v1; trace in brackets):
 - FX1-X03 delivery while an uncommitted rule insert is open: not blocked, uses committed rules
           only [arch 5.5]
 - FX1-L01 line not registered -> LINE_NOT_REGISTERED, ZSE [FR-1]
-- FX1-W01 workload not allow-listed / user principal -> WORKLOAD_NOT_AUTHORIZED, ZSE [arch 5.6]
+- FX1-W01 workload not allow-listed / actor principal -> WORKLOAD_NOT_AUTHORIZED, ZSE [arch 5.6]
 - FX1-M01 malformed commands (each field rule) -> COMMAND_MALFORMED, ZSE
 - FX1-S01 POSITIVE CONTROL of the support path: queue_put, queue_deactivate, rule_put, rule_remove
           applied with one audit row each [OD-FX3]
@@ -508,9 +508,9 @@ def test_fx1_w01_workload(install: fx.FX1Install) -> None:
     _ready(install)
     fx.refused(install, fx.RECEIVE, fx.fax_cmd(principal=sa.W_INGRESS),
                "WORKLOAD_NOT_AUTHORIZED")
-    user = fx.fax_cmd()
-    user["attribution"] = sa.attribution(fx.W_FAX, kind="user")
-    fx.refused(install, fx.RECEIVE, user, "WORKLOAD_NOT_AUTHORIZED")
+    actor = fx.fax_cmd()  # a well-formed attribution whose principal is an actor, not a workload
+    actor["attribution"] = sa.attribution(fx.W_FAX, kind="actor")
+    fx.refused(install, fx.RECEIVE, actor, "WORKLOAD_NOT_AUTHORIZED")
 
 
 MALFORMED: list[tuple[str, Any]] = [
