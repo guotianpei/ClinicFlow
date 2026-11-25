@@ -24,7 +24,7 @@ from psycopg.conninfo import make_conninfo
 
 from haloflow.m01.context import CorrelationSource, Principal, PrincipalKind, TrustedSource
 from haloflow.m05 import fax_ingress
-from haloflow.m05.fax import INGRESS_CAPABILITIES, LINES_CAPABILITIES, FaxService
+from haloflow.m05.fax import INGRESS_CAPABILITIES, LINES_CAPABILITIES, FaxRefused, FaxService
 from haloflow.synthetic.wiring import build_fax_service
 
 SYN_FAX_LINE: Final = "+15405550100"
@@ -33,6 +33,13 @@ FAX_WORKLOAD_SQL: Final = (
     "INSERT INTO {schema}.m05_fx_workloads (workload_id) VALUES ('" + SYN_FAX_WORKLOAD + "');")
 SIM_PROVIDER: Final = "simfax"
 PURPOSE: Final = "operations"
+# TEST-ONLY fault names (v1r2): taken one per simulator delivery attempt from
+# `FaxComposition.faults`. Empty in normal operation: nothing adds to it outside a test.
+FAULTS: Final = ("lose_ack", "unavailable", "refuse")
+
+
+class SimulatedUnavailable(Exception):
+    """The `unavailable` fault: the receive step fails before any transaction (-> 503)."""
 
 
 def build_service(rt: Any) -> FaxService:
@@ -66,6 +73,8 @@ class FaxComposition:
     ingress_app: Any
     secret: str
     stack: AsyncExitStack = field(repr=False)
+    faults: list[str] = field(default_factory=list)   # TEST-ONLY seam (see FAULTS)
+    current_fault: str | None = None
 
     def __repr__(self) -> str:
         return f"FaxComposition(fence={self.fence!r})"
@@ -90,16 +99,28 @@ async def start(runtime: Any, rt: Any, tenant_id: str, application_name: str) ->
             return await workload_context(rt.resolver, tenant, INGRESS_CAPABILITIES,
                                           TrustedSource.HTTP)
 
+        holder: list[FaxComposition] = []
+
+        async def receive(context: Any, fax: Any) -> Any:
+            fault = holder[0].current_fault if holder else None
+            if fault == "unavailable":
+                raise SimulatedUnavailable()
+            if fault == "refuse":
+                raise FaxRefused("LINE_NOT_REGISTERED")
+            return await service.receive(context, fax)
+
         secret = secrets.token_urlsafe(48)
         app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
         app.include_router(fax_ingress.create_fax_ingress_router(
             fax_ingress.FaxIngressConfig.build(secret), directory, fence, context_for,
-            service.receive))
+            receive))
     except BaseException:
         await stack.aclose()
         raise
-    return FaxComposition(service=service, fence=fence, directory=directory, ingress_app=app,
-                          secret=secret, stack=stack)
+    composition = FaxComposition(service=service, fence=fence, directory=directory,
+                                 ingress_app=app, secret=secret, stack=stack)
+    holder.append(composition)
+    return composition
 
 
 async def stop(composition: FaxComposition | None) -> None:
