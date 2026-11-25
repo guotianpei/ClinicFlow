@@ -1,12 +1,13 @@
-"""Incoming fax routing FX-IN FX2 mutation controls, group family ``fx2`` (M-FX2-1..9).
+"""Incoming fax routing FX-IN FX2 mutation controls, group family ``fx2`` (M-FX2-1..10).
 
 Targets predeclared in the FX2 red packet v1 (test_fx2_postgres docstring): the version check
 removed; the filed guard removed (OD-FX8); the sort-once guard removed; the target queue's
 active check removed; the provisioner's try-lock made blocking; line uniqueness checked per
 tenant only; the staff check removed; the receipt fence removed (FX1 M8, re-killed by the
-FX2 provisioning rows); the version checked before the state guard. M-FX2-10 (in-use check
-removed) is not declared: the rule foreign key is a deliberate backstop that yields the same
-atomic LINE_IN_USE (FX2 red packet note). Kill sets in scripts/fx2_mutant_kills.json.
+FX2 provisioning rows); the version checked before the state guard; act authorizing without
+read (M10, Codex 4eabf042). The in-use check removed is NOT declared: the rule foreign key is a
+deliberate backstop yielding the identical atomic LINE_IN_USE (equivalent mutant, evidenced
+separately in the FX2 green packet). Kill sets in scripts/fx2_mutant_kills.json.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/fx1_mutants.py. Usage (from haloflow/):
@@ -72,6 +73,10 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
     ("M9", "the version is checked before the state guard", STAFF,
      "    -- 3. the state guard (before the version: test cases v1r1 §1).\n",
      _VERSION_SQL + "    -- 3. the state guard (before the version: test cases v1r1 §1).\n"),
+    ("M10", "act authorizes without read (Codex 4eabf042)", STAFF,
+     "                    WHERE a.staff_id = p_staff_id AND a.access = 'read')\n",
+     "                    WHERE a.staff_id = p_staff_id AND a.access = 'read'\n"
+     "                       OR p_access = 'act')\n"),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (

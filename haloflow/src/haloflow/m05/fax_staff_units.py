@@ -6,8 +6,9 @@ Governing: FX-IN test cases v1r1 FX2/FX3 (Codex ALIGN 19629e35), the FX2 red pac
 OD-FX8 (filed is final), OD-FX9.
 
 - t140 `m05_fx_staff_check(uuid, text) -> boolean` (staff owner; EXECUTE to the M05 owner only;
-  the t022 pattern): the m01_staff row FOR SHARE, status active, and an access row equal to
-  the requested access ('read' | 'act'). False otherwise; never raises for those.
+  the t022 pattern): the m01_staff row FOR SHARE, status active, and read access; 'act'
+  additionally needs act access (act never authorizes without read, as capabilities_for).
+  False otherwise; never raises for those.
 - t141 `m05_fx_staff_action(jsonb)` (runtime): open | move | file | sort. Precedence
   (test cases v1r1 §1): ACTOR_INACTIVE -> FAX_NOT_FOUND -> state guard -> VERSION_CONFLICT ->
   QUEUE_NOT_FOUND. Lock order fax -> sorting -> queue (FOR SHARE).
@@ -67,8 +68,13 @@ BEGIN
     IF NOT FOUND OR v_status <> 'active' THEN
         RETURN false;
     END IF;
+    -- 'read' needs read; 'act' needs read AND act (the platform grants act only with read:
+    -- capabilities_for; Codex 4eabf042).
     RETURN EXISTS (SELECT 1 FROM {schema}.m01_staff_followup_access AS a
-                    WHERE a.staff_id = p_staff_id AND a.access = p_access);
+                    WHERE a.staff_id = p_staff_id AND a.access = 'read')
+       AND (p_access = 'read'
+            OR EXISTS (SELECT 1 FROM {schema}.m01_staff_followup_access AS a
+                        WHERE a.staff_id = p_staff_id AND a.access = 'act'));
 END;
 """
 
