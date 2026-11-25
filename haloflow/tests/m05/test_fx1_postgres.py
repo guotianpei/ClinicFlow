@@ -64,13 +64,16 @@ Rows (test-case ids v1; trace in brackets):
 - FX1-S10 queue_rename refusals: another queue's name ignoring case -> QUEUE_NAME_TAKEN; unknown,
           inactive or tenant-B queue -> QUEUE_NOT_FOUND (A and B ZSE); no grant ->
           SUPPORT_NOT_AUTHORIZED; runtime -> 42501; malformed -> COMMAND_MALFORMED
+- FX1-B01 (Codex 3e5361ff, FR-10 at the gateway boundary) tenant B's context on tenant A's
+          m05_fx_receive -> 22023 'tenant context invalid', A and B ZSE, nothing returned; own
+          context control succeeds; t140 is owner-only (no runtime EXECUTE)
 - FX1-C00 CONTROL: an existing eligibility tenant (E3b, target 126) has no FX table.
 
 Mutant killers (wired at green): M-FX1-1 level order -> R01/R02; -2 count rows -> R05; -3 dedup key
 drops provider -> D07; -4 mismatch ignores sender -> D04[sender]; -5 authority accepts any
 capability -> S02[cap]; -6 post-lock re-check removed -> S04; -7 inactive filter removed -> R11;
 -8 receipt fence removed -> F01/F02; -9 rename re-check after lock removed -> S04[queue_rename];
--10 rename collision check case-sensitive -> S10.
+-10 rename collision check case-sensitive -> S10; -11 receipt binding check removed -> B01.
 """
 
 from __future__ import annotations
@@ -781,3 +784,17 @@ def test_fx1_s10_queue_rename_refusals(install: fx.FX1Install, install_b: fx.FX1
                 fx.settings_cmd("queue_rename", queue_id=imaging, name="Elsewhere"))
     assert fx.snapshot(install) == before
     assert fx.snapshot(install_b) == b_before
+
+
+def test_fx1_b01_receive_refuses_foreign_context(install: fx.FX1Install,
+                                                install_b: fx.FX1Install) -> None:
+    """A (Codex 3e5361ff; kills M-FX1-11)."""
+    import si_support as si
+
+    _ready(install)
+    _ready(install_b)
+    fx.context_refused(install, install_b, fx.RECEIVE, fx.fax_cmd())
+    assert fx.call_with_context(install, install, fx.RECEIVE, fx.fax_cmd())["outcome"] == (
+        "needs_sorting")  # own-context control
+    assert not si.execute_privilege(install, fx.BOUND, sa.RUNTIME)
+    assert si.execute_privilege(install, fx.BOUND, sa.M05_OWNER)

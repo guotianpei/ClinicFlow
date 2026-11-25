@@ -17,7 +17,7 @@ the missing FX1 interface: `build_synthetic_registry(include_fx1=...)` raises Ty
 FX1 interface pinned here (red packet v1, section 2):
 
 Registry: `build_synthetic_registry(include_el1..include_el5=True, include_fx1=True)` = the
-eligibility registry (target 135) + t136..t139, target **139**; `include_fx1` without
+eligibility registry (target 135) + t136..t140, target **140**; `include_fx1` without
 `include_el5` -> ValueError. `build_synthetic_catalog(..., include_fx1=True)` likewise. The
 default (97) and eligibility (135) registries are unchanged (no `fax` profile until FX3).
 
@@ -50,6 +50,12 @@ Unit ids (one function per unit, house rule):
                                   duplicate_mismatch, fax_id, queue_id|null, level|null,
                                   reason|null}. One transaction: fax row, sorting row, first
                                   history row (architecture 5.1, 5.4).
+- `t140_m05_fx_tenant_bound`       `m05_fx_tenant_bound() RETURNS boolean` (staff owner; EXECUTE
+                                  to the M05 owner only; Codex 3e5361ff): true iff the session's
+                                  app.tenant_id equals the tenant registered for THIS schema in
+                                  shared.tenants. Every FX runtime gateway (t139 and FX2) refuses
+                                  otherwise with SQLSTATE 22023 'tenant context invalid', before
+                                  any read or write.
 Refusals: P0001 with message = code: COMMAND_MALFORMED, WORKLOAD_NOT_AUTHORIZED,
 LINE_NOT_REGISTERED, SUPPORT_NOT_AUTHORIZED, QUEUE_NAME_TAKEN, QUEUE_NOT_FOUND, RULE_NOT_FOUND,
 RULE_DUPLICATE. A non-support role calling t138 -> 42501.
@@ -85,18 +91,21 @@ from typing import Any, Final
 
 import m02_support
 import psycopg
+import pytest
 import sa_support as sa
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
-FX1_TARGET: Final = 139
+FX1_TARGET: Final = 140
 FX1_SUPPORTED: Final = range(FX1_TARGET, FX1_TARGET + 1)
 ELIGIBILITY_TARGET: Final = 135
 FX1_IDS: Final = ("t136_m05_fx_tables", "t137_m05_fx_settings_authority",
-                  "t138_m05_fx_settings_put", "t139_m05_fx_receive")
+                  "t138_m05_fx_settings_put", "t139_m05_fx_receive",
+                  "t140_m05_fx_tenant_bound")
 RECEIVE: Final = "m05_fx_receive"
 SETTINGS_PUT: Final = "m05_fx_settings_put"
 AUTHORITY: Final = "m05_fx_settings_authority"
+BOUND: Final = "m05_fx_tenant_bound"
 SETTINGS_CAP: Final = "m05.fax.settings"
 SUPPORT_ROLE: Final = "haloflow_support"
 
@@ -347,3 +356,27 @@ def wait(predicate: Callable[[], bool], timeout_s: float = 10.0) -> None:
     while not predicate():
         assert time.monotonic() < deadline, "condition not reached"
         time.sleep(0.02)
+
+
+def call_with_context(target: sa.SAInstall, context: sa.SAInstall, function: str,
+                      command: Any) -> dict[str, Any]:
+    """Runtime role calls `target`'s function with `context`'s tenant setting (Codex 3e5361ff)."""
+    with sa.runtime_conn(target) as conn, conn.transaction():
+        conn.execute("SELECT set_config('app.tenant_id', %s, true)", (context.tenant_id,))
+        row = conn.execute(sql.SQL("SELECT {}.{}(%s)").format(
+            sql.Identifier(target.schema), sql.Identifier(function)), (Jsonb(command),)).fetchone()
+        assert row is not None
+        result: dict[str, Any] = row[0]
+        return result
+
+
+def context_refused(target: sa.SAInstall, context: sa.SAInstall, function: str,
+                    command: Any) -> None:
+    """Mismatched context on `target`'s gateway: 22023 'tenant context invalid'; both tenants'
+    FX tables unchanged; nothing returned."""
+    before = (snapshot(target), snapshot(context))
+    with pytest.raises(psycopg.Error) as refused:
+        call_with_context(target, context, function, command)
+    assert (refused.value.sqlstate, refused.value.diag.message_primary) == (
+        "22023", "tenant context invalid")
+    assert (snapshot(target), snapshot(context)) == before
