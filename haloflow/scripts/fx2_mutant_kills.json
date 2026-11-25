@@ -26,7 +26,8 @@
   "tests/m05/test_fx2_postgres.py::test_fx2_p02_p03_duplicates"
  ],
  "M7": [
-  "tests/m05/test_fx2_postgres.py::test_fx2_a17_staff_check"
+  "tests/m05/test_fx2_postgres.py::test_fx2_a17_staff_check",
+  "tests/m05/test_fx2_postgres.py::test_fx2_a20_act_without_read_cannot_mutate"
  ],
  "M8": [
   "tests/m05/test_fx2_postgres.py::test_fx2_p07_receipt_blocks_reassignment",
@@ -35,5 +36,8 @@
  "M9": [
   "tests/m05/test_fx2_postgres.py::test_fx2_a11_concurrent_sorts",
   "tests/m05/test_fx2_postgres.py::test_fx2_a12_move_vs_file[a12a-file-wins]"
+ ],
+ "M10": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_a20_act_without_read_cannot_mutate"
  ]
 }
