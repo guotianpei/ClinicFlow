@@ -39,5 +39,14 @@
  ],
  "M10": [
   "tests/m05/test_fx2_postgres.py::test_fx2_a20_act_without_read_cannot_mutate"
+ ],
+ "M11a": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_b02_gateways_refuse_foreign_context"
+ ],
+ "M11r": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_b02_gateways_refuse_foreign_context"
+ ],
+ "M11s": [
+  "tests/m05/test_fx2_postgres.py::test_fx2_b02_gateways_refuse_foreign_context"
  ]
 }

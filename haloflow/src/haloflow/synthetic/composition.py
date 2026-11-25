@@ -310,7 +310,7 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
 
         fx1_units = (FX1_TENANT_MIGRATIONS,)
         fx1_profiles = dict(FX1_INSTALLED_STATE_PROFILES)
-    if include_fx2:  # FX-IN FX2: t140..t143 (target 143)
+    if include_fx2:  # FX-IN FX2: t141..t144 (target 144)
         from haloflow.m05.fax_staff_units import (
             FX2_INSTALLED_STATE_PROFILES,
             FX2_TENANT_MIGRATIONS,

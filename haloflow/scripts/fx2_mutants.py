@@ -1,13 +1,15 @@
-"""Incoming fax routing FX-IN FX2 mutation controls, group family ``fx2`` (M-FX2-1..10).
+"""Incoming fax routing FX-IN FX2 mutation controls, group family ``fx2`` (M-FX2-1..11).
 
 Targets predeclared in the FX2 red packet v1 (test_fx2_postgres docstring): the version check
 removed; the filed guard removed (OD-FX8); the sort-once guard removed; the target queue's
 active check removed; the provisioner's try-lock made blocking; line uniqueness checked per
 tenant only; the staff check removed; the receipt fence removed (FX1 M8, re-killed by the
 FX2 provisioning rows); the version checked before the state guard; act authorizing without
-read (M10, Codex 4eabf042). The in-use check removed is NOT declared: the rule foreign key is a
-deliberate backstop yielding the identical atomic LINE_IN_USE (equivalent mutant, evidenced
-separately in the FX2 green packet). Kill sets in scripts/fx2_mutant_kills.json.
+read (M10, Codex 4eabf042); the tenant binding check removed from the action, the
+read and the snapshot (M11a/r/s, Codex 3e5361ff). The in-use check removed is NOT declared:
+the rule foreign key is a deliberate backstop yielding the identical atomic LINE_IN_USE
+(equivalent mutant, evidenced separately in the FX2 green packet). Kill sets in
+scripts/fx2_mutant_kills.json.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
 scripts/fx1_mutants.py. Usage (from haloflow/):
@@ -77,6 +79,21 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "                    WHERE a.staff_id = p_staff_id AND a.access = 'read')\n",
      "                    WHERE a.staff_id = p_staff_id AND a.access = 'read'\n"
      "                       OR p_access = 'act')\n"),
+    ("M11a", "the staff action's tenant binding check is removed (Codex 3e5361ff)", STAFF,
+     "BEGIN\"\"\" + _TENANT + BINDING + r\"\"\"\n"
+     "    IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'action')\n",
+     "BEGIN\"\"\" + _TENANT + r\"\"\"\n"
+     "    IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'action')\n"),
+    ("M11r", "the staff read's tenant binding check is removed", STAFF,
+     "BEGIN\"\"\" + _TENANT + BINDING + r\"\"\"\n"
+     "    IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'view')\n",
+     "BEGIN\"\"\" + _TENANT + r\"\"\"\n"
+     "    IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'view')\n"),
+    ("M11s", "the lines snapshot's tenant binding check is removed", STAFF,
+     "BEGIN\"\"\" + _TENANT + BINDING + r\"\"\"\n"
+     "    IF v_keys IS DISTINCT FROM ARRAY['schema_version']::text[]\n",
+     "BEGIN\"\"\" + _TENANT + r\"\"\"\n"
+     "    IF v_keys IS DISTINCT FROM ARRAY['schema_version']::text[]\n"),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (

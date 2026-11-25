@@ -1,20 +1,21 @@
-"""Incoming fax routing FX-IN, package FX2: per-tenant migration units t140..t143. SYNTHETIC ONLY.
+"""Incoming fax routing FX-IN, package FX2: per-tenant migration units t141..t144. SYNTHETIC ONLY.
 
-Composed ONLY into the synthetic registry behind `include_fx2` (on FX1, target 139 -> 143).
+Composed ONLY into the synthetic registry behind `include_fx2` (on FX1, target 140 -> 144).
+Every runtime gateway here refuses a foreign session tenant via FX1 t140 (Codex 3e5361ff).
 Governing: FX-IN test cases v1r1 FX2/FX3 (Codex ALIGN 19629e35), the FX2 red packet v1
 (`claude_fx2-red-packet-v1-2026-11-25.md`), OD-FX6 (open / move / mark filed; no assignment),
 OD-FX8 (filed is final), OD-FX9.
 
-- t140 `m05_fx_staff_check(uuid, text) -> boolean` (staff owner; EXECUTE to the M05 owner only;
+- t141 `m05_fx_staff_check(uuid, text) -> boolean` (staff owner; EXECUTE to the M05 owner only;
   the t022 pattern): the m01_staff row FOR SHARE, status active, and read access; 'act'
   additionally needs act access (act never authorizes without read, as capabilities_for).
   False otherwise; never raises for those.
-- t141 `m05_fx_staff_action(jsonb)` (runtime): open | move | file | sort. Precedence
+- t142 `m05_fx_staff_action(jsonb)` (runtime): open | move | file | sort. Precedence
   (test cases v1r1 §1): ACTOR_INACTIVE -> FAX_NOT_FOUND -> state guard -> VERSION_CONFLICT ->
   QUEUE_NOT_FOUND. Lock order fax -> sorting -> queue (FOR SHARE).
-- t142 `m05_fx_staff_read(jsonb)` (runtime, STABLE): list | get | history. The sender appears
+- t143 `m05_fx_staff_read(jsonb)` (runtime, STABLE): list | get | history. The sender appears
   only as its last four digits; never the line, doc_ref or provider id (FR-11).
-- t143 `m05_fx_lines_snapshot(jsonb)` (runtime, STABLE): this tenant's receiving lines, sorted.
+- t144 `m05_fx_lines_snapshot(jsonb)` (runtime, STABLE): this tenant's receiving lines, sorted.
 """
 
 from __future__ import annotations
@@ -27,14 +28,15 @@ from haloflow.m01.provisioning.roles import RUNTIME_ROLE
 from haloflow.m01.provisioning.units import UnitDefinition, UnitDefinitions
 from haloflow.m01.staff import units as staff_units
 from haloflow.m02.roles import M05_OWNER_ROLE
+from haloflow.m05.fax_units import BINDING
 from haloflow.m05.intake_units import _ATTRIBUTION, _DECLARE_COMMON, _TENANT
 from haloflow.m05.reminder_units import _definition, _profile
 
-CHECK_ID: Final = "t140_m05_fx_staff_check"
-ACTION_ID: Final = "t141_m05_fx_staff_action"
-READ_ID: Final = "t142_m05_fx_staff_read"
-SNAPSHOT_ID: Final = "t143_m05_fx_lines_snapshot"
-FX2_TARGET: Final = 143
+CHECK_ID: Final = "t141_m05_fx_staff_check"
+ACTION_ID: Final = "t142_m05_fx_staff_action"
+READ_ID: Final = "t143_m05_fx_staff_read"
+SNAPSHOT_ID: Final = "t144_m05_fx_lines_snapshot"
+FX2_TARGET: Final = 144
 
 CHECK_NAME: Final = "m05_fx_staff_check"
 ACTION_NAME: Final = "m05_fx_staff_action"
@@ -46,7 +48,7 @@ def _raise(code: str) -> str:
     return f"RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = '{code}';"
 
 
-# --- t140 staff check (staff owner; EXECUTE to the M05 owner) -------------------------------
+# --- t141 staff check (staff owner; EXECUTE to the M05 owner) -------------------------------
 
 CHECK_BODY: Final = r"""
 DECLARE
@@ -108,7 +110,7 @@ _VERSION_FIELD: Final = r"""
        OR (p_command OPERATOR(pg_catalog.->>) 'expected_version')
           OPERATOR(pg_catalog.!~) '^[1-9][0-9]{0,8}$'"""
 
-# --- t141 staff action ----------------------------------------------------------------------
+# --- t142 staff action ----------------------------------------------------------------------
 
 ACTION_BODY: Final = (
     "\nDECLARE" + _DECLARE_COMMON + r"""
@@ -123,7 +125,7 @@ ACTION_BODY: Final = (
     v_now timestamptz;
     v_state text;
     v_new_queue uuid;
-BEGIN""" + _TENANT + r"""
+BEGIN""" + _TENANT + BINDING + r"""
     IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'action')
           IS DISTINCT FROM 'string' THEN
         """ + _raise("COMMAND_MALFORMED") + r"""
@@ -229,7 +231,7 @@ BEGIN""" + _TENANT + r"""
 END;
 """)
 
-# --- t142 staff read (STABLE) ---------------------------------------------------------------
+# --- t143 staff read (STABLE) ---------------------------------------------------------------
 
 _SUMMARY: Final = r"""pg_catalog.jsonb_build_object(
             'fax_id', f.fax_id::text, 'state', f.state, 'queue_id', f.queue_id::text,
@@ -247,7 +249,7 @@ READ_BODY: Final = (
     v_fax_id uuid;
     v_queue uuid;
     v_out jsonb;
-BEGIN""" + _TENANT + r"""
+BEGIN""" + _TENANT + BINDING + r"""
     IF pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'view')
           IS DISTINCT FROM 'string' THEN
         """ + _raise("COMMAND_MALFORMED") + r"""
@@ -314,12 +316,12 @@ BEGIN""" + _TENANT + r"""
 END;
 """)
 
-# --- t143 lines snapshot (STABLE) -----------------------------------------------------------
+# --- t144 lines snapshot (STABLE) -----------------------------------------------------------
 
 SNAPSHOT_BODY: Final = (
     "\nDECLARE" + _DECLARE_COMMON + r"""
     v_lines jsonb;
-BEGIN""" + _TENANT + r"""
+BEGIN""" + _TENANT + BINDING + r"""
     IF v_keys IS DISTINCT FROM ARRAY['schema_version']::text[]
        OR pg_catalog.jsonb_typeof(p_command OPERATOR(pg_catalog.->) 'schema_version')
           IS DISTINCT FROM 'number'
