@@ -58,12 +58,19 @@ Rows (test-case ids v1; trace in brackets):
 - FX1-S07 queue_put name equal ignoring case -> QUEUE_NAME_TAKEN [FR-2]
 - FX1-S08 settings_put refusals: unknown/foreign queue, unknown rule, unregistered line,
           duplicate rule, no sender and no line [FR-3, FR-10]
+- FX1-S09 (Codex REVISE 7859c910; OD-FX1 rename) support queue_rename keeps the queue's ID: a
+          default queue with an existing rule and routed fax is renamed; the rule and fax still
+          reference it; a new receipt routes there; one attributed audit row
+- FX1-S10 queue_rename refusals: another queue's name ignoring case -> QUEUE_NAME_TAKEN; unknown,
+          inactive or tenant-B queue -> QUEUE_NOT_FOUND (A and B ZSE); no grant ->
+          SUPPORT_NOT_AUTHORIZED; runtime -> 42501; malformed -> COMMAND_MALFORMED
 - FX1-C00 CONTROL: an existing eligibility tenant (E3b, target 126) has no FX table.
 
 Mutant killers (wired at green): M-FX1-1 level order -> R01/R02; -2 count rows -> R05; -3 dedup key
 drops provider -> D07; -4 mismatch ignores sender -> D04[sender]; -5 authority accepts any
 capability -> S02[cap]; -6 post-lock re-check removed -> S04; -7 inactive filter removed -> R11;
--8 receipt fence removed -> F01/F02.
+-8 receipt fence removed -> F01/F02; -9 rename re-check after lock removed -> S04[queue_rename];
+-10 rename collision check case-sensitive -> S10.
 """
 
 from __future__ import annotations
@@ -641,7 +648,7 @@ def _revoke(install: sa.SAInstall) -> None:
              (install.tenant_id, fx.SETTINGS_CAP))
 
 
-@pytest.mark.parametrize("op", ["queue_deactivate", "rule_put"])
+@pytest.mark.parametrize("op", ["queue_deactivate", "rule_put", "queue_rename"])
 @pytest.mark.parametrize("revoke", [True, False], ids=["s04-revoked", "s05-control"])
 def test_fx1_s04_s05_authority_after_lock(install: fx.FX1Install, env: db.L1WEnv, op: str,
                                           revoke: bool) -> None:
@@ -649,8 +656,11 @@ def test_fx1_s04_s05_authority_after_lock(install: fx.FX1Install, env: db.L1WEnv
     the grant is revoked (S04) or not (S05 positive control); the lock is then released."""
     _ready(install)
     imaging = fx.queue_id(install, "Imaging")
-    command = (fx.settings_cmd("queue_deactivate", queue_id=imaging) if op == "queue_deactivate"
-               else fx.settings_cmd("rule_put", sender=fx.SENDER, line=None, queue_id=imaging))
+    command = {
+        "queue_deactivate": fx.settings_cmd("queue_deactivate", queue_id=imaging),
+        "rule_put": fx.settings_cmd("rule_put", sender=fx.SENDER, line=None, queue_id=imaging),
+        "queue_rename": fx.settings_cmd("queue_rename", queue_id=imaging, name="Imaging & X-ray"),
+    }[op]
     with _support(env, install, f"fx1-s04-{op}-{revoke}") as support:
         before = fx.snapshot(install)
         with fx.row_locked(install, "m05_fx_queues", "queue_id = %s::uuid", (imaging,)):
@@ -714,3 +724,60 @@ def test_fx1_s08_settings_refusals(install: fx.FX1Install, install_b: fx.FX1Inst
         ]:
             fx.refused(install, fx.SETTINGS_PUT, command, code, conninfo=support)
         assert fx.snapshot(install_b) == b_before
+
+
+def test_fx1_s09_queue_rename_keeps_identity(install: fx.FX1Install, env: db.L1WEnv) -> None:
+    """A (OD-FX1 rename; Codex REVISE 7859c910)."""
+    _ready(install)
+    imaging = fx.queue_id(install, "Imaging")
+    rule = fx.seed_rule(install, sender=fx.SENDER, line=None, queue="Imaging")
+    routed = fx.receive(install, fx.fax_cmd())
+    with _support(env, install, "fx1-s09") as support:
+        result = fx.call_as(support, install, fx.SETTINGS_PUT, fx.settings_cmd(
+            "queue_rename", queue_id=imaging, name="Imaging & X-ray"))
+    assert (result["outcome"], result["queue_id"]) == ("applied", imaging)
+    (queue,) = fx.rows(install, "m05_fx_queues", "queue_id = %s::uuid", (imaging,))
+    assert (queue["name"], queue["active"], queue["position"]) == ("Imaging & X-ray", True, 2)
+    assert fx.rows(install, "m05_fx_queues", "name = 'Imaging'") == []
+    (rule_row,) = fx.rows(install, "m05_fx_rules", "rule_id = %s::uuid", (rule,))
+    assert rule_row["queue_id"] == imaging
+    assert fx.fax(install, str(routed["fax_id"]))["queue_id"] == imaging
+    again = fx.receive(install, fx.fax_cmd())
+    assert (again["outcome"], again["queue_id"]) == ("routed", imaging)
+    (audit,) = _audit(install)
+    assert (audit["op"], audit["target_id"]) == ("queue_rename", imaging)
+    assert audit["actor_id"] and audit["grant_id"]
+
+
+def test_fx1_s10_queue_rename_refusals(install: fx.FX1Install, install_b: fx.FX1Install,
+                                       env: db.L1WEnv) -> None:
+    """A (kills M-FX1-10 through the case-insensitive collision)."""
+    _ready(install)
+    _ready(install_b)
+    imaging = fx.queue_id(install, "Imaging")
+    fx.deactivate_raw(install, "General")
+    b_before = fx.snapshot(install_b)
+    with _support(env, install, "fx1-s10") as support:
+        for command, code in [
+            (fx.settings_cmd("queue_rename", queue_id=imaging, name="labs/results"),
+             "QUEUE_NAME_TAKEN"),
+            (fx.settings_cmd("queue_rename", queue_id=sa.new_id(), name="Elsewhere"),
+             "QUEUE_NOT_FOUND"),
+            (fx.settings_cmd("queue_rename", queue_id=fx.queue_id(install, "General"),
+                             name="Elsewhere"), "QUEUE_NOT_FOUND"),
+            (fx.settings_cmd("queue_rename", queue_id=fx.queue_id(install_b, "Imaging"),
+                             name="Elsewhere"), "QUEUE_NOT_FOUND"),
+            (fx.settings_cmd("queue_rename", queue_id=imaging, name=""), "COMMAND_MALFORMED"),
+            (fx.settings_cmd("queue_rename", queue_id=imaging), "COMMAND_MALFORMED"),
+        ]:
+            fx.refused(install, fx.SETTINGS_PUT, command, code, conninfo=support)
+    with _support(env, install, "fx1-s10-nogrant", caps=None) as nogrant:
+        fx.refused(install, fx.SETTINGS_PUT,
+                   fx.settings_cmd("queue_rename", queue_id=imaging, name="Elsewhere"),
+                   "SUPPORT_NOT_AUTHORIZED", conninfo=nogrant)
+    before = fx.snapshot(install)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        sa.call(install, fx.SETTINGS_PUT,
+                fx.settings_cmd("queue_rename", queue_id=imaging, name="Elsewhere"))
+    assert fx.snapshot(install) == before
+    assert fx.snapshot(install_b) == b_before

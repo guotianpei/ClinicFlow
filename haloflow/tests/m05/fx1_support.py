@@ -34,11 +34,13 @@ Unit ids (one function per unit, house rule):
 - `t138_m05_fx_settings_put`       `m05_fx_settings_put(jsonb) RETURNS jsonb`, EXECUTE to
                                   `haloflow_support` only. Ops (command `op`):
                                   queue_put {name, position} -> {outcome: applied, queue_id};
-                                  queue_deactivate {queue_id}; rule_put {sender|null, line|null,
+                                  queue_deactivate {queue_id}; queue_rename {queue_id, name}
+                                  -> {outcome: applied, queue_id} (same ID; OD-FX1 rename, Codex
+                                  REVISE 7859c910); rule_put {sender|null, line|null,
                                   queue_id} -> {outcome: applied, rule_id}; rule_remove {rule_id}.
                                   Authority before any lock or write AND re-checked after the
-                                  target row lock (queue row FOR UPDATE for queue ops; the target
-                                  queue FOR SHARE for rule_put). One audit row per applied op
+                                  target row lock (queue row FOR UPDATE for queue ops incl. rename;
+                                  target queue FOR SHARE for rule_put). One audit row per op
                                   (actor_id, grant_id, op, at).
 - `t139_m05_fx_receive`            `m05_fx_receive(jsonb) RETURNS jsonb`, EXECUTE to the runtime.
                                   Command {schema_version 1, provider, provider_fax_id, line,
