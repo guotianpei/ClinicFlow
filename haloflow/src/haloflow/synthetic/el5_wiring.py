@@ -98,7 +98,8 @@ async def context_resolver(runtime: Any, tenant_id: str) -> ContextResolver:
     if not isinstance(composed, TenantResolver):
         raise SyntheticRefused("RESOLVER_INVALID")
     record = await runtime.dependencies.control_store.get_tenant(tenant_id)
-    if record is None or record.schema_version != profiles.TARGETS[profiles.ELIGIBILITY]:
+    # FX3a: the fax profile composes E5 too; the installed target is the runtime's profile's
+    if record is None or record.schema_version != profiles.TARGETS[runtime.profile]:
         raise SyntheticRefused("TENANT_NOT_FOUND")
     resolver = copy.copy(composed)
     resolver._control_store = _RecordStore(record)  # noqa: SLF001 - answered from the record

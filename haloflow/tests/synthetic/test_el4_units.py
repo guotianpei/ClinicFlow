@@ -41,10 +41,11 @@ def test_el4_u01_explicit_values() -> None:
     """A. An explicit `default` equals the field-less reading; `eligibility` is read only
     from an explicit field."""
     profiles = e4.mod("profiles")
-    assert profiles.PROFILES == (e4.DEFAULT, e4.ELIGIBILITY)
+    # FX3a (red packet v1 section 4): the closed set gains the fax profile (target 144)
+    assert profiles.PROFILES == (e4.DEFAULT, e4.ELIGIBILITY, "fax")
     assert profiles.STATE_FIELD == e4.STATE_FIELD
     assert profiles.TARGETS == {e4.DEFAULT: e4.DEFAULT_TARGET,
-                                e4.ELIGIBILITY: e4.ELIGIBILITY_TARGET}
+                                e4.ELIGIBILITY: e4.ELIGIBILITY_TARGET, "fax": 144}
     assert profiles.read_profile(_raw(install_profile="default")) == e4.DEFAULT
     assert profiles.read_profile(_raw(install_profile="eligibility")) == e4.ELIGIBILITY
 

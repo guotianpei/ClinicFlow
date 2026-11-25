@@ -214,7 +214,7 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
                             include_el2: bool = False, include_el3a: bool = False,
                             include_el3b: bool = False, include_el4: bool = False,
                             include_el5: bool = False, include_fx1: bool = False,
-                            include_fx2: bool = False) -> Any:
+                            include_fx2: bool = False, include_fx3: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
@@ -239,8 +239,10 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         raise ValueError("fax FX1 composes on eligibility E5")
     if include_fx2 and not include_fx1:
         raise ValueError("fax FX2 composes on FX1")
+    if include_fx3 and not include_fx2:
+        raise ValueError("fax FX3 composes on FX2")
     # FX1/FX2 add no statement key: their gateways are reached by test rows and, from FX3, by
-    # the fax services (keys added there).
+    # the fax services (FX3's five keys, below).
     extra = (B5_STATEMENTS,) if include_b5 else ()
     rebound = SI_REBOUND
     if include_el1:
@@ -263,6 +265,10 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         from haloflow.m05.eligibility_statements import EL5_STATEMENTS
 
         extra = (*extra, EL5_STATEMENTS)
+    if include_fx3:                       # FX-IN FX3a: receive / lines / read / open / act
+        from haloflow.m05.fax_statements import FX3_STATEMENTS
+
+        extra = (*extra, FX3_STATEMENTS)
     return build_statement_catalog(*_parts(), rebound, SI_STATEMENTS, *extra,
                                    activation_protected=_protected())
 

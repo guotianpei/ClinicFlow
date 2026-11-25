@@ -95,7 +95,7 @@ def _form(action: str, csrf: str, inner: str, button: str) -> str:
 def _listed(lifecycle: Any) -> dict[str, Any]:
     """The scenarios this app lists: S1..S4, plus E1..E5 on an eligibility-profile app (E4)."""
     eligibility = (getattr(lifecycle, "install_profile", None)
-                   or getattr(lifecycle, "profile", "default")) == "eligibility"
+                   or getattr(lifecycle, "profile", "default")) in ("eligibility", "fax")
     return {name: spec for name, spec in scenarios.fixtures().items()
             if eligibility or name not in scenarios.EL_NAMES}
 
@@ -266,7 +266,7 @@ def install_sim_ui(app: FastAPI, lifecycle: Any) -> None:
     for name, path in FORM_ROUTES.items():
         app.add_api_route(path, endpoint_for(name), methods=["POST"], response_class=Response,
                           include_in_schema=False)
-    if getattr(lifecycle, "profile", "default") == "eligibility":         # E4 (D-E4-4)
+    if getattr(lifecycle, "profile", "default") in ("eligibility", "fax"):  # E4 (D-E4-4)
         async def clearinghouse_endpoint(request: Request) -> Response:
             return await clearinghouse_form(lifecycle, request)
 

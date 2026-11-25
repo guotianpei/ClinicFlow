@@ -10,7 +10,8 @@ Run twice by default; the two traces must be identical (determinism), else nothi
 
     python scripts/b2_measure_profile.py [--check] [--profile eligibility]
         # --check: compare with the pinned module; --profile (E4): the eligibility install
-        # profile (target 126) generates installed_profile_eligibility.py
+        # profile (target 126) generates installed_profile_eligibility.py; FX3a: --profile fax
+        # generates installed_profile_fax.py
 
 Requires HALOFLOW_SYNTHETIC_PG_BIN (PostgreSQL 17 binaries).
 """
@@ -37,7 +38,9 @@ from haloflow.synthetic.attest import admin_connect  # noqa: E402
 
 TARGETS = {"default": HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile.py",
            "eligibility": HALOFLOW / "src" / "haloflow" / "synthetic"
-           / "installed_profile_eligibility.py"}
+           / "installed_profile_eligibility.py",
+           # FX-IN FX3a: the fax install profile (target 144)
+           "fax": HALOFLOW / "src" / "haloflow" / "synthetic" / "installed_profile_fax.py"}
 from haloflow.synthetic.profiles import TARGETS as REGISTRY_TARGET  # noqa: E402
 PROFILE = ["default"]
 COMPLETION_POINTS = {
@@ -61,12 +64,13 @@ def _measurement_mode() -> None:
     expected index of an uninterrupted install (fake consecutive indices). Never used by src."""
     order = {name: i for i, name in enumerate(_FAKE_ORDER)}
     provision.COMPLETION = order  # type: ignore[misc]
-    if PROFILE[0] == "eligibility":
+    if PROFILE[0] != "default":
         # E4: the eligibility profile module is what this run generates, so a stand-in with the
         # fake indices answers the seal's profile id / point bounds during the measurement.
+        # FX3a: likewise the fax profile module.
         import types
 
-        stub = types.ModuleType("haloflow.synthetic.installed_profile_eligibility")
+        stub = types.ModuleType(f"haloflow.synthetic.{TARGETS[PROFILE[0]].stem}")
         stub.PROFILE_ID = "measurement"  # type: ignore[attr-defined]
         stub.POINTS = ("",) * len(order)  # type: ignore[attr-defined]
         stub.COMPLETION = order  # type: ignore[attr-defined]
