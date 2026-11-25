@@ -97,7 +97,12 @@ def test_el4_u01_registry_targets() -> None:
     # OD-EL12 (Codex t127 ALIGN): the eligibility registry is E3b's (126) plus t127.
     full = comp.build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
                                          include_el3b=True, include_el4=True)
-    assert profiles.registry(e4.ELIGIBILITY).target_version == full.target_version == 127
+    assert full.target_version == e4.E4_TARGET == 127
+    # Eligibility E5 (declared pin move): the eligibility profile composes E5 on top (135:
+    # t128..t134 + t135, the doc item display-state read of the 2026-11-24 REVISE).
+    el5 = comp.build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
+                                        include_el3b=True, include_el4=True, include_el5=True)
+    assert profiles.registry(e4.ELIGIBILITY).target_version == el5.target_version == 135
 
 
 def test_el4_u01_baseline_registries_control() -> None:
@@ -234,7 +239,9 @@ def test_el4_u05_kind_titles() -> None:
     ui = e4.mod("ui")
     for kind, title in e4.EL_TITLES.items():
         assert ui.KIND_LABELS.get(kind) == title, (kind, ui.KIND_LABELS.get(kind))
-    assert len(ui.KIND_LABELS) == 8
+    # Eligibility E5 (declared pin move, 2026-11-24): + owner decision 4's doc-check title.
+    assert len(ui.KIND_LABELS) == 9
+    assert ui.KIND_LABELS["eligibility_doc_check"] == "Chart entry needs a check"
 
 
 def test_el4_u05_eligibility_label_tables_control() -> None:
@@ -320,6 +327,12 @@ def _routes(profile: str | None) -> set[tuple[str, str]]:
 EL4_ROUTES = {("POST", e4.CLEARINGHOUSE_ROUTE), ("POST", e4.CLEARINGHOUSE_FORM),
               ("POST", e4.UI_PREFIX + "/{item_id}/contact"),
               ("POST", e4.UI_PREFIX + "/{item_id}/close")}
+# Eligibility E5 (EL-12; declared pin moves): the read-only simulated chart page (R9.1) and the
+# staff action route are the routes E5 adds, eligibility profile only.
+EL5_ROUTES = {("GET", "/synthetic/ui/chart/{appointment_ref}"),
+              # E5 REVISE 2026-11-24 (declared pin move, Codex-aligned): the staff action
+              # "Recorded in chart manually" on the open doc item.
+              ("POST", e4.UI_PREFIX + "/{item_id}/chart-recorded")}
 
 
 def test_el4_u08_default_inventory_control() -> None:
@@ -332,7 +345,7 @@ def test_el4_u08_inventory_per_profile() -> None:
     exactly the four E4 routes."""
     base = _routes(None)
     assert _routes(e4.DEFAULT) == base
-    assert _routes(e4.ELIGIBILITY) == base | EL4_ROUTES
+    assert _routes(e4.ELIGIBILITY) == base | EL4_ROUTES | EL5_ROUTES
 
 
 # ---------------------------------------------------------------------------- U09 logs
@@ -414,5 +427,7 @@ def test_el4_u10_contact_history_unit_pin() -> None:
         assert verb not in body.upper().replace("UPDATED", ""), verb
     profiles = e4.mod("profiles")
     el_ids = profiles.registry(e4.ELIGIBILITY).migration_ids
-    assert el_ids[-1] == e4.CONTACT_HISTORY_ID and len(el_ids) == e4.ELIGIBILITY_TARGET
+    # Eligibility E5 (declared pin move): t127 is the last E4 unit; E5's t128..t135 follow it.
+    assert el_ids[e4.E4_TARGET - 1] == e4.CONTACT_HISTORY_ID
+    assert len(el_ids) == e4.ELIGIBILITY_TARGET
     assert e4.CONTACT_HISTORY_ID not in profiles.registry(e4.DEFAULT).migration_ids

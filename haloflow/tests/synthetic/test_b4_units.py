@@ -58,7 +58,9 @@ def test_b4_u_lbl2_module_wording_is_exact() -> None:
     assert ui.BANNER == b4.BANNER
     # Eligibility E4 (el4_support pins; declared pin move): the three OD-EL11 titles are added;
     # the five B4 labels are unchanged.
-    el4 = {"eligibility_inactive", "eligibility_inconclusive", "eligibility_manual"}
+    # Eligibility E5 (declared pin move, 2026-11-24): owner decision 4's doc-check title is added.
+    el4 = {"eligibility_inactive", "eligibility_inconclusive", "eligibility_manual",
+           "eligibility_doc_check"}
     assert {k: v for k, v in ui.KIND_LABELS.items() if k not in el4} == b4.KIND_LABELS
     assert ui.REASON_LABELS == b4.REASON_LABELS
     assert ui.OUTCOME_LABELS == b4.OUTCOME_LABELS

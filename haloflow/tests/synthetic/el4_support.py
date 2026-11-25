@@ -107,7 +107,12 @@ STATE_FIELD: Final = "install_profile"
 DEFAULT_TARGET: Final = 97
 # OD-EL12 (Rachel 2026-11-22) + Codex t127 ALIGN: the eligibility profile adds the synthetic
 # contact-history read t127, so its target is 127 (E3b's own registry stays 126).
-ELIGIBILITY_TARGET: Final = 127
+# Eligibility E5 (EL-12; el5_support pins; declared pin move): the eligibility profile adds
+# t128..t135 (the simulated chart documentation units; t135, the doc item display-state read,
+# from the 2026-11-24 REVISE, Codex D2 ruling (b)), so the INSTALLED target is 135; E4's own
+# registry delta stays t127 (E4_TARGET).
+ELIGIBILITY_TARGET: Final = 135
+E4_TARGET: Final = 127
 E3B_TARGET: Final = 126
 CONTACT_HISTORY_KEY: Final = "m05.synthetic.el_contact_history"
 CONTACT_HISTORY_ID: Final = "t127_m05_el_contact_history"

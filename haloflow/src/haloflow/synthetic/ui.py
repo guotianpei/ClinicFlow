@@ -50,7 +50,7 @@ CSS_PATH: Final = "/synthetic/ui/static/app.css"
 # accepts the form media type only on a full match of this union.
 UI_FORM_ROUTE: Final = re.compile(
     r"/synthetic/ui/items/(?P<item_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
-    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve|contact|close)"
+    r"[0-9a-f]{12})/(?P<endpoint>claim|resolve|contact|close|chart-recorded)"
     r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr|clearinghouse)")
 # E4: contact / close are served for eligibility items, and the clearinghouse simulator form,
 # only on an eligibility-profile app (elsewhere those paths are not routed: 404).
@@ -76,9 +76,12 @@ KIND_LABELS: dict[str, str] = {
     "eligibility_inactive": "Insurance not active — review coverage",
     "eligibility_inconclusive": "Insurance check inconclusive — review",
     "eligibility_manual": "Insurance needs manual check",
+    # E5 owner decision 4 (Rachel 2026-11-22), exact.
+    "eligibility_doc_check": "Chart entry needs a check",
 }
 EL_KINDS: Final = frozenset({"eligibility_inactive", "eligibility_inconclusive",
                              "eligibility_manual"})
+DOC_ITEM_KIND: Final = "eligibility_doc_check"          # E5 doc-check item (owner decision 4)
 REASON_LABELS: dict[str, str] = {
     "status_changed": "status changed",
     "declined_or_unknown": "declined or unknown",
@@ -470,6 +473,17 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
                                  lambda m05, ctx: m05.reason(ctx, item_id))
         display = await _read(lifecycle, "get",
                               lambda _m05, ctx: _display_read(lifecycle, ctx, item_id))
+        doc_display: object = None
+        doc_ref: object = None
+        if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
+            from haloflow.synthetic import el_ui as _el  # E5 (t135, D2 (b))
+
+            try:
+                doc_state = await _read(
+                    lifecycle, "get", lambda _m05, ctx: _el.doc_display(lifecycle, ctx, item_id))
+                doc_display, doc_ref = doc_state.get("display"), doc_state.get("appointment_ref")
+            except _Failed:
+                doc_display = doc_ref = None          # fail closed: no action, state or link
         case: Mapping[str, Any] | None = None
         contacts: Mapping[Any, Any] = {}
         if item.get("item_kind") in EL_KINDS:                       # E4 (D-E4-5)
@@ -499,6 +513,10 @@ async def view_page(lifecycle: Any, request: Request) -> Response:
         from haloflow.synthetic import el_ui
 
         parts.extend(el_ui.section(lifecycle, item, case))
+    if item.get("item_kind") == DOC_ITEM_KIND and getattr(lifecycle, "doc_service", None):
+        from haloflow.synthetic import el_ui  # E5 (R6.3b, OD-EL14)
+
+        parts.extend(el_ui.doc_section(lifecycle, item, doc_display, doc_ref))
     rows = []
     for entry in history.get("entries", []):
         if not isinstance(entry, Mapping):
@@ -634,7 +652,17 @@ def install_ui(app: FastAPI, lifecycle: Any) -> None:
         async def close(request: Request) -> Response:
             return await el_ui.action(lifecycle, "close", request)
 
+        async def chart_recorded(request: Request) -> Response:   # E5 (R6.3b, OD-EL14)
+            return await el_ui.chart_recorded(lifecycle, request)
+
         for path, handler in ((UI_PREFIX + "/{item_id}/contact", contact),
-                              (UI_PREFIX + "/{item_id}/close", close)):
+                              (UI_PREFIX + "/{item_id}/close", close),
+                              (UI_PREFIX + "/{item_id}/chart-recorded", chart_recorded)):
             app.add_api_route(path, handler, methods=["POST"], response_class=Response,
                               include_in_schema=False)
+
+        async def chart(request: Request) -> Response:      # E5 (R9.1): read only
+            return await el_ui.chart_page(lifecycle, request)
+
+        app.add_api_route(el_ui.CHART_PREFIX + "/{appointment_ref}", chart, methods=["GET"],
+                          response_class=Response, include_in_schema=False)

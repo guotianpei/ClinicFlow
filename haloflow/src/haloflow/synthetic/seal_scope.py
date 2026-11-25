@@ -64,7 +64,11 @@ EL_RUNTIME_MUTABLE_TABLES: Final = frozenset({
     "{tenant}.m05_el_case_notes", "{tenant}.m05_el_cases", "{tenant}.m05_el_counts",
     "{tenant}.m05_el_coverage", "{tenant}.m05_el_late_answers", "{tenant}.m05_el_triggers",
     "{tenant}.m05_el_verifications", "{tenant}.m05_contact_entries",
+    "{tenant}.m05_el_doc_ops",                     # E5: the documentation ops
 })
+# Eligibility E5: the SIMULATED chart store (schema `sim_chart`, eligibility profile only;
+# outside the shared / tenant inventories). Written by the composed doc service at runtime.
+SIM_CHART_RUNTIME_MUTABLE_TABLES: Final = frozenset({"sim_chart.permits", "sim_chart.entries"})
 EL_INSTALL_SEALED_TABLES: Final = frozenset({
     "{tenant}.m05_el_settings", "{tenant}.m05_el_priority_payers",
     "{tenant}.m05_contact_codes", "{tenant}.m05_outcome_kinds",
@@ -85,7 +89,8 @@ def generic_table(name: str, schema: str | None = None) -> str:
 
 def is_runtime_mutable(name: str, schema: str | None = None) -> bool:
     table = generic_table(name, schema)
-    return table in RUNTIME_MUTABLE_TABLES or table in EL_RUNTIME_MUTABLE_TABLES
+    return (table in RUNTIME_MUTABLE_TABLES or table in EL_RUNTIME_MUTABLE_TABLES
+            or table in SIM_CHART_RUNTIME_MUTABLE_TABLES)
 
 
 def sealed_view(normalised: Mapping[str, Any]) -> dict[str, Any]:

@@ -12,6 +12,10 @@
 4. apply (E3a, only when `cases` and `case_contexts` are given): one fresh case context and
    `EligibilityCaseService.drain(ctx, batch_limit)`; without them the phase is NOT_RUN with
    zero counts and every E2 behaviour is unchanged.
+5. document (E5, only when `doc` and `doc_contexts` are given): one fresh doc context, checked
+   against the scheduled tenant, and `DocService.run_pass(ctx)` (bounded inside); without them
+   the phase is NOT_RUN with zero counts. Runs whether or not eligibility is enabled
+   (architecture v1r1 A7).
 
 This module never claims, dispatches, answers, settles or calls the port itself. One tenant
 never stops another; cancellation is never caught and is re-checked before every
@@ -42,6 +46,8 @@ from haloflow.m05.eligibility import (
     EligibilityWorker,
 )
 from haloflow.m05.eligibility_cases import EligibilityCaseRefused, EligibilityCaseService
+from haloflow.m05.eligibility_doc import COUNT_KEYS as DOC_KEYS
+from haloflow.m05.eligibility_doc import DocFailed, DocService
 
 LOGGER: Final = logging.getLogger(__name__)
 
@@ -95,6 +101,13 @@ class TenantReport:
 
 
 @dataclass(frozen=True, slots=True)
+class DocTenantReport(TenantReport):
+    """E5: a tenant report of a scheduler composed with the document phase."""
+
+    document: PhaseReport = PhaseReport(NOT_RUN, dict.fromkeys(DOC_KEYS, 0))
+
+
+@dataclass(frozen=True, slots=True)
 class TickResult:
     tick: int
     duration_ms: int
@@ -134,6 +147,8 @@ def _failure_class(error: Exception) -> str:
         return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
     if isinstance(error, EligibilityCaseRefused):
         return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
+    if isinstance(error, DocFailed):
+        return "CAPABILITY_REFUSED" if error.code in _CAPABILITY_CODES else "REFUSED"
     return INTERNAL
 
 
@@ -145,6 +160,10 @@ def _apply_not_run() -> PhaseReport:
     return PhaseReport(NOT_RUN, dict.fromkeys(APPLY_KEYS, 0))
 
 
+def _document_not_run() -> PhaseReport:
+    return PhaseReport(NOT_RUN, dict.fromkeys(DOC_KEYS, 0))
+
+
 class EligibilityScheduler:
     def __init__(self, *, contexts: Callable[[str], Awaitable[TenantContext]],
                  service: EligibilityService, worker: EligibilityWorker,
@@ -154,6 +173,8 @@ class EligibilityScheduler:
                  sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
                  cases: EligibilityCaseService | None = None,
                  case_contexts: Callable[[str], Awaitable[TenantContext]] | None = None,
+                 doc: DocService | None = None,
+                 doc_contexts: Callable[[str], Awaitable[TenantContext]] | None = None,
                  ) -> None:
         if not callable(contexts):
             raise EligibilitySchedulerRefused("CONTEXTS_INVALID")
@@ -173,6 +194,12 @@ class EligibilityScheduler:
                 cases is not None and (not isinstance(cases, EligibilityCaseService)
                                        or not callable(case_contexts))):
             raise EligibilitySchedulerRefused("CASES_INVALID")
+        if (doc is None) != (doc_contexts is None) or (
+                doc is not None and (not isinstance(doc, DocService)
+                                     or not callable(doc_contexts) or cases is None)):
+            raise EligibilitySchedulerRefused("DOC_INVALID")
+        self._doc = doc
+        self._doc_contexts = doc_contexts
         self._cases = cases
         self._case_contexts = case_contexts
         self._contexts = contexts
@@ -299,9 +326,33 @@ class EligibilityScheduler:
         if self._cases is not None:
             _cancel_pending()
             apply = await self._apply_phase(tenant)
+        document = _document_not_run()
+        if self._doc is not None:
+            _cancel_pending()
+            document = await self._document_phase(tenant)
         ok = run.status == OK and expire.status == OK and (
-            self._cases is None or apply.status == OK)
-        return TenantReport(tenant, COMPLETE if ok else DEGRADED, OK, run, expire, apply)
+            self._cases is None or apply.status == OK) and (
+            self._doc is None or document.status == OK)
+        if self._doc is None:
+            return TenantReport(tenant, COMPLETE if ok else DEGRADED, OK, run, expire, apply)
+        return DocTenantReport(tenant, COMPLETE if ok else DEGRADED, OK, run, expire, apply,
+                               document)
+
+    async def _document_phase(self, tenant: str) -> PhaseReport:
+        counts = dict.fromkeys(DOC_KEYS, 0)
+        assert self._doc is not None and self._doc_contexts is not None
+        try:
+            context = await self._doc_contexts(tenant)
+            if not _for_tenant(context, tenant):
+                return PhaseReport(TENANT_MISMATCH, counts)
+            _cancel_pending()
+            done = await self._doc.run_pass(context)
+        except Exception as error:  # noqa: BLE001
+            return PhaseReport(_failure_class(error), counts)
+        if not isinstance(done, dict) or not set(done) <= set(DOC_KEYS):
+            return PhaseReport(INTERNAL, counts)
+        counts.update(done)
+        return PhaseReport(OK, counts)
 
     async def _apply_phase(self, tenant: str) -> PhaseReport:
         counts = dict.fromkeys(APPLY_KEYS, 0)

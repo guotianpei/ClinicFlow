@@ -59,7 +59,10 @@ SYN_RESOLVE_FIELDS: Final = {**RESOLVE_FIELDS, "case_token": False}
 CONTACT_FIELDS: Final = {"client_action_id": True, "expected_version": True,
                          "contact_code": True, "case_token": True}
 _TOKEN_KEYS: Final = frozenset({"case_id", "item_id", "case_version"})
-_ROUTE_REQUIREMENT: Final = {"reason": "get", "case": "get", "contact": "resolve"}
+# E5 REVISE 2026-11-24 (Codex-aligned D4): recording manual chart documentation on the doc item
+# needs the existing `resolve` route capability (only staff who may resolve items).
+_ROUTE_REQUIREMENT: Final = {"reason": "get", "case": "get", "contact": "resolve",
+                             "chart_recorded": "resolve"}
 _UUID_TEXT: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 

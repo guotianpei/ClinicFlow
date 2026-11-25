@@ -16,6 +16,7 @@ token) before any service call, then executed through `staff_routes.execute`. A 
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Mapping
 from typing import Any, Final
@@ -41,6 +42,10 @@ CLOSE_REQUIRED: Final = frozenset({"csrf", "type", "client_action_id", "expected
                                    "outcome_code", *ui.TOKEN_FIELDS})
 CLOSE_TYPES: Final = frozenset({"resolve", "claim_and_resolve"})
 MAX_FIELDS: Final = 9
+# E5 REVISE 2026-11-24: the staff action on the open "Chart entry needs a check" item.
+CHART_RECORDED_LABEL: Final = "Recorded in chart manually"     # OD-EL14 (Rachel 2026-11-24)
+PENDING_LABEL: Final = "Being confirmed"                        # OD-EL15 (Rachel 2026-11-24)
+RECORDED_FIELDS: Final = frozenset({"csrf", "expected_version"})
 
 
 def _hidden(name: str, value: object) -> str:
@@ -144,6 +149,39 @@ def outcome_text(code: object) -> str:
     return ui.label(OUTCOME_LABELS, code)
 
 
+CHART_PREFIX: Final = "/synthetic/ui/chart"
+CHART_TITLE: Final = "Simulated chart"
+CHART_NOTICE: Final = "Simulated chart entries (synthetic; not a real EHR). Read only."
+
+
+async def chart_page(lifecycle: Any, request: Request) -> Response:
+    """E5 (R9.1): the SIMULATED chart entries of one appointment, read only (no write control),
+    through the context-bound port of the install's authorized staff context. Each line shows
+    the entry text (owner decision 2 / OD-EL13) and its event time; nothing else of the body."""
+    try:
+        ref = _path_uuid(request.path_params["appointment_ref"], "appointment_ref")
+    except _Malformed:
+        return ui._error_page(404)
+    services = lifecycle.services
+    if services is None or lifecycle.chart is None:
+        return ui._error_page(503)
+    try:
+        port = lifecycle.chart.for_tenant(lifecycle.staff_context(str(services.staff_id)))
+        rows = await port.entries_for(str(ref))
+    except Exception:  # noqa: BLE001 - closed refusal; nothing is echoed
+        return ui._error_page(503)
+    lines = []
+    for row in rows:
+        body = row.get("body")
+        text = body.get("text") if isinstance(body, Mapping) else None
+        when = body.get("event_at") if isinstance(body, Mapping) else None
+        lines.append(f"<li>{ui.esc(text if type(text) is str else ui.UNRECOGNIZED)}"
+                     f" — {ui.esc(ui._when(when))}</li>")
+    listing = f"<ul>{''.join(lines)}</ul>" if lines else "<p>No chart entries.</p>"
+    return ui._page(f"<h1>{ui.esc(CHART_TITLE)}</h1><p>{ui.esc(CHART_NOTICE)}</p>{listing}"
+                    f"<p><a href=\"{ui.UI_PREFIX}\">All items</a></p>")
+
+
 def _case_changed(item_id: Any) -> Response:
     """CASE_CHANGED: 409 with the OD-B4-2 reload message; nothing was changed."""
     return ui._page(f"<p class=\"message\">{ui.esc(ui.MESSAGES['conflict'])}</p>"
@@ -215,4 +253,127 @@ async def action(lifecycle: Any, endpoint: str, request: Request) -> Response:
         return ui._redirect(item_id, "refused")
     if code == "MALFORMED":
         return ui._error_page(400)
+    return ui._redirect(item_id, "unavailable")
+
+
+# ---------------------------------------------------------------------------- E5 manual action
+
+def _may_record(lifecycle: Any, item: Mapping[str, Any], display: object) -> bool:
+    """The action is offered only when t135 reports the item `actionable` (not resolved, op
+    needs_check; t135 is the one source of the item's display state) and it is not in progress
+    by someone else. t134 re-checks every condition on submission (refusals change nothing)."""
+    if display != "actionable":
+        return False
+    services = lifecycle.services
+    principal = str(services.staff_id) if services is not None else None
+    assignee = item.get("assignee_id")
+    return assignee is None or str(assignee) == principal
+
+
+async def doc_display(lifecycle: Any, context: Any,
+                      item_id: uuid.UUID) -> dict[str, str | None]:
+    """t135 through the staff READ statement (view capability), tenant-bound by the resolved
+    context: {"display": state, "appointment_ref": ref}; either is None when the read gave no
+    usable answer (fail closed: no action, no state line, no link)."""
+    from psycopg.types.json import Jsonb
+
+    from haloflow.m05.eligibility_statements import DOC_ITEM_STATE_KEY
+
+    async def run(handle: Any) -> Any:
+        return await handle.fetch_all(DOC_ITEM_STATE_KEY, {"command": Jsonb(
+            {"schema_version": 1, "item_id": str(item_id)})})
+
+    rows = await lifecycle.services.gateway.with_tenant_transaction(context, run)
+    value = rows[0][0] if rows and rows[0] else None
+    display = value.get("display") if isinstance(value, Mapping) else None
+    ref = value.get("appointment_ref") if isinstance(value, Mapping) else None
+    return {"display": display if display in DISPLAY_STATES else None,
+            "appointment_ref": ref if type(ref) is str and _UUID_TEXT.fullmatch(ref) else None}
+
+
+_UUID_TEXT: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+DISPLAY_STATES: Final = frozenset({"actionable", "pending", "closed", "other", "none"})
+
+
+def doc_section(lifecycle: Any, item: Mapping[str, Any], display: object,
+                appointment_ref: object = None) -> list[str]:
+    """The read-only chart link of the item's appointment (from its case event row, t135; the
+    existing "Simulated chart" title as its text), then: pending (op manual_pending) the
+    OD-EL15 line, no action; actionable one form, hidden csrf + expected_version, one button
+    (OD-EL14); anything else nothing more."""
+    parts: list[str] = []
+    if type(appointment_ref) is str and _UUID_TEXT.fullmatch(appointment_ref):
+        parts.append(f"<p><a href=\"{CHART_PREFIX}/{appointment_ref}\">"
+                     f"{ui.esc(CHART_TITLE)}</a></p>")
+    if display == "pending" and item.get("state") != "resolved":
+        return [*parts, f"<p>{ui.esc(PENDING_LABEL)}</p>"]
+    if not _may_record(lifecycle, item, display):
+        return parts
+    base = (_hidden("csrf", lifecycle.csrf_token or "")
+            + _hidden("expected_version", str(item.get("version"))))
+    action = f"{ui.UI_PREFIX}/{ui.esc(item.get('item_id'))}/chart-recorded"
+    return [*parts, f"<form method=\"post\" action=\"{action}\">{base}"
+            f"<button type=\"submit\">{ui.esc(CHART_RECORDED_LABEL)}</button></form>"]
+
+
+_DOC_REFUSED_403: Final = frozenset({"TENANT_MISMATCH", "CAPABILITY_REFUSED", "CONTEXT_INVALID"})
+
+
+async def chart_recorded(lifecycle: Any, request: Request) -> Response:
+    """POST .../chart-recorded: every refusal before any principal resolution or doc call
+    (path, byte cap, raw form rules with exactly {csrf, expected_version}, CSRF, canonical
+    version); then the existing two-step staff resolution (route `chart_recorded` requires
+    `resolve`), and DocService.manual with the install's authorized staff context for the
+    RESOLVED principal (the attribution), bound to the resolved context's tenant."""
+    from haloflow.m05.eligibility_doc import DocRefused
+
+    try:
+        item_id = _path_uuid(request.path_params["item_id"], "item_id")
+    except _Malformed:
+        return ui._error_page(404)
+    try:
+        raw = await ui._bounded_body(request)
+        fields = ui.parse_form(raw, allowed=RECORDED_FIELDS, max_fields=len(RECORDED_FIELDS))
+    except ui.FormRefused as refused:
+        return ui._error_page(refused.status)
+    if "csrf" not in fields or not ui._csrf_ok(fields["csrf"], lifecycle.csrf_token):
+        return ui._error_page(403)
+    version = fields.get("expected_version")
+    if version is None or not ui._VERSION.fullmatch(version):
+        return ui._error_page(400)
+    expected = int(version)
+    if lifecycle.doc_service is None:
+        return ui._error_page(503)
+
+    async def call(_m05: Any, context: Any) -> dict[str, Any]:
+        staff_ctx = lifecycle.staff_context(str(context.principal.id))
+        if staff_ctx.tenant_id != context.tenant_id:      # authorized tenant binding
+            return {"refused": "TENANT_MISMATCH"}
+        try:
+            return {"outcome": await lifecycle.doc_service.manual(
+                staff_ctx, str(item_id), expected)}
+        except DocRefused as refused:
+            return {"refused": refused.code}
+
+    value = await execute(lifecycle, "chart_recorded", call)
+    if isinstance(value, Mapping) and "outcome" in value:
+        return ui._redirect(item_id)
+    if isinstance(value, Mapping):
+        code = value.get("refused")
+        if code == "VERSION_STALE":
+            return _case_changed(item_id)
+        if code == "ITEM_NOT_FOUND":
+            return ui._error_page(404)
+        if code in _DOC_REFUSED_403:
+            return ui._error_page(403)
+        if code == "COMMAND_MALFORMED":
+            return ui._error_page(400)
+        return ui._redirect(item_id, "refused")
+    if isinstance(value, Response):
+        if value.status_code in (403, 409):
+            return ui._redirect(item_id, "refused")
+        if ui._code(value) in ("NOT_FOUND", "ITEM_NOT_FOUND"):
+            return ui._error_page(404)
     return ui._redirect(item_id, "unavailable")
