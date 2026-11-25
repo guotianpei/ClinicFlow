@@ -299,7 +299,7 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
     el5_profiles = dict(EL5_INSTALLED_STATE_PROFILES) if include_el5 else {}
     fx1_units: tuple[Any, ...] = ()
     fx1_profiles: dict[str, Any] = {}
-    if include_fx1:  # FX-IN FX1: t136..t139 on the eligibility registry (target 139)
+    if include_fx1:  # FX-IN FX1: t136..t140 on the eligibility registry (target 140)
         from haloflow.m05.fax_units import FX1_INSTALLED_STATE_PROFILES, FX1_TENANT_MIGRATIONS
 
         fx1_units = (FX1_TENANT_MIGRATIONS,)

@@ -1,11 +1,12 @@
-"""Incoming fax routing FX-IN FX1 mutation controls, group family ``fx1`` (M-FX1-1..10).
+"""Incoming fax routing FX-IN FX1 mutation controls, group family ``fx1`` (M-FX1-1..11).
 
 Targets predeclared in the FX1 red packet v1 (test_fx1_postgres docstring; Codex 65d1f9db): the
 level order reversed (rules and SQL); rule rows counted instead of distinct destinations; the
 duplicate key without the provider; the mismatch digest ignoring the sender; the support
 authority accepting any capability; the post-lock authority re-check removed (queue_deactivate
 and rule_put); the inactive-queue filter removed; the receipt's shared line fence removed;
-the rename re-check removed; a case-sensitive rename collision. Kill sets are declared in
+the rename re-check removed; a case-sensitive rename collision; the receipt binding
+check removed. Kill sets are declared in
 scripts/fx1_mutant_kills.json before the CI run.
 
 Judged by the shared part-A checker (scripts/m02_observation_mutants.py) exactly as
@@ -84,6 +85,13 @@ EDITS: tuple[tuple[str, str, Path, str, str], ...] = (
      "                      AND q.queue_id <> v_target) THEN\n",
      "                    WHERE q.name = v_name\n"
      "                      AND q.queue_id <> v_target) THEN\n"),
+    ("M11", "the receipt's tenant binding check is removed (Codex 3e5361ff)", UNITS,
+     "BEGIN\"\"\" + _TENANT + BINDING + r\"\"\"\n"
+     "    IF v_keys IS DISTINCT FROM ARRAY['attribution', 'doc_ref', 'line', 'pages',"
+     " 'provider',\n",
+     "BEGIN\"\"\" + _TENANT + r\"\"\"\n"
+     "    IF v_keys IS DISTINCT FROM ARRAY['attribution', 'doc_ref', 'line', 'pages',"
+     " 'provider',\n"),
 )
 
 GROUPS: tuple[tuple[str, Path, str], ...] = (

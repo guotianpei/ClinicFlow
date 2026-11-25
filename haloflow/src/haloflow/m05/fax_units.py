@@ -19,6 +19,11 @@ receipt's transaction-level shared lock on K_FX_LINES), owner decisions OD-FX1..
 - t139 `m05_fx_receive(jsonb)` (runtime): one transaction — the K_FX_LINES shared xact lock,
   the tenant-local line re-check, the fax row (or duplicate handling), routing, the sorting row
   and the first history row (architecture 5.1, 5.4).
+- t140 `m05_fx_tenant_bound() -> boolean` (staff owner; EXECUTE to the M05 owner only; Codex
+  3e5361ff): the session's app.tenant_id equals the tenant registered for THIS schema in
+  shared.tenants (the staff owner's alembic 009 read). Every FX runtime gateway refuses otherwise
+  with 22023 'tenant context invalid' before any read or write (BINDING below). t139 is created
+  before t140; PL/pgSQL resolves the call at execution, and no tenant runs FX code below 140.
 """
 
 from __future__ import annotations
@@ -39,11 +44,13 @@ TABLES_ID: Final = "t136_m05_fx_tables"
 AUTHORITY_ID: Final = "t137_m05_fx_settings_authority"
 SETTINGS_ID: Final = "t138_m05_fx_settings_put"
 RECEIVE_ID: Final = "t139_m05_fx_receive"
-FX1_TARGET: Final = 139
+BOUND_ID: Final = "t140_m05_fx_tenant_bound"
+FX1_TARGET: Final = 140
 
 AUTHORITY_NAME: Final = "m05_fx_settings_authority"
 SETTINGS_NAME: Final = "m05_fx_settings_put"
 RECEIVE_NAME: Final = "m05_fx_receive"
+BOUND_NAME: Final = "m05_fx_tenant_bound"
 SETTINGS_CAPABILITY: Final = "m05.fax.settings"
 
 DEFAULT_QUEUES: Final = ("Labs/Results", "Imaging", "Referrals & consults", "Records requests",
@@ -391,6 +398,26 @@ BEGIN""" + _TENANT + r"""
 END;
 """).replace("@@E164@@", _E164)
 
+# --- t140 tenant binding (staff owner; EXECUTE to the M05 owner) -------------------------
+
+BOUND_BODY: Final = r"""
+DECLARE
+    v_setting text;
+    v_tenant text;
+BEGIN
+    v_setting := pg_catalog.current_setting('app.tenant_id', true);
+    SELECT t.tenant_id INTO v_tenant FROM shared.tenants AS t WHERE t.schema_key = '{schema}';
+    RETURN FOUND AND v_setting IS NOT NULL AND v_tenant = v_setting;
+END;
+"""
+
+# Used by every FX runtime gateway right after the context-syntax check (_TENANT).
+BINDING: Final = r"""
+    IF NOT {schema}.m05_fx_tenant_bound() THEN
+        RAISE EXCEPTION USING ERRCODE = '22023', MESSAGE = 'tenant context invalid';
+    END IF;
+"""
+
 # --- t139 receive (runtime) ----------------------------------------------------------------
 
 _DIGEST: Final = (
@@ -419,7 +446,7 @@ RECEIVE_BODY: Final = (
     v_fields text[];
     v_seq integer;
     v_now timestamptz;
-BEGIN""" + _TENANT + r"""
+BEGIN""" + _TENANT + BINDING + r"""
     IF v_keys IS DISTINCT FROM ARRAY['attribution', 'doc_ref', 'line', 'pages', 'provider',
                                      'provider_fax_id', 'received_at', 'schema_version',
                                      'sender']::text[] THEN
@@ -560,6 +587,9 @@ _FUNCTIONS: Final[tuple[tuple[str, str, str, str, str | None], ...]] = (
 
 _ALL: Final[dict[str, str | UnitDefinition]] = {
     TABLES_ID: T136_SQL,
+    BOUND_ID: staff_units._definition(
+        BOUND_NAME, (), "bool", "stable", M05_OWNER_ROLE, BOUND_BODY,
+        hashlib.sha256(BOUND_BODY.encode("utf-8")).hexdigest()),
     AUTHORITY_ID: staff_units._definition(
         AUTHORITY_NAME, (), "jsonb", "volatile", M05_OWNER_ROLE, AUTHORITY_BODY,
         hashlib.sha256(AUTHORITY_BODY.encode("utf-8")).hexdigest()),
@@ -570,4 +600,5 @@ FX1_TENANT_MIGRATIONS: Final[UnitDefinitions] = MappingProxyType(dict(sorted(_AL
 FX1_INSTALLED_STATE_PROFILES: Final = MappingProxyType({
     **{mid: _profile(name, vol, grantee) for mid, name, vol, _body, grantee in _FUNCTIONS},
     AUTHORITY_ID: staff_units._profile(AUTHORITY_NAME, (), "jsonb", "volatile", M05_OWNER_ROLE),
+    BOUND_ID: staff_units._profile(BOUND_NAME, (), "bool", "stable", M05_OWNER_ROLE),
 })

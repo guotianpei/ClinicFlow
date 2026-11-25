@@ -44,5 +44,8 @@
  ],
  "M10": [
   "tests/m05/test_fx1_postgres.py::test_fx1_s10_queue_rename_refusals"
+ ],
+ "M11": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_b01_receive_refuses_foreign_context"
  ]
 }
