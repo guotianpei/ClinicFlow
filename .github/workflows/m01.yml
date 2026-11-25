@@ -468,6 +468,14 @@ jobs:
           $VENV/bin/python -I scripts/el5_mutants.py
           --pytest "$VENV/bin/pytest"
           --evidence "$RUNNER_TEMP/verify-evidence/el5-mutation"
+      # Incoming fax routing FX-IN FX1 mutation controls M1r..M8: two groups (the pure
+      # fax_rules against the unit module; the t136..t139 SQL against the PostgreSQL module),
+      # kill sets in scripts/fx1_mutant_kills.json (measured before the CI run).
+      - run: $VENV/bin/pytest scripts/test_fx1_mutants.py -q -p no:cacheprovider
+      - run: >-
+          $VENV/bin/python -I scripts/fx1_mutants.py
+          --pytest "$VENV/bin/pytest"
+          --evidence "$RUNNER_TEMP/verify-evidence/fx1-mutation"
       # L-1S package S-H H1 send/recovery mutation controls M1-M10: three groups (units and
       # statements against the PostgreSQL module, the worker against the unit module),
       # kill sets in scripts/sh_h1_mutant_kills.json.
