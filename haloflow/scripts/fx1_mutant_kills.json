@@ -1,0 +1,42 @@
+{
+ "M1r": [
+  "tests/m05/test_fx1_units.py::test_fx1_u02_decide[conflict]",
+  "tests/m05/test_fx1_units.py::test_fx1_u02_decide[l1]",
+  "tests/m05/test_fx1_units.py::test_fx1_u02_decide[l2]",
+  "tests/m05/test_fx1_units.py::test_fx1_u02_decide[lower-conflict]"
+ ],
+ "M1s": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_r01_level1",
+  "tests/m05/test_fx1_postgres.py::test_fx1_r02_level2",
+  "tests/m05/test_fx1_postgres.py::test_fx1_r06_conflict_at_deciding_level",
+  "tests/m05/test_fx1_postgres.py::test_fx1_r07_lower_conflict_irrelevant"
+ ],
+ "M2": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_r05_offschema_same_queue_routes_once"
+ ],
+ "M3": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_d07_other_provider_same_id"
+ ],
+ "M4": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_d04_each_field_mismatch[sender-null]",
+  "tests/m05/test_fx1_postgres.py::test_fx1_d04_each_field_mismatch[sender]",
+  "tests/m05/test_fx1_postgres.py::test_fx1_p01_digest_parity"
+ ],
+ "M5": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_s02_support_refusals"
+ ],
+ "M6d": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_s04_s05_authority_after_lock[s04-revoked-queue_deactivate]"
+ ],
+ "M6r": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_s04_s05_authority_after_lock[s04-revoked-rule_put]"
+ ],
+ "M7": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_r11_inactive_queue_ignored",
+  "tests/m05/test_fx1_postgres.py::test_fx1_s06_deactivation_keeps_faxes"
+ ],
+ "M8": [
+  "tests/m05/test_fx1_postgres.py::test_fx1_f01_receipt_waits_for_exclusive_fence",
+  "tests/m05/test_fx1_postgres.py::test_fx1_f02_open_receipt_holds_the_fence"
+ ]
+}
