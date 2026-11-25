@@ -20,7 +20,9 @@ include_fx4=True)` — FX2's ids plus FX4_IDS, target **149**; include_fx4 witho
 ValueError("...FX4..."). Units live in `haloflow.m05.fax_display_units` (FX4_TENANT_MIGRATIONS,
 FX4_INSTALLED_STATE_PROFILES).
 Catalogue: `build_synthetic_catalog(<EL flags>, include_fx1, include_fx2, include_fx3,
-include_fx4=True)` adds QUEUES_KEY; include_fx4 without include_fx3 -> ValueError("...FX4...").
+include_fx4=True)` adds QUEUES_KEY and REBINDS RECEIVE_KEY -> "SELECT m05_fx_receive_v2(%(command)s)" and READ_KEY -> "SELECT
+m05_fx_staff_read_v2(%(command)s)" (same modes and capabilities); include_fx4 without include_fx3 ->
+ValueError("...FX4...").
 - t145 `m05_fx_staff_queues(p_command jsonb) RETURNS jsonb` (runtime, STABLE, `_TENANT + BINDING`):
   command exactly {schema_version 1, staff_id, attribution (actor; principal_id = staff_id)}; staff
   check 'read' else ACTOR_INACTIVE; result {schema_version 1, queues: [{queue_id, name, active,
@@ -37,13 +39,18 @@ include_fx4=True)` adds QUEUES_KEY; include_fx4 without include_fx3 -> ValueErro
   (authority re-checked AFTER the sender row lock; nothing committed on refusal). One settings-audit
   row per applied op, target_id = sender_id, no number / digest / name anywhere in the audit row.
   The stored display_name is the saved name after NFKC, whitespace collapse and trim.
-- t148 `m05_fx_receive` replaced: the v1 key set, optionally plus `sender_name` (string | null). Raw
+- t148 `m05_fx_receive_v2(jsonb)` (runtime; red v1r1 pin correction: the unit framework never
+  replaces a function — every typed unit is `replace: false` and earlier packages version names, e.g.
+  m05_directory_v4 — so v2 is a NEW function and the FX4 catalogue rebinds RECEIVE_KEY to it; t139
+  stays): the v1 key set, optionally plus `sender_name` (string | null). Raw
   length > 256 -> COMMAND_MALFORMED (direct gateway too). Stored `sender_name` =
   normalise_sender_name(raw). Replay of the same identity: equal normalised names (both absent
   included) and equal other metadata -> duplicate (no write); otherwise duplicate_mismatch, original
   row untouched, discrepancy `fields` includes 'sender_name' when the names differ. Saved names
   never take part.
-- t149 `m05_fx_staff_read` replaced: every fax summary gains `sender_display` = {"text": str|null,
+- t149 `m05_fx_staff_read_v2(jsonb)` (runtime, STABLE; NEW function, the FX4 catalogue rebinds
+  READ_KEY to it; t143 stays): as t143, and every fax summary gains `sender_display` =
+  {"text": str|null,
   "source": "saved"|"as_sent"|"none"} (saved name of the fax's exact sender number in THIS schema,
   else the stored sent name, else none); `sender_last4` unchanged.
 - `haloflow.m05.fax_rules`: SENDER_NAME_RAW_MAX = 256, SENDER_NAME_MAX = 40, SAVED_NAME_MAX = 64,
@@ -86,6 +93,8 @@ FX4_SUPPORTED: Final = range(FX4_TARGET, FX4_TARGET + 1)
 FX4_IDS: Final = ("t145_m05_fx_staff_queues", "t146_m05_fx_senders", "t147_m05_fx_sender_put",
                   "t148_m05_fx_receive_v2", "t149_m05_fx_staff_read_v2")
 QUEUES: Final = "m05_fx_staff_queues"
+RECEIVE_V2: Final = "m05_fx_receive_v2"
+READ_V2: Final = "m05_fx_staff_read_v2"
 SENDER_PUT: Final = "m05_fx_sender_put"
 FX4_TABLES: Final = (*fx.FX_TABLES, "m05_fx_senders")
 MASK: Final = "•••"
@@ -212,12 +221,20 @@ def queues(install: sa.SAInstall, staff_id: str) -> dict[str, Any]:
     return sa.call(install, QUEUES, queues_cmd(staff_id))
 
 
+def receive(install: sa.SAInstall, command: dict[str, Any]) -> dict[str, Any]:
+    return sa.call(install, RECEIVE_V2, command)
+
+
+def read(install: sa.SAInstall, view: str, staff_id: str, **fields: Any) -> dict[str, Any]:
+    return sa.call(install, READ_V2, f2.read_cmd(view, staff_id, **fields))
+
+
 def receive_named(install: sa.SAInstall, name: Any, **fields: Any) -> dict[str, Any]:
-    return fx.receive(install, {**fx.fax_cmd(**fields), "sender_name": name})
+    return receive(install, {**fx.fax_cmd(**fields), "sender_name": name})
 
 
 def summary(install: sa.SAInstall, staff_id: str, fax_id: str) -> dict[str, Any]:
-    got: dict[str, Any] = f2.read(install, "get", staff_id, fax_id=fax_id)["fax"]
+    got: dict[str, Any] = read(install, "get", staff_id, fax_id=fax_id)["fax"]
     return got
 
 

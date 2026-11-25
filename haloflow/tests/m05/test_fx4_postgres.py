@@ -13,7 +13,8 @@
           the same -> duplicate; name added / changed / removed -> duplicate_mismatch, original
           byte-identical, discrepancy fields include sender_name and no value; a saved name added /
           edited / removed between deliveries does not change the outcome
-- FX4-P06 a v1 command (no sender_name) -> the FX1 outcome and rows, stored name NULL
+- FX4-P06 a v1 command (no sender_name) through v2 AND through t139 -> the FX1 outcome and rows,
+          stored name NULL
 - FX4-P06b UPGRADE: an FX2 tenant (144) receives a real fax through t139, is migrated to 149;
           replay without a name -> duplicate (no write); with a name -> duplicate_mismatch,
           original preserved
@@ -33,8 +34,9 @@
 - FX4-P09 logs: FaxService.receive with a sent name holding a number -> no name, number or digit run
           in any log record
 - FX4-P10 two clinics, same number, own saved names
-- FX4-B01 direct gateway: a 257-character sender_name -> COMMAND_MALFORMED, ZSE; 256 accepted
-- FX4-B02 FOREIGN session context (B's tenant) on A's t149 read and t145 queues with VALID A inputs
+- FX4-B01 direct gateway (v2): a 257-character sender_name -> COMMAND_MALFORMED, ZSE; 256 accepted
+- FX4-B02 FOREIGN session context (B's tenant) on A's t149 read (v2) and t145 queues with VALID A
+          inputs
           (A's staff, A's fax) -> 22023 'tenant context invalid', both clinics unchanged
 """
 
@@ -163,7 +165,7 @@ def test_fx4_p02_precedence(install: f4.FX4Install, env: db.L1WEnv) -> None:
     assert _display(install, staff, sent) == ("Lakeside Imaging", "as_sent", plain[-4:])
     assert _display(install, staff, none)[:2] == (None, "none")
     assert _display(install, staff, withheld) == ("Night Clinic", "as_sent", None)
-    listed = f2.read(install, "list", staff, queue_id=None)["faxes"]
+    listed = f4.read(install, "list", staff, queue_id=None)["faxes"]
     assert all("sender_display" in f for f in listed)
 
 
@@ -198,24 +200,24 @@ def test_fx4_p05_replay(install: f4.FX4Install, env: db.L1WEnv) -> None:
     f4.ready(install)
     sender = f4.fresh_sender()
     base = fx.fax_cmd(sender=sender)
-    first = fx.receive(install, {**base, "sender_name": "Lab 540 555 0100"})
+    first = f4.receive(install, {**base, "sender_name": "Lab 540 555 0100"})
     original = fx.fax(install, str(first["fax_id"]))
     before = f4.snapshot(install)
-    same = fx.receive(install, {**base, "sender_name": "Lab 540-555-0100"})  # masks the same
+    same = f4.receive(install, {**base, "sender_name": "Lab 540-555-0100"})  # masks the same
     assert (same["outcome"], same["fax_id"]) == ("duplicate", first["fax_id"])
     assert f4.snapshot(install) == before
     with _support(env, install, "fx4-p05") as support:
         _put(support, install, sender, "Saved Name")
-        assert fx.receive(install, {**base, "sender_name": "Lab 540-555-0100"})["outcome"] == (
+        assert f4.receive(install, {**base, "sender_name": "Lab 540-555-0100"})["outcome"] == (
             "duplicate")
         _put(support, install, sender, "Edited Name")
-        assert fx.receive(install, {**base, "sender_name": "Lab 540-555-0100"})["outcome"] == (
+        assert f4.receive(install, {**base, "sender_name": "Lab 540-555-0100"})["outcome"] == (
             "duplicate")
     for variant in ("Other Lab", None):
-        changed = fx.receive(install, {**base, "sender_name": variant})
+        changed = f4.receive(install, {**base, "sender_name": variant})
         assert (changed["outcome"], changed["fax_id"]) == ("duplicate_mismatch", first["fax_id"])
     removed = dict(base)
-    assert fx.receive(install, removed)["outcome"] == "duplicate_mismatch"
+    assert f4.receive(install, removed)["outcome"] == "duplicate_mismatch"
     assert fx.fax(install, str(first["fax_id"])) == original
     discrepancies = fx.rows(install, "m05_fx_discrepancies")
     assert len(discrepancies) == 3
@@ -227,9 +229,11 @@ def test_fx4_p06_v1_command_unchanged(install: f4.FX4Install) -> None:
     """A."""
     f4.ready(install)
     fx.seed_rule(install, sender=fx.SENDER, line=None, queue="Imaging")
-    result = fx.receive(install, fx.fax_cmd())
-    assert (result["outcome"], result["queue_id"]) == ("routed", fx.queue_id(install, "Imaging"))
-    assert fx.fax(install, str(result["fax_id"]))["sender_name"] is None
+    for call in (f4.receive, fx.receive):            # v2 without the key, and t139 itself
+        result = call(install, fx.fax_cmd())
+        assert (result["outcome"], result["queue_id"]) == ("routed",
+                                                           fx.queue_id(install, "Imaging"))
+        assert fx.fax(install, str(result["fax_id"]))["sender_name"] is None
 
 
 def test_fx4_p06b_upgrade_then_replay(old: f2.FX2Install) -> None:
@@ -244,10 +248,10 @@ def test_fx4_p06b_upgrade_then_replay(old: f2.FX2Install) -> None:
     original = fx.fax(old, str(first["fax_id"]))
     assert original["sender_name"] is None
     before = f4.snapshot(old)
-    again = fx.receive(old, command)
+    again = f4.receive(old, command)
     assert (again["outcome"], again["fax_id"]) == ("duplicate", first["fax_id"])
     assert f4.snapshot(old) == before
-    named = fx.receive(old, {**command, "sender_name": "Late Name"})
+    named = f4.receive(old, {**command, "sender_name": "Late Name"})
     assert (named["outcome"], named["fax_id"]) == ("duplicate_mismatch", first["fax_id"])
     assert fx.fax(old, str(first["fax_id"])) == original
 
@@ -426,10 +430,10 @@ def test_fx4_p09_no_names_in_logs(install: f4.FX4Install, caplog: pytest.LogCapt
 def test_fx4_b01_raw_limit_at_gateway(install: f4.FX4Install) -> None:
     """A (Codex 8f518e20: direct gateway 257)."""
     f4.ready(install)
-    fx.refused(install, fx.RECEIVE, {**fx.fax_cmd(), "sender_name": "q" * 257},
+    fx.refused(install, f4.RECEIVE_V2, {**fx.fax_cmd(), "sender_name": "q" * 257},
                "COMMAND_MALFORMED")
     for bad in (42, ["Quest"], {"n": "Quest"}):
-        fx.refused(install, fx.RECEIVE, {**fx.fax_cmd(), "sender_name": bad},
+        fx.refused(install, f4.RECEIVE_V2, {**fx.fax_cmd(), "sender_name": bad},
                    "COMMAND_MALFORMED")
     ok = f4.receive_named(install, "q" * 256)
     assert fx.fax(install, str(ok["fax_id"]))["sender_name"] == "q" * 40
@@ -441,8 +445,8 @@ def test_fx4_b02_foreign_context(install: f4.FX4Install, install_b: f4.FX4Instal
     install_b.require()
     staff_a = f2.seed_staff(install)
     fid = str(f4.receive_named(install, "Lab", sender=None)["fax_id"])
-    assert f2.read(install, "get", staff_a, fax_id=fid)["fax"]["fax_id"] == fid  # positive
+    assert f4.read(install, "get", staff_a, fax_id=fid)["fax"]["fax_id"] == fid  # positive
     assert f4.queues(install, staff_a)["queues"]                                  # positive
-    fx.context_refused(install, install_b, f2.READ, f2.read_cmd("get", staff_a, fax_id=fid))
+    fx.context_refused(install, install_b, f4.READ_V2, f2.read_cmd("get", staff_a, fax_id=fid))
     fx.context_refused(install, install_b, f4.QUEUES, f4.queues_cmd(staff_a))
     assert str(uuid.uuid4())

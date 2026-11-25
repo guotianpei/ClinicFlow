@@ -9,7 +9,8 @@ Classes: C control, A absence-red.
           Pd, U+2212, . ( ) + /; >= 5 digits; 4 kept); number_runs returns ASCII digit strings
 - FX4-U03 raw limit: 256 accepted, 257 -> ValueError; non-str -> ValueError
 - FX4-U04 saved_name_valid: valid / invalid corpus (same detector)
-- FX4-U05 InboundFax.sender_name defaults to None; QUEUES_KEY statement pinned; registry ids and
+- FX4-U05 InboundFax.sender_name defaults to None; QUEUES_KEY statement pinned; the FX4 catalogue
+          rebinds RECEIVE_KEY / READ_KEY to the v2 functions (FX3 keeps v1); registry ids and
           target 149; include_fx4 chains (registry needs FX2, catalogue needs FX3) with "FX4" in the
           error
 - FX4-U06 ingress body: sender_name absent / null / string accepted; number -> 400 MALFORMED
@@ -107,6 +108,14 @@ def test_fx4_u05_records_statements_registry() -> None:
                                 include_fx2=True, include_fx4=True)
     compiled = f4.fx4_catalog()
     assert compiled.catalog.resolve(st.QUEUES_KEY).required_capability == "m05.followup.read"
+    receive = compiled.catalog.resolve(st.RECEIVE_KEY)
+    read = compiled.catalog.resolve(st.READ_KEY)
+    assert (receive.query, receive.required_capability) == (
+        "SELECT m05_fx_receive_v2(%(command)s)", "m05.fax.ingress")
+    assert (read.query, read.required_capability) == (
+        "SELECT m05_fx_staff_read_v2(%(command)s)", "m05.followup.read")
+    fx3 = f3.fx3_catalog()
+    assert fx3.catalog.resolve(st.RECEIVE_KEY).query == "SELECT m05_fx_receive(%(command)s)"
     assert str(uuid.uuid4())  # keeps the import local (class-A rule)
 
 
