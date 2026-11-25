@@ -39,6 +39,11 @@ Rows (test-case ids v1; trace in brackets):
 - FX1-X02 a rule added after routing never re-routes the fax [arch 5.4]
 - FX1-X03 delivery while an uncommitted rule insert is open: not blocked, uses committed rules
           only [arch 5.5]
+- FX1-F01 (Codex 19629e35, green-time contention evidence) an EXCLUSIVE K_FX_LINES xact lock is
+          held: the receipt is OBSERVED blocked on the advisory lock, then completes after release
+          [test cases v1r1 §0]
+- FX1-F02 a receipt transaction is held open: a try of the EXCLUSIVE K_FX_LINES lock fails; it
+          succeeds after the receipt commits [test cases v1r1 §0]
 - FX1-L01 line not registered -> LINE_NOT_REGISTERED, ZSE [FR-1]
 - FX1-W01 workload not allow-listed / actor principal -> WORKLOAD_NOT_AUTHORIZED, ZSE [arch 5.6]
 - FX1-M01 malformed commands (each field rule) -> COMMAND_MALFORMED, ZSE
@@ -57,7 +62,8 @@ Rows (test-case ids v1; trace in brackets):
 
 Mutant killers (wired at green): M-FX1-1 level order -> R01/R02; -2 count rows -> R05; -3 dedup key
 drops provider -> D07; -4 mismatch ignores sender -> D04[sender]; -5 authority accepts any
-capability -> S02[cap]; -6 post-lock re-check removed -> S04; -7 inactive filter removed -> R11.
+capability -> S02[cap]; -6 post-lock re-check removed -> S04; -7 inactive filter removed -> R11;
+-8 receipt fence removed -> F01/F02.
 """
 
 from __future__ import annotations
@@ -492,6 +498,36 @@ def test_fx1_x03_uncommitted_rule_not_seen(install: fx.FX1Install) -> None:
                 result = sa.call_in(conn, install, fx.RECEIVE, fx.fax_cmd())
     assert result["outcome"] == "needs_sorting"
     _assert_routed(install, fx.receive(install, fx.fax_cmd()), "Imaging", 2)
+
+
+# --- F: the receipt's line fence (test cases v1r1 §0) ---------------------------------------
+
+
+def _try_exclusive(install: sa.SAInstall) -> bool:
+    from haloflow.m05.fax_rules import K_FX_LINES
+
+    return bool(sa.admin(install, "SELECT pg_try_advisory_xact_lock(%s)", (K_FX_LINES,))[0][0])
+
+
+def test_fx1_f01_receipt_waits_for_exclusive_fence(install: fx.FX1Install) -> None:
+    """Green-time contention evidence: the receipt takes the shared fence before its line check."""
+    from haloflow.m05.fax_rules import K_FX_LINES
+
+    _ready(install)
+    with psycopg.connect(install.ids.admin) as admin, admin.transaction():
+        admin.execute("SELECT pg_advisory_xact_lock(%s)", (K_FX_LINES,))
+        waiter = sa.Waiter(install, fx.RECEIVE, fx.fax_cmd()).start_and_block()
+        assert fx.rows(install, "m05_fx_faxes") == []
+    assert waiter.join()["outcome"] == "needs_sorting"
+
+
+def test_fx1_f02_open_receipt_holds_the_fence(install: fx.FX1Install) -> None:
+    """An admitted receipt holds the shared fence to commit."""
+    _ready(install)
+    with sa.held(install, fx.RECEIVE, fx.fax_cmd()) as result:
+        assert result["outcome"] == "needs_sorting"
+        assert _try_exclusive(install) is False
+    assert _try_exclusive(install) is True
 
 
 # --- L / W / M: refusals --------------------------------------------------------------------
