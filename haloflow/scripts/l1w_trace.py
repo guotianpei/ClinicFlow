@@ -1004,6 +1004,7 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[act]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[admin]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[fax_read]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[get]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[history]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_capabilities_with_everything_held[list]",  # noqa: E501
@@ -1020,6 +1021,7 @@ TRACE: dict[str, list[str]] = {
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[act]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[admin]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[display]",  # noqa: E501
+        "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[fax_read]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[get]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[history]",  # noqa: E501
         "tests/platform/test_l1w_w4b_capabilities_units.py::test_r01_route_denied_when_one_capability_is_missing[list]",  # noqa: E501
