@@ -335,7 +335,7 @@ def test_fx4_p07b_concurrent_first_put(install: f4.FX4Install, env: db.L1WEnv) -
 @pytest.mark.parametrize("revoke", [True, False], ids=["revoked", "control"])
 def test_fx4_p07c_authority_after_lock(install: f4.FX4Install, env: db.L1WEnv, op: str,
                                        revoke: bool) -> None:
-    """A (Codex 8f518e20: put/upsert as well as remove)."""
+    """A (Codex 8f518e20: put/upsert as well as remove; existing-row lock)."""
     f4.ready(install)
     sender = f4.fresh_sender()
     command = (f4.sender_cmd("sender_put", sender, "New Name") if op == "sender_put"
@@ -355,6 +355,43 @@ def test_fx4_p07c_authority_after_lock(install: f4.FX4Install, env: db.L1WEnv, o
         else:
             assert waiter.join()["outcome"] == "applied"
             assert [a["op"] for a in _audit(install)] == ["sender_put", op]
+
+
+@pytest.mark.parametrize("revoke", [True, False], ids=["revoked", "control"])
+def test_fx4_p07d_authority_after_first_insert_wait(install: f4.FX4Install, env: db.L1WEnv,
+                                                    revoke: bool) -> None:
+    """A (Codex b15367b review, 2026-11-26): on a concurrent FIRST put there is no row to lock,
+    so the second writer waits on the first writer's uncommitted insert (unique index) AFTER its
+    pre-write checks. It is OBSERVED blocked (wait_event_type Lock); the grant is revoked; the
+    first writer commits -> the second is refused, the winner's name, sender_id and single audit
+    row are preserved. Control without revocation: the second put applies to the same id."""
+    f4.ready(install)
+    sender = f4.fresh_sender()
+    with _support(env, install, f"fx4-p07d-{revoke}") as support:
+        with psycopg.connect(support) as first:
+            one = sa.call_in(first, install, f4.SENDER_PUT,
+                             f4.sender_cmd("sender_put", sender, "First Name"))
+            assert _senders(install) == []            # the first insert is not yet committed
+            waiter = fx.LoginWaiter(install, support, f4.SENDER_PUT,
+                                    f4.sender_cmd("sender_put", sender, "Second Name")
+                                    ).start_and_block()
+            if revoke:
+                _revoke(install)
+            first.commit()
+        rows = lambda: [(r["display_name"], str(r["sender_id"]))  # noqa: E731
+                        for r in _senders(install)]
+        if revoke:
+            with pytest.raises(psycopg.Error) as late:
+                waiter.join()
+            assert fx.code_of(late.value) == "SUPPORT_NOT_AUTHORIZED"
+            assert rows() == [("First Name", one["sender_id"])]
+            assert [(a["op"], str(a["target_id"])) for a in _audit(install)] == [
+                ("sender_put", one["sender_id"])]
+        else:
+            two = waiter.join()
+            assert (two["outcome"], two["sender_id"]) == ("applied", one["sender_id"])
+            assert rows() == [("Second Name", one["sender_id"])]
+            assert [str(a["target_id"]) for a in _audit(install)] == [one["sender_id"]] * 2
 
 
 # ------------------------------------------------------------------------------- t145

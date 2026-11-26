@@ -10,8 +10,10 @@ Governing: package v1r1 (Codex ALIGN for red tests 8f518e20), red packet v1 (Cod
 - t146 (migrator SQL): `m05_fx_senders` (opaque sender_id, exact number, saved display name),
   `m05_fx_faxes.sender_name` (the normalised name as sent), the settings-audit op set widened.
 - t147 `m05_fx_sender_put(jsonb)` (EXECUTE to haloflow_support only, OD-FX3): sender_put (upsert,
-  sender_id kept from the first insert) and sender_remove; the t137 authority before any lock and
-  re-checked after the sender row lock; one audit row per applied op (target = sender_id).
+  sender_id kept from the first insert) and sender_remove; the t137 authority before any lock,
+  re-checked after the sender row lock and again after the write (a first put can wait on a
+  concurrent uncommitted insert inside the upsert); one audit row per applied op (target =
+  sender_id).
 - t148 `m05_fx_receive_v2(jsonb)` (runtime): t139 plus an optional `sender_name`, normalised in
   SQL (the authority; `fax_rules.normalise_sender_name` mirrors it) and compared on replay.
 - t149 `m05_fx_staff_read_v2(jsonb)` (runtime, STABLE): t143 plus `sender_display` on every fax
@@ -289,6 +291,10 @@ BEGIN""" + _TENANT + r"""
         END IF;
         DELETE FROM {schema}.m05_fx_senders WHERE sender_id = v_id;
     END IF;
+    -- ... and again after the write (Codex b15367b review): a concurrent FIRST put has no row
+    -- to lock, so the upsert itself can wait on another writer's uncommitted insert after the
+    -- checks above; a grant revoked during that wait refuses here and rolls the write back.""" + (
+        _AUTHORIZE) + r"""
     INSERT INTO {schema}.m05_fx_settings_audit (audit_id, actor_id, grant_id, op, target_id, at)
     VALUES (pg_catalog.gen_random_uuid(), v_auth OPERATOR(pg_catalog.->>) 'actor_id',
             (v_auth OPERATOR(pg_catalog.->>) 'grant_id')::uuid, v_op, v_id,
