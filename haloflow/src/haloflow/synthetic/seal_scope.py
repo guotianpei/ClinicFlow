@@ -85,6 +85,7 @@ FX_RUNTIME_MUTABLE_TABLES: Final = frozenset({
 FX_INSTALL_SEALED_TABLES: Final = frozenset({
     "{tenant}.m05_fx_workloads", "{tenant}.m05_fx_queues", "{tenant}.m05_fx_lines",
     "{tenant}.m05_fx_rules", "{tenant}.m05_fx_settings_audit",
+    "{tenant}.m05_fx_senders",  # FX4: written only by the support sender gateway (t147)
 })
 
 # The token `view.capture` substitutes for the tenant schema in normalised names.

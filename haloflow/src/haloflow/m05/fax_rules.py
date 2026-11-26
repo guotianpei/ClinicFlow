@@ -99,3 +99,107 @@ def meta_digest(*, line: str, sender: str | None, pages: int, received_at: str,
 
     parts = (META_TAG, line, sender or "", str(pages), received_at, doc_ref)
     return hashlib.sha256(_SEP.join(parts).encode("utf-8")).digest()
+
+
+# --- FX4 (OD-FX10): sender names ------------------------------------------------------------
+#
+# The SQL gateways (t147 saved names, t148 sent names) are the authority; these functions mirror
+# them for tests, the simulator and the ingress pre-check. Order (Codex 8f518e20): NFKC ->
+# whitespace to ' ' -> drop the remaining Cc/Cf and '<' '>' -> collapse spaces, trim -> mask each
+# number run (>= 5 Unicode digits joined by separators) to MASK + its last four digits -> cut to
+# SENDER_NAME_MAX -> trim; empty is None.
+
+SENDER_NAME_RAW_MAX: Final = 256
+SENDER_NAME_MAX: Final = 40
+SAVED_NAME_MAX: Final = 64
+MASK: Final = "•••"
+RUN_DIGITS: Final = 5
+_SEPARATORS: Final = frozenset(".()+/−")
+
+
+def _is_digit(char: str) -> bool:
+    import unicodedata
+
+    return unicodedata.category(char) == "Nd"
+
+
+def _is_separator(char: str) -> bool:
+    import unicodedata
+
+    return char in _SEPARATORS or unicodedata.category(char) in ("Zs", "Pd")
+
+
+def _clean(raw: str) -> str:
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", raw)
+    text = "".join(" " if char.isspace() else char for char in text)
+    text = "".join(char for char in text
+                   if unicodedata.category(char) not in ("Cc", "Cf") and char not in "<>")
+    return " ".join(text.split())
+
+
+def _runs(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, ASCII digits) of every maximal digit/separator run that starts and ends with
+    a digit."""
+    import unicodedata
+
+    out: list[tuple[int, int, str]] = []
+    i = 0
+    while i < len(text):
+        if not _is_digit(text[i]):
+            i += 1
+            continue
+        j, last = i, i
+        while j < len(text) and (_is_digit(text[j]) or _is_separator(text[j])):
+            if _is_digit(text[j]):
+                last = j
+            j += 1
+        digits = "".join(str(unicodedata.decimal(c)) for c in text[i:last + 1] if _is_digit(c))
+        out.append((i, last + 1, digits))
+        i = last + 1
+    return out
+
+
+def number_runs(text: str) -> list[str]:
+    """The ASCII digit string of every digit run in `text` (after the same cleaning)."""
+    return [digits for _start, _end, digits in _runs(_clean(text))]
+
+
+def normalise_sender_name(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    if type(raw) is not str or len(raw) > SENDER_NAME_RAW_MAX:
+        raise ValueError("SENDER_NAME_INVALID")
+    text = _clean(raw)
+    parts: list[str] = []
+    position = 0
+    for start, end, digits in _runs(text):
+        if len(digits) >= RUN_DIGITS:
+            parts += [text[position:start], MASK + digits[-4:]]
+            position = end
+    parts.append(text[position:])
+    result = "".join(parts)[:SENDER_NAME_MAX].strip()
+    return result or None
+
+
+def saved_name_valid(name: str) -> bool:
+    import unicodedata
+
+    if type(name) is not str:
+        return False
+    text = " ".join("".join(" " if c.isspace() else c
+                            for c in unicodedata.normalize("NFKC", name)).split())
+    if not 1 <= len(text) <= SAVED_NAME_MAX:
+        return False
+    if any(unicodedata.category(c) in ("Cc", "Cf") or c in "<>" for c in text):
+        return False
+    return not any(len(digits) >= RUN_DIGITS for _s, _e, digits in _runs(text))
+
+
+def saved_name_stored(name: str) -> str:
+    """The stored form of a valid saved name: NFKC, whitespace collapsed, trimmed."""
+    import unicodedata
+
+    return " ".join("".join(" " if c.isspace() else c
+                            for c in unicodedata.normalize("NFKC", name)).split())

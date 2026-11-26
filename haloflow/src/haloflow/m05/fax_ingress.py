@@ -38,7 +38,7 @@ from fastapi import APIRouter, Request
 from starlette.responses import JSONResponse, Response
 
 from haloflow.m05.fax import FaxRefused, InboundFax
-from haloflow.m05.fax_rules import E164, K_FX_LINES
+from haloflow.m05.fax_rules import E164, K_FX_LINES, SENDER_NAME_RAW_MAX
 
 LOGGER: Final = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ MAX_AUTH_BYTES: Final = 512
 MIN_SECRET_BYTES: Final = 32
 MAX_SECRET_BYTES: Final = MAX_AUTH_BYTES - len(b"Bearer ")  # 505: the header must fit
 FORBIDDEN_FIELDS: Final = ("line", "to", "to_number", "receiving_line")
+OPTIONAL_FIELDS: Final = ("sender_name",)  # FX4: the provider's name as sent (OD-FX10)
 BODY_FIELDS: Final = ("provider", "provider_fax_id", "sender", "pages", "received_at",
                       "doc_ref")
 _SECRET_CHARS: Final = re.compile(r"[\x21-\x7e]+")
@@ -226,7 +227,7 @@ def _parse(raw: bytes) -> dict[str, Any]:
         if field in value:
             raise _BodyRefused("BODY_FIELD_FORBIDDEN", field)
     for field in sorted(value):
-        if field not in BODY_FIELDS:
+        if field not in BODY_FIELDS and field not in OPTIONAL_FIELDS:
             raise _BodyRefused("MALFORMED", field)
     for field in BODY_FIELDS:
         if field not in value:
@@ -238,6 +239,9 @@ def _parse(raw: bytes) -> dict[str, Any]:
         raise _BodyRefused("MALFORMED", "sender")
     if type(value["pages"]) is not int:
         raise _BodyRefused("MALFORMED", "pages")
+    name = value.get("sender_name")  # FX4 (OD-FX10): optional, untrusted, never logged
+    if name is not None and (type(name) is not str or len(name) > SENDER_NAME_RAW_MAX):
+        raise _BodyRefused("MALFORMED", "sender_name")
     return value
 
 
@@ -277,7 +281,8 @@ def create_fax_ingress_router(config: FaxIngressConfig, directory: FaxLineDirect
             await after_lookup()
         fax = InboundFax(provider=body["provider"], provider_fax_id=body["provider_fax_id"],
                          line=line, sender=body["sender"], pages=body["pages"],
-                         received_at=body["received_at"], doc_ref=body["doc_ref"])
+                         received_at=body["received_at"], doc_ref=body["doc_ref"],
+                         sender_name=body.get("sender_name"))
         try:
             context = await context_for(tenant)
             result = await receive(context, fax)

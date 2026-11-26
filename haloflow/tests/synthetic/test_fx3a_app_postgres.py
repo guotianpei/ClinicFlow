@@ -137,7 +137,8 @@ def test_fx3_g03_fax_install(pg: s.PgCluster, tmp_path: Path) -> None:
     from haloflow.synthetic import fax_wiring
 
     inst = e4.install(pg, tmp_path, FAX)
-    assert e4.installed_target(inst) == 144
+    # FX4-G04 moves the fax profile to 149; FX3's own delta (t136..t144) is still installed
+    assert e4.installed_target(inst) == 149
     assert inst.state["install_profile"] == FAX
     assert [r["line_e164"] for r in _fx_rows(inst, "m05_fx_lines")] == [fax_wiring.SYN_FAX_LINE]
 

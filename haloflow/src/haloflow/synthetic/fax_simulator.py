@@ -36,7 +36,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from haloflow.m05 import fax_ingress
-from haloflow.m05.fax_rules import E164
+from haloflow.m05.fax_rules import E164, SENDER_NAME_RAW_MAX
 from haloflow.synthetic.fax_wiring import SIM_PROVIDER, SYN_FAX_LINE
 from haloflow.synthetic.labels import labelled
 
@@ -117,10 +117,15 @@ async def deliver_fax(lifecycle: Any, request: Request) -> Response:
     value = await _value(request)
     if type(value) is not dict:
         return _refused("body")
-    if set(value) != {"sender", "pages"}:
-        return _refused("unknown_field" if set(value) - {"sender", "pages"} else
+    allowed = {"sender", "pages", "sender_name"}  # FX4: optional name as sent (OD-FX10)
+    if set(value) - allowed or not {"sender", "pages"} <= set(value):
+        return _refused("unknown_field" if set(value) - allowed else
                         ("sender" if "sender" not in value else "pages"))
     sender, pages = value["sender"], value["pages"]
+    sender_name = value.get("sender_name")
+    if sender_name is not None and (type(sender_name) is not str
+                                    or len(sender_name) > SENDER_NAME_RAW_MAX):
+        return _refused("sender_name")
     if sender is not None and (type(sender) is not str or not E164.fullmatch(sender)):
         return _refused("sender")
     if type(pages) is not int or not 1 <= pages <= MAX_PAGES:
@@ -130,7 +135,8 @@ async def deliver_fax(lifecycle: Any, request: Request) -> Response:
         "provider": SIM_PROVIDER, "provider_fax_id": provider_fax_id, "sender": sender,
         "pages": pages,
         "received_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-        "doc_ref": "syn-doc-" + provider_fax_id[-12:]}).encode("utf-8")
+        "doc_ref": "syn-doc-" + provider_fax_id[-12:],
+        **({} if sender_name is None else {"sender_name": sender_name})}).encode("utf-8")
     status: int | None = None
     out: Any = None
     for attempt in range(1, MAX_ATTEMPTS + 1):

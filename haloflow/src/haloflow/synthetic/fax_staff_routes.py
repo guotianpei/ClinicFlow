@@ -53,6 +53,7 @@ ROUTES: Final[dict[str, tuple[str, str, str]]] = {
     "history": ("history", "GET", PREFIX + "/faxes/{fax_id}/history"),
     "open": ("get", "POST", PREFIX + "/faxes/{fax_id}/open"),
     "act": ("act", "POST", PREFIX + "/faxes/{fax_id}/actions"),
+    "queues": ("list", "GET", PREFIX + "/queues"),  # FX4 (t145)
 }
 
 Call = Callable[[Any, Any], Awaitable[Any]]
@@ -127,6 +128,9 @@ def _action(fax_id: uuid.UUID, value: dict[str, Any]) -> FaxAction:
 
 
 async def _parse(name: str, request: Request) -> Call:
+    if name == "queues":
+        _no_query(request)
+        return lambda fax, ctx: fax.queues(ctx)
     if name == "list":
         queue = _queue_param(request)
         return lambda fax, ctx: fax.list(ctx, queue)
