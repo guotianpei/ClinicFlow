@@ -27,6 +27,7 @@ import b2_support as s
 import b3a_support as b3
 import b3b_support as bb
 import el4_support as e4
+import ob5_support as b5
 import pytest
 
 pytestmark = pytest.mark.postgres
@@ -130,8 +131,12 @@ def test_fx5_h01_read_only_principal(pg: s.PgCluster, tmp_path: Path,
     asyncio.run(body())
 
 
-def test_fx5_h03_follow_up_kept(pg: s.PgCluster, tmp_path: Path) -> None:
+def test_fx5_h03_follow_up_kept(pg: s.PgCluster, tmp_path: Path,
+                                monkeypatch: pytest.MonkeyPatch) -> None:
     """C (R3: unrelated roles unchanged; a control before and after FX5)."""
+    # the B5 five-zone TEST set, so the E2 scenario loads at any hour (as test_el4_postgres
+    # `test_zones`; without it the load is refused OUTSIDE_LOAD_HOURS by the wall clock)
+    monkeypatch.setattr(e4.mod("scenarios"), "LOAD_ZONES", b5.TEST_ZONES)
     inst = e4.install(pg, tmp_path, FAX)
 
     async def body() -> None:
