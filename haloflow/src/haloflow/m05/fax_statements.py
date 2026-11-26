@@ -53,3 +53,17 @@ FX4_REBOUND: Final[StatementDefinitions] = MappingProxyType({
                   "SELECT m05_fx_receive_v2(%(command)s)"),
     READ_KEY: (StatementMode.READ, READ_CAPABILITY, "SELECT m05_fx_staff_read_v2(%(command)s)"),
 })
+
+# FX-IN FX5 (target 153, OD-FX11): read / open / act / queues rebound to the versions that check
+# 'act' for every staff call (t150 / t152 / t151), each needing m05.followup.apply. OPEN keeps
+# the constant right-hand open operation.
+FX5_REBOUND: Final[StatementDefinitions] = MappingProxyType({
+    READ_KEY: (StatementMode.READ, APPLY_CAPABILITY, "SELECT m05_fx_staff_read_v3(%(command)s)"),
+    OPEN_KEY: (StatementMode.WRITE, APPLY_CAPABILITY,
+               "SELECT m05_fx_staff_action_v2(%(command)s OPERATOR(pg_catalog.||)"
+               " pg_catalog.jsonb_build_object('action', 'open'))"),
+    ACT_KEY: (StatementMode.WRITE, APPLY_CAPABILITY,
+              "SELECT m05_fx_staff_action_v2(%(command)s)"),
+    QUEUES_KEY: (StatementMode.READ, APPLY_CAPABILITY,
+                 "SELECT m05_fx_staff_queues_v2(%(command)s)"),
+})

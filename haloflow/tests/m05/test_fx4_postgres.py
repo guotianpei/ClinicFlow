@@ -29,8 +29,9 @@
           positive control without revocation applies
 - FX4-P08 t145: read-only staff reads exactly four keys per queue, position then lower(name),
           inactive included; inactive staff -> ACTOR_INACTIVE; rename continuity
-- FX4-P08b route GET /synthetic/v1/fax/queues (actual fax_staff_routes): A's route lists A's queues
-          only (B has a queue A lacks); inactive queue `active:false`; no write method on /queues
+- FX4-P08b route GET /synthetic/v1/fax/queues (actual fax_staff_routes; act staff since FX5 /
+          OD-FX11): A's route lists A's queues only (B has a queue A lacks); inactive queue
+          `active:false`; no write method on /queues
 - FX4-P09 logs: FaxService.receive with a sent name holding a number -> no name, number or digit run
           in any log record
 - FX4-P10 two clinics, same number, own saved names
@@ -422,7 +423,9 @@ def test_fx4_p08b_queues_route(install: f4.FX4Install, install_b: f4.FX4Install,
     """A."""
     f4.ready(install, fx.LINE1)
     f4.ready(install_b, fx.LINE2)
-    reader = f2.seed_staff(install, access=("read",))
+    # FX5 / OD-FX11 re-pin: the LIVE queues route needs read AND act (`fax_read`); the queue
+    # assertions are unchanged (a read-only reader is refused: FX5-H01)
+    reader = f2.seed_staff(install)
     fx.deactivate_raw(install, "General")
     with _support(env, install_b, "fx4-p08b") as support_b:
         fx.call_as(support_b, install_b, fx.SETTINGS_PUT,

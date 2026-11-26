@@ -48,12 +48,13 @@ CONFLICT_CODES: Final = frozenset({"VERSION_CONFLICT", "FAX_FILED", "NOT_ROUTED"
 _UUID: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # route name -> (platform route requirement, method, path)
 ROUTES: Final[dict[str, tuple[str, str, str]]] = {
-    "list": ("list", "GET", PREFIX + "/faxes"),
-    "get": ("get", "GET", PREFIX + "/faxes/{fax_id}"),
-    "history": ("history", "GET", PREFIX + "/faxes/{fax_id}/history"),
-    "open": ("get", "POST", PREFIX + "/faxes/{fax_id}/open"),
+    # FX5 (OD-FX11): every fax read / open needs read AND act (`fax_read`)
+    "list": ("fax_read", "GET", PREFIX + "/faxes"),
+    "get": ("fax_read", "GET", PREFIX + "/faxes/{fax_id}"),
+    "history": ("fax_read", "GET", PREFIX + "/faxes/{fax_id}/history"),
+    "open": ("fax_read", "POST", PREFIX + "/faxes/{fax_id}/open"),
     "act": ("act", "POST", PREFIX + "/faxes/{fax_id}/actions"),
-    "queues": ("list", "GET", PREFIX + "/queues"),  # FX4 (t145)
+    "queues": ("fax_read", "GET", PREFIX + "/queues"),  # FX4 (t145; FX5 t151)
 }
 
 Call = Callable[[Any, Any], Awaitable[Any]]

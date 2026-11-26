@@ -48,6 +48,8 @@ ROUTE_REQUIREMENTS: Final[Mapping[str, tuple[frozenset[str], ...]]] = MappingPro
     "read_note": (frozenset({_READ, _NOTE_READ}),),
     "display": (frozenset({_DISPLAY, _READ}), frozenset({_DISPLAY, _ADMIN})),
     "admin": (frozenset({_ADMIN}),),
+    # FX-IN FX5 (OD-FX11): fax reads and open need read AND act (no view-only fax access)
+    "fax_read": (frozenset({_READ, _PREPARE, _APPLY}),),
 })
 
 # v1r1 correction 1: the M05 service derives the SQL permissions {read, act, supervise}
@@ -61,6 +63,7 @@ ROUTE_OPTIONAL: Final[Mapping[str, frozenset[str]]] = MappingProxyType({
     "read_note": frozenset(),
     "display": frozenset(),
     "admin": frozenset(),
+    "fax_read": frozenset(),
 })
 
 

@@ -34,6 +34,9 @@ pytestmark = pytest.mark.postgres
 FAX = "fax"
 SIM_ROUTE = "/synthetic/v1/simulator/fax"
 PREFIX = "/synthetic/v1/fax"
+# the exact refusal body (every synthetic response carries the simulated label); identical for an
+# existing and an absent fax id
+DENIED = {"code": "FORBIDDEN", "simulated": True}
 
 
 @pytest.fixture(autouse=True)
@@ -118,9 +121,9 @@ def test_fx5_h01_read_only_principal(pg: s.PgCluster, tmp_path: Path,
                 for target in ("/faxes?queue=needs_sorting", f"/faxes/{target_id}",
                                f"/faxes/{target_id}/history", "/queues"):
                     got = await _get(app, target)
-                    assert (got.status, got.json) == (403, {"code": "FORBIDDEN"}), target
+                    assert (got.status, got.json) == (403, DENIED), target
                 opened = await _post(app, tok, f"/faxes/{target_id}/open")
-                assert (opened.status, opened.json) == (403, {"code": "FORBIDDEN"})
+                assert (opened.status, opened.json) == (403, DENIED)
             assert called == []
             assert _history(inst) == before
 
