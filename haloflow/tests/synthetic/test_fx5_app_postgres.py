@@ -10,8 +10,8 @@ the real installer, lifecycle and app (as FX3a).
           called (the route refuses first); no history row
 - FX5-H02 an act principal: 200 on list / get / history / queues; open 200 records `opened` with
           the staff id
-- FX5-H03 R3: the same read-only principal keeps the follow-up list (200) — unrelated roles
-          unchanged
+- FX5-H03 CONTROL (R3, Codex 0a62cb3f): a read-only principal keeps the follow-up list AND a
+          seeded unrelated follow-up item (GET 200) — passes before and after FX5
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ def test_fx5_g01_fax_install_target(pg: s.PgCluster, tmp_path: Path) -> None:
     assert {"t150_m05_fx_staff_read_v3", "t153_m05_fx_revoke_superseded"} <= applied
 
 
-def test_fx5_h01_h03_read_only_principal(pg: s.PgCluster, tmp_path: Path,
+def test_fx5_h01_read_only_principal(pg: s.PgCluster, tmp_path: Path,
                                          monkeypatch: pytest.MonkeyPatch) -> None:
     """A."""
     from haloflow.m05 import fax as fax_mod
@@ -123,9 +123,31 @@ def test_fx5_h01_h03_read_only_principal(pg: s.PgCluster, tmp_path: Path,
                 assert (opened.status, opened.json) == (403, {"code": "FORBIDDEN"})
             assert called == []
             assert _history(inst) == before
-            # H03 (R3): the follow-up list is unchanged for the read-only principal
-            followup = await bb.asgi(app, "GET", bb.path("list"), headers=bb.get_headers())
-            assert followup.status == 200
+
+    asyncio.run(body())
+
+
+def test_fx5_h03_follow_up_kept(pg: s.PgCluster, tmp_path: Path) -> None:
+    """C (R3: unrelated roles unchanged; a control before and after FX5)."""
+    inst = e4.install(pg, tmp_path, FAX)
+
+    async def body() -> None:
+        async with e4.running(inst, profile=FAX, app_name="fx5-h03") as (_lc, app):
+            tok = await e4.token(app)
+            # an unrelated follow-up item (eligibility E2 -> "Insurance needs manual check")
+            assert (await e4.load(app, tok, "E2")).status == 200
+            e4.make_due(inst, e4.scenario_ref(inst, "E2", e4.EL_ROW_KEY), "booking", -1.0)
+            await e4.tick(app, tok)
+            items = [i for i, k, st in e4.el_items(inst) if st == "open"]
+            assert len(items) == 1, items
+            iid = items[0]
+            bb.standing_override(inst, access=("read",))
+            listed = await bb.asgi(app, "GET", bb.path("list") + "?limit=100",
+                                   headers=bb.get_headers())
+            assert listed.status == 200
+            assert iid in [i["item_id"] for i in listed.json["items"]], listed.json
+            got = await bb.asgi(app, "GET", bb.path("get", iid), headers=bb.get_headers())
+            assert got.status == 200, got.raw[:200]
 
     asyncio.run(body())
 

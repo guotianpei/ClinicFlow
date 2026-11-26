@@ -2,8 +2,8 @@
 Governing: see `fx5_support`.
 Classes: C control, A absence-red.
 
-- FX5-C01 CONTROL: the FX4 registry (149) and catalogue build; today a read-only holder resolves
-          the fax read routes (`list`) — the pre-state OD-FX11 removes
+- FX5-C01 CONTROL: the FX4 registry (149); the historical FX4 catalogue READ_KEY (t149, read
+          capability); a read-only holder resolves the follow-up `list` requirement (unchanged)
 - FX5-U01 platform: ROUTE_REQUIREMENTS["fax_read"] == ({read, prepare, apply},); an explicit EMPTY
           ROUTE_OPTIONAL["fax_read"]; route_capabilities("fax_read", {read}) is None, with
           {read, prepare, apply} (and + supervise) exactly {read, prepare, apply}; list / get /
@@ -34,9 +34,11 @@ def test_fx5_c01_controls() -> None:
     from haloflow.platform.capabilities import route_capabilities
 
     assert f4.fx4_registry().target_version == 149
-    assert f4.fx4_catalog() is not None
-    routes = f3.m("fax_staff_routes", package="haloflow.synthetic")
-    assert routes.ROUTES["list"][0] == "list"
+    # the historical FX4 composition (not the live route table, which U02 re-pins)
+    st = f3.m("fax_statements")
+    read = f4.fx4_catalog().catalog.resolve(st.READ_KEY)
+    assert (read.query, read.required_capability) == (
+        "SELECT m05_fx_staff_read_v2(%(command)s)", READ)
     assert route_capabilities("list", frozenset({READ})) == frozenset({READ})
 
 
