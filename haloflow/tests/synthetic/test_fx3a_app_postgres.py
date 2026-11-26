@@ -42,8 +42,9 @@ Rows:
           as "eligibility" is refused before any pool
 - FX3-A01 POSITIVE end to end: simulator delivery (sender hidden) -> 200 needs_sorting -> the staff
           needs-sorting list shows it with reason sender_not_shown -> get shows no sender digits
-- FX3-H01 read-only staff: list / get / history 200; open 200 with history actor = the staff id;
-          actions -> 403, ZSE
+- FX3-H01 read-only staff (RE-PINNED by FX5 / OD-FX11, Rachel 2026-11-26: the fax profile is the
+          FX5 target; view-only staff have no fax access): list / get / history / open / queues /
+          actions -> 403 FORBIDDEN, ZSE (no `opened` history row)
 - FX3-H02 act staff: sort -> 200 routed; a POST without the CSRF token is refused, ZSE
 - FX3-H03 the route table has no settings or lines route
 - FX3-H04 (single tenant) an unknown fax id -> 404 NOT_FOUND on get / history / open / actions, ZSE
@@ -137,8 +138,9 @@ def test_fx3_g03_fax_install(pg: s.PgCluster, tmp_path: Path) -> None:
     from haloflow.synthetic import fax_wiring
 
     inst = e4.install(pg, tmp_path, FAX)
-    # FX4-G04 moves the fax profile to 149; FX3's own delta (t136..t144) is still installed
-    assert e4.installed_target(inst) == 149
+    # FX4-G04 then FX5-G01 move the fax profile to 153; FX3's own delta (t136..t144) is still
+    # installed
+    assert e4.installed_target(inst) == 153
     assert inst.state["install_profile"] == FAX
     assert [r["line_e164"] for r in _fx_rows(inst, "m05_fx_lines")] == [fax_wiring.SYN_FAX_LINE]
 
@@ -172,24 +174,20 @@ def test_fx3_a01_simulator_to_staff_read(pg: s.PgCluster, tmp_path: Path) -> Non
 
 
 def test_fx3_h01_read_only_staff(pg: s.PgCluster, tmp_path: Path) -> None:
-    """A."""
+    """A (re-pinned by FX5, OD-FX11)."""
     inst = e4.install(pg, tmp_path, FAX)
 
     async def body() -> None:
         async with e4.running(inst, profile=FAX, app_name="fx3-h01") as (_lc, app):
             tok = await e4.token(app)
             fid = (await _deliver(app, tok)).json["fax_id"]
-            bb.standing_override(inst, access=("read",))
-            for target in ("/faxes?queue=needs_sorting", f"/faxes/{fid}",
-                           f"/faxes/{fid}/history"):
-                assert (await _get(app, target)).status == 200, target
-            opened = await _post(app, tok, f"/faxes/{fid}/open", {})
-            assert opened.status == 200
-            history = await _get(app, f"/faxes/{fid}/history")
-            assert history.json["history"][-1]["action"] == "opened"
-            assert history.json["history"][-1]["actor"] == inst.state["staff_id"]
-            before = _zse(inst)
             queue = _fx_rows(inst, "m05_fx_queues")[0]["queue_id"]
+            bb.standing_override(inst, access=("read",))
+            before = _zse(inst)
+            for target in ("/faxes?queue=needs_sorting", f"/faxes/{fid}",
+                           f"/faxes/{fid}/history", "/queues"):
+                assert (await _get(app, target)).status == 403, target
+            assert (await _post(app, tok, f"/faxes/{fid}/open", {})).status == 403
             denied = await _post(app, tok, f"/faxes/{fid}/actions",
                                  {"action": "sort", "expected_version": 1, "queue_id": queue})
             assert denied.status == 403
