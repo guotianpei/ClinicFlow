@@ -20,7 +20,8 @@ include_fx4=True)` — FX2's ids plus FX4_IDS, target **149**; include_fx4 witho
 ValueError("...FX4..."). Units live in `haloflow.m05.fax_display_units` (FX4_TENANT_MIGRATIONS,
 FX4_INSTALLED_STATE_PROFILES).
 Catalogue: `build_synthetic_catalog(<EL flags>, include_fx1, include_fx2, include_fx3,
-include_fx4=True)` adds QUEUES_KEY and REBINDS RECEIVE_KEY -> "SELECT m05_fx_receive_v2(%(command)s)" and READ_KEY -> "SELECT
+include_fx4=True)` adds QUEUES_KEY and REBINDS RECEIVE_KEY ->
+"SELECT m05_fx_receive_v2(%(command)s)" and READ_KEY -> "SELECT
 m05_fx_staff_read_v2(%(command)s)" (same modes and capabilities); include_fx4 without include_fx3 ->
 ValueError("...FX4...").
 - t145 `m05_fx_staff_queues(p_command jsonb) RETURNS jsonb` (runtime, STABLE, `_TENANT + BINDING`):
@@ -40,9 +41,9 @@ ValueError("...FX4...").
   row per applied op, target_id = sender_id, no number / digest / name anywhere in the audit row.
   The stored display_name is the saved name after NFKC, whitespace collapse and trim.
 - t148 `m05_fx_receive_v2(jsonb)` (runtime; red v1r1 pin correction: the unit framework never
-  replaces a function — every typed unit is `replace: false` and earlier packages version names, e.g.
-  m05_directory_v4 — so v2 is a NEW function and the FX4 catalogue rebinds RECEIVE_KEY to it; t139
-  stays): the v1 key set, optionally plus `sender_name` (string | null). Raw
+  replaces a function — every typed unit is `replace: false` and earlier packages version names,
+  e.g. m05_directory_v4 — so v2 is a NEW function and the FX4 catalogue rebinds RECEIVE_KEY to
+  it; t139 stays): the v1 key set, optionally plus `sender_name` (string | null). Raw
   length > 256 -> COMMAND_MALFORMED (direct gateway too). Stored `sender_name` =
   normalise_sender_name(raw). Replay of the same identity: equal normalised names (both absent
   included) and equal other metadata -> duplicate (no write); otherwise duplicate_mismatch, original

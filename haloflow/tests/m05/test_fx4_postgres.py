@@ -243,8 +243,11 @@ def test_fx4_p06b_upgrade_then_replay(old: f2.FX2Install) -> None:
     command = fx.fax_cmd(sender=f4.fresh_sender())
     first = fx.receive(old, command)
     f4.upgrade_to_fx4(old)
-    assert sa.admin(old, "SELECT schema_version FROM shared.tenants WHERE tenant_id = %s",
-                    (old.tenant_id,))[0][0] == f4.FX4_TARGET
+    # the runner records units in shared.schema_migrations; shared.tenants.schema_version is
+    # set only by the provisioner at activation (no upgrade path for an active tenant)
+    applied = sa.admin(old, "SELECT migration_id FROM shared.schema_migrations"
+                            " WHERE tenant_id = %s AND state = 'applied'", (old.tenant_id,))
+    assert set(f4.FX4_IDS) <= {row[0] for row in applied}
     original = fx.fax(old, str(first["fax_id"]))
     assert original["sender_name"] is None
     before = f4.snapshot(old)

@@ -32,6 +32,7 @@ from haloflow.m05.fax_statements import (
     CAPABILITY_LINES,
     LINES_KEY,
     OPEN_KEY,
+    QUEUES_KEY,
     READ_KEY,
     RECEIVE_KEY,
 )
@@ -59,6 +60,7 @@ class InboundFax:
     pages: int
     received_at: str
     doc_ref: str
+    sender_name: str | None = None  # FX4 (OD-FX10): the name as sent, untrusted, never logged
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,10 +125,18 @@ class FaxService:
         self._workload(context, INGRESS_CAPABILITIES)
         if not isinstance(fax, InboundFax):
             raise FaxRefused("COMMAND_MALFORMED")
-        return await self._call(context, RECEIVE_KEY, {
+        command: dict[str, Any] = {
             "provider": fax.provider, "provider_fax_id": fax.provider_fax_id, "line": fax.line,
             "sender": fax.sender, "pages": fax.pages, "received_at": fax.received_at,
-            "doc_ref": fax.doc_ref})
+            "doc_ref": fax.doc_ref}
+        if fax.sender_name is not None:  # FX4; absent on an FX3 (target 144) catalogue
+            command["sender_name"] = fax.sender_name
+        return await self._call(context, RECEIVE_KEY, command)
+
+    async def queues(self, context: Any) -> dict[str, Any]:
+        """FX4 (t145): the tenant's queues for an active staff member with read access."""
+        staff = self._staff(context)
+        return await self._call(context, QUEUES_KEY, {"staff_id": staff})
 
     async def lines(self, context: Any) -> tuple[str, ...]:
         self._workload(context, LINES_CAPABILITIES)

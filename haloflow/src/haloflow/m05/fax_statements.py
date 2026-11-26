@@ -41,3 +41,15 @@ FX3_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
     ACT_KEY: (StatementMode.WRITE, APPLY_CAPABILITY,
               "SELECT m05_fx_staff_action(%(command)s)"),
 })
+
+# FX-IN FX4 (target 149): the queue read (t145) and the receive / read keys rebound to the v2
+# functions (t148 / t149; the unit framework never replaces a function).
+QUEUES_KEY: Final = "m05.fax.queues"
+FX4_STATEMENTS: Final[StatementDefinitions] = MappingProxyType({
+    QUEUES_KEY: (StatementMode.READ, READ_CAPABILITY, "SELECT m05_fx_staff_queues(%(command)s)"),
+})
+FX4_REBOUND: Final[StatementDefinitions] = MappingProxyType({
+    RECEIVE_KEY: (StatementMode.WRITE, CAPABILITY_INGRESS,
+                  "SELECT m05_fx_receive_v2(%(command)s)"),
+    READ_KEY: (StatementMode.READ, READ_CAPABILITY, "SELECT m05_fx_staff_read_v2(%(command)s)"),
+})
