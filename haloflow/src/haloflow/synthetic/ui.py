@@ -643,7 +643,7 @@ def install_ui(app: FastAPI, lifecycle: Any) -> None:
             (UI_PREFIX + "/{item_id}/resolve", resolve, "POST"), (CSS_PATH, css, "GET")):
         app.add_api_route(path, handler, methods=[method], response_class=Response,
                           include_in_schema=False)
-    if getattr(lifecycle, "profile", "default") == "eligibility":     # E4 (D-E4-5)
+    if getattr(lifecycle, "profile", "default") in ("eligibility", "fax"):  # E4 (D-E4-5)
         from haloflow.synthetic import el_ui
 
         async def contact(request: Request) -> Response:

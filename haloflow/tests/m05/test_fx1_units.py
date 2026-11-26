@@ -146,7 +146,8 @@ def test_fx1_c02_default_target_and_profiles_unchanged() -> None:
     from haloflow.synthetic.composition import build_synthetic_registry
 
     assert build_synthetic_registry().target_version == 97
-    assert profiles.TARGETS == {"default": 97, "eligibility": 135}
+    # FX3a adds the fax profile (144); the default and eligibility targets stay unchanged
+    assert (profiles.TARGETS["default"], profiles.TARGETS["eligibility"]) == (97, 135)
 
 
 def test_fx1_a01_fx1_registry() -> None:

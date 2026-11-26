@@ -62,6 +62,8 @@ NONDETERMINISTIC: Final = frozenset({
     ("shared.tenants", "updated_at"),
     ("{tenant}.m05_reminder_settings", "updated_at"),
     ("{tenant}.m05_el_settings", "updated_at"),        # E4: eligibility profile only
+    ("{tenant}.m05_fx_queues", "queue_id"),           # FX3a: fax profile only (t136's
+    ("{tenant}.m05_fx_queues", "created_at"),         # seven default queues)
     ("{tenant}.m05_activation_records", "created_at"),
     ("{tenant}.m05_activation_records", "record_id"),
     ("{tenant}.m01_staff", "status_changed_at"),

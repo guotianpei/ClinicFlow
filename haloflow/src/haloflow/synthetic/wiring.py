@@ -488,6 +488,7 @@ class SyntheticServices:
     gateway: Any
     tenant_id: str
     staff_id: str
+    fax: Any = None       # FX3a: the fax profile's FaxService (other profiles: None)
 
 
 def _synthetic_staff_v4() -> type:
@@ -564,18 +565,29 @@ def _synthetic_staff_v4() -> type:
 
 
 def build_services(rt: Any, note_keys: Any, state: Mapping[str, Any], *,
-                   profile: str = "default") -> SyntheticServices:
+                   profile: str = "default", fax: Any = None) -> SyntheticServices:
     from haloflow.m01.staff.service import StaffService
     from haloflow.m05.writeback import StaffServiceV3
 
     # E4: the eligibility profile serves the E3b v4 staff service (case view, contact,
     # per-kind outcomes); the default profile keeps StaffServiceV3.
-    cls = _synthetic_staff_v4() if profile == "eligibility" else StaffServiceV3
+    cls = _synthetic_staff_v4() if profile in ("eligibility", "fax") else StaffServiceV3
     m05 = cls(rt.gateway, keys=note_keys,
               foundation=EventFoundation(rt.gateway, producer_service=M05_PRODUCER))
     return SyntheticServices(resolver=rt.resolver, staff=StaffService(rt.gateway), m05=m05,
                              gateway=rt.gateway, tenant_id=str(state["tenant_id"]),
-                             staff_id=str(state["staff_id"]))
+                             staff_id=str(state["staff_id"]), fax=fax)
+
+
+def build_fax_service(rt: Any) -> Any:
+    """FX3a (fax profile): the FaxService over the composed runtime. Built here because this
+    module is the synthetic package's one EventFoundation construction site (B5-K01)."""
+    from haloflow.m05.fax import FaxService
+
+    return FaxService(EventFoundation(rt.gateway, producer_service=FAX_PRODUCER))
+
+
+FAX_PRODUCER: Final = "m05_fax"
 
 
 def load_foundation(gateway: Any) -> EventFoundation:

@@ -144,7 +144,8 @@ async def load(lifecycle: Any, scenario: str) -> Result:
     """Load one packaged scenario (module docstring). Never retries."""
     fixtures = scenarios.fixtures()
     if type(scenario) is not str or scenario not in fixtures \
-            or (scenario in scenarios.EL_NAMES and _profile(lifecycle) != profiles.ELIGIBILITY):
+            or (scenario in scenarios.EL_NAMES
+                and not profiles.has_eligibility(_profile(lifecycle))):
         return _audit_load(_refusal(422, "UNKNOWN_SCENARIO"), None)
     stopping = _stopping(lifecycle)
     if stopping is not None:
@@ -250,8 +251,8 @@ def _profile(lifecycle: Any) -> str:
 
 def _schedulers(lifecycle: Any) -> tuple[str, ...]:
     """E4: the eligibility profile adds `eligibility`; the default set is SCHEDULERS."""
-    if _profile(lifecycle) == profiles.ELIGIBILITY:
-        return profiles.schedulers(profiles.ELIGIBILITY)
+    if profiles.has_eligibility(_profile(lifecycle)):          # FX3a: fax composes E4 too
+        return profiles.schedulers(_profile(lifecycle))
     return SCHEDULERS
 
 
@@ -344,7 +345,7 @@ def install_sim_actions(app: FastAPI, lifecycle: Any) -> None:
                       include_in_schema=False)
     app.add_api_route(OUTBOX_ROUTE, outbox_endpoint, methods=["GET"], response_class=Response,
                       include_in_schema=False)
-    if getattr(lifecycle, "profile", profiles.DEFAULT) == profiles.ELIGIBILITY:
+    if profiles.has_eligibility(getattr(lifecycle, "profile", profiles.DEFAULT)):
         async def clearinghouse_endpoint(request: Request) -> Response:
             return _response(clearinghouse(lifecycle, await _json(request)))
 

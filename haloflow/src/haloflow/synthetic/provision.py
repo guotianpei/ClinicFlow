@@ -76,6 +76,8 @@ from haloflow.synthetic.hooks import fire
 from haloflow.synthetic.seal_scope import (
     EL_INSTALL_SEALED_TABLES,
     EL_RUNTIME_MUTABLE_TABLES,
+    FX_INSTALL_SEALED_TABLES,
+    FX_RUNTIME_MUTABLE_TABLES,
     INSTALL_SEALED_TABLES,
     RUNTIME_MUTABLE_TABLES,
     generic_table,
@@ -102,6 +104,8 @@ def profile_module(profile: str) -> ModuleType:
     try:
         if profiles.valid(profile) == profiles.ELIGIBILITY:
             return importlib.import_module("haloflow.synthetic.installed_profile_eligibility")
+        if profile == profiles.FAX:                                         # FX3a
+            return importlib.import_module("haloflow.synthetic.installed_profile_fax")
         return importlib.import_module("haloflow.synthetic.installed_profile")
     except ModuleNotFoundError:
         raise SyntheticRefused("STATE_DIVERGED", ("profile",)) from None
@@ -167,6 +171,10 @@ def inventory(profile: str) -> frozenset[str]:
     if profiles.valid(profile) == profiles.ELIGIBILITY:
         return (INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES | EL_INSTALL_SEALED_TABLES
                 | EL_RUNTIME_MUTABLE_TABLES)
+    if profile == profiles.FAX:                                             # FX3a
+        return (INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES | EL_INSTALL_SEALED_TABLES
+                | EL_RUNTIME_MUTABLE_TABLES | FX_INSTALL_SEALED_TABLES
+                | FX_RUNTIME_MUTABLE_TABLES)
     return INSTALL_SEALED_TABLES | RUNTIME_MUTABLE_TABLES
 LOGIN_GROUPS: Final = {"runtime": RUNTIME_ROLE, "migrator": MIGRATOR_ROLE,
                        "provisioner": PROVISIONER_ROLE, "audit_projector": AUDIT_PROJECTOR_ROLE,
@@ -322,7 +330,7 @@ def _namespace_check(ctx: _Ctx) -> None:
             "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname NOT LIKE 'pg\\_%'"
             " AND nspname <> 'information_schema'").fetchall()}
         allowed = {"public", "shared", ctx.schema}
-        if _ACTIVE.get() == profiles.ELIGIBILITY:          # E5: the simulated chart store
+        if profiles.has_eligibility(_ACTIVE.get()):        # E5: the simulated chart store
             allowed.add(SIM_CHART_SCHEMA)
         if schemas - allowed:
             raise _diverged("schema")
@@ -386,9 +394,13 @@ def _run_profile(ctx: _Ctx) -> None:
         c.execute(SA_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(SI_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
         c.execute(RESOLUTION_PROFILE_SQL.format(schema=ctx.schema).encode())   # F-R1
-        if _ACTIVE.get() == profiles.ELIGIBILITY:                              # D-E4-2
+        if profiles.has_eligibility(_ACTIVE.get()):                            # D-E4-2
             c.execute(EL3A_TEST_PROFILE_SQL.format(schema=ctx.schema).encode())
             c.execute(SIM_CHART_SQL.encode())          # E5: the SIMULATED chart store
+        if _ACTIVE.get() == profiles.FAX:              # FX3a: the fax ingress workload
+            from haloflow.synthetic.fax_wiring import FAX_WORKLOAD_SQL
+
+            c.execute(FAX_WORKLOAD_SQL.format(schema=ctx.schema).encode())
 
 
 def _run_activated(ctx: _Ctx) -> None:
@@ -414,7 +426,7 @@ def _run_settings(ctx: _Ctx) -> None:
             tuple(SETTINGS.values()))
         if cur.rowcount != 1:
             raise _diverged("settings")
-        if _ACTIVE.get() == profiles.ELIGIBILITY:                              # D-E4-7
+        if profiles.has_eligibility(_ACTIVE.get()):                            # D-E4-7
             cur = c.execute(sql.SQL(
                 "UPDATE {}.m05_el_settings SET enabled = true, lead_days = %s,"
                 " not_received_days = %s, settings_version = settings_version + 1,"
@@ -426,6 +438,11 @@ def _run_settings(ctx: _Ctx) -> None:
             for payer in EL_PRIORITY_PAYERS:
                 c.execute(sql.SQL("INSERT INTO {}.m05_el_priority_payers (payer_id)"
                                   " VALUES (%s)").format(sql.Identifier(ctx.schema)), (payer,))
+        if _ACTIVE.get() == profiles.FAX:              # FX3a: the one synthetic receiving line
+            from haloflow.synthetic.fax_lines import install_line
+            from haloflow.synthetic.fax_wiring import SYN_FAX_LINE
+
+            install_line(c, str(ctx.state["tenant_id"]), SYN_FAX_LINE)
 
 
 # ---------------------------------------------------------------------------- reconciliation
@@ -926,8 +943,8 @@ def _run(endpoint: AdminEndpoint, st: LockedState, lock: InstallLock) -> InitRes
             raise SyntheticRefused("CLUSTER_NOT_FRESH", bad)
         sysid, oid = cluster_identity(endpoint)
         state = _new_intent(endpoint.target, sysid, oid)
-        if _ACTIVE.get() == profiles.ELIGIBILITY:
-            state[profiles.STATE_FIELD] = profiles.ELIGIBILITY   # default: pre-E4 key set
+        if _ACTIVE.get() != profiles.DEFAULT:
+            state[profiles.STATE_FIELD] = _ACTIVE.get()           # default: pre-E4 key set
         st.write(state)
     else:
         profiles.check_request(recorded_profile(state), _ACTIVE.get())

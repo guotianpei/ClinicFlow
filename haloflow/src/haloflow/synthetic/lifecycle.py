@@ -390,6 +390,9 @@ class SyntheticLifecycle:
         self.chart: Any = None
         self.doc_service: Any = None
         self._context_resolver: Any = None
+        # FX-IN FX3a (fax profile): the fax composition (line fence, directory, unmounted
+        # ingress app and its per-lifespan secret, FaxService); None for other profiles.
+        self.fax: Any = None
         self.config = config or LifecycleConfig()
         self._sender_factory = sender_factory
         self._ehr_factory = ehr_factory
@@ -547,7 +550,7 @@ class SyntheticLifecycle:
                              gate=self._tick_gate)
         self.port = built.port
         self.schedulers = built.schedulers
-        if installed == profiles.ELIGIBILITY:              # E4 (D-E4-3): fourth scheduler
+        if profiles.has_eligibility(installed):           # E4 (D-E4-3): fourth scheduler
             self.clearinghouse = self._clearinghouse_factory() \
                 if self._clearinghouse_factory is not None else _simulated_clearinghouse()
             # E5: the simulated chart over the install's own database (schema sim_chart),
@@ -559,7 +562,15 @@ class SyntheticLifecycle:
                 rt, state["tenant_id"], clearinghouse=self.clearinghouse,
                 stop_timeout=self.config.stop_timeout("eligibility"), gate=self._tick_gate,
                 doc=self.doc_service)
-        self.services = wiring.build_services(rt, self.note_keys, state, profile=installed)
+        if installed == profiles.FAX:     # FX3a: the fence first, then directory and ingress
+            from haloflow.synthetic import fax_wiring
+
+            self.fax = await fax_wiring.start(runtime, rt, state["tenant_id"],
+                                              self.application_name)
+            fire("fx3.start.fax", {})
+        self.services = wiring.build_services(
+            rt, self.note_keys, state, profile=installed,
+            fax=None if self.fax is None else self.fax.service)
         self.csrf_token = secrets.token_urlsafe(32)
         self.ingress_secret = secrets.token_urlsafe(48)
         fire("b3.start.wiring", {})
@@ -726,6 +737,10 @@ class SyntheticLifecycle:
                 self.port.close()
 
         async def pool() -> None:
+            if self.fax is not None:                  # FX3a: close the line fence session
+                from haloflow.synthetic import fax_wiring
+
+                await fax_wiring.stop(self.fax)
             if self.chart is not None:                # E5: a never-released held append
                 await self.chart.aclose()
             if self.runtime is not None and self.runtime.pool is not None:

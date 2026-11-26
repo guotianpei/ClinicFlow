@@ -74,6 +74,19 @@ EL_INSTALL_SEALED_TABLES: Final = frozenset({
     "{tenant}.m05_contact_codes", "{tenant}.m05_outcome_kinds",
 })
 
+# FX-IN FX3a (fax profile only): the receipt path the fax app composes writes the fax, its
+# sorting item, its history and (FR-7) discrepancies. Lines and the ingress workload are
+# written only by the installer; queues, rules and the settings audit only by the support
+# settings gateway, which FX3a does not compose, so they stay sealed.
+FX_RUNTIME_MUTABLE_TABLES: Final = frozenset({
+    "{tenant}.m05_fx_faxes", "{tenant}.m05_fx_sorting", "{tenant}.m05_fx_history",
+    "{tenant}.m05_fx_discrepancies",
+})
+FX_INSTALL_SEALED_TABLES: Final = frozenset({
+    "{tenant}.m05_fx_workloads", "{tenant}.m05_fx_queues", "{tenant}.m05_fx_lines",
+    "{tenant}.m05_fx_rules", "{tenant}.m05_fx_settings_audit",
+})
+
 # The token `view.capture` substitutes for the tenant schema in normalised names.
 SCHEMA_TOKEN: Final = "<SCHEMA>"
 
@@ -90,7 +103,7 @@ def generic_table(name: str, schema: str | None = None) -> str:
 def is_runtime_mutable(name: str, schema: str | None = None) -> bool:
     table = generic_table(name, schema)
     return (table in RUNTIME_MUTABLE_TABLES or table in EL_RUNTIME_MUTABLE_TABLES
-            or table in SIM_CHART_RUNTIME_MUTABLE_TABLES)
+            or table in SIM_CHART_RUNTIME_MUTABLE_TABLES or table in FX_RUNTIME_MUTABLE_TABLES)
 
 
 def sealed_view(normalised: Mapping[str, Any]) -> dict[str, Any]:

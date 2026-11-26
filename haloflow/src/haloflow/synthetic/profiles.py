@@ -7,6 +7,11 @@ E1..E3b, the OD-EL12 t127 read and the E5 t128..t134 chart documentation units, 
 top-level key `install_profile` (only for the eligibility profile, so a default install keeps
 the pre-E4 key set exactly; `seal.profile` is a different thing, the installed-state digest
 id), and must match the startup request; a mismatch is refused before any pool opens.
+
+FX-IN FX3a adds the `fax` profile: the eligibility profile plus the fax units FX1/FX2
+(t136..t144, target 144), the fax statement keys, the fax ingress workload and one synthetic
+receiving line. Everything the eligibility profile composes, the fax profile composes too
+(`has_eligibility`).
 """
 
 from __future__ import annotations
@@ -18,13 +23,17 @@ from haloflow.synthetic.errors import SyntheticRefused
 
 DEFAULT: Final = "default"
 ELIGIBILITY: Final = "eligibility"
-PROFILES: Final = (DEFAULT, ELIGIBILITY)
+FAX: Final = "fax"
+PROFILES: Final = (DEFAULT, ELIGIBILITY, FAX)
 STATE_FIELD: Final = "install_profile"
 # OD-EL12 (Rachel 2026-11-22): the eligibility profile adds the t127 contact-history read;
 # E5 (EL-12) adds t128..t134, the simulated chart documentation units.
-TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 135}    # E5: t128..t135
+TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 135, FAX: 144}    # E5: t128..t135; FX: ..t144
 B5_SCHEDULERS: Final = ("due", "reminder", "writeback")
-_SCHEDULERS: Final = {DEFAULT: B5_SCHEDULERS, ELIGIBILITY: (*B5_SCHEDULERS, "eligibility")}
+_SCHEDULERS: Final = {DEFAULT: B5_SCHEDULERS, ELIGIBILITY: (*B5_SCHEDULERS, "eligibility"),
+                      FAX: (*B5_SCHEDULERS, "eligibility")}
+_EL_FLAGS: Final = {"include_el1": True, "include_el2": True, "include_el3a": True,
+                    "include_el3b": True, "include_el4": True, "include_el5": True}
 
 
 def _no_duplicate_field(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -71,13 +80,20 @@ def check_request(installed: str, requested: str) -> None:
         raise SyntheticRefused("PROFILE_MISMATCH")
 
 
+def has_eligibility(profile: str) -> bool:
+    """True for the profiles that compose the eligibility package (eligibility, fax). Never
+    raises (an unknown value is simply not one of them)."""
+    return type(profile) is str and profile in (ELIGIBILITY, FAX)
+
+
 def registry(profile: str) -> Any:
     from haloflow.synthetic.composition import build_synthetic_registry
 
     if valid(profile) == DEFAULT:
         return build_synthetic_registry()
-    return build_synthetic_registry(include_el1=True, include_el2=True, include_el3a=True,
-                                    include_el3b=True, include_el4=True, include_el5=True)
+    if profile == FAX:
+        return build_synthetic_registry(**_EL_FLAGS, include_fx1=True, include_fx2=True)
+    return build_synthetic_registry(**_EL_FLAGS)
 
 
 def catalog(profile: str) -> Any:
@@ -85,8 +101,10 @@ def catalog(profile: str) -> Any:
 
     if valid(profile) == DEFAULT:
         return build_synthetic_catalog()
-    return build_synthetic_catalog(include_el1=True, include_el2=True, include_el3a=True,
-                                   include_el3b=True, include_el4=True, include_el5=True)
+    if profile == FAX:
+        return build_synthetic_catalog(**_EL_FLAGS, include_fx1=True, include_fx2=True,
+                                       include_fx3=True)
+    return build_synthetic_catalog(**_EL_FLAGS)
 
 
 def schedulers(profile: str) -> tuple[str, ...]:

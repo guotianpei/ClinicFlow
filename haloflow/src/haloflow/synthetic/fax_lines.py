@@ -114,3 +114,22 @@ def provision_lines(conninfo: str, ops: Iterable[LineOp]) -> None:
         except psycopg.errors.ForeignKeyViolation as error:
             # a rule written after the in-use check: the delete itself is refused (atomic)
             raise LineProvisionRefused("LINE_IN_USE") from error
+
+
+def install_line(conn: psycopg.Connection[Any], tenant_id: str, line: str) -> None:
+    """FX3a: the synthetic INSTALLER's one line add, inside the caller's open phase transaction
+    (the installer's phase model writes every change in a phase transaction). The same rules as
+    `provision_lines` for one `add`: validated first, the exclusive try-lock, every tenant's
+    lines checked; any refusal raises and the caller's transaction rolls back."""
+    item = LineOp("add", tenant_id, line)
+    _validate([item])
+    locked = conn.execute("SELECT pg_try_advisory_xact_lock(%s)", (K_FX_LINES,)).fetchone()
+    if not (locked and locked[0]):
+        raise LineProvisionRefused("LINE_PROVISION_BUSY")
+    schemas = _tenant_schemas(conn)
+    if tenant_id not in schemas:
+        raise LineProvisionRefused("TENANT_UNKNOWN")
+    if line in _current(conn, schemas):
+        raise LineProvisionRefused("LINE_DUPLICATE")
+    conn.execute(sql.SQL("INSERT INTO {}.m05_fx_lines (line_e164) VALUES (%s)").format(
+        sql.Identifier(schemas[tenant_id])), (line,))

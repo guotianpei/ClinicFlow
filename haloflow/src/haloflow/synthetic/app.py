@@ -77,6 +77,12 @@ def create_synthetic_app(environ: Mapping[str, str] | None = None, *,
     install_sim_actions(app, lc)
     install_sim_ui(app, lc)
     install_ui(app, lc)
+    if getattr(lc, "profile", None) == "fax":   # FX3a: the fax simulator and staff routes
+        from haloflow.synthetic.fax_simulator import install_fax_simulator
+        from haloflow.synthetic.fax_staff_routes import install_fax_staff_routes
+
+        install_fax_simulator(app, lc)
+        install_fax_staff_routes(app, lc)
     app.add_middleware(LocalGate, lifecycle=lc, allowed=allowed)
     app.state.lifecycle = lc
     return app
