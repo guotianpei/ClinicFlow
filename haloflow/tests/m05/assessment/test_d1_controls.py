@@ -568,3 +568,121 @@ def test_bundle_rejection_cases(mutate: Any, code: str) -> None:
     with pytest.raises(pkg.BundleRejected) as err:
         pkg.validate_bundle(bundle)
     assert err.value.code == code
+
+
+# ---------------------------------------------------------------- green review 761544f
+# Regressions requested by Codex (codex review of 761544f, relay 39e23f68).
+
+
+def _lineage_request(pkg: Any, old_id: str, old_kind: str, reverse: bool) -> dict[str, Any]:
+    old = s.membership(evidence_id=old_id, upstream_txn="U-M1", value={"kind": old_kind},
+                       observed_at="2026-10-01T17:00:00.000000Z",
+                       retrieved_at="2026-10-01T17:00:00.000000Z")
+
+    def m(req: dict[str, Any]) -> None:
+        records = [s.membership(), old]
+        req["evidence"] = list(reversed(records)) if reverse else records
+    return s.build(pkg, m)
+
+
+@pytest.mark.parametrize("old_id", ["A-old", "Z-old"])
+@pytest.mark.parametrize("reverse", [False, True], ids=["forward", "reversed"])
+def test_r1_lineage_keeps_value_and_freshness_of_the_same_record(old_id: str,
+                                                                  reverse: bool) -> None:
+    """Same lineage, same value: the fresh record's own value and freshness decide."""
+    pkg = s.assessment()
+    result = s.run(pkg, _lineage_request(pkg, old_id, "active", reverse))
+    m = s.assert_q(result, "M", "active", "adequate", "current_member")
+    assert m["accepted"] == ["E-M1"], m
+
+
+@pytest.mark.parametrize("old_id", ["A-old", "Z-old"])
+@pytest.mark.parametrize("reverse", [False, True], ids=["forward", "reversed"])
+def test_r1_inconsistent_lineage_is_explicit(old_id: str, reverse: bool) -> None:
+    """Same upstream transaction, different values: never adequate, never a stale value."""
+    pkg = s.assessment()
+    result = s.run(pkg, _lineage_request(pkg, old_id, "inactive", reverse))
+    m = s.assert_q(result, "M", "disputed", "conflicting", "inconsistent_lineage")
+    assert sorted(m["accepted"]) == sorted(["E-M1", old_id])
+    assert result["completion"] is False
+
+
+def test_r2_missing_service_scope_is_not_a_wildcard() -> None:
+    pkg = s.assessment()
+
+    def m(req: dict[str, Any]) -> None:
+        s.require(req, "B")
+        req["evidence"].append(s.evidence("E-B1", "B", {"kind": "covered"},
+                                          scope={"service_date": "2026-11-30",
+                                                 "payer": "PAYER_A", "product": "PROD_A"}))
+
+    result = s.run(pkg, s.build(pkg, m))
+    b = s.assert_q(result, "B", "unknown", "insufficient", "service_scope_unknown")
+    assert b["rejected"] == [{"evidence_id": "E-B1", "reason": "service_scope_unknown"}]
+
+
+@pytest.mark.parametrize("explicit", [False, True], ids=["bound", "explicit"])
+def test_r2_equivalent_bindings_give_the_same_business_reason(explicit: bool) -> None:
+    pkg = s.assessment()
+    scope = {"service_id": "S1", "service_date": "2026-11-30", "payer": "PAYER_A",
+             "product": "PROD_A"}
+    if explicit:
+        scope["coverage_id"] = "V1"
+
+    def m(req: dict[str, Any]) -> None:
+        s.require(req, "B")
+        req["evidence"].append(s.evidence("E-B1", "B", {"kind": "covered"}, scope=scope))
+
+    result = s.run(pkg, s.build(pkg, m))
+    b = s.assert_q(result, "B", "covered", "adequate", "current_benefit")
+    bindings = [x for x in result["trace"]["bindings"] if x["evidence_id"] == "E-B1"]
+    assert [x["binding"] for x in bindings] == ["explicit" if explicit else "bound"]
+    assert bindings[0]["question_key"] == b["key"]
+
+
+def _two_by_two(req: dict[str, Any]) -> None:
+    req["context"]["services"] = [
+        {"service_id": sid, "category": "consult", "confirmed": True, "origin": "emr-sim",
+         "codes": []} for sid in ("S1", "S2")]
+    req["context"]["coverages"] = [
+        {"coverage_id": "V1", "version": 1, "payer": "PAYER_A", "product": "PROD_A",
+         "relationship": "self", "priority": 1},
+        {"coverage_id": "V2", "version": 1, "payer": "PAYER_B", "product": "PROD_B",
+         "relationship": "self", "priority": 2}]
+    s.require(req, "B")
+    req["evidence"].append(s.membership(
+        evidence_id="E-M-V2", upstream_txn="U-M-V2",
+        subject={"patient": "P", "coverage_id": "V2", "coverage_version": 1},
+        scope={"service_date": "2026-11-30", "payer": "PAYER_B", "product": "PROD_B"}))
+    req["evidence"].append(s.evidence("E-B1", "B", {"kind": "covered"},
+                                      scope={"service_id": "S1", "coverage_id": "V1",
+                                             "service_date": "2026-11-30",
+                                             "payer": "PAYER_A", "product": "PROD_A"}))
+
+
+def test_r3_excluded_record_is_traceable_with_its_material_mismatch() -> None:
+    """H3: a record answering another scope is excluded but stays traceable per question."""
+    pkg = s.assessment()
+    result = s.run(pkg, s.build(pkg, _two_by_two))
+    b21 = s.assert_q(result, "B", "unknown", "missing", "no_matching_scope",
+                     service_id="S2", coverage_id="V1")
+    b12 = s.assert_q(result, "B", "unknown", "missing", "no_matching_scope",
+                     service_id="S1", coverage_id="V2")
+    assert {"evidence_id": "E-B1", "reason": "service_mismatch"} in b21["rejected"]
+    assert {"evidence_id": "E-B1", "reason": "coverage_mismatch"} in b12["rejected"]
+
+
+def test_r3_same_record_keeps_its_mismatch_reason_without_a_sibling_question() -> None:
+    """The record-level reason does not depend on whether a sibling question exists."""
+    pkg = s.assessment()
+
+    def m(req: dict[str, Any]) -> None:
+        s.require(req, "B")
+        req["evidence"].append(s.evidence("E-B1", "B", {"kind": "covered"},
+                                          scope={"service_id": "S2", "coverage_id": "V1",
+                                                 "service_date": "2026-11-30",
+                                                 "payer": "PAYER_A", "product": "PROD_A"}))
+
+    result = s.run(pkg, s.build(pkg, m))
+    b = s.assert_q(result, "B", "unknown", "insufficient", "service_mismatch")
+    assert {"evidence_id": "E-B1", "reason": "service_mismatch"} in b["rejected"]

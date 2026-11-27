@@ -199,7 +199,8 @@ def _f07a(r: dict[str, Any]) -> None:
 
 
 def _f08_common(r: dict[str, Any]) -> list[dict[str, Any]]:
-    s.assert_q(r, "B", "covered", "adequate", "scope_match", service_id="S1", coverage_id="V1")
+    s.assert_q(r, "B", "covered", "adequate", "current_benefit", service_id="S1",
+               coverage_id="V1")
     for svc, cov in (("S1", "V2"), ("S2", "V1"), ("S2", "V2")):
         s.assert_q(r, "B", "unknown", "missing", "no_matching_scope",
                    service_id=svc, coverage_id=cov)
@@ -417,12 +418,17 @@ ROWS: list[Row] = [
         {"service_id": "S1", "category": "consult", "confirmed": True, "origin": "emr-sim",
          "codes": []},
         {"service_id": "S2", "category": "procedure", "confirmed": True, "origin": "emr-sim",
-         "codes": ["PROC-1"]}]),
+         "codes": ["PROC-1"], "added_in_version": 2}]),
                  add_template({"template_id": "procedure", "category": "procedure",
                                "payer": None, "questions": [
                                    {"type": "B", "requiredness": "required",
                                     "depends_on": ["M"]}]})),
         checks(_f07a, profile="G")),
+    # Green review 761544f H1: revision > 1 alone cannot establish new_service; an
+    # unchanged service in revision 2 with no evidence keeps the generic missing reason.
+    Row("F07b", (ctx(appointment_version=2), need("B")),
+        checks(m_unchanged, q("B", "unknown", "missing", "answer_absent", service_id="S1"),
+               profile="G")),
 ]
 
 _TWO_SERVICES = ctx(services=[
