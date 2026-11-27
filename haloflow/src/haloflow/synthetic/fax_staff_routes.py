@@ -169,20 +169,30 @@ def _failure(error: BaseException) -> Response:
         return internal()
 
 
+async def staff_context(services: Any, route: str) -> Any | None:
+    """The production two-step resolution for the install's ONE fixed principal (shared with
+    the FX3b screen): resolve with {SELF_STANDING}, `staff.self_standing`, `capabilities_for`,
+    `route_capabilities(route, held)`; None when the route requirement is not held (403),
+    otherwise the context resolved with exactly the bounded set."""
+    execution_id, correlation_id = uuid.uuid4(), uuid.uuid4()
+    own = frozenset({SELF_STANDING})
+    context = await _resolve(services, own, own, execution_id, correlation_id)
+    held = capabilities_for(await services.staff.self_standing(context))
+    requested = route_capabilities(route, held)
+    if requested is None:
+        return None
+    return await _resolve(services, held, requested, execution_id, correlation_id)
+
+
 async def serve(lifecycle: Any, name: str, request: Request) -> Response:
     services = lifecycle.services
     if services is None or getattr(services, "fax", None) is None:
         return relabel(body("UNAVAILABLE"))
     try:
         call = await _parse(name, request)
-        execution_id, correlation_id = uuid.uuid4(), uuid.uuid4()
-        own = frozenset({SELF_STANDING})
-        context = await _resolve(services, own, own, execution_id, correlation_id)
-        held = capabilities_for(await services.staff.self_standing(context))
-        requested = route_capabilities(ROUTES[name][0], held)
-        if requested is None:
+        context = await staff_context(services, ROUTES[name][0])
+        if context is None:
             return relabel(body("FORBIDDEN"))
-        context = await _resolve(services, held, requested, execution_id, correlation_id)
         value = await call(services.fax, context)
     except Exception as error:  # noqa: BLE001 - the closed status map above
         return _failure(error)
@@ -206,4 +216,4 @@ def _endpoint(lifecycle: Any, name: str) -> Callable[[Request], Awaitable[Respon
     return endpoint
 
 
-__all__ = ["PREFIX", "ROUTES", "install_fax_staff_routes"]
+__all__ = ["PREFIX", "ROUTES", "install_fax_staff_routes", "staff_context"]

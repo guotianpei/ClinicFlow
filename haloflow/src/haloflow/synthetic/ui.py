@@ -51,7 +51,10 @@ CSS_PATH: Final = "/synthetic/ui/static/app.css"
 UI_FORM_ROUTE: Final = re.compile(
     r"/synthetic/ui/items/(?P<item_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-"
     r"[0-9a-f]{12})/(?P<endpoint>claim|resolve|contact|close|chart-recorded)"
-    r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr|clearinghouse)")
+    r"|/synthetic/simulator/ui/(?:load|tick|reply|ehr|clearinghouse)"
+    # FX3b: the four fax screen form routes (served on a fax-profile app only)
+    r"|/synthetic/ui/fax/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"/(?:open|move|file|sort)")
 # E4: contact / close are served for eligibility items, and the clearinghouse simulator form,
 # only on an eligibility-profile app (elsewhere those paths are not routed: 404).
 UI_FORM_MEDIA: Final = "application/x-www-form-urlencoded"
@@ -427,8 +430,14 @@ async def list_page(lifecycle: Any, request: Request) -> Response:
                                             "after_created_at": nxt.get("created_at", ""),
                                             "after_item_id": nxt.get("item_id", "")})
         more = f"<p><a href=\"{esc(link)}\">Next</a></p>"
+    entry = ""
+    if getattr(lifecycle, "profile", None) == "fax":     # FX3b (OD-FX11): act staff only
+        from haloflow.synthetic import fax_ui
+
+        if await fax_ui.holds_fax_read(lifecycle):
+            entry = (f"<p><a href=\"{fax_ui.UI_PREFIX}\">{esc(fax_ui.ENTRY_LABEL)}</a></p>")
     body = (
-        "<h1>Follow-up items</h1>"
+        f"{entry}<h1>Follow-up items</h1>"
         f"<form method=\"get\" action=\"{UI_PREFIX}\"><select name=\"state\">{options}</select>"
         "<button type=\"submit\">Show</button></form>"
         f"<p>{esc(PAGE_LOCAL)}</p>"
