@@ -15,7 +15,8 @@ Classes: C control, A absence-red.
           error
 - FX4-U06 ingress body: sender_name absent / null / string accepted; number -> 400 MALFORMED
           sender_name; 257 characters -> 400 MALFORMED sender_name (no context / receive call)
-- FX4-U07 staff routes: ROUTES["queues"] == ("list", "GET", PREFIX + "/queues")
+- FX4-U07 staff routes: ROUTES["queues"] == ("fax_read", "GET", PREFIX + "/queues") (route key
+          re-pinned by FX5 / OD-FX11: the live table; was "list")
 
 """
 
@@ -170,4 +171,4 @@ def test_fx4_u06_ingress_sender_name(value: Any, status: int) -> None:
 def test_fx4_u07_queues_route_pinned() -> None:
     """A."""
     routes = f3.m("fax_staff_routes", package="haloflow.synthetic")
-    assert routes.ROUTES["queues"] == ("list", "GET", routes.PREFIX + "/queues")
+    assert routes.ROUTES["queues"] == ("fax_read", "GET", routes.PREFIX + "/queues")  # FX5

@@ -63,9 +63,9 @@ def test_fx4_g04_fax_install_target(pg: s.PgCluster, tmp_path: Path) -> None:
     from haloflow.synthetic import profiles
 
     assert (profiles.TARGETS["default"], profiles.TARGETS["eligibility"],
-            profiles.TARGETS["fax"]) == (97, 135, 149)
+            profiles.TARGETS["fax"]) == (97, 135, 153)  # FX5-G01
     inst = e4.install(pg, tmp_path, FAX)
-    assert e4.installed_target(inst) == 149
+    assert e4.installed_target(inst) == 153  # FX5-G01: the fax profile is FX5's target
 
 
 def test_fx4_a01_simulator_sender_name(pg: s.PgCluster, tmp_path: Path) -> None:

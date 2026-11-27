@@ -55,12 +55,15 @@ EXPECTED_ROUTES: dict[str, tuple[frozenset[str], ...]] = {
     "read_note": (frozenset({READ, NOTE_READ}),),
     "display": (frozenset({DISPLAY, READ}), frozenset({DISPLAY, ADMIN})),
     "admin": (frozenset({ADMIN}),),
+    # FX-IN FX5 (OD-FX11): fax read / open need read AND act; no optional set
+    "fax_read": (frozenset({READ, PREPARE, APPLY}),),
 }
 
 EXPECTED_OPTIONAL: dict[str, frozenset[str]] = {
     "list": frozenset(), "get": frozenset(), "history": frozenset(),
     "act": frozenset({READ, SUPERVISE}), "resolve": frozenset({READ, SUPERVISE}),
     "read_note": frozenset(), "display": frozenset(), "admin": frozenset(),
+    "fax_read": frozenset(),  # FX5
 }
 
 READ_CAPS = EXPECTED_MATRIX["read"]

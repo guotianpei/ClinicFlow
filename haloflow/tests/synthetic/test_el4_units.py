@@ -45,7 +45,7 @@ def test_el4_u01_explicit_values() -> None:
     assert profiles.PROFILES == (e4.DEFAULT, e4.ELIGIBILITY, "fax")
     assert profiles.STATE_FIELD == e4.STATE_FIELD
     assert profiles.TARGETS == {e4.DEFAULT: e4.DEFAULT_TARGET,
-                                e4.ELIGIBILITY: e4.ELIGIBILITY_TARGET, "fax": 149}  # FX4-G04
+                                e4.ELIGIBILITY: e4.ELIGIBILITY_TARGET, "fax": 153}  # FX5-G01
     assert profiles.read_profile(_raw(install_profile="default")) == e4.DEFAULT
     assert profiles.read_profile(_raw(install_profile="eligibility")) == e4.ELIGIBILITY
 

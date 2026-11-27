@@ -8,8 +8,9 @@ top-level key `install_profile` (only for the eligibility profile, so a default 
 the pre-E4 key set exactly; `seal.profile` is a different thing, the installed-state digest
 id), and must match the startup request; a mismatch is refused before any pool opens.
 
-FX-IN FX3a adds the `fax` profile: the eligibility profile plus the fax units FX1/FX2/FX4
-(t136..t149, target 149; FX4 adds the queue read and sender display), the fax statement keys,
+FX-IN FX3a adds the `fax` profile: the eligibility profile plus the fax units FX1/FX2/FX4/FX5
+(t136..t153, target 153; FX4 adds the queue read and sender display; FX5 limits fax access to
+staff who can act, OD-FX11), the fax statement keys,
 the fax ingress workload and one synthetic receiving line. Everything the eligibility profile
 composes, the fax profile composes too (`has_eligibility`).
 """
@@ -28,7 +29,7 @@ PROFILES: Final = (DEFAULT, ELIGIBILITY, FAX)
 STATE_FIELD: Final = "install_profile"
 # OD-EL12 (Rachel 2026-11-22): the eligibility profile adds the t127 contact-history read;
 # E5 (EL-12) adds t128..t134, the simulated chart documentation units.
-TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 135, FAX: 149}    # E5: t128..t135; FX4: ..t149
+TARGETS: Final = {DEFAULT: 97, ELIGIBILITY: 135, FAX: 153}    # E5: t128..t135; FX5: ..t153
 B5_SCHEDULERS: Final = ("due", "reminder", "writeback")
 _SCHEDULERS: Final = {DEFAULT: B5_SCHEDULERS, ELIGIBILITY: (*B5_SCHEDULERS, "eligibility"),
                       FAX: (*B5_SCHEDULERS, "eligibility")}
@@ -93,7 +94,7 @@ def registry(profile: str) -> Any:
         return build_synthetic_registry()
     if profile == FAX:
         return build_synthetic_registry(**_EL_FLAGS, include_fx1=True, include_fx2=True,
-                                        include_fx4=True)
+                                        include_fx4=True, include_fx5=True)
     return build_synthetic_registry(**_EL_FLAGS)
 
 
@@ -104,7 +105,7 @@ def catalog(profile: str) -> Any:
         return build_synthetic_catalog()
     if profile == FAX:
         return build_synthetic_catalog(**_EL_FLAGS, include_fx1=True, include_fx2=True,
-                                       include_fx3=True, include_fx4=True)
+                                       include_fx3=True, include_fx4=True, include_fx5=True)
     return build_synthetic_catalog(**_EL_FLAGS)
 
 

@@ -215,7 +215,7 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
                             include_el3b: bool = False, include_el4: bool = False,
                             include_el5: bool = False, include_fx1: bool = False,
                             include_fx2: bool = False, include_fx3: bool = False,
-                            include_fx4: bool = False) -> Any:
+                            include_fx4: bool = False, include_fx5: bool = False) -> Any:
     """The synthetic statement catalogue: the S-I TEST catalogue plus (by default) the three
     B5 keys. `include_b5=False` is the S-I TEST catalogue alone, as the M05 S-I/S-J test
     harness uses it (`tests/m05/si_support.si_catalog`). Pinned by B1-E2 / B5-E2.
@@ -244,6 +244,8 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
         raise ValueError("fax FX3 composes on FX2")
     if include_fx4 and not include_fx3:
         raise ValueError("fax FX4 composes on FX3")
+    if include_fx5 and not include_fx4:
+        raise ValueError("fax FX5 composes on FX4")
     # FX1/FX2 add no statement key: their gateways are reached by test rows and, from FX3, by
     # the fax services (FX3's five keys, below).
     extra = (B5_STATEMENTS,) if include_b5 else ()
@@ -269,11 +271,22 @@ def build_synthetic_catalog(*, include_b5: bool = True, include_el1: bool = Fals
 
         extra = (*extra, EL5_STATEMENTS)
     if include_fx3:                       # FX-IN FX3a: receive / lines / read / open / act
-        from haloflow.m05.fax_statements import FX3_STATEMENTS, FX4_REBOUND, FX4_STATEMENTS
+        from haloflow.m05.fax_statements import (
+            FX3_STATEMENTS,
+            FX4_REBOUND,
+            FX4_STATEMENTS,
+            FX5_REBOUND,
+        )
 
         if include_fx4:  # FX4: receive / read rebound to the v2 functions, plus the queue read
             fx3 = MappingProxyType({**FX3_STATEMENTS, **FX4_REBOUND})
-            extra = (*extra, fx3, FX4_STATEMENTS)
+            fx4 = FX4_STATEMENTS
+            if include_fx5:  # FX5 (OD-FX11): read / open / act / queues need 'act'
+                fx3 = MappingProxyType({**fx3, **{k: v for k, v in FX5_REBOUND.items()
+                                                  if k in fx3}})
+                fx4 = MappingProxyType({**FX4_STATEMENTS, **{k: v for k, v in FX5_REBOUND.items()
+                                                             if k in FX4_STATEMENTS}})
+            extra = (*extra, fx3, fx4)
         else:
             extra = (*extra, FX3_STATEMENTS)
     return build_statement_catalog(*_parts(), rebound, SI_STATEMENTS, *extra,
@@ -284,7 +297,8 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
                              include_el2: bool = False, include_el3a: bool = False,
                              include_el3b: bool = False, include_el4: bool = False,
                              include_el5: bool = False, include_fx1: bool = False,
-                             include_fx2: bool = False, include_fx4: bool = False) -> Any:
+                             include_fx2: bool = False, include_fx4: bool = False,
+                             include_fx5: bool = False) -> Any:
     """The synthetic per-tenant migration registry: the S-I TEST units plus (by default) the
     B5 units, target 97 (synthetic only). `include_b5=False` is the S-I TEST registry alone,
     target 94, as the M05 S-I/S-J test harness uses it (`tests/m05/si_support.si_registry`).
@@ -308,6 +322,8 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
         raise ValueError("fax FX2 composes on FX1")
     if include_fx4 and not include_fx2:
         raise ValueError("fax FX4 composes on FX2")
+    if include_fx5 and not include_fx4:
+        raise ValueError("fax FX5 composes on FX4")
     from haloflow.m05.eligibility_doc_units import (
         EL5_INSTALLED_STATE_PROFILES,
         EL5_TENANT_MIGRATIONS,
@@ -341,6 +357,17 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
 
         fx1_units = (*fx1_units, FX4_TENANT_MIGRATIONS)
         fx1_profiles.update(FX4_INSTALLED_STATE_PROFILES)
+    fx5_amendments: tuple[Any, ...] = ()
+    if include_fx5:  # FX-IN FX5: t150..t153 (target 153; OD-FX11 actor-only fax access)
+        from haloflow.m05.fax_access_units import (
+            FX5_ACL_AMENDMENTS,
+            FX5_INSTALLED_STATE_PROFILES,
+            FX5_TENANT_MIGRATIONS,
+        )
+
+        fx1_units = (*fx1_units, FX5_TENANT_MIGRATIONS)
+        fx1_profiles.update(FX5_INSTALLED_STATE_PROFILES)
+        fx5_amendments = FX5_ACL_AMENDMENTS
     b5_units = (B5_TENANT_MIGRATIONS,) if include_b5 else ()
     b5_profiles = dict(B5_INSTALLED_STATE_PROFILES) if include_b5 else {}
     el1_units = (EL1_TENANT_MIGRATIONS,) if include_el1 else ()
@@ -374,5 +401,6 @@ def build_synthetic_registry(*, include_b5: bool = True, include_el1: bool = Fal
                                   **el3a_profiles, **el3b_profiles, **el4_profiles,
                                   **el5_profiles, **fx1_profiles},
         acl_amendments=(*APPROVED_ACL_AMENDMENTS, *SH_ACL_AMENDMENTS, *SH2_ACL_AMENDMENTS,
-                        *SI_ACL_AMENDMENTS, *el1_amendments, *el3b_amendments),
+                        *SI_ACL_AMENDMENTS, *el1_amendments, *el3b_amendments,
+                        *fx5_amendments),
     )
