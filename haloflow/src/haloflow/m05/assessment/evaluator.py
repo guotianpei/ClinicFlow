@@ -28,6 +28,8 @@ _META_TYPES: Final = frozenset({"category", "priority", "policy"})
 _ABSENT_REASON: Final = {"N": "participation_absent"}
 _STATUS_ACTIONS: Final = frozenset({"WAIT_AUTO", "WAIT_REPLY"})
 _RESOLVED: Final = frozenset({"adequate", "justified"})
+_FRESH_RANK: Final = {"fresh": 0, "unknown": 1, "stale": 2}
+
 
 Json = dict[str, Any]
 
@@ -79,6 +81,7 @@ class _Evaluation:
         self.zones = zones
         self.criteria: list[Json] = []
         self.conflicts: list[Json] = []
+        self.bindings: list[Json] = []
 
     # ------------------------------------------------------------------ rules
 
@@ -209,6 +212,7 @@ class _Evaluation:
                 "context": {"stated_reason": ctx.get("stated_reason"),
                             "booked_category": ctx.get("booked_category")},
                 "suppressed": self._suppressed(),
+                "bindings": self.bindings,
                 "criteria": self.criteria,
             },
             "replay_record": {"request": req, "input_digest": input_digest,
@@ -346,10 +350,13 @@ class _Evaluation:
         ctx = self.req["context"]
         scope = q["scope"]
         typed = [e for e in self.req.get("evidence", []) if e.get("question_type") == q["type"]]
-        candidates = []
-        for ev in typed:
+        candidates: list[Json] = []
+        excluded: list[Json] = []
+        for ev in sorted(typed, key=lambda e: (e["evidence_id"], e.get("version", 0))):
             subject = ev.get("subject", {})
             if "coverage_id" in scope and subject.get("coverage_id") != scope["coverage_id"]:
+                excluded.append({"evidence_id": ev["evidence_id"],
+                                 "reason": "coverage_mismatch"})
                 continue
             ev_service = ev.get("scope", {}).get("service_id")
             if ("service_id" in scope and ev_service is not None
@@ -358,15 +365,23 @@ class _Evaluation:
                             and o["scope"].get("service_id") == ev_service
                             and o["scope"].get("coverage_id") == scope.get("coverage_id")
                             for o in questions)):
-                continue  # this record answers another question of the same type
+                # This record answers another question of the same type: excluded from this
+                # question's candidates, traced with the same material mismatch reason it
+                # would carry without the sibling question (green review H3).
+                excluded.append({"evidence_id": ev["evidence_id"],
+                                 "reason": "service_mismatch"})
+                continue
             candidates.append(ev)
 
         if not candidates:
+            q["rejected"] = excluded
+            service = self._service(scope.get("service_id"))
             if q["requiredness"] == "informational":
                 q.update(finding="unknown", adequacy="informational", reason="optional_absent")
             elif typed:
                 q.update(finding="unknown", adequacy="missing", reason="no_matching_scope")
-            elif "service_id" in scope and ctx.get("appointment_version", 1) > 1:
+            elif service is not None and service.get("added_in_version") == ctx.get(
+                    "appointment_version"):
                 q.update(finding="unknown", adequacy="missing", reason="new_service")
             else:
                 q.update(finding="unknown", adequacy="missing",
@@ -389,7 +404,8 @@ class _Evaluation:
                 rejected.append(entry)
                 continue
             accepted.append((ev, self._freshness(ev, q)))
-        q["rejected"] = rejected
+        q["rejected"] = sorted(rejected + excluded,
+                               key=lambda e: (e["evidence_id"], e["reason"]))
 
         if not accepted:
             q.update(finding="unknown", adequacy="insufficient", reason=rejected[0]["reason"])
@@ -400,14 +416,31 @@ class _Evaluation:
             lineages.setdefault(ev.get("upstream_txn") or ev["evidence_id"], []).append(
                 (ev, fresh))
         reps: list[tuple[Json, str, list[str]]] = []
+        inconsistent = False
         for group in lineages.values():
-            group.sort(key=lambda pair: pair[0]["evidence_id"])
-            freshest = "fresh" if any(f == "fresh" for _, f in group) else (
-                "unknown" if any(f == "unknown" for _, f in group) else "stale")
-            reps.append((group[0][0], freshest, sorted({str(e.get("origin")) for e, _ in group})))
+            if len({canonical_bytes(e["value"]) for e, _ in group}) > 1:
+                inconsistent = True  # one upstream response cannot carry two values
+            # The representative is one record: its value, observation and freshness travel
+            # together (green review R1). Freshest first, then latest observation, then id.
+            group.sort(key=lambda pair: str(pair[0]["evidence_id"]))
+            group.sort(key=lambda pair: str(pair[0].get("observed_at") or ""), reverse=True)
+            group.sort(key=lambda pair: _FRESH_RANK[pair[1]])  # stable: keeps the order above
+            reps.append((group[0][0], group[0][1],
+                         sorted({str(e.get("origin")) for e, _ in group})))
         reps.sort(key=lambda r: r[0]["evidence_id"])
-        q["accepted"] = [r[0]["evidence_id"] for r in reps]
         q["linked_origins"] = sorted({o for r in reps for o in r[2]})
+        if inconsistent:
+            q["accepted"] = sorted(e["evidence_id"] for e, _ in accepted)
+            q.update(finding="disputed", adequacy="conflicting",
+                     reason="inconsistent_lineage")
+            return
+        q["accepted"] = [r[0]["evidence_id"] for r in reps]
+        for rep, _fresh, _origins in reps:
+            ev_scope = rep.get("scope", {})
+            bound_dims = [dim for dim in ("service_id", "coverage_id") if dim in scope]
+            explicit = all(ev_scope.get(dim) == scope[dim] for dim in bound_dims)
+            self.bindings.append({"question_key": q["key"], "evidence_id": rep["evidence_id"],
+                                  "binding": "explicit" if explicit else "bound"})
 
         fresh_kinds = {r[0]["value"]["kind"] for r in reps if r[1] == "fresh"}
         if len(fresh_kinds) > 1:
@@ -424,6 +457,12 @@ class _Evaluation:
         q.update(finding=finding, adequacy=adequacy, reason=reason)
         if "amount" in ev:
             q["amount"] = ev["amount"]
+
+    def _service(self, service_id: Any) -> Json | None:
+        for service in self.req["context"].get("services", []):
+            if service.get("service_id") == service_id:
+                return dict(service)
+        return None
 
     def _mismatch(self, ev: Mapping[str, Any], q: Mapping[str, Any]) -> str | None:
         ctx = self.req["context"]
@@ -443,10 +482,15 @@ class _Evaluation:
         for dim in ("payer", "product"):
             if coverage and ev_scope.get(dim) not in (None, coverage.get(dim)):
                 return "product_mismatch"
-        if "service_id" in scope and ev_scope.get("service_id") not in (None, scope["service_id"]):
-            return "service_mismatch"
+        if "service_id" in scope:
+            if ev_scope.get("service_id") is None:
+                return "service_scope_unknown"
+            if ev_scope["service_id"] != scope["service_id"]:
+                return "service_mismatch"
         if q["type"] == "N":
-            if ev_scope.get("provider") not in (None, ctx.get("provider")):
+            if ev_scope.get("provider") is None:
+                return "provider_scope_unknown"
+            if ev_scope["provider"] != ctx.get("provider"):
                 return "provider_mismatch"
             if ev_scope.get("site") not in (None, ctx.get("site")):
                 return "site_mismatch"
@@ -488,9 +532,7 @@ class _Evaluation:
         if kind == "inactive":
             return "inactive", "adequate", "current_negative"
         if kind == "covered":
-            ev_scope = ev.get("scope", {})
-            explicit = "service_id" in ev_scope and "coverage_id" in ev_scope
-            return "covered", "adequate", "scope_match" if explicit else "current_benefit"
+            return "covered", "adequate", "current_benefit"
         if kind == "excluded":
             return "excluded", "adequate", "explicit_exclusion"
         if kind == "participating":
