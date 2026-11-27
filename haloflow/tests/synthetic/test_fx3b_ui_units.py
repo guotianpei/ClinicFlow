@@ -12,7 +12,8 @@ DESIGN. Governing: `fx3b_support.py` (interface pin, approved copy).
            of the expected kind, summary agrees -> the named notice (actor name, queue, time)
 - FX3b-U05 conflict case 5 (neutral): two changes since the form; a later `opened` row is
            ignored (and alone is never a change); summary disagrees with the row; system actor;
-           unknown kind -> "Check the details below." with no name, queue or time
+           the principal's own change (same id, named; Codex REVISE 1); unknown kind ->
+           "Check the details below." with no name, queue or time
 - FX3b-U06 escaping: names, queue names and sender text are HTML-escaped where rendered by the
            module's builders (`esc`), never double-escaped in the notice text
 """
@@ -53,7 +54,7 @@ def _fax(state: str, queue: str | None, version: int) -> dict[str, Any]:
 def _notice(attempt: str, attempted: str | None, expected: int, fax: dict[str, Any],
             rows: list[dict[str, Any]]) -> str:
     out: str = f.fax_ui().conflict_notice(attempt, attempted, expected, fax, rows, NAMES, QUEUES,
-                                          f.CLINIC_TZ)
+                                          f.CLINIC_TZ, ME)
     return out
 
 
@@ -183,6 +184,10 @@ NEUTRAL = [
     # a state row with no staff actor
     pytest.param("move", X, 1, _fax("routed", Y, 2),
                  [_received(), _row(2, "moved", None, Z, Y, T_CHANGE)], id="system-actor"),
+    # Codex REVISE 1: the principal itself made the change (another tab); the actor is named
+    # ("Demo Clinic Admin") and otherwise satisfies case 0, but ids match -> neutral
+    pytest.param("move", X, 1, _fax("routed", Y, 2),
+                 [_received(), _row(2, "moved", ME, Z, Y, T_CHANGE)], id="self-named-actor"),
 ]
 
 
@@ -192,7 +197,8 @@ def test_fx3b_u05_neutral_case(attempt: str, attempted: str | None, expected_ver
     """A."""
     got = _notice(attempt, attempted, expected_version, fax, rows)
     assert got == f.case_text(5)
-    for leaked in ("Dana Reyes", "Chris Ode", "Imaging", "Labs/Results", "General", "PM", "AM"):
+    for leaked in ("Dana Reyes", "Chris Ode", "Demo Clinic Admin", "Imaging", "Labs/Results",
+                   "General", "PM", "AM"):
         assert leaked not in got, leaked
 
 
@@ -213,5 +219,5 @@ def test_fx3b_u06_escaping() -> None:
     names = {DANA: "Dana <Reyes>"}
     got = ui.conflict_notice("move", X, 1, _fax("routed", Y, 2),
                              [_received(), _row(2, "moved", DANA, Z, Y, T_CHANGE)],
-                             names, QUEUES, f.CLINIC_TZ)
+                             names, QUEUES, f.CLINIC_TZ, ME)
     assert "Dana <Reyes>" in got and "&lt;" not in got

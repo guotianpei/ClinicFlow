@@ -20,16 +20,19 @@ profile, target 153); ASGI requests; pages parsed by the support module's own HT
            "Fax needs sorting (3)"; each sorting row shows exactly its approved reason; the routed
            fax is in its queue's section; queue sections in t151 order; Sort offers exactly the
            active queue ids and routes the fax to the selected queue
-- FX3b-H06 filed and inactive (OD-FX8, OD-FX12): a fax filed from the screen stays listed under
-           its renamed queue (by id, current name); its detail shows the filed notice, the filer's
-           display name, no Move or Mark filed; an inactive queue is listed but never selectable
+- FX3b-H06 filed and inactive (OD-FX8, OD-FX12): a fax filed by a distinct staff member stays
+           listed under its renamed queue (by id, current name); its detail shows the filed
+           notice, that filer's name in the filed history event only (the received event shows
+           "System"), no Move or Mark filed; a fax filed from the screen shows the principal in
+           its filed event; an inactive queue is listed but never selectable
 - FX3b-H07 conflicts (OD-FX12 case 0, OD-FX13 cases 1-5; Codex fixtures): the competing action
            commits first; the screen's stale submit answers 409 with exactly one notice = the
            approved lead and case line (name, queue and time from the competing state row; case
            0 ignores a later open by a third staff member; case 5 names nothing); fax and history
            equal the snapshot taken just before the submit, again after a GET refresh and after
-           re-submitting the stale form; "Refresh this fax" loads forms bound to the current
-           version; case 0 then succeeds from the refreshed form
+           re-submitting the stale form; "Refresh this fax" loads exactly the actions of the
+           refreshed state (routed: move, file; needs sorting: sort; filed: none), each bound to
+           the current version; case 0 then succeeds from the refreshed form
 - FX3b-H08 From column (OD-FX10): saved name, as sent, neither, withheld; the known synthetic
            numbers in every formatted variant are absent from list and detail pages
 """
@@ -283,16 +286,20 @@ def test_fx3b_h06_filed_renamed_inactive(pg: s.PgCluster, tmp_path: Path) -> Non
         async with e4.running(inst, profile=FAX, app_name="fx3b-h06") as (_lc, app):
             tok = await e4.token(app)
             f.seed_rule(inst, SENDER_Z, Z)
-            filed = await f.deliver(app, tok, SENDER_Z)
+            filed = await f.deliver(app, tok, SENDER_Z)        # filed by a DISTINCT staff member
+            mine = await f.deliver(app, tok, SENDER_Z)         # filed from the screen
             routed = await f.deliver(app, tok, SENDER_Z)
             sorting = await f.deliver(app, tok, None)
             q = f.queue_ids(inst)
-            # file it from the screen
-            dpage = f.fax_page(await f.get(app, f.detail(filed)))
-            file_form = dpage.form(f.act_path(filed, "file"))
+            dana = f.seed_staff(inst, "Dana Reyes")
+            assert f.gateway_act(inst, dana, "file", filed, expected_version=1)["outcome"] == (
+                "applied")
+            # the screen's own file action (positive path)
+            dpage = f.fax_page(await f.get(app, f.detail(mine)))
+            file_form = dpage.form(f.act_path(mine, "file"))
             got = await f.post_form(app, file_form.action, f.submit(file_form))
-            assert got.status == 303
-            assert f.fax_row(inst, filed)["state"] == "filed"
+            assert got.status == 303 and got.header("location") == [f.detail(mine)]
+            assert f.fax_row(inst, mine)["state"] == "filed"
             f.rename_queue(inst, Z, "General correspondence")
             f.deactivate_queue(inst, "Pharmacy/Refills")
             listing = f.fax_page(await f.get(app, f.UI))
@@ -303,11 +310,21 @@ def test_fx3b_h06_filed_renamed_inactive(pg: s.PgCluster, tmp_path: Path) -> Non
             assert f.act_path(filed, "open") in forms
             pharmacy, _forms = listing.region(f"data-queue-id={q['Pharmacy/Refills']}")
             assert "Pharmacy/Refills" in pharmacy                      # listed, identifiable
+            # detail: the filed notice; the filer bound to the filed history event (Codex REVISE 2)
             dpage = f.fax_page(await f.get(app, f.detail(filed)))
             assert dpage.alerts == [f.FILED_NOTICE]
-            assert "Demo Clinic Admin" in dpage.text                   # the filer, by name
+            filed_seq = [r["seq"] for r in f.history(inst, filed) if r["action"] == "filed"]
+            assert len(filed_seq) == 1
+            event, _forms = dpage.region(f"data-history-seq={filed_seq[0]}")
+            assert "Dana Reyes" in event and "Demo Clinic Admin" not in event, event
+            received, _forms = dpage.region("data-history-seq=1")
+            assert f.SYSTEM_ACTOR in received and "Dana Reyes" not in received, received
             assert not dpage.has_form(f.act_path(filed, "move"))
             assert not dpage.has_form(f.act_path(filed, "file"))
+            mine_page = f.fax_page(await f.get(app, f.detail(mine)))
+            mine_seq = [r["seq"] for r in f.history(inst, mine) if r["action"] == "filed"]
+            event, _forms = mine_page.region(f"data-history-seq={mine_seq[0]}")
+            assert "Demo Clinic Admin" in event and "Dana Reyes" not in event, event
             active = {v for k, v in q.items() if k != "Pharmacy/Refills"}
             move = f.fax_page(await f.get(app, f.detail(routed))).form(f.act_path(routed, "move"))
             assert set(move.selects["queue_id"].options) <= active
@@ -380,14 +397,14 @@ def test_fx3b_h07_conflict(pg: s.PgCluster, tmp_path: Path, case: int) -> None:
             assert again.status == 409
             fresh = f.fax_page(await f.get(app, f.detail(fid)))
             assert f.snapshot(inst, fid) == snap
+            # Codex REVISE 3: the exact action set for the refreshed state, then the versions
             current = str(snap[0]["version"])
-            for action in ("move", "file", "sort"):
-                if fresh.has_form(f.act_path(fid, action)):
-                    assert fresh.form(f.act_path(fid, action)).hidden(
-                        "expected_version") == current
-            if snap[0]["state"] == "filed":
-                assert not fresh.has_form(f.act_path(fid, "move"))
-                assert not fresh.has_form(f.act_path(fid, "file"))
+            expected_actions = {"routed": {"move", "file"}, "needs_sorting": {"sort"},
+                                "filed": set()}[snap[0]["state"]]
+            shown = {a for a in ("move", "file", "sort") if fresh.has_form(f.act_path(fid, a))}
+            assert shown == expected_actions, (case, snap[0]["state"], shown)
+            for action in sorted(expected_actions):
+                assert fresh.form(f.act_path(fid, action)).hidden("expected_version") == current
             if case == 0:
                 move = fresh.form(f.act_path(fid, "move"))
                 done = await f.post_form(app, move.action, f.submit(move, queue_id=q[X]))

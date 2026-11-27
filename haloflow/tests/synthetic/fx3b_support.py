@@ -54,13 +54,15 @@ haloflow.synthetic.fax_ui (new module):
       ISO-8601 UTC ("...Z") -> clinic time, "Nov 24, 5:12 PM" (no leading zero on the day or
       the hour); anything unparseable -> "Unrecognized"
   conflict_notice(attempt, attempted_queue_id, expected_version, fax, history, names,
-                  queue_names, clinic_tz) -> str
+                  queue_names, clinic_tz, principal_id) -> str
       attempt in {"move", "file", "sort"}; fax = the re-read `get` summary; history = the
-      re-read history rows; names: staff id -> display name; queue_names: queue id -> name.
+      re-read history rows; names: staff id -> display name; queue_names: queue id -> name;
+      principal_id: the authenticated principal's staff id (the screen's own staff member).
       Returns the case line that follows CONFLICT_LEAD (OD-FX13 cases 1-5, OD-FX12 case 0).
       A named case (0-4) only when ALL hold: fax.version == expected_version + 1 (exactly one
       state change since the form), the LATEST state row (moved / sorted / filed; `opened` and
-      `received_*` rows never count) is the change the case describes, its actor is a staff id,
+      `received_*` rows never count) is the change the case describes, its actor is a staff id
+      with a display name and is NOT principal_id (compared by id, never by name),
       and the re-read summary agrees with it (moved / sorted: state "routed" and queue_id ==
       the row's to_queue_id; filed: state "filed").
       Otherwise case 5 ("Check the details below."): no name, queue or time.
@@ -80,6 +82,8 @@ Markup pins (the oracle reads these, nothing else):
   - list page: <section id="needs-sorting"> (heading text "Fax needs sorting (N)") BEFORE any
     <section data-queue-id="..."> (one per queue, t151 order); each fax row has data-fax-id and
     holds the Open form (action /synthetic/ui/fax/{id}/open);
+  - detail page: each history row is one element with data-history-seq="<seq>" holding that
+    row's actor display name (or "System" / "Unknown staff member");
   - detail page: the conflict notice and the filed notice are each ONE element with
     role="alert"; the Move / Sort forms carry <select name="queue_id"> whose <option value>s
     are the selectable queue ids; "Refresh this fax" is <a href="/synthetic/ui/fax/{id}">;
@@ -184,7 +188,7 @@ class _Parser(HTMLParser):
         if a.get("role") == "alert":
             self.alerts.append([])
             sinks.append(self.alerts[-1])
-        for key in ("id", "data-queue-id", "data-fax-id"):
+        for key in ("id", "data-queue-id", "data-fax-id", "data-history-seq"):
             if key == "id" and a.get("id") != "needs-sorting":
                 continue
             if key in a:
