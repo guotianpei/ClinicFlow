@@ -8,22 +8,21 @@ The package under test (`haloflow.m05.assessment`) is imported lazily inside eac
 each row FAIL in its own body rather than ERROR in setup (the class-B red rule).
 
 Golden expectations here are written from the test packet, independently of any
-implementation. No database, network or model is used. The IANA zone data is read from the
-system database HERE, in the test process, and passed to the evaluator as immutable data
-(T1); the evaluator package itself may not read it.
+implementation. No database, network or model is used. The IANA zone data is a frozen,
+reviewed fixture (fixtures/tz_2026e_america_new_york.json) passed to the evaluator as
+immutable data (T1); the evaluator package itself may not read zone data.
 """
 
 from __future__ import annotations
 
 import copy
-import hashlib
 import importlib
 import json
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
+from pathlib import Path
 from types import ModuleType
 from typing import Any
-from zoneinfo import ZoneInfo
 
 # ---------------------------------------------------------------------------- package
 
@@ -35,9 +34,22 @@ def assessment() -> ModuleType:
 
 # ---------------------------------------------------------------------------- time
 
-TZ_RELEASE = "fixture-2026a"
-ZONES = ("America/New_York",)
-_SPAN = (datetime(2026, 1, 1, tzinfo=UTC), datetime(2028, 1, 1, tzinfo=UTC))
+# Frozen, reviewed zone fixture (Codex red review 49c67ee item 1): America/New_York
+# transitions 2026-01-01..2028-01-01 from IANA tzdata 2026e, generated once in the test
+# process and committed. Its digest below was computed independently with hashlib over the
+# canonical form (sorted keys, no insignificant whitespace, literal UTF-8), NOT through the
+# package under test, so a wrong package digest cannot certify itself.
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+_TZ_FIXTURE = json.loads((FIXTURES / "tz_2026e_america_new_york.json").read_text("utf-8"))
+TZ_RELEASE = "2026e"
+TZ_PAYLOAD: dict[str, Any] = _TZ_FIXTURE["payload"]
+TZ_DIGEST = "0cfa9719c59e3860c574ec39097e2d3ced0ea949bd94cfceb87c7c47b24334bf"
+assert TZ_PAYLOAD["release"] == TZ_RELEASE
+
+# Independent canonical-encoding vector (A3), bytes and SHA-256 computed with the stdlib.
+VECTOR = {"b": 1, "a": "\u00e9", "d": {"y": True, "x": None}, "n": -7}
+VECTOR_BYTES = b'{"a":"\xc3\xa9","b":1,"d":{"x":null,"y":true},"n":-7}'
+VECTOR_DIGEST = "783df830306d76cadc744e42109633cdaf6b70db0739543e13ed3e5ebacdc430"
 
 
 def instant(text: str) -> str:
@@ -46,46 +58,16 @@ def instant(text: str) -> str:
     return value.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def _transitions(zone: str) -> tuple[tuple[int, int], ...]:
-    """(utc_epoch_second, offset_seconds) pairs covering the fixture span, hourly-scanned.
-
-    Read from the system IANA database in the test process (outside the package, T1).
-    """
-    tz = ZoneInfo(zone)
-    start, end = _SPAN
-    out: list[tuple[int, int]] = []
-    cursor = start
-    previous: int | None = None
-    while cursor < end:
-        offset = int(cursor.astimezone(tz).utcoffset().total_seconds())  # type: ignore[union-attr]
-        if offset != previous:
-            out.append((int(cursor.timestamp()), offset))
-            previous = offset
-        cursor += timedelta(hours=1)
-    return tuple(out)
-
-
-def _sha(obj: Any) -> str:
-    raw = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def zone_payload() -> dict[str, Any]:
-    transitions = {zone: [list(pair) for pair in _transitions(zone)] for zone in ZONES}
-    return {"release": TZ_RELEASE, "transitions": transitions}
-
-
 def zones(pkg: ModuleType, *, release: str | None = None, digest: str | None = None) -> Any:
-    """Build pkg.ZoneData from the fixture transitions; digest via the package's own digest()."""
-    payload = zone_payload()
-    real = pkg.digest(payload)
-    transitions = {k: tuple(tuple(p) for p in v) for k, v in payload["transitions"].items()}
-    return pkg.ZoneData(release=release or TZ_RELEASE, digest=digest or real,
+    """pkg.ZoneData from the frozen fixture with the independently computed digest."""
+    transitions = {zone: tuple(tuple(pair) for pair in pairs)
+                   for zone, pairs in TZ_PAYLOAD["transitions"].items()}
+    return pkg.ZoneData(release=release or TZ_RELEASE, digest=digest or TZ_DIGEST,
                         transitions=transitions)
 
 
 def tz_reference(pkg: ModuleType) -> dict[str, str]:
-    return {"release": TZ_RELEASE, "digest": pkg.digest(zone_payload())}
+    return {"release": TZ_RELEASE, "digest": TZ_DIGEST}
 
 
 # ---------------------------------------------------------------------------- policy

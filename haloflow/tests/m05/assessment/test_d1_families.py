@@ -719,15 +719,20 @@ TRUTH: list[tuple[dict[str, Any], str]] = [
 
 
 def test_d1_family_F51i() -> None:
-    """F51i: operator truth table with Unknown operands; repeated with the same inputs."""
+    """F51i: operator truth table with Unknown operands; repeated with the same inputs.
+
+    Each result is compared by identity with True, False or pkg.UNKNOWN, so no other value
+    can pass as Unknown (Codex red review 49c67ee item 2).
+    """
     pkg = s.assessment()
     view = {"here": 1}
+    expected_value = {"T": True, "F": False}
     for expression, expected in TRUTH:
         got = pkg.eval_expr(expression, view)
         again = pkg.eval_expr(expression, view)
-        assert got is again or got == again
-        label = {True: "T", False: "F"}.get(got, "U") if got is not pkg.UNKNOWN else "U"
-        assert label == expected, (expression, got)
+        want = pkg.UNKNOWN if expected == "U" else expected_value[expected]
+        assert got is want, (expression, got)
+        assert again is want, (expression, again)
     # Unknown applicability binds to unresolved (U); a dominating True selects the base (C).
     resolved = s.build(pkg, add_rule(s.rule(
         "APP-OR", "applicability", s.expr("or", args=[s.lit(True), s.field("missing")]),
@@ -739,10 +744,46 @@ def test_d1_family_F51i() -> None:
     s.assert_profile(s.run(pkg, unresolved), "U")
 
 
-def test_d1_family_F54a() -> None:
-    """F54a: replay of the base with the caller clock advanced 10 days is identical."""
+def test_d1_family_F54a(monkeypatch: pytest.MonkeyPatch) -> None:
+    """F54a: replay of the base with the caller clock advanced 10 days is identical.
+
+    The caller's clock is advanced independently (time.time/time_ns and datetime.datetime
+    replaced in the test process); a control proves the perturbation took effect before the
+    replay (Codex red review 49c67ee item 3).
+    """
+    import datetime as datetime_module
+    import time as time_module
+
     pkg = s.assessment()
     original = s.run(pkg, s.build(pkg))
+
+    shift = 10 * 24 * 3600
+    real_time, real_time_ns = time_module.time, time_module.time_ns
+    real_datetime = datetime_module.datetime
+
+    class AdvancedDatetime(real_datetime):  # type: ignore[misc, valid-type]
+        @classmethod
+        def now(cls, tz: Any = None) -> Any:
+            return real_datetime.now(tz) + datetime_module.timedelta(seconds=shift)
+
+        @classmethod
+        def utcnow(cls) -> Any:
+            return real_datetime.now(datetime_module.UTC).replace(tzinfo=None) + \
+                datetime_module.timedelta(seconds=shift)
+
+        @classmethod
+        def today(cls) -> Any:
+            return cls.now()
+
+    before = real_time()
+    monkeypatch.setattr(time_module, "time", lambda: real_time() + shift)
+    monkeypatch.setattr(time_module, "time_ns", lambda: real_time_ns() + shift * 10**9)
+    monkeypatch.setattr(datetime_module, "datetime", AdvancedDatetime)
+    # Control: the caller clock really moved by ~10 days.
+    assert time_module.time() - before >= shift - 5
+    assert (datetime_module.datetime.now(datetime_module.UTC)
+            - real_datetime.now(datetime_module.UTC)).total_seconds() >= shift - 5
+
     replayed = pkg.replay(original["replay_record"], zones=s.zones(pkg))
     assert replayed == original
     assert replayed["trace"]["evaluation_instant"] == s.EVAL

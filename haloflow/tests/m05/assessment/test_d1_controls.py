@@ -294,6 +294,18 @@ def test_i5_equivalent_sets_and_objects_have_identical_bytes_digest_and_output()
     assert ra == rb
 
 
+def test_i5_canonical_bytes_and_digest_match_an_independent_vector() -> None:
+    """A3 against bytes and SHA-256 computed with the stdlib, not via the package."""
+    pkg = s.assessment()
+    assert pkg.canonical_bytes(s.VECTOR) == s.VECTOR_BYTES
+    assert pkg.digest(s.VECTOR) == s.VECTOR_DIGEST
+
+
+def test_i2_package_digest_of_the_frozen_zone_fixture_matches_the_independent_digest() -> None:
+    pkg = s.assessment()
+    assert pkg.digest(s.TZ_PAYLOAD) == s.TZ_DIGEST
+
+
 def test_i5_duplicate_identical_set_entry_is_removed() -> None:
     pkg = s.assessment()
     a = s.build(pkg)
