@@ -129,3 +129,23 @@ production database.
   running against the disposable database.
 - Run restrictions: approved synthetic environments only (section 2); loopback only; no live
   SMS; no real EHR; no real patient data; not a demo. These holds are not lifted by this app.
+
+## 9. Fax screen (fax profile only)
+
+On an app started with the `fax` install profile, the staff screen shows a link "Incoming faxes"
+(only for staff who can act on faxes; staff with read access only have no fax access, OD-FX11).
+
+- `/synthetic/ui/fax` lists "Fax needs sorting" first, with each fax's reason ("No matching rule",
+  "Sender number not shown", "Rules point to different queues"), then every queue in its configured
+  order. Inactive queues are listed and marked "(inactive)" but are never offered as a target.
+- Opening a fax is the Open button (it records "Opened" in the history); viewing the detail page
+  records nothing. The detail page shows the sender ("From"), the history with staff names, and the
+  actions for the fax's state: Move and Mark filed for a fax in a queue, Sort for a fax that needs
+  sorting, none for a filed fax ("This fax has been filed. ..."; filed is final).
+- No full fax number is ever shown: a saved sender name, else the name as sent marked "(as sent)",
+  else "Unknown sender", with the last four digits.
+- If someone else changed the fax while it was open, nothing is changed and the page explains what
+  happened (the approved OD-FX12 / OD-FX13 notices) with a "Refresh this fax" link. When the screen
+  cannot tell who changed it or how, it says only "Check the details below."
+- Faxes come from the fax simulator (`POST /synthetic/v1/simulator/fax`); page images are a synthetic
+  placeholder. SIMULATED: no real faxes, no real provider.
